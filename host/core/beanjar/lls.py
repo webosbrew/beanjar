@@ -45,9 +45,12 @@ namespace, with a PATH of beanjar's stand-ins alone: no host program but the she
 generators' popen: nyx-cmd replays the firmware's own nyx-cmd's OSInfo answers, initctl does
 nothing; _helpers). In the guest (larger-page hosts, NYX LLS) they run in a chroot of the same
 root with the firmware's own shell (_shell), nyx-cmd and OSInfo module on the firmware's PATH,
-each under GUEST_TIMEOUT. glibc's MALLOC_PERTURB_=255 makes new heap memory read 0x00:
+each under GUEST_TIMEOUT. glibc's MALLOC_PERTURB_=255 makes new heap memory read 0x00, and
+GLIBC_TUNABLES=glibc.malloc.tcache_count=0 makes that hold for every allocation (glibc does not
+perturb a chunk it hands out from its tcache, which keeps what was freed there; HEAP_ENV):
 LLSFactoryDB's constructor leaves three padding bytes of its record unwritten (record
-+0x69-0x6b), which on a TV hold what the heap had.
++0x69-0x6b), LLSConnectivityDB's the last two of its record (+22-23), which on a TV hold what
+the heap had.
 The debugstatus is encrypted with RAND_bytes, so two runs differ there.
 
 The result is cached in build/lls/<firmware>/<key>/ (eeprom.img, the probe's records.txt, the two
@@ -71,7 +74,7 @@ import tempfile
 
 from . import nvm, targets, paths
 
-VERSION = 11
+VERSION = 12
 SIZE = 0x8000
 SDK_GCC = "/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-gcc"
 # the programs run, in the firmware's root
@@ -108,7 +111,13 @@ OSINFO_MODULES = tuple(
 OSINFO_KEYS = ("webos_manufacturing_version", "webos_release", "webos_release_platformcode")
 # The guest's chroot: the firmware's shell for the generators' popen, its PATH (a TV's
 # /etc/profile), and the limit of each program; a program stopped there says so on stderr
+# the entries of the firmware's shell in the layouts it has (W21P's /bin/sh -> /bin/busybox.nosuid;
+# 43.x's /bin -> usr/bin, /usr/bin/sh -> /usr/bin/busybox.nosuid): those that are links or files
+# are extracted as they are, and the chroot's kernel resolves the links
 SHELL = "/bin/sh"
+SHELL_ENTRIES = ("/bin", "/bin/sh", "/usr/bin/sh", "/bin/busybox.nosuid", "/usr/bin/busybox.nosuid")
+# heap memory reads 0x00 wherever the program leaves it unwritten (above)
+HEAP_ENV = (("MALLOC_PERTURB_", "255"), ("GLIBC_TUNABLES", "glibc.malloc.tcache_count=0"))
 GUEST_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
 GUEST_TIMEOUT = 30
 GUEST_STOPPED = "beanjar-prepare: "
@@ -173,24 +182,23 @@ class Root:
                     break
         return self._binds
 
-    def readlink(self, path):
-        """The target of path in the first layer that has it, if a symlink there; else None. The
-        path's directories are not followed (unsquashfs's listing)."""
+    def entry(self, path):
+        """(pak, prefix, type) of path in the first layer that has it, type its listing's first
+        letter ("l" a link, "-" a file, "d" a directory); None if no layer has it. The path's
+        directories are not followed (unsquashfs's listing)."""
         for pak, prefix in self.layers:
-            entry = (prefix + path).strip("/")
+            name = (prefix + path).strip("/")
             r = subprocess.run(
-                ["unsquashfs", "-lls", "-no-wildcards", "-max-depth", str(entry.count("/") + 1)]
-                + [pak, entry],
+                ["unsquashfs", "-lls", "-no-wildcards", "-max-depth", str(name.count("/") + 1)]
+                + [pak, name],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
             for line in r.stdout.splitlines():
-                name = line.split("squashfs-root/", 1)[-1] if "squashfs-root/" in line else ""
-                if name == entry:
-                    return None
-                if line.startswith("l") and name.startswith(entry + " -> "):
-                    return name[len(entry) + 4 :]
+                listed = line.split("squashfs-root/", 1)[-1] if "squashfs-root/" in line else ""
+                if listed == name or listed.startswith(name + " -> "):
+                    return pak, prefix, line[:1]
         return None
 
     def read(self, path):
@@ -295,38 +303,41 @@ def extract(root, programs, data_files, dest):
 
 
 def _shell(root, dest):
-    """The firmware's SHELL in dest as the firmware lays it out (W21P's /bin/sh ->
-    /bin/busybox.nosuid; 43.x's /bin -> usr/bin, /usr/bin/sh -> /usr/bin/busybox.nosuid): each
-    symlink on the way (Root.readlink, a component at a time) as a symlink, then the shell with its
-    libraries (extract); {path: sha256, or "-> target" for a link}."""
-    parts, done, digests = SHELL.strip("/").split("/"), [], {}
-    for _ in range(64):
-        if not parts:
-            break
-        part = parts.pop(0)
-        if part in ("", "."):
+    """The firmware's shell in dest as the firmware lays it out: of SHELL_ENTRIES, each link (as a
+    link) and file the firmware has, by unsquashfs, and the files' libraries (extract). The links
+    are not followed here: in the guest's chroot the kernel resolves them. {path: sha256, or
+    "-> target" for a link}."""
+    digests, files = {}, []
+    for path in SHELL_ENTRIES:
+        found = root.entry(path)
+        if not found or found[2] not in ("l", "-"):
             continue
-        if part == "..":
-            done = done[:-1]
-            continue
-        path = "/" + "/".join(done + [part])
-        target = root.readlink(path)
-        if target is None:
-            done.append(part)
-            continue
+        pak, prefix, kind = found
         p = os.path.join(dest, path.lstrip("/"))
-        if not (os.path.islink(p) and os.readlink(p) == target):
-            if os.path.lexists(p):
-                raise Error(f"{SHELL}: the firmware's {path} -> {target}, but it is extracted")
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            os.symlink(target, p)
-        digests[path] = "-> " + target
-        parts = target.split("/") + parts
-        if target.startswith("/"):
-            done = []
-    else:
-        raise Error(f"{SHELL}: too many symlinks in the firmware")
-    digests.update(extract(root, ["/" + "/".join(done)], (), dest))
+        if os.path.lexists(p) and not os.path.islink(p) and kind == "l":
+            raise Error(f"the firmware's {path} is a link, but it is extracted")
+        with tempfile.TemporaryDirectory(prefix="shell-", dir=os.path.dirname(dest)) as tmp:
+            out = os.path.join(tmp, "root")
+            subprocess.run(
+                ["unsquashfs", "-q", "-n", "-no-wildcards", "-d", out, pak]
+                + [(prefix + path).lstrip("/")],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            got = os.path.join(out, (prefix + path).lstrip("/"))
+            if kind == "l":
+                if not os.path.islink(got):
+                    raise Error(f"unsquashfs did not extract the firmware's {path}")
+                if os.path.islink(p):
+                    os.unlink(p)
+                os.makedirs(os.path.dirname(p), exist_ok=True)
+                os.symlink(os.readlink(got), p)
+                digests[path] = "-> " + os.readlink(got)
+            else:
+                files.append(path)
+    if not files or not any(p in digests for p in ("/bin/sh", "/usr/bin/sh")):
+        raise Error(f"no {SHELL} in the firmware's layouts ({', '.join(SHELL_ENTRIES)})")
+    digests.update(extract(root, files, (), dest))
     return digests
 
 
@@ -374,7 +385,10 @@ def _guest_preamble(extra_env=None):
     initramfs's /bin and /sbin too) and bounded, which runs its arguments in the chroot under
     GUEST_TIMEOUT and, if stopped there, says so on stderr (GUEST_STOPPED) and ends the command."""
     text = (
-        "export LANG=C MALLOC_PERTURB_=255 LD_LIBRARY_PATH=/lib:/usr/lib PATH=" + GUEST_PATH + "\n"
+        "export LANG=C LD_LIBRARY_PATH=/lib:/usr/lib PATH="
+        + GUEST_PATH
+        + "".join(f" {key}={value}" for key, value in HEAP_ENV)
+        + "\n"
     )
     for key, value in (extra_env or {}).items():
         text += "export " + key + "=" + shlex.quote(value) + "\n"
@@ -599,8 +613,7 @@ def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None, bindir=No
         tools["qemu-arm"],
         "-L",
         sysroot,
-        "-E",
-        "MALLOC_PERTURB_=255",
+        *(a for key, value in HEAP_ENV for a in ("-E", key + "=" + value)),
         "-E",
         "LD_LIBRARY_PATH=" + sysroot + "/lib:" + sysroot + "/usr/lib",
     ]

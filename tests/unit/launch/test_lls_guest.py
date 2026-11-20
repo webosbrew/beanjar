@@ -21,7 +21,8 @@ def test_command(tmp_path):
     text = lls._guest_command(
         sysroot, [sysroot + "/usr/bin/nyx-option-gen", "-A", "x y"], {"LD_PRELOAD": "/p.so"}
     )
-    assert "PATH=" + lls.GUEST_PATH + "\n" in text
+    assert " PATH=" + lls.GUEST_PATH + " MALLOC_PERTURB_=255 " in text
+    assert " GLIBC_TUNABLES=glibc.malloc.tcache_count=0\n" in text
     assert "export LD_PRELOAD=/p.so\n" in text
     assert f"timeout {lls.GUEST_TIMEOUT} chroot /root " in text
     assert text.endswith("\nbounded /usr/bin/nyx-option-gen -A 'x y'\n")
