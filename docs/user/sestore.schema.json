@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Beanjar secure-store inputs (identity/sestore.toml)",
+  "description": "Per-VM secure-store values. See docs/user/sestore.md. Limits this schema cannot check: each decoded value is at most 65536 bytes, the TOML document at most 64 MiB, referenced files must be regular files with owner-only permissions, and PEM contents are validated by the host at launch.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "missing": {
+      "description": "What to do for items the file does not configure. \"fallback\" (the default) adds a synthetic model key when no model item is configured and generates the SSG and DVR keys at launch; \"error\" adds nothing.",
+      "enum": ["fallback", "error"],
+      "default": "fallback"
+    },
+    "items": {
+      "description": "Secure-store items by exact name, as passed to SESTORE_ReadData, including regional suffixes. At most 256 items. Names are never hashed, renamed or uppercased.",
+      "type": "object",
+      "maxProperties": 256,
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+      },
+      "properties": {
+        "1D492999": { "$ref": "#/definitions/model_key" },
+        "1D492999_a": { "$ref": "#/definitions/model_key" },
+        "1D492999_d": { "$ref": "#/definitions/model_key" },
+        "1D492999_r": { "$ref": "#/definitions/model_key" },
+        "SDP_MODEL": { "$ref": "#/definitions/model_key" },
+        "77D1DD90": { "$ref": "#/definitions/ssg_key" },
+        "C1FFB834": { "$ref": "#/definitions/youtube_key" },
+        "dvr_key": { "$ref": "#/definitions/dvr_key" }
+      },
+      "additionalProperties": { "$ref": "#/definitions/entry" }
+    }
+  },
+  "definitions": {
+    "entry": {
+      "description": "One item: exactly one of text, hex or file, optionally followed by a NUL byte.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "description": "The value as UTF-8 text. No newline, trimming or terminator is implicit.",
+          "type": "string"
+        },
+        "hex": {
+          "description": "The value as hexadecimal digits, two per byte. Written without separators.",
+          "type": "string",
+          "pattern": "^([0-9A-Fa-f]{2})*$"
+        },
+        "file": {
+          "description": "Path of a file whose exact bytes are the value. Relative paths resolve beside this TOML; absolute paths are accepted. The file needs owner-only permissions and at most 65536 bytes.",
+          "type": "string",
+          "minLength": 1
+        },
+        "nul_terminated": {
+          "description": "Append one zero byte to the value, whatever its source.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "oneOf": [
+        { "required": ["text"] },
+        { "required": ["hex"] },
+        { "required": ["file"] }
+      ]
+    },
+    "model_key": {
+      "description": "Model secret: 44 canonical base64 characters for a 32-byte key, with no NUL or newline (so nul_terminated must be false). Canonical form and the choice of regional item are checked by the host.",
+      "allOf": [
+        { "$ref": "#/definitions/entry" },
+        {
+          "properties": {
+            "text": { "pattern": "^[A-Za-z0-9+/]{43}=$" },
+            "hex": { "pattern": "^([0-9A-Fa-f]{2}){44}$" },
+            "nul_terminated": { "const": false }
+          }
+        }
+      ]
+    },
+    "ssg_key": {
+      "description": "Second-screen gateway private PEM key, nonempty, at most 1999 bytes, without NUL (so nul_terminated must be false). Launch generates the matching certificate. PEM validity is checked by the host.",
+      "allOf": [
+        { "$ref": "#/definitions/entry" },
+        {
+          "properties": {
+            "text": { "minLength": 1, "maxLength": 1999, "pattern": "^[^\\u0000]*$" },
+            "hex": { "minLength": 2, "maxLength": 3998 },
+            "nul_terminated": { "const": false }
+          }
+        }
+      ]
+    },
+    "youtube_key": {
+      "description": "YouTube credentials: printable ASCII <part1>;<part2>, both nonempty, followed by one NUL or LF, at most 100 bytes including that terminator. For authored text use nul_terminated = true; a text ending in LF is also accepted. The terminator itself is checked by the host.",
+      "allOf": [
+        { "$ref": "#/definitions/entry" },
+        {
+          "properties": {
+            "text": { "pattern": "^[!-~]+;[!-~]+\\n?$", "maxLength": 100 }
+          }
+        }
+      ]
+    },
+    "dvr_key": {
+      "description": "The DVR's secure key: exactly 16 bytes (32 hex digits, or 30 with nul_terminated = true). Launch makes a random one when it is missing, unless missing = \"error\".",
+      "allOf": [
+        { "$ref": "#/definitions/entry" },
+        {
+          "properties": {
+            "hex": { "pattern": "^([0-9A-Fa-f]{2}){16}$" }
+          },
+          "if": {
+            "required": ["nul_terminated", "hex"],
+            "properties": { "nul_terminated": { "const": true } }
+          },
+          "then": {
+            "properties": { "hex": { "pattern": "^([0-9A-Fa-f]{2}){15}$" } }
+          }
+        }
+      ]
+    }
+  }
+}

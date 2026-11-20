@@ -22,6 +22,12 @@ missing = "fallback"
 "C1FFB834" = { text = "dummy-id;dummy-secret", nul_terminated = true }
 ```
 
+An editor can validate and complete the file with [`sestore.schema.json`](sestore.schema.json),
+for example in taplo or Even Better TOML. Put `#:schema ./sestore.schema.json` (a path or URL to
+the schema) as the first line of `sestore.toml`, or map the file to the schema with `[[rule]]`
+`include` and `[rule.schema] path` in `.taplo.toml`. The schema covers the structure and the
+fixed formats of the known items; the host still checks byte sizes, PEM contents and files.
+
 The root `missing` property accepts `fallback` (the default) and `error`. Under either, a sestore
 read of an item the TOML does not configure returns `0xFFFF0002` (no such item); LG's own library
 is never asked, since it cannot read its store in a VM. Fallback adds the built-in synthetic model
