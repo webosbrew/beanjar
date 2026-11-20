@@ -368,6 +368,7 @@ class CacheLockTest(unittest.TestCase):
             mock.patch.object(lls, "board_cmdline", return_value="model=X"),
             mock.patch.object(lls, "Root", return_value=root),
             mock.patch.object(lls, "extract", return_value={"/usr/sbin/lls": "0" * 64}),
+            mock.patch.object(lls, "_large_pages", return_value=False),
             mock.patch.object(lls, "generate", self.slow(calls, (b"eeprom", "records\n", {}))),
         ):
             got = self.together(

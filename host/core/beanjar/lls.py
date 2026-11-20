@@ -43,16 +43,19 @@ firmware's paks with unsquashfs as the VM stacks them (the release's pak lowers 
 rootfs), with the board's command line on /proc/cmdline and a fresh /tmp, in their own pid
 namespace, with a PATH of beanjar's stand-ins alone: no host program but the shell runs (the
 generators' popen: nyx-cmd replays the firmware's own nyx-cmd's OSInfo answers, initctl does
-nothing; _helpers). glibc's MALLOC_PERTURB_=255 makes new heap memory read 0x00: LLSFactoryDB's
-constructor leaves three padding bytes of its record unwritten (record +0x69-0x6b), which on a TV
-hold what the heap had.
+nothing; _helpers). In the guest (larger-page hosts, NYX LLS) they run in a chroot of the same
+root with the firmware's own shell (_shell), nyx-cmd and OSInfo module on the firmware's PATH,
+each under GUEST_TIMEOUT. glibc's MALLOC_PERTURB_=255 makes new heap memory read 0x00:
+LLSFactoryDB's constructor leaves three padding bytes of its record unwritten (record
++0x69-0x6b), which on a TV hold what the heap had.
 The debugstatus is encrypted with RAND_bytes, so two runs differ there.
 
 The result is cached in build/lls/<firmware>/<key>/ (eeprom.img, the probe's records.txt, the two
 JSONs, the command line), key the sha256 of this module's VERSION, the command line and every file
 read. Installed hosts use the packaged probe. On 4 KiB hosts preparation needs qemu-arm
 (qemu-user) and bwrap; larger-page hosts use the packaged 4 KiB kernel and initramfs in a
-bounded, network-free qemu-system-aarch64 guest (paths.Tree.qemu's). Source builds need the SDK for the probe.
+bounded, network-free qemu-system-aarch64 guest (paths.Tree.qemu's; _large_pages). Source builds
+need the SDK for the probe.
 """
 
 import hashlib
@@ -68,7 +71,7 @@ import tempfile
 
 from . import nvm, targets, paths
 
-VERSION = 10
+VERSION = 11
 SIZE = 0x8000
 SDK_GCC = "/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-gcc"
 # the programs run, in the firmware's root
@@ -103,6 +106,12 @@ OSINFO_MODULES = tuple(
     "/usr/lib/nyx/modules/" + name for name in ("nyxOSInfoMain.module", "nyxOSInfo.module")
 )
 OSINFO_KEYS = ("webos_manufacturing_version", "webos_release", "webos_release_platformcode")
+# The guest's chroot: the firmware's shell for the generators' popen, its PATH (a TV's
+# /etc/profile), and the limit of each program; a program stopped there says so on stderr
+SHELL = "/bin/sh"
+GUEST_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+GUEST_TIMEOUT = 30
+GUEST_STOPPED = "beanjar-prepare: "
 
 
 class Error(Exception):
@@ -163,6 +172,26 @@ class Root:
                 if names:
                     break
         return self._binds
+
+    def readlink(self, path):
+        """The target of path in the first layer that has it, if a symlink there; else None. The
+        path's directories are not followed (unsquashfs's listing)."""
+        for pak, prefix in self.layers:
+            entry = (prefix + path).strip("/")
+            r = subprocess.run(
+                ["unsquashfs", "-lls", "-no-wildcards", "-max-depth", str(entry.count("/") + 1)]
+                + [pak, entry],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            for line in r.stdout.splitlines():
+                name = line.split("squashfs-root/", 1)[-1] if "squashfs-root/" in line else ""
+                if name == entry:
+                    return None
+                if line.startswith("l") and name.startswith(entry + " -> "):
+                    return name[len(entry) + 4 :]
+        return None
 
     def read(self, path):
         """The bytes of path from the first layer unsquashfs can read, else through the root's bind
@@ -265,6 +294,47 @@ def extract(root, programs, data_files, dest):
     return out
 
 
+def _shell(root, dest):
+    """The firmware's SHELL in dest as the firmware lays it out (W21P's /bin/sh ->
+    /bin/busybox.nosuid; 43.x's /bin -> usr/bin, /usr/bin/sh -> /usr/bin/busybox.nosuid): each
+    symlink on the way (Root.readlink, a component at a time) as a symlink, then the shell with its
+    libraries (extract); {path: sha256, or "-> target" for a link}."""
+    parts, done, digests = SHELL.strip("/").split("/"), [], {}
+    for _ in range(64):
+        if not parts:
+            break
+        part = parts.pop(0)
+        if part in ("", "."):
+            continue
+        if part == "..":
+            done = done[:-1]
+            continue
+        path = "/" + "/".join(done + [part])
+        target = root.readlink(path)
+        if target is None:
+            done.append(part)
+            continue
+        p = os.path.join(dest, path.lstrip("/"))
+        if not (os.path.islink(p) and os.readlink(p) == target):
+            if os.path.lexists(p):
+                raise Error(f"{SHELL}: the firmware's {path} -> {target}, but it is extracted")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            os.symlink(target, p)
+        digests[path] = "-> " + target
+        parts = target.split("/") + parts
+        if target.startswith("/"):
+            done = []
+    else:
+        raise Error(f"{SHELL}: too many symlinks in the firmware")
+    digests.update(extract(root, ["/" + "/".join(done)], (), dest))
+    return digests
+
+
+def _large_pages():
+    """Whether qemu-arm cannot run the firmware here (pages over its 4 KiB): the guest path."""
+    return os.sysconf("SC_PAGE_SIZE") > 4096
+
+
 # ---------------------------------------------------------------------------- running LLS's code
 def probe(tree=paths.TREE, preload=False):
     """build/lls/lls-probe, built from guest/helpers/lls/lls-probe.c with the webOS SDK when missing or
@@ -299,18 +369,43 @@ def probe(tree=paths.TREE, preload=False):
     return exe
 
 
+def _guest_preamble(extra_env=None):
+    """The start of a guest command: the programs' environment (the firmware's PATH, which holds the
+    initramfs's /bin and /sbin too) and bounded, which runs its arguments in the chroot under
+    GUEST_TIMEOUT and, if stopped there, says so on stderr (GUEST_STOPPED) and ends the command."""
+    text = (
+        "export LANG=C MALLOC_PERTURB_=255 LD_LIBRARY_PATH=/lib:/usr/lib PATH=" + GUEST_PATH + "\n"
+    )
+    for key, value in (extra_env or {}).items():
+        text += "export " + key + "=" + shlex.quote(value) + "\n"
+    text += f"""bounded() {{
+    start=$(cut -d. -f1 /proc/uptime)
+    rc=0
+    timeout {GUEST_TIMEOUT} chroot /root "$@" || rc=$?
+    if [ "$rc" -ne 0 ] && [ $(($(cut -d. -f1 /proc/uptime) - start)) -ge {GUEST_TIMEOUT} ]; then
+        echo "{GUEST_STOPPED}${{1##*/}}: no exit in {GUEST_TIMEOUT} s, stopped" >&2
+        exit 124
+    fi
+    return "$rc"
+}}
+"""
+    return text
+
+
+def _guest_command(sysroot, argv, extra_env=None):
+    """The guest command that runs argv (paths in sysroot, the guest's /root) bounded."""
+    guest_argv = [a.removeprefix(sysroot) if a.startswith(sysroot + "/") else a for a in argv]
+    return _guest_preamble(extra_env) + "bounded " + shlex.join(guest_argv) + "\n"
+
+
 def _run_guest(sysroot, cmdline, tmp, argv, tree, extra_env=None):
     """Run unchanged ARM firmware under our 4 KiB kernel on larger-page hosts."""
-    guest_argv = [a.removeprefix(sysroot) if a.startswith(sysroot + "/") else a for a in argv]
-    command = "export LANG=C MALLOC_PERTURB_=255 LD_LIBRARY_PATH=/lib:/usr/lib\n"
-    for key, value in (extra_env or {}).items():
-        command += "export " + key + "=" + shlex.quote(value) + "\n"
-    command += "chroot /root " + shlex.join(guest_argv) + "\n"
-    return _guest_request(sysroot, cmdline, tmp, command, tree)
+    return _guest_request(sysroot, cmdline, tmp, _guest_command(sysroot, argv, extra_env), tree)
 
 
-def _guest_request(sysroot, cmdline, tmp, command, tree, eeprom=None):
-    """Execute one bounded preparation transaction; optional EEPROM uses actual guest I2C."""
+def _guest_request(sysroot, cmdline, tmp, command, tree, eeprom=None, timeout=120):
+    """Execute one bounded preparation transaction; optional EEPROM uses actual guest I2C. A
+    program bounded stopped, or a guest not done in timeout s, is an Error with its stderr."""
     for name in ("proc", "dev", "tmp", "var/run", "var/log"):
         os.makedirs(os.path.join(sysroot, name), exist_ok=True)
     os.makedirs(os.path.join(tmp, "var/run"), exist_ok=True)
@@ -368,9 +463,28 @@ def _guest_request(sysroot, cmdline, tmp, command, tree, eeprom=None):
                 f"local,path={directory},mount_tag={tag},security_model=none"
                 + (",readonly=on" if readonly else ""),
             ]
-        r = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120
-        )
+
+        def stderr():
+            try:
+                with open(os.path.join(request, "stderr"), errors="replace") as f:
+                    return f.read()
+            except OSError:
+                return ""
+
+        try:
+            r = subprocess.run(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout
+            )
+        except subprocess.TimeoutExpired as e:
+            # run() has killed QEMU and waited for it
+            console = e.output or b""
+            if isinstance(console, bytes):
+                console = console.decode(errors="replace")
+            tail = stderr().strip()[-1000:] or "(none)"
+            raise Error(
+                f"firmware preparation guest: no exit in {timeout} s, stopped; its stderr: {tail}; "
+                f"console: {console.strip()[-1000:]}"
+            ) from None
         status = os.path.join(request, "status")
         if r.returncode or not os.path.isfile(status):
             raise Error("firmware preparation guest failed: " + r.stdout[-2000:])
@@ -378,8 +492,12 @@ def _guest_request(sysroot, cmdline, tmp, command, tree, eeprom=None):
             rc = int(f.read())
         with open(os.path.join(request, "stdout")) as f:
             out = f.read()
-        with open(os.path.join(request, "stderr")) as f:
-            err = f.read()
+        err = stderr()
+        lines = err.rstrip("\n").split("\n")
+        if rc == 124 and lines[-1].startswith(GUEST_STOPPED):
+            what = lines[-1].removeprefix(GUEST_STOPPED)
+            tail = "\n".join(lines[:-1]).strip()[-1000:] or "(none)"
+            raise Error(f"{what}; its stderr: {tail}")
         return rc, out, err
 
 
@@ -436,8 +554,9 @@ def _osinfo(sysroot, cmdline, tmp, bindir, tree=paths.TREE):
 def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None, bindir=None, timeout=120):
     """argv (paths in the firmware's root) under qemu-arm in bwrap: /proc/cmdline cmdline, /tmp
     the directory tmp, PATH bindir alone (_helpers; by default bin beside sysroot, made with
-    initctl if missing); (exit status, stdout, stderr). Everything it starts dies with it."""
-    if os.sysconf("SC_PAGE_SIZE") > 4096:
+    initctl if missing); (exit status, stdout, stderr). Everything it starts dies with it. On
+    larger-page hosts in the guest (_run_guest; bindir and timeout unused there)."""
+    if _large_pages():
         return _run_guest(sysroot, cmdline, tmp, argv, tree, extra_env)
     tools = {t: shutil.which(t) for t in ("bwrap", "qemu-arm")}
     for tool, path in tools.items():
@@ -665,10 +784,10 @@ def generate_nyx(fw, target, cmdline, work, tree=paths.TREE, say=print):
     params = [p for p in targets.soc(target).lgemu if p.startswith(("i2c_buses=", "i2c_dev="))]
     if not any(p.startswith("i2c_dev=") and "nvm:" in p for p in params):
         raise Error("NYX preparation needs the board's Linux I2C EEPROM parameters")
-    command = "set -e\nexport LANG=C MALLOC_PERTURB_=255 LD_LIBRARY_PATH=/lib:/usr/lib\n"
+    command = "set -e\n" + _guest_preamble()
     command += "insmod /lib/modules/lgemu.ko nvm_disk=/dev/vda " + shlex.join(params) + "\n"
     for g in GENERATORS:
-        command += "timeout 30 chroot /root " + shlex.join([g, "-A", "-d", TVCONFIG]) + " >&2\n"
+        command += "bounded " + shlex.join([g, "-A", "-d", TVCONFIG]) + " >&2\n"
     command += """chroot /root /usr/sbin/lowlevelstorage >/prepare-tmp/lowlevelstorage.stdout 2>&1 &
 lls_pid=$!
 cleanup() { kill -TERM "$lls_pid" 2>/dev/null || true; sleep 1; kill -KILL "$lls_pid" 2>/dev/null || true; wait "$lls_pid" 2>/dev/null || true; }
@@ -686,11 +805,7 @@ done
 cleanup
 trap - EXIT
 """
-    command += (
-        "timeout 30 chroot /root "
-        + shlex.join(["/probe/lls-probe", NYX_LLS, *_board_items(cmdline)])
-        + "\n"
-    )
+    command += "bounded " + shlex.join(["/probe/lls-probe", NYX_LLS, *_board_items(cmdline)]) + "\n"
     rc, out, err = _guest_request(sysroot, cmdfile, tmp, command, tree, eeprom=eeprom)
     if rc:
         raise Error(f"NYX preparation: exit {rc}: {err.strip()[-1500:]}")
@@ -724,7 +839,8 @@ def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
         f.write(cmdline + "\n")
     lls = targets.release(target).nvm.lls
     bindir = os.path.join(work, "bin")
-    _helpers(bindir, _osinfo(sysroot, cmdfile, tmp, bindir, tree))
+    if not _large_pages():  # the guest's generators ask the firmware's nyx-cmd themselves
+        _helpers(bindir, _osinfo(sysroot, cmdfile, tmp, bindir, tree))
     for g in GENERATORS:
         rc, out, err = _run(
             sysroot,
@@ -812,6 +928,9 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
             DATA,
             sysroot,
         )
+        guest = _large_pages()
+        if guest:
+            _shell(root, sysroot)
         if groups:
             os.makedirs(os.path.join(sysroot, "probe"), exist_ok=True)
             shutil.copy(probe(tree), os.path.join(sysroot, "probe", "lls-probe"))
@@ -825,7 +944,8 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
                 f.write(cmdlines[k] + "\n")
             text = ""
             bindir = os.path.join(d, "bin")
-            _helpers(bindir, _osinfo(sysroot, cmdfile, tmp, bindir, tree))
+            if not guest:
+                _helpers(bindir, _osinfo(sysroot, cmdfile, tmp, bindir, tree))
             for g in GENERATORS:
                 _, out, err = _run(
                     sysroot,
@@ -1110,10 +1230,13 @@ def cache_dir(
         modules = tuple(p for p in NYX_MODULES if root.read(p) is not None) if nyx else ()
         digests = extract(
             root,
-            (lls, *GENERATORS, "/lib/libdl.so.2", *modules, *(() if nyx else _osinfo_files(root))),
+            (lls, *GENERATORS, "/lib/libdl.so.2", *modules, *_osinfo_files(root)),
             data_files,
             os.path.join(work, "root"),
         )
+        if nyx or _large_pages():
+            # the guest's chroot: the generators' popen runs the firmware's own shell
+            digests.update(_shell(root, os.path.join(work, "root")))
         if nyx:
             # These helpers execute the stock code; their changes must invalidate preparation.
             for name, path in (
