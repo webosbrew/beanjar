@@ -271,6 +271,20 @@ class VM:
         except sestore.Error as error:
             raise Error(str(error)) from None
 
+    def model_key_item(self):
+        """The secure-store item its model key goes in (sestore.model_item): the board's regional
+        one where its firmware's readers ask for that (targets.regional_model_key), else the plain."""
+        from . import sestore
+
+        target = self.target()
+        try:
+            broadcast = targets.board_broadcast(
+                target, self.firmware_dir(), self.config.get("broadcast")
+            )
+        except targets.Error as error:
+            raise Error(str(error), "broadcast") from None
+        return sestore.model_item(targets.regional_model_key(target), broadcast)
+
     def __init__(self, library, name):
         self.library = library
         self.name = name
@@ -1116,8 +1130,9 @@ class Library:
 
     def set_model_key(self, name, source):
         """The VM's model key in sestore.toml from the file source, checked as
-        host/core/beanjar/modelkey.py does (44 characters of canonical base64 for 32 bytes); source None
-        removes all model variants (the guest follows its missing policy). The VM must be off."""
+        host/core/beanjar/modelkey.py does (44 characters of canonical base64 for 32 bytes), as the
+        item its firmware's readers ask for (VM.model_key_item); source None removes all model
+        items (the guest follows its missing policy). The VM must be off."""
         vm = self.vm(name)
         if vm.alive():
             raise Error(f"VM {name} is not off; its model key changes only while it is off")
@@ -1125,8 +1140,9 @@ class Library:
         from . import sestore
 
         value = None if source is None else read_model_key(source)
+        item = sestore.MODEL if value is None else vm.model_key_item()
         try:
-            sestore.set_model(vm.identity_dir, value)
+            sestore.set_model(vm.identity_dir, value, item)
         except sestore.Error as error:
             raise Error(str(error), "model_key") from None
         return vm

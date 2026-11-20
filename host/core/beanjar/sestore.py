@@ -15,6 +15,9 @@ from . import modelkey
 CONFIG = "sestore.toml"
 MODEL = "1D492999"
 MODELS = (MODEL, MODEL + "_a", MODEL + "_d", MODEL + "_r", "SDP_MODEL")
+# The regional item LG's model-key readers ask for first from kisscurl on, by the board's broadcast
+# (DILE_TVREGION_getTVRegion: 1 ATSC, 2 DVB, 3 ARIB); docs/research/model-key.md.
+MODEL_REGIONAL = {"atsc": MODEL + "_a", "dvb": MODEL + "_d", "arib": MODEL + "_r"}
 SSG = "77D1DD90"
 YOUTUBE = "C1FFB834"
 # The DVR's secure key, MStar's sedata item (include/webos-sestore-items.h): 16 bytes.
@@ -31,9 +34,10 @@ DEFAULT_MODEL = b"cJbhRLJFZD9VYKzaaWeU7v1BUOafcEreZkElG7PI3+k="
 
 
 def effective(identity):
-    """Resolve TOML items and the stable synthetic default; legacy files are migration-only."""
+    """Resolve TOML items and the stable synthetic default, which only a VM with no model item of
+    any name gets; legacy files are migration-only."""
     missing, items = load(identity)
-    if missing == "fallback" and MODEL not in items and "SDP_MODEL" not in items:
+    if missing == "fallback" and not any(name in items for name in MODELS):
         items[MODEL] = DEFAULT_MODEL
     return missing, items
 
@@ -306,16 +310,24 @@ def migrate(identity, merge=False):
     return imported
 
 
-def set_model(identity, value):
-    """Keep the existing model-key command authoritative after migration."""
+def model_item(regional, broadcast):
+    """The item a model key is installed as: the board's regional one (MODEL_REGIONAL) where the
+    firmware's readers ask for it (regional), else the plain MODEL."""
+    return MODEL_REGIONAL.get(broadcast, MODEL) if regional else MODEL
+
+
+def set_model(identity, value, item=MODEL):
+    """The VM's one model key, as item (model_item), replacing every model item; None clears them."""
     data = document(identity) or {"missing": "fallback", "items": {}}
     load(identity)
     items = data.setdefault("items", {})
     for name in MODELS:
         items.pop(name, None)
     if value is not None:
-        validate_item(MODEL, value)
-        items[MODEL] = {"text": value.decode("ascii")}
+        if item not in MODELS:
+            raise Error(f"{item} is not a model key item")
+        validate_item(item, value)
+        items[item] = {"text": value.decode("ascii")}
     _write(identity, data)
 
 

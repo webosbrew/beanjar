@@ -85,16 +85,23 @@ def cmd_key_model(lib, a):
     from .. import sestore
 
     try:
-        missing, _items = sestore.load(vm.identity_dir)
+        missing, items = sestore.load(vm.identity_dir)
     except sestore.Error as error:
         raise Error(str(error)) from None
     source = os.path.join(vm.identity_dir, sestore.CONFIG)
+    names = [n for n in sestore.MODELS if n in items]
     return emit(
         a,
-        {"name": vm.name, "model_key": has, "source": source if has else None, "missing": missing},
+        {
+            "name": vm.name,
+            "model_key": has,
+            "items": names,
+            "source": source if has else None,
+            "missing": missing,
+        },
         f"{vm.name}: "
         + (
-            f"provisioned model key ({source}; value omitted)"
+            f"provisioned model key {', '.join(names)} ({source}; value omitted)"
             if has
             else "no model key: "
             + ("missing policy is error" if missing == "error" else "the built-in model secret")
@@ -176,8 +183,9 @@ def register(cli):
         g,
         "model",
         "a VM's SDP model key: show whether it has one, install one from FILE (44 characters "
-        "of base64 for 32 bytes), or clear it (then follow the missing policy); the value is never "
-        "printed; install and clear while it is off",
+        "of base64 for 32 bytes) as the item its firmware reads (from kisscurl on the board's "
+        "regional 1D492999_a, _d or _r, else 1D492999), or clear it (then follow the missing "
+        "policy); the value is never printed; install and clear while it is off",
         cmd_key_model,
         usage="beanjar key model NAME [show | install FILE | clear] [--json]",
     )

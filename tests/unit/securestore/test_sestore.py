@@ -232,6 +232,34 @@ class TestInputsTest:
         assert not sestore.has_model(self.identity)
         assert sestore.load(self.identity) == ("error", {"browser_secret": b"hello\x7f"})
 
+    def test_model_key_goes_in_the_item_the_line_reads(self):
+        from beanjar import targets
+
+        value = base64.b64encode(bytes(range(32)))
+        assert [
+            targets.regional_model_key(t)
+            for t in (
+                ("m3", "goldilocks"),
+                ("k6lp", "jhericurl"),
+                ("k7lp", "kisscurl"),
+                ("o22", "queue"),
+            )
+        ] == [False, False, True, True]
+        assert [sestore.model_item(True, b) for b in ("atsc", "dvb", "arib", None)] == [
+            sestore.MODEL + "_a",
+            sestore.MODEL + "_d",
+            sestore.MODEL + "_r",
+            sestore.MODEL,
+        ]
+        assert sestore.model_item(False, "arib") == sestore.MODEL
+        sestore.set_model(self.identity, value)
+        sestore.set_model(self.identity, value, sestore.MODEL + "_r")
+        assert sestore.load(self.identity) == ("fallback", {sestore.MODEL + "_r": value})
+        # A regional key alone gets no synthetic plain key beside it.
+        assert sestore.effective(self.identity) == ("fallback", {sestore.MODEL + "_r": value})
+        with pytest.raises(sestore.Error):
+            sestore.set_model(self.identity, value, "3382732D")
+
     def test_effective_defaults_migrated_inputs_and_strict_policy(self):
         default = base64.b64encode(
             hashlib.sha256(b"webos-hypervisor emulator SDP_MODEL secret for 42LB650V").digest()

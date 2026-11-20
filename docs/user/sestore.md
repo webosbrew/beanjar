@@ -22,10 +22,11 @@ missing = "fallback"
 "C1FFB834" = { text = "dummy-id;dummy-secret", nul_terminated = true }
 ```
 
-The root `missing` property accepts `fallback` (the default) and `error`. Fallback preserves
-the built-in synthetic model secret, generated SSG keys and the stock library where applicable. Error makes an unconfigured sestore read return `0xFFFF0002` (no such
-item), and the HAL/DILE model-key read fail. It disables synthetic fallback and
-automatic SSG and DVR key provisioning.
+The root `missing` property accepts `fallback` (the default) and `error`. Under either, a sestore
+read of an item the TOML does not configure returns `0xFFFF0002` (no such item); LG's own library
+is never asked, since it cannot read its store in a VM. Fallback adds the built-in synthetic model
+secret as `1D492999` when no model item of any name is configured, and generates the SSG and DVR
+keys at launch. Error adds nothing: without a model item the HAL/DILE model-key read fails.
 Legacy files are migration inputs only; removing an entry never revives an archived key.
 
 Each entry contains exactly one of `text`, `hex`, or `file`. Text is UTF-8, hex is decoded binary,
@@ -55,11 +56,13 @@ output. TOML loading and guest delivery retain the original bytes. For manually 
 `text` credentials, use `nul_terminated = true` as above. Do not append NUL to an LF-ended
 native export, since that would leave an embedded LF.
 
-Regional model items are distinct. An exact configured suffix wins. With error, an absent
-regional item reports missing, allowing nyxCrypto's own plain-item retry. With fallback, the
-existing model shim can answer a missing regional item using the plain key. HAL/DILE use the
-plain `1D492999` entry, or legacy `SDP_MODEL`. Dummy keys exercise local code paths; external
-services may reject them.
+Regional model items are distinct, as on a TV. From kisscurl (W21A, W21P) on, the DILE and nyx
+readers ask for the board's regional item first (`_a` ATSC, `_d` DVB, `_r` ARIB, from LG's
+`libdile_tvregion` and the board's `hwopt`), then plain `1D492999`; nyxCrypto reads nothing for a
+board whose region is neither. Older lines (W20L, W19P, W18R and before) read only the plain
+item, or legacy `SDP_MODEL`. A configured name is answered exactly and an absent one is missing:
+an ARIB board with only `1D492999_d` has no model key. Dummy keys exercise local code paths;
+external services may reject them.
 
 ## Legacy key files
 
@@ -69,9 +72,10 @@ an identity are not read. `migrate-local` imports them into `sestore.toml` as pa
 `nul_terminated = true`), keeping the originals.
 
 `beanjar key model NAME install FILE` and the GUI model-key setting update TOML. Installing replaces
-configured model variants with that plain key; `--clear` removes
-those variants, retaining the policy and other items. CLI and GUI
-detect TOML-only model keys. Generated SSG keys are written directly into TOML. SSH keys, `tee-huk`
+every configured model item with one: the item of the VM's board broadcast where the firmware reads
+regional items (`1D492999_a`, `_d` or `_r`), else plain `1D492999`. To move it, change the board
+(`beanjar settings NAME set broadcast=...`) and install again. `clear` removes all model items,
+retaining the policy and other items. CLI and GUI detect TOML-only model keys. Generated SSG keys are written directly into TOML. SSH keys, `tee-huk`
 and the proxy CA keep their existing storage.
 
 ## Guest delivery
@@ -92,7 +96,8 @@ read-only device, mode `0444`, and exposes the VM's configured items.
 
 libsestore and HAL/DILE are device clients. They never read guest key files or parse TOML.
 libsestore retains NULL-buffer size queries and its output length ABI; HAL/DILE retain capacity
-checks. A missing item follows the provisioned policy. A missing, unreadable or unprovisioned
+checks, except the regional DILE read, which passes the caller's buffer to `SESTORE_ReadData` as
+LG's does. A missing item is missing. A missing, unreadable or unprovisioned
 device fails the read; it cannot silently enable fallback. The host helper resolves synthetic
 model identity using the existing fixed value, preserving NDUID behavior.
 

@@ -1008,6 +1008,15 @@ def board_broadcast(target, fw=None, broadcast=None):
     return broadcast
 
 
+def regional_model_key(target):
+    """Whether the target's model-key readers (stock DILE_CRYPTO_ReadMskToSecureStore, nyxCrypto)
+    ask for the board's regional item before the plain one: from kisscurl on (W21A, W21P; their
+    libdile_crypto NEEDs libdile_tvregion), not jhericurl's W20L or older, which read only the
+    plain item (docs/research/model-key.md)."""
+    order = WEBOS_ORDER
+    return target[1] in order and order.index(target[1]) >= order.index("kisscurl")
+
+
 def boots_default_board(target, fw):
     """Whether a VM of the target boots the chip's default board (Soc.board_cmdline) from the firmware
     directory fw (board_broadcast: by its model_id.json, a global firmware the default board's
