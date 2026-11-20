@@ -40,9 +40,12 @@ board's command line (the soc layer's board.cmdline):
 
 The programs run under qemu-arm in bwrap, in a root of the files they read, extracted from the
 firmware's paks with unsquashfs as the VM stacks them (the release's pak lowers over the
-rootfs), with the board's command line on /proc/cmdline and a fresh /tmp. glibc's
-MALLOC_PERTURB_=255 makes new heap memory read 0x00: LLSFactoryDB's constructor leaves three
-padding bytes of its record unwritten (record +0x69-0x6b), which on a TV hold what the heap had.
+rootfs), with the board's command line on /proc/cmdline and a fresh /tmp, in their own pid
+namespace, with a PATH of beanjar's stand-ins alone: no host program but the shell runs (the
+generators' popen: nyx-cmd replays the firmware's own nyx-cmd's OSInfo answers, initctl does
+nothing; _helpers). glibc's MALLOC_PERTURB_=255 makes new heap memory read 0x00: LLSFactoryDB's
+constructor leaves three padding bytes of its record unwritten (record +0x69-0x6b), which on a TV
+hold what the heap had.
 The debugstatus is encrypted with RAND_bytes, so two runs differ there.
 
 The result is cached in build/lls/<firmware>/<key>/ (eeprom.img, the probe's records.txt, the two
@@ -57,6 +60,7 @@ import os
 import platform
 import shlex
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -64,7 +68,7 @@ import tempfile
 
 from . import nvm, targets, paths
 
-VERSION = 9
+VERSION = 10
 SIZE = 0x8000
 SDK_GCC = "/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-gcc"
 # the programs run, in the firmware's root
@@ -86,6 +90,21 @@ NYX_MODULES = tuple(
 )
 
 
+# the systemd mount tables of webOS 5-8 roots: their binds put /mnt/otycabi's nyx modules on
+# /usr/lib/nyx/modules
+BIND_FSTABS = "/etc/systemd/system/mount-readonly-volatile.d"
+# The generators popen "nyx-cmd OSInfo query <key>" and put each answer in tv.nyx.json
+# (firmwareVersion, platformVersion, platformCode; none where the command printed nothing). The
+# OSInfo module has these built in; the firmware's own nyx-cmd answers them in the sandbox and a
+# stand-in replays that to the generators (_helpers).
+NYX_CMD = "/usr/bin/nyx-cmd"
+NYX_CMD_OSINFO = "/usr/lib/nyx/nyxcmd/libnyxcmdModuleOSInfo.so"  # webOS 5-8's nyx-cmd plugin
+OSINFO_MODULES = tuple(
+    "/usr/lib/nyx/modules/" + name for name in ("nyxOSInfoMain.module", "nyxOSInfo.module")
+)
+OSINFO_KEYS = ("webos_manufacturing_version", "webos_release", "webos_release_platformcode")
+
+
 class Error(Exception):
     pass
 
@@ -103,17 +122,63 @@ class Root:
         for low in reversed(rel.pak_lowers):
             self.layers.append((os.path.join(fw, files[low.serial] + ".pak"), "/" + low.subdir))
         self.layers.append((os.path.join(fw, root.file + ".pak"), ""))
+        # the paks mounted elsewhere ({mount point: pak path}), for the root's bind mounts
+        self.mounts = {
+            p.mount: os.path.join(fw, p.file + ".pak")
+            for p in rel.paks
+            if p.mount and p.mount != "/"
+        }
+        self._binds = None
+
+    @staticmethod
+    def _cat(pak, path):
+        r = subprocess.run(
+            ["unsquashfs", "-cat", "-no-wildcards", pak, path.lstrip("/")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        return r.stdout if r.returncode == 0 else None
+
+    def binds(self):
+        """[(source, target)] of the root's systemd bind mounts (BIND_FSTABS), as its
+        mount-readonly-volatile applies them: W21P's nyx modules from /mnt/otycabi."""
+        if self._binds is None:
+            self._binds = []
+            for pak, prefix in self.layers:
+                r = subprocess.run(
+                    ["unsquashfs", "-l", "-no-wildcards", pak, (prefix + BIND_FSTABS).lstrip("/")],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+                names = sorted(
+                    {ln.rsplit("/", 1)[1] for ln in r.stdout.split() if ln.endswith(".fstab")}
+                )
+                for name in names:
+                    text = self._cat(pak, prefix + BIND_FSTABS + "/" + name) or b""
+                    for line in text.decode(errors="replace").splitlines():
+                        f = line.split()
+                        if len(f) >= 4 and not f[0].startswith("#") and "bind" in f[3].split(","):
+                            self._binds.append((f[0], f[1]))
+                if names:
+                    break
+        return self._binds
 
     def read(self, path):
-        """The bytes of path from the first layer unsquashfs can read, or None."""
+        """The bytes of path from the first layer unsquashfs can read, else through the root's bind
+        mounts from a pak mounted at the bind's source, or None."""
         for pak, prefix in self.layers:
-            r = subprocess.run(
-                ["unsquashfs", "-cat", "-no-wildcards", pak, (prefix + path).lstrip("/")],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
-            if r.returncode == 0:
-                return r.stdout
+            blob = self._cat(pak, prefix + path)
+            if blob is not None:
+                return blob
+        for source, target in self.binds():
+            if path.startswith(target.rstrip("/") + "/"):
+                source += path[len(target.rstrip("/")) :]
+                for mount, pak in self.mounts.items():
+                    if source.startswith(mount + "/"):
+                        blob = self._cat(pak, source[len(mount) :])
+                        if blob is not None:
+                            return blob
         return None
 
 
@@ -318,21 +383,80 @@ def _guest_request(sysroot, cmdline, tmp, command, tree, eeprom=None):
         return rc, out, err
 
 
-def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None):
+def _helpers(bindir, osinfo=None):
+    """bindir, the generators' whole PATH: initctl, which does nothing (the TV's upstart events
+    nyxconfig-data-ready and hwconfig-data-ready have no consumer here), and where osinfo
+    ({key: (exit status, output)} of the firmware's own nyx-cmd, _osinfo) is given, a nyx-cmd that
+    replays those answers and fails for any other query. Host shells only, no other host program:
+    the firmware's root has no /bin/sh, so qemu-arm runs the host's, which with PATH set looks in
+    PATH alone."""
+    shutil.rmtree(bindir, ignore_errors=True)
+    os.makedirs(bindir)
+    scripts = {"initctl": "exit 0\n"}
+    if osinfo is not None:
+        text = 'case "$*" in\n'
+        for key, (rc, out) in sorted(osinfo.items()):
+            pattern = shlex.quote("OSInfo query " + key)
+            text += f"{pattern}) printf %s {shlex.quote(out)}; exit {rc} ;;\n"
+        text += 'esac\necho "nyx-cmd $*: not answered in firmware preparation" >&2\nexit 1\n'
+        scripts["nyx-cmd"] = text
+    for name, body in scripts.items():
+        p = os.path.join(bindir, name)
+        with open(p, "w") as f:
+            f.write("#!/bin/sh\n" + body)
+        os.chmod(p, 0o755)
+
+
+def _osinfo_files(root):
+    """Of the firmware's root, the files its nyx-cmd needs to answer OSINFO_KEYS: nyx-cmd, its
+    OSInfo plugin where it has one, the OSInfo module (none if it has no nyx-cmd)."""
+    if root.read(NYX_CMD) is None:
+        return ()
+    plugin = (NYX_CMD_OSINFO,) if root.read(NYX_CMD_OSINFO) is not None else ()
+    module = next((p for p in OSINFO_MODULES if root.read(p) is not None), None)
+    return (NYX_CMD, *plugin, *((module,) if module else ()))
+
+
+def _osinfo(sysroot, cmdline, tmp, bindir, tree=paths.TREE):
+    """{key: (exit status, output)} of the firmware's own nyx-cmd OSInfo query for each OSINFO_KEYS,
+    as a TV's tvconfig-gen gets them; None where the firmware has no nyx-cmd."""
+    nyx_cmd = os.path.join(sysroot, NYX_CMD.lstrip("/"))
+    if not os.path.isfile(nyx_cmd):
+        return None
+    _helpers(bindir)
+    out = {}
+    for key in OSINFO_KEYS:
+        rc, text, _ = _run(
+            sysroot, cmdline, tmp, [nyx_cmd, "OSInfo", "query", key], tree, bindir=bindir
+        )
+        out[key] = (rc, text)
+    return out
+
+
+def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None, bindir=None, timeout=120):
     """argv (paths in the firmware's root) under qemu-arm in bwrap: /proc/cmdline cmdline, /tmp
-    the directory tmp; (exit status, stdout, stderr)."""
+    the directory tmp, PATH bindir alone (_helpers; by default bin beside sysroot, made with
+    initctl if missing); (exit status, stdout, stderr). Everything it starts dies with it."""
     if os.sysconf("SC_PAGE_SIZE") > 4096:
         return _run_guest(sysroot, cmdline, tmp, argv, tree, extra_env)
-    for tool in ("bwrap", "qemu-arm"):
-        if not shutil.which(tool):
+    tools = {t: shutil.which(t) for t in ("bwrap", "qemu-arm")}
+    for tool, path in tools.items():
+        if not path:
             raise Error(f"{tool} not found (qemu-user, bubblewrap)")
+    if bindir is None:
+        bindir = os.path.join(os.path.dirname(sysroot), "bin")
+        if not os.path.isdir(bindir):
+            _helpers(bindir)
     # Ombre's generator writes literal /var/run as well as the -d output path.
     # QEMU path translation and the host /var/run -> /run alias both see private data.
     runtime = os.path.join(tmp, "var/run")
     os.makedirs(runtime, exist_ok=True)
     os.makedirs(os.path.join(sysroot, "var/run"), exist_ok=True)
     cmd = [
-        "bwrap",
+        tools["bwrap"],
+        # a pid namespace: what the program leaves running dies with it (bwrap's init)
+        "--unshare-pid",
+        "--die-with-parent",
         "--bind",
         "/",
         "/",
@@ -353,7 +477,7 @@ def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None):
         "--bind",
         runtime,
         os.path.join(sysroot, "var/run"),
-        "qemu-arm",
+        tools["qemu-arm"],
         "-L",
         sysroot,
         "-E",
@@ -365,15 +489,26 @@ def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None):
         cmd += ["-E", key + "=" + value]
     cmd += argv
     # qemu-arm hands its environment to the program: none of the host's (LD_LIBRARY_PATH)
-    r = subprocess.run(
+    p = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        timeout=120,
-        env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C"},
+        env={"PATH": os.path.abspath(bindir), "LANG": "C"},
+        start_new_session=True,
     )
-    return r.returncode, r.stdout, r.stderr
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        out, err = p.communicate()
+        name = os.path.basename(argv[0]) if argv else "?"
+        tail = err.strip()[-1000:] or "(none)"
+        raise Error(f"{name}: no exit in {timeout} s, stopped; its stderr: {tail}") from None
+    return p.returncode, out, err
 
 
 def parse_records(text):
@@ -588,6 +723,8 @@ def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
     with open(cmdfile, "w") as f:
         f.write(cmdline + "\n")
     lls = targets.release(target).nvm.lls
+    bindir = os.path.join(work, "bin")
+    _helpers(bindir, _osinfo(sysroot, cmdfile, tmp, bindir, tree))
     for g in GENERATORS:
         rc, out, err = _run(
             sysroot,
@@ -595,6 +732,7 @@ def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
             tmp,
             [os.path.join(sysroot, g.lstrip("/")), "-A", "-d", TVCONFIG],
             tree,
+            bindir=bindir,
         )
         if rc:
             raise Error(f"{g}: exit {rc}: {(err or out).strip()[-400:]}")
@@ -626,6 +764,7 @@ def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
         tmp,
         [os.path.join(sysroot, "probe", "lls-probe"), lls, "debugstatus", mode, *strings],
         tree,
+        bindir=bindir,
     )
     if rc and "cannot dynamically load position-independent executable" in err:
         shutil.copy(probe(tree, preload=True), os.path.join(sysroot, "probe", "lls-probe.so"))
@@ -636,6 +775,7 @@ def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
             [os.path.join(sysroot, lls.lstrip("/")), lls, "debugstatus", mode, *strings],
             tree,
             extra_env={"LD_PRELOAD": "/probe/lls-probe.so"},
+            bindir=bindir,
         )
     if rc:
         raise Error(f"lls-probe: exit {rc}: {err.strip()[-400:]}")
@@ -662,7 +802,15 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
             tuple(p for p in NYX_MODULES if root.read(p) is not None) if root.read(NYX_LLS) else ()
         )
         extract(
-            root, (*GENERATORS, *modules, *(("/lib/libdl.so.2",) if groups else ())), DATA, sysroot
+            root,
+            (
+                *GENERATORS,
+                *modules,
+                *_osinfo_files(root),
+                *(("/lib/libdl.so.2",) if groups else ()),
+            ),
+            DATA,
+            sysroot,
         )
         if groups:
             os.makedirs(os.path.join(sysroot, "probe"), exist_ok=True)
@@ -676,6 +824,8 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
             with open(cmdfile, "w") as f:
                 f.write(cmdlines[k] + "\n")
             text = ""
+            bindir = os.path.join(d, "bin")
+            _helpers(bindir, _osinfo(sysroot, cmdfile, tmp, bindir, tree))
             for g in GENERATORS:
                 _, out, err = _run(
                     sysroot,
@@ -683,6 +833,7 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
                     tmp,
                     [os.path.join(sysroot, g.lstrip("/")), "-A", "-d", TVCONFIG],
                     tree,
+                    bindir=bindir,
                 )
                 text += out + err
             got = []
@@ -696,7 +847,12 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
             if not groups:
                 return got[0], got[1], text
             _, out, err = _run(
-                sysroot, cmdfile, tmp, [os.path.join(sysroot, "probe", "lls-probe"), "group"], tree
+                sysroot,
+                cmdfile,
+                tmp,
+                [os.path.join(sysroot, "probe", "lls-probe"), "group"],
+                tree,
+                bindir=bindir,
             )
             f = out.split()
             grp = int(f[1]) if len(f) == 3 and f[0] == "group" and f[2] == "0" else None
@@ -954,7 +1110,7 @@ def cache_dir(
         modules = tuple(p for p in NYX_MODULES if root.read(p) is not None) if nyx else ()
         digests = extract(
             root,
-            (lls, *GENERATORS, "/lib/libdl.so.2", *modules),
+            (lls, *GENERATORS, "/lib/libdl.so.2", *modules, *(() if nyx else _osinfo_files(root))),
             data_files,
             os.path.join(work, "root"),
         )
