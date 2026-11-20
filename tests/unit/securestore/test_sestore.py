@@ -356,12 +356,19 @@ class TestShimTest:
         cls.device = ctypes.CDLL(str(cls.root / "libtestdevice.so"))
         cls.device.test_load.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int]
         cls.device.test_load.restype = ctypes.c_int
-        stock = cls.root / "stock.c"
-        stock.write_text(
-            "int SESTORE_ReadData(const char *id, unsigned char *buf, unsigned int *len) { "
-            "(void)id; (void)buf; *len=5; return 123; }"
+        # LG's region library as the stock DILE reads it: the region a test sets.
+        region = cls.root / "tvregion.c"
+        region.write_text("int region; int DILE_TVREGION_getTVRegion(void) { return region; }")
+        subprocess.run(
+            cls.flags
+            + [
+                str(region),
+                "-Wl,-soname,libdile_tvregion.so.1",
+                "-o",
+                str(cls.root / "tvregion.so"),
+            ],
+            check=True,
         )
-        subprocess.run(cls.flags + [str(stock), "-o", str(cls.root / "libstock.so")], check=True)
         flags = cls.flags + [
             "-Dopen=emulator_test_open",
             "-Dclose=emulator_test_close",
@@ -379,11 +386,9 @@ class TestShimTest:
         subprocess.run(
             flags
             + [
-                "-DSESTORE_MODEL_ITEMS",
                 str(source / "libsestore/sestore.c"),
                 *link,
-                "-lstock",
-                "-ldl",
+                "-Wl,-soname,libsestore.so.0",
                 "-o",
                 str(target),
             ],
@@ -399,12 +404,16 @@ class TestShimTest:
             ("libdile_crypto/dile-crypto.c", "DILE_CRYPTO_ReadMskToSecureStore"),
         ]:
             target = cls.root / (symbol + ".so")
-            subprocess.run(flags + [str(source / name), *link, "-o", str(target)], check=True)
+            subprocess.run(
+                flags + [str(source / name), *link, "-ldl", "-o", str(target)], check=True
+            )
             lib = ctypes.CDLL(str(target))
             call = getattr(lib, symbol)
             call.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint)]
             call.restype = ctypes.c_int
             cls.models.append((lib, call))
+        cls.dile = cls.models[1][1]
+        cls.region = None
         yield
         cls.device.test_reset()
 
@@ -435,7 +444,7 @@ class TestShimTest:
 
     def test_missing_policy_and_device_failure(self):
         self.provision({})
-        assert self.read("12345678")[:2] == (123, 5)
+        assert self.read("12345678")[0] == 0xFFFF0002
         self.provision({}, "error")
         assert self.read("12345678")[0] == 0xFFFF0002
         self.provision({})
@@ -466,9 +475,9 @@ class TestShimTest:
             size = ctypes.c_uint(44)
             assert call(ctypes.create_string_buffer(44), ctypes.byref(size)) == -1
 
-    def test_fallback_regional_alias_uses_provisioned_plain_key(self):
+    def test_regional_model_items_are_exact_under_fallback(self):
         self.provision({sestore.MODEL: sestore.DEFAULT_MODEL})
-        assert self.read(sestore.MODEL + "_r")[2][:44] == sestore.DEFAULT_MODEL
+        assert self.read(sestore.MODEL + "_r")[0] == 0xFFFF0002
         regional = base64.b64encode(bytes(range(32)))
         self.provision({sestore.MODEL: sestore.DEFAULT_MODEL, sestore.MODEL + "_r": regional})
         assert self.read(sestore.MODEL + "_r")[2][:44] == regional
@@ -494,3 +503,37 @@ class TestShimTest:
         assert self.load(good) == 0
         assert self.load(good) == -errno.EBUSY
         assert self.read("item")[2][:5] == b"bytes"
+
+    def dile_read(self):
+        buf = ctypes.create_string_buffer(b"x" * 48, 48)
+        size = ctypes.c_uint(44)
+        code = self.dile(buf, ctypes.byref(size))
+        return code, buf.raw[: size.value] if code == 0 else None
+
+    # Last in the class: once the region library is loaded the DILE stand-in takes the regional
+    # path for the rest of the process, as on a kisscurl and later firmware.
+    def test_dile_reads_the_region_item_then_plain_like_stock(self):
+        cls = type(self)
+        if cls.region is None:
+            cls.region = ctypes.CDLL(str(cls.root / "tvregion.so"), ctypes.RTLD_GLOBAL)
+        region = ctypes.c_int.in_dll(cls.region, "region")
+        plain = base64.b64encode(bytes(range(32)))
+        keys = {s: base64.b64encode(bytes([i]) * 32) for i, s in enumerate("adr", 1)}
+        self.provision(
+            {sestore.MODEL: plain, **{sestore.MODEL + "_" + s: k for s, k in keys.items()}}
+        )
+        for number, suffix in ((1, "a"), (2, "d"), (3, "r")):
+            region.value = number
+            assert self.dile_read() == (0, keys[suffix])
+        for number in (0, 4, -1):
+            region.value = number
+            assert self.dile_read() == (0, plain)
+        # Only the board's item: the region decides, with no fallback to another region's.
+        self.provision({sestore.MODEL + "_r": keys["r"]}, "error")
+        region.value = 3
+        assert self.dile_read() == (0, keys["r"])
+        region.value = 1
+        assert self.dile_read()[0] == 0xFFFF0002 - (1 << 32)
+        # A plain-only VM: the regional read misses, the plain one answers.
+        self.provision({sestore.MODEL: plain})
+        assert self.dile_read() == (0, plain)

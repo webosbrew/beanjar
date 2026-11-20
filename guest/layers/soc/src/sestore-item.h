@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* Thin clients of the immutable kernel store. 0 = found, 1 = absent, -1 = device/read failure.
- * Failure to open or provision the device never enables fallback. */
+ * A device that cannot be opened or is not provisioned is a failure. */
 #ifndef EMULATOR_SESTORE_ITEM_H
 #define EMULATOR_SESTORE_ITEM_H
 #include <errno.h>
@@ -38,16 +38,4 @@ static inline int emulator_sestore_read(const char *id, unsigned char *buf, unsi
     return 0;
 }
 
-static inline int emulator_sestore_fallback(void)
-{
-    struct webos_sestore_info info;
-    int fd = open(WEBOS_SESTORE_DEVICE, O_RDONLY | O_CLOEXEC), result;
-    if (fd < 0)
-        return 0;
-    do {
-        result = ioctl(fd, WEBOS_SESTORE_INFO, &info);
-    } while (result < 0 && errno == EINTR);
-    close(fd);
-    return !result && info.missing == WEBOS_SESTORE_MISSING_FALLBACK;
-}
 #endif

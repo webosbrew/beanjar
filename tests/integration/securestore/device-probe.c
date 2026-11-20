@@ -90,6 +90,9 @@ static void read_checks(int fd, unsigned int policy)
     assert(!SESTORE_ReadData("3382732D", NULL, &size) && size == 4);
     assert(!SESTORE_ReadData("C1FFB834", buf, &size) && size == 10);
     assert(!memcmp(buf, "dummy;key\0", 10));
+    /* Exact names only, whatever the policy: no regional alias, nothing from LG's library. */
+    assert((unsigned int)SESTORE_ReadData("1D492999_r", buf, &size) == 0xFFFF0002u);
+    assert((unsigned int)SESTORE_ReadData("missing", buf, &size) == 0xFFFF0002u);
     size = sizeof buf;
     assert(!HAL_CRYPTO_ReadMskToSecureStore(buf, &size) && size == 44);
     assert(!memcmp(buf, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", 44));

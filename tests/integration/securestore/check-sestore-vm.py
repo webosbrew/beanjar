@@ -54,7 +54,6 @@ def main():
                 "-Wall",
                 "-Wextra",
                 "-Werror",
-                "-DSESTORE_MODEL_ITEMS",
                 "-I" + str(TOP / "include"),
                 *map(str, sources),
                 "-ldl",

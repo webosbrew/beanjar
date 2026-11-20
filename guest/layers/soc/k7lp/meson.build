@@ -13,9 +13,10 @@
 # which the compositor's QPA, libQt5Gui, libgm-wayland and the GL users NEED (K6LP's had none);
 # it exports wl_egl_window_* as K6LP's does.
 gl_vendor_gl_soname = 'libmali.so.0'
-# W21P's DILE model-key read uses libsestore directly, so the older HAL wrapper cannot supply
-# the provisioned key: K6LP's libdile_crypto shim wraps only that read; the stock file handles all
-# other DILE_CRYPTO calls.
+# W21P's DILE model-key read is libsestore's only, by the board's region (libdile_tvregion: "_a",
+# "_d", "_r", then the plain item), after a DILE_CRYPTO_Initialize that fails in a VM: K6LP's
+# libdile_crypto shim takes that path (src/libdile_crypto); the stock file handles all other
+# DILE_CRYPTO calls.
 # The media elements: K6LP's, against W21P's GStreamer 1.16.2 (the decoders' third src memory,
 # DMABuf, and dvovideosink's NV12-only template among the differences).
 gst_elements = 'rtk-k7lp'

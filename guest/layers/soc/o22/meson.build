@@ -4,10 +4,10 @@
 # The stock cursor initializer waits for actual GAL surfaces before input reads.
 # Its 1056-byte surfaces and 76-byte capability match the software GAL backend.
 # Keep all other stock HAL/media code until runtime establishes its contracts.
-# libdile_crypto: O22's DILE_CRYPTO_ReadMskToSecureStore is a libsestore read only (the item by
-# TV region), and the emulator's secure store holds no model secret, so SM_SA_GetNDUID failed and
-# nyx made a random NDUID at every open. The shim answers that read, as on K7LP (O22N and O22N2
-# inherit it).
+# libdile_crypto: O22's DILE_CRYPTO_ReadMskToSecureStore returns -1 when DILE_CRYPTO_Initialize's
+# SESTORE_Init fails, as it does in a VM, so SM_SA_GetNDUID failed and nyx made a random NDUID at
+# every open. The shim reads as stock does after that, the item of the board's region
+# (libdile_tvregion), then the plain one, as on K7LP (O22N and O22N2 inherit it).
 # libaibsp, libaibspLib: LG's AI picture libraries drive an NPU and display registers the VM lacks.
 # nn-proxy's AIBSP_Initialize failed at /dev/video241 and its teardown crashed; pqcontroller's
 # workers retried /dev/mem forever and W24G's AIBSP_PQ_Enable read a failed mmap. Every imported
@@ -58,9 +58,8 @@ endif
 # libsestore (guest/layers/soc/meson.build adds it wherever nyx's secure store reads it): queue's
 # libsecretagent reads the model secret through nyx (nyxCrypto, nyxSecureStore), which asks
 # libsestore for the SDP_MODEL item with no DILE call between, so the libdile_crypto shim never saw
-# it: SA_getDeviceID failed and sdx sent LG's login without X-Device-ID. On this chip the shim
-# then answers the regional model items too.
-sestore_model_items_nyx = true
+# it: SA_getDeviceID failed and sdx sent LG's login without X-Device-ID. It reads the item of the
+# board's region, then the plain one, the names as the VM's store has them.
 # libkadaptor (bsppart's KADP, libkadaptor.so.2.0.1 from mullet to spacebuns; its .so.0 names,
 # links to the stock file there, are made links to the shim). Everywhere: KADP's Widevine OEMCrypto
 # reaches a TEE the VM lacks, and mullet's and number1's have no failure path there: Cobalt's EME

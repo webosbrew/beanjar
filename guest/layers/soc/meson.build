@@ -19,9 +19,10 @@
 #   libdile_vt/      tv.capture's video plane (DILE_VT's older interface: H13)
 #   libdile_gal/     DILE_GAL on the emulator's graphics memory (the SoC module's /dev/gfx)
 #   libhal_crypto/   the secure store's model secret (NDUID)
-#   libdile_crypto/  W21P's model secret above its direct libsestore read
-#   libsestore/      secure store items: the second screen gateway's TLS key (every firmware whose
-#                    gateway reads it), and the model secret where nyx crypto reads it (queue on)
+#   libdile_crypto/  the model secret's DILE read, as stock does it after its initialisation
+#   libsestore/      secure store items by their exact names: the second screen gateway's TLS key
+#                    (every firmware whose gateway reads it), the model secret (DILE's regional read,
+#                    and nyx crypto's from queue on)
 #   libhal_avd/      the analog decoder's no signal over MStar's board HAL (hal-avd.c)
 #   libkadaptor/     M2's XC window calls, passed to the kernel too (kadaptor-xc.c); O22's
 #                    Widevine OEMCrypto without a TEE (kadaptor-oemcrypto.c) and secure clock
@@ -44,9 +45,8 @@
 # libsestore: wherever the stock library is there and something reads secure store items through it
 # directly (src/libsestore/sestore.c): the second screen gateway, for its TLS key
 # (helpers/bus/ssl-cert-getter.js, webOS 5 on), or nyx's secure store module, which nyx crypto
-# reads the model secret through (nyxSecureStore.module NEEDs libsestore.so.0: queue and spacebuns).
-# A chip whose table sets sestore_model_items_nyx (O22) also answers the regional model items
-# there (sestore_model_items).
+# reads the model secret through (nyxSecureStore.module NEEDs libsestore.so.0: queue and spacebuns),
+# and the libdile_crypto shim's regional read goes through it too.
 sestore_nyx = 'usr/lib/nyx/modules/nyxSecureStore.module'
 ssg_getter = 'usr/palm/services/com.webos.service.secondscreen.gateway/helpers/bus/ssl-cert-getter.js'
 sestore_stock = 'usr/lib/libsestore.so.0.1.0'
@@ -54,7 +54,6 @@ fw_questions += ['path ' + sestore_nyx, 'path ' + ssg_getter, 'path ' + sestore_
 fw_sestore_nyx = fw_path.get(sestore_nyx, false)
 if fw_path.get(sestore_stock, false) and (fw_path.get(ssg_getter, false) or fw_sestore_nyx)
   hal_stock += {'libsestore': ['libsestore.so.0', 'libsestore.so.0.1.0', []]}
-  sestore_model_items = get_variable('sestore_model_items_nyx', false) and fw_sestore_nyx
 endif
 
 # A chip's table names the shims its stock libraries may need; one whose stock file the rootfs does

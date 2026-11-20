@@ -7,13 +7,13 @@
  * The store is read by libsestore (guest/layers/soc/src/libsestore/sestore.c answers the ones the
  * VM provides). */
 
-/* SDP model secret key (SDP_MODEL, the model key). nyxCrypto asks for it by the TV's broadcast
- * region, a region-suffixed id first, then the plain one. */
-#define SESTORE_ITEM_SDP_MODEL         "1D492999"
-#define SESTORE_ITEM_SDP_MODEL_REGIONS "adr" /* the region letters that follow "_" */
-#define SESTORE_ITEM_SDP_MODEL_A       SESTORE_ITEM_SDP_MODEL "_a"
-#define SESTORE_ITEM_SDP_MODEL_D       SESTORE_ITEM_SDP_MODEL "_d"
-#define SESTORE_ITEM_SDP_MODEL_R       SESTORE_ITEM_SDP_MODEL "_r"
+/* SDP model secret key (SDP_MODEL, the model key). From kisscurl on, DILE and nyxCrypto ask for it
+ * by the TV's broadcast region, a region-suffixed id first (_a ATSC, _d DVB, _r ARIB), then the
+ * plain one. */
+#define SESTORE_ITEM_SDP_MODEL   "1D492999"
+#define SESTORE_ITEM_SDP_MODEL_A SESTORE_ITEM_SDP_MODEL "_a"
+#define SESTORE_ITEM_SDP_MODEL_D SESTORE_ITEM_SDP_MODEL "_d"
+#define SESTORE_ITEM_SDP_MODEL_R SESTORE_ITEM_SDP_MODEL "_r"
 
 /* Second screen gateway (SSG, SSAP) TLS private key, read by securitymanager's getSSGSSL. */
 #define SESTORE_ITEM_SSG "77D1DD90"
