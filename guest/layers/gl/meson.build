@@ -20,7 +20,9 @@
 #                                               NEEDing the Mesa libraries gl_vendor_gl_needs names;
 #                                               with gl_vendor_window_rgba (m16p) the vendor's
 #                                               window-config rule, also as libEGL.so{,.1,.1.4},
-#                                               and Mesa's libEGL as libEGL-mesa.so.1
+#                                               and Mesa's libEGL as libEGL-mesa.so.1; with
+#                                               gl_vendor_mali_pixmap (o22) images of Mali
+#                                               native pixmaps (src/mali-pixmap.c)
 #   libegl-kms.so                               compositor only (LD_PRELOAD): window 0 -> KMS
 #   libstarfishsurface.so.0.0.0                 QtWebKit's shared surfaces on gbm/dmabuf
 #   libIMGegl.so*, libsrv_um.so*, libglslcompiler.so*   empty stubs
@@ -137,7 +139,23 @@ if gl_vendor_gl != ''
     vendor_needs += mesa_lib / 'lib' + n + '.so'
   endforeach
   vendor_soname = get_variable('gl_vendor_gl_soname', '')
-  if gl_window_rgba.length() == 0
+  if gl_window_rgba.length() == 0 and get_variable('gl_vendor_mali_pixmap', false)
+    # With the chip's gl_vendor_mali_pixmap: eglCreateImageKHR of Mali's native pixmaps
+    # (src/mali-pixmap.c), which libgm-wayland draws its windows with; NEEDing the same Mesa
+    # libraries.
+    if 'EGL' not in gl_vendor_gl_needs or 'GLESv2' not in gl_vendor_gl_needs
+      error('gl_vendor_mali_pixmap: needs EGL and GLESv2 in gl_vendor_gl_needs')
+    endif
+    if vendor_soname != ''
+      vendor_needs += '-Wl,-soname,' + vendor_soname
+    endif
+    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/mali-pixmap.c',
+      dependencies: mesa_dep,
+      c_args: ['-fvisibility=hidden'],
+      link_args: ['-Wl,--hash-style=both', '-ldl', '-lpthread',
+                  '-L' + mesa_lib, '-Wl,--no-as-needed'] + vendor_needs,
+      link_depends: mesa)}
+  elif gl_window_rgba.length() == 0
     if vendor_soname != ''
       vendor_needs += '-Wl,-soname,' + vendor_soname
     endif

@@ -96,6 +96,9 @@ gl_vendor_stubs = []
 gl_vendor_gl = 'mali'
 gl_vendor_gl_soname = 'libmali.so.0'
 gl_vendor_gl_needs = ['EGL', 'GLESv2', 'GLESv1_CM', 'wayland-egl']
+# libgm-wayland (hybridtv-manager's data-broadcast window) makes an EGLImage of a Mali native pixmap
+# on each update (W22O 43.21.89): the vendor library takes them (guest/layers/gl/src/mali-pixmap.c).
+gl_vendor_mali_pixmap = true
 soc_layer_trees += ['--tree', meson.current_source_dir() / 'rootfs', '.']
 # The OpenGL ES version of the chip's GPU (gl_es_version), at most which the gl layer's Mesa
 # gives a context: W22O 04.40.93 and 13.30.56: libmali.so.0.28.0 prints "OpenGL ES 3.2"; 23.25.55,
