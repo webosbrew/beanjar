@@ -138,6 +138,7 @@ class SelectTest(unittest.TestCase):
                 "o24-queue",
                 "o24n-ponytail",
                 "o24n-queue",
+                "o26-queue",
                 "virt-testguest",
             ],
         )

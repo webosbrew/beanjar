@@ -1,0 +1,39 @@
+# O26 (W26O; lge,lg1215-pinctrl in its kernel): its own BASE id and board option, the O24
+# platform otherwise. W26O 43.11.77's kernel (6.12, LG's lg1k kdriver framework) maps chip=O26..
+# to BASE id 0x29 in lg1k_kdrv_init's chip table ({'O', 26, ' ', 0x29}, after O24's 0x28); A0 is
+# the chosen virtual revision, not a retail measurement. Its graphic_res is a constant there
+# (lx_chip_graphic_res: 1920x1080) and lg1k_board_frwk_init makes the platform from hwopt digit 3
+# (UD: 0x2000).
+# board_opt is not the O22 source contract: lg1k_board_frwk_init composes it from hwopt digits
+# (DDR digit 11: 6, 3G, gives 0x90000; FRC digit 17 at most 1: 0x2; panel output rate digit 9
+# not 0: 0x200000; digit 4 not 1: 0x4; graphics digit 14 not 4: 0x100) and the board type of the
+# pioneer.board= tokens (none: SYS_BOARD, 0x800000); the device tree's DDR size is stored apart
+# and not used for it. Both boards' lines (board-atsc, board-dvb) give 0x00a90106.
+# Its bsppart libhal_ucom accepts chip ids 0x26, 0x28 and 0x29, so ucom=1 and the 40-byte UCOM
+# boundary carry over. nyxI2c (queue 43.11.77) keeps NVM 7/0xa0, LIGHT_SENSOR 1 and
+# TMF882X_SENSOR_N 1, adding only rows the emulator does not map (ZCB_MICOM, TCON_KLD,
+# SNSR_MM3286). Its libdil_tu_plugin is its own build; webos_tv keeps O24's frontend values.
+# Its board is the G6; mic stays false as on O24 (its microphone was not studied).
+
+base = "o24"
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x29a0",
+    "ace_rev=0x29a0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x00a90106",
+    "ucom=1",
+]
+
+[[modules]]
+name = "webos_tv"
+params = [
+    "platform=wfm",
+    "frontends=2",
+    "delsys=3+16+1,5+6",
+    "version=2.1.0",
+    "version_cmd=0x68",
+]

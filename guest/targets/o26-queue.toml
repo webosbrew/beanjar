@@ -1,0 +1,31 @@
+models = ["W26O"]
+bring_up = ["W26O"]
+tested = false
+lg_scaler = [3840, 2160]
+v4l2_capture = true
+de_histogram = true
+
+# W26O queue-qianshan (43.11.77, HE_DTV_W26O_AFABATAA, the global build) keeps O24 queue's
+# super.pak images, jail pins (p17, p18, p21, p24) and peripheral modules (its 6.12 kernel has
+# them all built in), but moves its read-only and writable fstab pins (partmap/o26-queue.toml).
+# Its libpqeca (bsppart) reads the DE histogram proc.
+[release]
+base = "queue"
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",
+    "hid-microsoft", "hid-pl", "hid-sony", "hid-playstation", "hid-zpff", "xpad", "uvcvideo",
+    "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii", "nls_utf8",
+    "nls_iso8859-1", "nls_cp949", "exfat", "snd-usb-audio", "cdc-acm", "pl2303", "option",
+    "sierra", "lgfs", "ftdi_sio", "ch341", "cp210x",
+]
+paks = [
+    { file = "rootfs", serial = "rootfs", mount = "/" },
+    { file = "bsppart", serial = "bsppart" },
+    { file = "otncabi", serial = "otncabi", mount = "/mnt/otncabi" },
+    { file = "otycabi", serial = "otycabi", mount = "/mnt/otycabi" },
+    { file = "fonts", serial = "fonts", mount = "/mnt/fonts" },
+    { file = "license", serial = "license", mount = "/mnt/license" },
+]
+nvm_disks = { nvram = "8M", eeprom = "32K" }
+partmap = "o26-queue"

@@ -613,6 +613,7 @@ class BootConfTest(unittest.TestCase):
             "o22n3-ponytail": base | {"ftdi_sio"},
             "o24n-queue": base | {"ftdi_sio", "ch341", "cp210x"},
             "o22n3-queue": base | {"ftdi_sio", "ch341", "cp210x"},
+            "o26-queue": base | {"ftdi_sio", "ch341", "cp210x"},
             "k8hp-number1": base,
             "k8hp-ombre": base,
             "k8hp-ponytail": base,
@@ -1199,6 +1200,7 @@ class BootConfTest(unittest.TestCase):
             "o22n3": "OLED55C5PUA",
             "o24n": "OLED55G5WUA",
             "o24": "OLED55G4SUB",
+            "o26": "OLED55G6WUA",
         }
         seen = set()
         for target in targets.all_targets():
@@ -1358,6 +1360,7 @@ class BootConfTest(unittest.TestCase):
                 "o24-queue",
                 "o24n-ponytail",
                 "o24n-queue",
+                "o26-queue",
                 "virt-testguest",
             ],
         )
@@ -1449,6 +1452,7 @@ class BootConfTest(unittest.TestCase):
                 "o24n-queue": 2560,
                 "virt-testguest": 512,
                 "o22n3-queue": 2560,
+                "o26-queue": 3072,
             },
         )
 

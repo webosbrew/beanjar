@@ -1,0 +1,211 @@
+# o26-queue: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# Generated: host/scripts/vm-launcher firmware-facts o26-queue (from 43.11.77.01-HE_DTV_W26O_AFABATAA)
+lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
+lib usr/lib/libgobject-2.0.so.0 libgobject-2.0.so.0
+lib usr/lib/libgstaudio-1.0.so.0 libgstaudio-1.0.so.0
+lib usr/lib/libgstbase-1.0.so.0 libgstbase-1.0.so.0
+lib usr/lib/libgstreamer-1.0.so.0 libgstreamer-1.0.so.0
+lib usr/lib/libgstvideo-1.0.so.0 libgstvideo-1.0.so.0
+lib usr/lib/libluna-service2.so.3 libluna-service2.so.3
+path usr/lib/libaibsp.so.1.0.0 yes
+path usr/lib/libaibspLib.so.1.0.0 yes
+path usr/lib/libdile_crypto.so.0.1.1 no
+path usr/lib/libdile_gal.so.1.0.2 no
+path usr/lib/libsestore.so.0.1.0 yes
+path usr/lib/nyx/modules/nyxDrm.module yes
+path usr/lib/nyx/modules/nyxSecureStore.module yes
+path usr/lib/plugins/egldeviceintegrations/libeglfs-starfish-integration.so yes
+path usr/palm/services/com.webos.service.secondscreen.gateway/helpers/bus/ssl-cert-getter.js yes
+path usr/share/weston/weston.ini yes
+sym usr/lib/libglib-2.0.so.0 g_ascii_strtoll func
+sym usr/lib/libglib-2.0.so.0 g_free func
+sym usr/lib/libglib-2.0.so.0 g_get_monotonic_time func
+sym usr/lib/libglib-2.0.so.0 g_intern_static_string func
+sym usr/lib/libglib-2.0.so.0 g_list_append func
+sym usr/lib/libglib-2.0.so.0 g_list_free func
+sym usr/lib/libglib-2.0.so.0 g_list_free_full func
+sym usr/lib/libglib-2.0.so.0 g_log func
+sym usr/lib/libglib-2.0.so.0 g_main_loop_new func
+sym usr/lib/libglib-2.0.so.0 g_main_loop_quit func
+sym usr/lib/libglib-2.0.so.0 g_main_loop_run func
+sym usr/lib/libglib-2.0.so.0 g_malloc0 func
+sym usr/lib/libglib-2.0.so.0 g_mutex_clear func
+sym usr/lib/libglib-2.0.so.0 g_mutex_init func
+sym usr/lib/libglib-2.0.so.0 g_mutex_lock func
+sym usr/lib/libglib-2.0.so.0 g_mutex_unlock func
+sym usr/lib/libglib-2.0.so.0 g_once_init_enter func
+sym usr/lib/libglib-2.0.so.0 g_once_init_leave func
+sym usr/lib/libglib-2.0.so.0 g_rec_mutex_lock func
+sym usr/lib/libglib-2.0.so.0 g_rec_mutex_trylock func
+sym usr/lib/libglib-2.0.so.0 g_rec_mutex_unlock func
+sym usr/lib/libglib-2.0.so.0 g_snprintf func
+sym usr/lib/libglib-2.0.so.0 g_str_has_prefix func
+sym usr/lib/libglib-2.0.so.0 g_strcmp0 func
+sym usr/lib/libglib-2.0.so.0 g_strlcpy func
+sym usr/lib/libglib-2.0.so.0 g_timeout_add_seconds func
+sym usr/lib/libgobject-2.0.so.0 g_cclosure_marshal_VOID__BOOLEAN func
+sym usr/lib/libgobject-2.0.so.0 g_cclosure_marshal_VOID__POINTER func
+sym usr/lib/libgobject-2.0.so.0 g_cclosure_marshal_VOID__VOID func
+sym usr/lib/libgobject-2.0.so.0 g_cclosure_marshal_generic func
+sym usr/lib/libgobject-2.0.so.0 g_object_class_install_property func
+sym usr/lib/libgobject-2.0.so.0 g_object_get func
+sym usr/lib/libgobject-2.0.so.0 g_object_new func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_boolean func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_boxed func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_double func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_enum func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_int func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_int64 func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_string func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_uint func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_uint64 func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_ulong func
+sym usr/lib/libgobject-2.0.so.0 g_param_spec_value_array func
+sym usr/lib/libgobject-2.0.so.0 g_signal_emit_by_name func
+sym usr/lib/libgobject-2.0.so.0 g_signal_lookup func
+sym usr/lib/libgobject-2.0.so.0 g_signal_new func
+sym usr/lib/libgobject-2.0.so.0 g_type_check_instance_is_a func
+sym usr/lib/libgobject-2.0.so.0 g_type_check_value_holds func
+sym usr/lib/libgobject-2.0.so.0 g_type_class_adjust_private_offset func
+sym usr/lib/libgobject-2.0.so.0 g_type_class_peek_parent func
+sym usr/lib/libgobject-2.0.so.0 g_type_name func
+sym usr/lib/libgobject-2.0.so.0 g_type_parent func
+sym usr/lib/libgobject-2.0.so.0 g_type_query func
+sym usr/lib/libgobject-2.0.so.0 g_type_register_static func
+sym usr/lib/libgobject-2.0.so.0 g_type_register_static_simple func
+sym usr/lib/libgobject-2.0.so.0 g_value_array_get_type func
+sym usr/lib/libgobject-2.0.so.0 g_value_copy func
+sym usr/lib/libgobject-2.0.so.0 g_value_get_boxed func
+sym usr/lib/libgobject-2.0.so.0 g_value_get_int func
+sym usr/lib/libgobject-2.0.so.0 g_value_get_object func
+sym usr/lib/libgobject-2.0.so.0 g_value_get_string func
+sym usr/lib/libgobject-2.0.so.0 g_value_get_uint func
+sym usr/lib/libgobject-2.0.so.0 g_value_init func
+sym usr/lib/libgobject-2.0.so.0 g_value_reset func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_boolean func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_double func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_enum func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_int func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_int64 func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_static_string func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_uint func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_uint64 func
+sym usr/lib/libgobject-2.0.so.0 g_value_set_ulong func
+sym usr/lib/libgobject-2.0.so.0 g_value_transform func
+sym usr/lib/libgobject-2.0.so.0 g_value_type_transformable func
+sym usr/lib/libgobject-2.0.so.0 g_value_unset func
+sym usr/lib/libgstbase-1.0.so.0 gst_base_sink_get_type func
+sym usr/lib/libgstbase-1.0.so.0 gst_base_sink_set_qos_enabled func
+sym usr/lib/libgstbase-1.0.so.0 gst_base_sink_set_sync func
+sym usr/lib/libgstbase-1.0.so.0 gst_base_sink_set_ts_offset func
+sym usr/lib/libgstreamer-1.0.so.0 GST_CAT_DEFAULT object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_buffer_type object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_caps_features_memory_system_memory object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_caps_type object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_debug_category_new func
+sym usr/lib/libgstreamer-1.0.so.0 _gst_debug_min object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_fraction_type object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_structure_type object 4
+sym usr/lib/libgstreamer-1.0.so.0 _gst_value_list_type object 4
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_copy_into func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_copy_region func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_extract func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_get_size func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_map func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_new_allocate func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_new_wrapped_full func
+sym usr/lib/libgstreamer-1.0.so.0 gst_buffer_unmap func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_append func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_copy_nth func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_features_copy func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_features_free func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_features_is_equal func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_from_string func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_get_features func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_get_size func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_get_structure func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_intersect_full func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_is_empty func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_new_empty func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_new_simple func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_set_features func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_set_simple func
+sym usr/lib/libgstreamer-1.0.so.0 gst_caps_to_string func
+sym usr/lib/libgstreamer-1.0.so.0 gst_clock_get_time func
+sym usr/lib/libgstreamer-1.0.so.0 gst_clock_id_unref func
+sym usr/lib/libgstreamer-1.0.so.0 gst_clock_id_unschedule func
+sym usr/lib/libgstreamer-1.0.so.0 gst_clock_id_wait_async func
+sym usr/lib/libgstreamer-1.0.so.0 gst_clock_new_single_shot_id func
+sym usr/lib/libgstreamer-1.0.so.0 gst_debug_log func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_add_pad func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_class_add_pad_template func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_class_get_pad_template func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_class_set_static_metadata func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_get_type func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_iterate_src_pads func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_post_message func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_query_position func
+sym usr/lib/libgstreamer-1.0.so.0 gst_element_register func
+sym usr/lib/libgstreamer-1.0.so.0 gst_event_copy_segment func
+sym usr/lib/libgstreamer-1.0.so.0 gst_event_has_name func
+sym usr/lib/libgstreamer-1.0.so.0 gst_event_new_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_event_new_custom func
+sym usr/lib/libgstreamer-1.0.so.0 gst_event_parse_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_flow_get_name func
+sym usr/lib/libgstreamer-1.0.so.0 gst_iterator_free func
+sym usr/lib/libgstreamer-1.0.so.0 gst_iterator_next func
+sym usr/lib/libgstreamer-1.0.so.0 gst_iterator_resync func
+sym usr/lib/libgstreamer-1.0.so.0 gst_message_new_application func
+sym usr/lib/libgstreamer-1.0.so.0 gst_mini_object_ref func
+sym usr/lib/libgstreamer-1.0.so.0 gst_mini_object_replace func
+sym usr/lib/libgstreamer-1.0.so.0 gst_mini_object_unref func
+sym usr/lib/libgstreamer-1.0.so.0 gst_object_ref func
+sym usr/lib/libgstreamer-1.0.so.0 gst_object_unref func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_add_probe func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_check_reconfigure func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_event_default func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_get_current_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_get_pad_template_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_get_parent_element func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_get_peer func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_get_stream_id func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_new_from_template func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_peer_query_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_push func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_push_event func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_set_activatemode_function_full func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_set_chain_function_full func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_set_event_function_full func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_template_get_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_template_new func
+sym usr/lib/libgstreamer-1.0.so.0 gst_pad_use_fixed_caps func
+sym usr/lib/libgstreamer-1.0.so.0 gst_plugin_register_static func
+sym usr/lib/libgstreamer-1.0.so.0 gst_proxy_pad_get_internal func
+sym usr/lib/libgstreamer-1.0.so.0 gst_proxy_pad_get_type func
+sym usr/lib/libgstreamer-1.0.so.0 gst_segment_clip func
+sym usr/lib/libgstreamer-1.0.so.0 gst_segment_init func
+sym usr/lib/libgstreamer-1.0.so.0 gst_segment_to_running_time func
+sym usr/lib/libgstreamer-1.0.so.0 gst_segment_to_stream_time func
+sym usr/lib/libgstreamer-1.0.so.0 gst_static_pad_template_get func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_get_fraction func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_get_int func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_get_name func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_get_string func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_get_value func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_has_field func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_new func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_new_empty func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_set func
+sym usr/lib/libgstreamer-1.0.so.0 gst_structure_to_string func
+sym usr/lib/libgstreamer-1.0.so.0 gst_system_clock_get_type func
+sym usr/lib/libgstreamer-1.0.so.0 gst_value_get_structure func
+sym usr/lib/libgstreamer-1.0.so.0 gst_value_list_get_size func
+sym usr/lib/libgstreamer-1.0.so.0 gst_value_list_get_value func
+sym usr/lib/libgstvideo-1.0.so.0 gst_buffer_add_video_meta_full func
+sym usr/lib/libluna-service2.so.3 LSCallOneReply func
+sym usr/lib/libluna-service2.so.3 LSErrorFree func
+sym usr/lib/libluna-service2.so.3 LSErrorInit func
+sym usr/lib/libluna-service2.so.3 LSErrorPrint func
+sym usr/lib/libluna-service2.so.3 LSGmainAttach func
+sym usr/lib/libluna-service2.so.3 LSMessageGetPayload func
+version usr/lib/libwayland-client.so.0 22.0

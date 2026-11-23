@@ -1,0 +1,21 @@
+# OLED55G6WUA, the US 55-inch G6: the models DB lists it for this OTA ID (W26O, markets US and
+# CA_EN). The default board (board_cmdline in guest/targets/soc/): W26O's own hw-option-gen and
+# nyx-option-gen (queue 43.11.77) decode this line as O26, US/ATSC, 3G OLED, UHD panel,
+# 1920x1080 graphics and 120 Hz panel and SoC output; libdile_boardinfo's group of the line is 2,
+# configd's USA RMM grpCode. 3G: every W26O device profile declares it (devices.json, and
+# TV_2026_o26_W26O_OLED_3G_G6 for this tool type); with 2.5G no profile matched, systemprofile
+# lacked five profiles and sdx never came up. ToolOpt: LLS's factory default record of this
+# line, with the G6/55" panelInch and toolType of the firmware's factory tables. O26 A0 is a VM
+# choice; identity placeholders are replaced per VM.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=2
+modelopt=000000000
+hwopt=500200010106102000
+ToolOpt=2187537:1310739:1706322:4194832:12068147:571595531
+modelName=OLED55G6WUA
+debugMode=3
+serialNum=000RAXX00001
+chip=O26A0
+emmc_size=0x1d2000000
+cmdEnd

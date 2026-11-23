@@ -1,0 +1,17 @@
+# OLED55G64LW, a European 55-inch G6 of this OTA ID (models DB), the VM's broadcast "dvb" board:
+# W26O's own generators (queue 43.11.77) decode this line as O26, EU/DVB, 3G OLED, UHD,
+# 1920x1080 graphics and 120 Hz; countryGrp 4, configd's EU RMM group. ToolOpt: LLS's factory
+# default record of this line (the same words as the US line's) with the G6/55" enums. Identity
+# placeholders are replaced per VM.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=4
+modelopt=000000000
+hwopt=200200010106102000
+ToolOpt=2187537:1310739:1706322:4194832:12068147:571595531
+modelName=OLED55G64LW
+debugMode=3
+serialNum=000RAXX00001
+chip=O26A0
+emmc_size=0x1d2000000
+cmdEnd
