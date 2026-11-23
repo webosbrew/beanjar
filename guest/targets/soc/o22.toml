@@ -10,6 +10,13 @@ board_cmdline = "/etc/emulator/board-atsc.cmdline"
 # US/ATSC by the same generators and the USA RMM group 2 (board-atsc.cmdline); a VM whose
 # vm.toml says firmware.broadcast "dvb" boots the global C2, OLED55C21LA (board-dvb.cmdline).
 broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emulator/board-dvb.cmdline", arib = "/etc/emulator/board-arib.cmdline" }
+# The Japanese board's terrestrial tuner: its firmware (legacy-broadcast-arib through
+# libdil_tu_plugin's DIL_TU_ChangeTransMedia and DIL_TU_SetPLL) sets DTV_DELIVERY_SYSTEM to
+# SYS_ISDBT (8) on frontend 0, which must be among the frontend's systems; the ISDB-T special data
+# it stores (0x644300E4 by default) webos_tv gives back with the valid bit, as its tuner would.
+# Over the targets' webos_tv words (o22-queue.toml, o22-ponytail.toml); not on the US and global
+# boards.
+broadcast_params = { arib = { webos_tv = ["frontends=1", "delsys=8"] } }
 # The HDMI CEC adapter (lgemu cec.c): webOS 6's libcecp opens /dev/cec0, the kernel's CEC
 # framework, and without it eim's receive thread spins on the failed descriptor.
 # snd_ctls=1: the card's "LGSE Var Fn009" (soundengine's OSD volume) and "Mute Output" (libumi's mute)

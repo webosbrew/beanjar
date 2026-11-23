@@ -235,15 +235,79 @@ struct lgfe_state {
     u32 specdata;     /* the last STORE_SPECAILDATA's word */
 };
 
-/* the EXT_* names seen in the firmwares (spellings as there), for the counts */
+/* the EXT_* names, for the counts: the name table (gDTV_EXT_CMD_NAME, DTV_EXT_ATTENUATOR 0x47 to
+ * DTV_EXT_SET_EXT_PROPERTY 0x93) of the JP libdil_tu_plugin of W22O queue 43.21.89, spellings as
+ * there */
 static const char *const lgfe_names[] = {
-    "EXT_SET_IS_EXT_PROPERTY",   "EXT_SET_RECORD_MODE",
-    "EXT_STORE_DELIVERY_SYSTEM", "EXT_TUNE_MODE",
-    "EXT_SET_TRANSSYSTEM",       "EXT_SET_PLL",
-    "EXT_STORE_SPECAILDATA",     "EXT_SET_DEMOD",
-    "EXT_STORE_MOROR_ROTATE",    "EXT_STORE_MOTOR_WAITTIME",
-    "EXT_GET_TUNED_FREQUENCY",   "EXT_CHECK_SPECAILDATA",
-    "EXT_GET_LOCK_STATUS",       "EXT_TS_OUTPUT",
+    "EXT_ATTENUATOR",
+    "EXT_GET_CELLID",
+    "EXT_RELEASE_EWBS",
+    "EXT_RF_PORT",
+    "EXT_TS_OUTPUT",
+    "EXT_TS_MODE",
+    "EXT_TUNE_MODE",
+    "EXT_MPLP_INFO",
+    "EXT_CHANGE_PLP",
+    "EXT_SET_PLP",
+    "EXT_STORE_PLPID",
+    "EXT_LNB_FAULT",
+    "EXT_DRIVER_VERSION",
+    "EXT_CHECK_SPECAILDATA",
+    "EXT_STORE_SPECAILDATA",
+    "EXT_BLINDSCANTP_TOTALCOUNT",
+    "EXT_INIT_BLINDSCAN",
+    "EXT_GET_BLINDSCAN_STATUS",
+    "EXT_GET_TUNED_FREQUENCY",
+    "EXT_STORE_DELIVERY_SYSTEM",
+    "EXT_STORE_ATSC3_PLPDATA",
+    "EXT_STAT_STRENGTH",
+    "EXT_STAT_QUALITY",
+    "EXT_STAT_PER",
+    "EXT_STAT_SNR",
+    "EXT_STAT_BER",
+    "EXT_STAT_RSSI",
+    "EXT_SUPPORT_ATSC3",
+    "EXT_SUPPORT_ISDBS3",
+    "EXT_GET_LNB_POWER",
+    "EXT_GET_STACK_PACKETERR",
+    "EXT_SET_RUN_PACKETERR",
+    "EXT_SET_CLEAR_PACKETERR",
+    "EXT_SET_RECORD_MODE",
+    "EXT_GET_FREQUENCY_OFFSET",
+    "EXT_BS_RESET_SCANDATA",
+    "EXT_BS_SCIF_FLAG",
+    "EXT_BS_MIN_FREQUENCY",
+    "EXT_BS_MAX_FREQUENCY",
+    "EXT_BS_SCIF_STATUS",
+    "EXT_BS_RANGE",
+    "EXT_BS_SCIFBS_BANK",
+    "EXT_BS_SCIFBS_SLOT",
+    "EXT_BS_SCIFBS_FUB",
+    "EXT_BS_SCIFBS_PARAMS",
+    "EXT_STORE_MOROR_ROTATE",
+    "EXT_STORE_MOTOR_WAITTIME",
+    "EXT_SET_PLL",
+    "EXT_SET_DEMOD",
+    "EXT_SET_DEMOD_ATSC3",
+    "EXT_GET_LOCK_STATUS",
+    "EXT_SET_FREQUENCY_ISDBS",
+    "EXT_INIT_DEMOD",
+    "EXT_SET_ISDBT_TSID",
+    "EXT_GET_SIGNAL_STATE",
+    "EXT_STAT_VALID",
+    "EXT_STAT_HIERARCHICAL",
+    "EXT_STAT_AGC",
+    "EXT_BS_SCIFBS_UNICABLEVERTYPE",
+    "EXT_BS_SCIFBS_PINPROTECTED",
+    "EXT_BS_SCIFBS_SLOTPIN",
+    "EXT_IS_BS",
+    "EXT_GET_DVB_TS_CLK_RATE",
+    "EXT_GET_SATELLITE_CHIP_ID",
+    "EXT_SET_TRANSSYSTEM",
+    "EXT_SET_RFGPIO",
+    "EXT_SET_RESET",
+    "EXT_SET_IS_EXT_PROPERTY",
+    "EXT_SET_EXT_PROPERTY",
 };
 
 static u32 lgfe_get32(const u8 *p)
@@ -319,8 +383,18 @@ static int lgfe_get(const struct lgfe_cmds *c, const struct lgfe_state *st, u8 *
     if (name) { /* the answer in the first word, where cmd is */
         u32 v = 0;
 
-        if (!strcmp(name, "EXT_GET_LOCK_STATUS"))
+        /* DIL_TU_CheckSignalState (the JP plugin's named form): EXT_STAT_HIERARCHICAL set to
+         * the layer, then GET_SIGNAL_STATE (its result only checked), STAT_VALID and the
+         * statistics; legacy-broadcast-arib reads a layer of quality 0 as lost and mutes the
+         * service (E203). PER, BER, AGC and RSSI stay 0. */
+        if (!strcmp(name, "EXT_GET_LOCK_STATUS") || !strcmp(name, "EXT_GET_SIGNAL_STATE"))
             v = lgfe_status(st);
+        else if (!strcmp(name, "EXT_STAT_VALID"))
+            v = st->locked;
+        else if (!strcmp(name, "EXT_STAT_STRENGTH"))
+            v = st->locked ? LGFE_STRENGTH : 0;
+        else if (!strcmp(name, "EXT_STAT_QUALITY"))
+            v = st->locked ? LGFE_QUALITY : 0;
         else if (!strcmp(name, "EXT_GET_TUNED_FREQUENCY"))
             v = lgfe_khz(st);
         else if (!strcmp(name, "EXT_CHECK_SPECAILDATA"))
