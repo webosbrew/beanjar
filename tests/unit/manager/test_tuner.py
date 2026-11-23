@@ -6,7 +6,9 @@ include/webos-tuner.h, the guest's tune frames taken apart at any split, a strea
 rate without nulls and with the STT set to now (its CRC made again), the map kept in the VM's
 state, the US channel frequencies, the guide's events and the independent section check; the
 split between the feeder beside QEMU and a generator elsewhere (a feed) over sockets, with no
-TSDuck, ffmpeg or ssh, and the CLI's remote map and unmap against a fake host."""
+TSDuck, ffmpeg or ssh, and the CLI's remote map and unmap against a fake host; the lineup per
+broadcast standard (the Japanese ISDB-T one: its delivery system in the map, a stream only to an
+ISDB-T tune, its TDT and TOT set to now)."""
 
 import contextlib
 import io
@@ -25,6 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
 from beanjar import ares, cli, remote, tuner, tuner_stream  # noqa: E402
+from beanjar import tuner_stream_arib as arib
 
 
 def section(table_id, body, long=True):
@@ -455,6 +458,8 @@ class RemoteCliTest(unittest.TestCase):
         data = {
             "name": "tv",
             "tuner": True,
+            "broadcast": "atsc",
+            "delsys": 11,
             "channels": [
                 {"channel": c, "center_hz": tuner_stream.rf_center_hz(c),
                  "mapped": c in self.mapped, "services": []}
@@ -480,6 +485,7 @@ class RemoteCliTest(unittest.TestCase):
     def test_map_makes_here_and_starts_the_feed(self):
         rc, out, err = self.beanjar("io", "tuner", "map", "pi/tv", "7", "14")
         self.assertEqual(rc, 0, err)
+        self.assertEqual(self.calls[0], ["io", "tuner", "list", "local/tv", "--json"])  # its lineup
         self.assertEqual(
             self.calls[-1], ["io", "tuner", "map", "local/tv", "7", "14", "--fed", "--json"]
         )
@@ -514,7 +520,7 @@ class RemoteCliTest(unittest.TestCase):
         rc, _o, err = self.beanjar("io", "tuner", "map", "pi/tv", "8")
         self.assertEqual(rc, 1)
         self.assertIn("no physical channel 8", err)
-        self.assertEqual(self.calls, [])
+        self.assertEqual(self.calls, [["io", "tuner", "list", "local/tv", "--json"]])  # no map
 
 
 class FrameTest(unittest.TestCase):
@@ -531,6 +537,131 @@ class FrameTest(unittest.TestCase):
 
     def test_channels_of(self):
         self.assertEqual(tuner.channels_of([473000000, 177200000, 999000000]), [7, 14])
+
+
+def tdt(field):
+    return bytes([0x70, 0x70, 0x05]) + field
+
+
+def tot(field):
+    sec = bytes([0x73, 0x70, 0x0B]) + field + b"\xf0\x00"  # no descriptors, then the CRC
+    return sec + tuner_stream.crc32_mpeg(sec).to_bytes(4, "big")
+
+
+class AribTest(unittest.TestCase):
+    """The ISDB-T lineup of an ARIB board, with no tools."""
+
+    def test_lineups(self):
+        self.assertIs(tuner.lineup("arib"), tuner.ARIB)
+        self.assertIs(tuner.lineup("atsc"), tuner.ATSC)
+        self.assertIs(tuner.lineup(None), tuner.ATSC)
+        self.assertIs(tuner.lineup("dvb"), tuner.ATSC)  # no lineup of its own yet
+        self.assertEqual((tuner.ARIB.delsys, tuner.ARIB.channels), (8, [27]))
+        self.assertEqual(tuner.ARIB.center_hz(27), 557142857)
+        self.assertEqual(tuner.lineup_of_delsys(8), tuner.ARIB)
+        self.assertEqual(tuner.lineup_of_delsys(11), tuner.ATSC)
+        with self.assertRaises(tuner.Error):
+            tuner.ARIB.check(28)
+        tuner.check_channels([7, 14], tuner.ATSC)
+        with self.assertRaises(tuner.Error):
+            tuner.check_channels([7], tuner.ARIB)
+        # the firmware's DTV_FREQUENCY is its table's kHz times 1000: within the tolerance
+        self.assertEqual(tuner.channels_of([557143000], tuner.ARIB), [27])
+        self.assertEqual(tuner.channels_of([557143000]), [])
+
+    def test_map_frame_and_reader(self):
+        f = tuner.map_frame([557142857], tuner.SYS_ISDBT)
+        self.assertEqual(struct.unpack_from("<II", f, 16), (557142857, 8))
+        r = tuner.TuneReader()
+        r.feed(f)
+        self.assertEqual((r.wanted, r.wanted_delsys), ([557142857], 8))
+        r.feed(tuner.map_frame([]))
+        self.assertEqual((r.wanted, r.wanted_delsys), ([], None))
+
+    def test_status_follows_the_board(self):
+        class VM:
+            name, state_dir, run_dir = "jp", "/nonexistent", "/nonexistent"
+
+            def target(self):
+                return ("o22", "queue")
+
+        with mock.patch.object(tuner, "vm_broadcast", return_value="arib"):
+            st = tuner.status(VM())
+        self.assertEqual((st["broadcast"], st["delsys"]), ("arib", 8))
+        self.assertEqual([c["channel"] for c in st["channels"]], [27])
+        self.assertEqual(st["channels"][0]["center_hz"], 557142857)
+        self.assertIn("ビーンジャー１", st["channels"][0]["services"][0])
+        with mock.patch.object(tuner, "vm_broadcast", return_value="atsc"):
+            self.assertEqual([c["channel"] for c in tuner.status(VM())["channels"]], [7, 14, 33])
+
+    def test_tdt_and_tot_set_to_now(self):
+        old = arib.jst_time(1_700_000_000)
+        p = packet(arib.TOT_PID, tdt(old) + tot(old))
+        now = 1_800_000_123  # 2027-01-15 08:02:03 UTC: 17:02:03 JST
+        q = arib.time_rewrite(p, now)
+        self.assertEqual(len(q), 188)
+        field = bytes.fromhex("EFEC") + bytes([0x17, 0x02, 0x03])  # MJD 61420, then BCD
+        self.assertEqual(q[5:13], tdt(field))
+        sec = q[13 : 13 + 14]
+        self.assertEqual(sec[3:8], field)
+        self.assertEqual(tuner_stream.crc32_mpeg(sec), 0)  # the CRC made again
+        self.assertEqual(q[27:], p[27:])
+        other = packet(0x11, tdt(old))
+        self.assertEqual(arib.time_rewrite(other, now), other)  # only the TOT PID
+
+    def test_stream_rewrites_the_lineups_time(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "s.ts")
+            old = arib.jst_time(1_700_000_000)
+            pkts = [packet(arib.TOT_PID, tdt(old)), packet(0x1FFB, stt(1000))]
+            with open(path, "wb") as f:
+                f.write(b"".join(pkts))
+            s = tuner.Stream(path, rate=188 * 8 * 100, clock=tuner.ARIB.clock)
+            out = s.next(0.02, now=1_800_000_000)
+            self.assertEqual(out[5:13], tdt(arib.jst_time(1_800_000_000)))
+            self.assertEqual(out[188:], pkts[1])  # no STT of ISDB's
+
+    def test_sender_sends_to_an_isdbt_tune_only(self):
+        rf27 = tuner.ARIB.center_hz(27)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "isdbt27.ts")
+            with open(path, "wb") as f:
+                f.write(packet(0x111, b"video") * 50)
+            lu = tuner.Lineup(
+                "arib", 8, 188 * 8 * 1000, [27], tuner.ARIB.center_hz, tuner.ARIB.services,
+                lambda cache, ch, now: path, tuner.ARIB.clock,
+            )  # fmt: skip
+            sent = []
+            sender = tuner.Sender(tuner.Player(d, print, lu), sent.append, lambda t: None)
+            sender.tick([27], rf27, tuner.SYS_ATSC, 0.0)
+            sender.tick([27], rf27, tuner.SYS_ATSC, 0.1)
+            frames = tuner.FrameReader().feed(b"".join(sent))
+            self.assertEqual([k for k, _f, _p in frames], [tuner.MAP])
+            self.assertEqual(struct.unpack_from("<II", frames[0][2]), (rf27, 8))
+            sent.clear()
+            sender.tick([27], rf27, tuner.SYS_ISDBT, 0.2)
+            frames = tuner.FrameReader().feed(b"".join(sent))
+            self.assertEqual({(k, f) for k, f, _p in frames}, {(tuner.TS, rf27)})
+
+    def test_feed_takes_the_lineup_of_the_map(self):
+        rf27 = tuner.ARIB.center_hz(27)
+        a, b = socket.socketpair()
+        players = []
+
+        class Player(tuner.Player):
+            def ready(self, channels):
+                players.append((self.lineup.name, channels))
+                return {}
+
+        def feeder():
+            b.sendall(tuner.map_frame([rf27], tuner.SYS_ISDBT))
+            until(lambda: players)
+            b.close()
+
+        threading.Thread(target=feeder, daemon=True).start()
+        tuner.feed_session(a, Player("/nonexistent", print), lambda t: None, wait=5)
+        a.close()
+        self.assertEqual(players[0], ("arib", [27]))
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ def tuner_words(a):
 def tuner_text(name, data):
     if not data["tuner"]:
         return f"{name}: no tuner of ours on its board (no dtv_soc)"
-    lines = [
+    lines = [f"{data.get('broadcast', 'atsc').upper()} lineup"] + [
         f"RF{c['channel']:<3} {c['center_hz'] / 1e6:7.1f} MHz  {'mapped  ' if c['mapped'] else 'unmapped'}  "
         + ", ".join(c["services"])
         for c in data["channels"]
@@ -76,10 +76,13 @@ def remote_tuner(a, host, name):
     if verb == "list":
         data = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
     else:
-        tuner.check_channels(channels or [])
+        # the host's board's lineup: its broadcast standard
+        listed = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
+        lu = tuner.lineup(listed.get("broadcast") if isinstance(listed, dict) else None)
+        tuner.check_channels(channels or [], lu)
         cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
         if verb == "map":
-            tuner.make(cache, channels)  # here, where the feed makes them: its errors now
+            tuner.make(cache, channels, lu=lu)  # here, where the feed makes them: its errors now
         words = [*(map(str, channels) if channels is not None else ["all"]), "--fed"]
         data = remote.call_json(host, uri, ["io", "tuner", verb, remote.own(name), *words])
         if not isinstance(data, dict) or "feed_socket" not in data:
@@ -215,10 +218,10 @@ def register(cli):
     )
     tuner = group(
         "tuner",
-        "the antenna of a set with our tuner (W21P's US board): list the lineup's physical "
-        "channels and what the set is tuned to, map RF... to put a signal on them (their "
-        "transport streams, ATSC with the channel tables and guide, are made with TSDuck and "
-        "ffmpeg; for HOST/NAME on this machine, fed to the host over ssh while the VM runs), or "
+        "the antenna of a set with our tuner: list the lineup of its board's broadcast standard "
+        "(US ATSC channels, or a Japanese ISDB-T one on an ARIB board), its physical channels "
+        "and what the set is tuned to, map RF... to put a signal on them (their transport "
+        "streams, with the channel tables and guide, are made with TSDuck and ffmpeg; for HOST/NAME on this machine, fed to the host over ssh while the VM runs), or "
         "unmap RF... or all; kept for the VM's next starts",
         under=io,
         dest="verb",

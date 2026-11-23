@@ -17,20 +17,24 @@ The page is EUC-JP with the ARIB BML 1.0 DOCTYPE and `<?bml bml-version="100.0" 
 broadcasts and denpa's test documents are written; whether LG's NetFront would take UTF-8 or no
 DOCTYPE is not known, so nothing is left out that a broadcast carries."""
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from xml.sax.saxutils import escape, quoteattr
 
-from .tuner_stream import Error
+from .tuner_stream import PACKET, Error, crc32_mpeg
 
 MUX_RATE = 5_000_000  # bits a second
+VERSION = 1  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 LOOP_SECONDS = 5  # of the A/V loop
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
 
 PAT_PID, NIT_PID, SDT_PID, EIT_PID, TOT_PID = 0x00, 0x10, 0x11, 0x12, 0x14
+TABLE_TDT, TABLE_TOT = 0x70, 0x73
 PMT_PID, VIDEO_PID, AUDIO_PID, DATA_PID = 0x1F0, 0x111, 0x112, 0x740
 
 TAG_VIDEO, TAG_AUDIO, TAG_DATA = 0x00, 0x10, 0x40  # component tags; 0x40 is the entry component
@@ -350,3 +354,70 @@ def make(path, now):
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return path
+
+
+def stream_key(now):
+    """What the stream depends on: the generator, the service, its page and the present and
+    following events (EIT p/f), so it is made again when the present event ends."""
+    text = json.dumps(
+        [VERSION, SERVICE, startup_bml().hex(), [e[:2] for e in events(now)]], sort_keys=True
+    )
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def stream_path(cache, ch, now):
+    return os.path.join(cache, f"isdbt{ch:02d}-{stream_key(now)}.ts")
+
+
+def make_cached(cache, ch, now):
+    """The path of physical channel ch's stream for now, made into the directory cache if it is not
+    there yet; older streams of the channel go. Error for a channel that carries nothing."""
+    if ch != SERVICE["uhf"]:
+        raise Error(f"the lineup has no physical channel {ch} ({SERVICE['uhf']})")
+    path = stream_path(cache, ch, now)
+    if os.path.exists(path):
+        return path
+    os.makedirs(cache, exist_ok=True)
+    make(path + ".tmp", now)
+    os.replace(path + ".tmp", path)
+    for name in os.listdir(cache):
+        if name.startswith(f"isdbt{ch:02d}-") and os.path.join(cache, name) != path:
+            os.unlink(os.path.join(cache, name))
+    return path
+
+
+def jst_time(now):
+    """The 40-bit JST_time field of a TDT or TOT (ARIB STD-B10): the MJD, then hours, minutes and
+    seconds in BCD."""
+    t = datetime.fromtimestamp(int(now), JST)
+    mjd = (t.date() - date(1858, 11, 17)).days
+
+    def bcd(n):
+        return ((n // 10) << 4) | (n % 10)
+
+    return mjd.to_bytes(2, "big") + bytes([bcd(t.hour), bcd(t.minute), bcd(t.second)])
+
+
+def time_rewrite(packet, now):
+    """The packet with the JST_time of each whole TDT and TOT section in it set to now (and the
+    TOT's CRC made again); the packet itself when it starts no section on the TOT PID."""
+    pid = ((packet[1] & 0x1F) << 8) | packet[2]
+    if pid != TOT_PID or not packet[1] & 0x40 or not packet[3] & 0x10:
+        return packet
+    at = 4 + (1 + packet[4] if packet[3] & 0x20 else 0)
+    if at >= PACKET:
+        return packet
+    at += 1 + packet[at]  # the pointer field
+    out = bytearray(packet)
+    stamp = jst_time(now)
+    while at + 3 <= PACKET and out[at] != 0xFF:
+        n = 3 + (((out[at + 1] & 0xF) << 8) | out[at + 2])
+        if at + n > PACKET:
+            break
+        if out[at] == TABLE_TDT and n >= 8:
+            out[at + 3 : at + 8] = stamp
+        elif out[at] == TABLE_TOT and n >= 14:
+            out[at + 3 : at + 8] = stamp
+            out[at + n - 4 : at + n] = crc32_mpeg(bytes(out[at : at + n - 4])).to_bytes(4, "big")
+        at += n
+    return bytes(out)

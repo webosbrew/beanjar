@@ -480,6 +480,7 @@ def run(words, env=None):
                     p.run_dir,
                     p.state_dir,
                     tuner.cache_dir(p.tree),
+                    p.broadcast or "",
                 ],
                 env=helper_env,
                 stdin=subprocess.DEVNULL,
