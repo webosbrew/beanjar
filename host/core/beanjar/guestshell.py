@@ -562,7 +562,7 @@ def local_socket(vm):
 
 
 def remote_path(info):
-    """Where the relay's socket is on the VM's host, from its `beanjar info --json`; None when the
+    """Where the relay's socket is on the VM's host, from its `beanjar show --json`; None when the
     VM is not running there."""
     import posixpath
 
@@ -583,7 +583,7 @@ def run_remote(host, name, argv, tty):
     from .core import Error
 
     uri = remote.hosts()[host]
-    info = remote.call_json(host, uri, ["info", remote.own(name)])
+    info = remote.call_json(host, uri, ["show", remote.own(name)])
     path = remote_path(info if isinstance(info, dict) else {})
     if path is None:
         raise Error(f"{host}/{name} is not running")

@@ -9,7 +9,7 @@ The `devmode` layer makes the VM a TV with Developer Mode switched on: its SSH s
 `prisoner` on port 9922 and its key server on 9991, with the VM's own developer key.
 
 ```sh
-beanjar settings tv1 set layers=normal,gl,devmode
+beanjar config set tv1 layers=normal,gl,devmode
 beanjar start tv1
 beanjar ares-install -d tv1 com.example.app_1.0.0_all.ipk
 beanjar ares-launch -d tv1 com.example.app
@@ -31,7 +31,7 @@ The `hbchannel` layer installs [Homebrew Channel](https://github.com/webosbrew/w
 elevated, as on a rooted TV. It needs `devmode` and replaces `rootssh`:
 
 ```sh
-beanjar settings tv1 set layers=normal,gl,devmode,hbchannel
+beanjar config set tv1 layers=normal,gl,devmode,hbchannel
 ```
 
 `hbchannel` is the default release (0.8.0-rc1); `hbchannel@0.7.3` picks the other one built.
@@ -41,10 +41,10 @@ See [Homebrew Channel](../../host/core/README.md#homebrew-channel) in the manage
 ## Root
 
 With `rootssh` or `hbchannel`, root SSH listens on the VM's port 6622 with the VM's own keys;
-`beanjar info tv1` prints the `ssh` command, which uses the VM's own client key. Your own SSH keys
-are not given to the guest unless you add them (`beanjar identity authorized-keys tv1 add-mine`):
+`beanjar show tv1` prints the `ssh` command, which uses the VM's own client key. Your own SSH keys
+are not given to the guest unless you add them (`beanjar identity authorized-keys add tv1 --mine`):
 the guest can read every key it gets, and your keys identify you. `beanjar identity
-authorized-keys tv1` lists the keys it gets, and `... reset` takes yours out again. The ares tools run as root with `--root`:
+authorized-keys show tv1` lists the keys it gets, and `... reset tv1` takes yours out again. The ares tools run as root with `--root`:
 
 ```sh
 beanjar ares-shell --root -d tv1 -r 'id'
@@ -67,7 +67,7 @@ Details: [the VM manager](../../host/core/README.md#shell).
 
 An app on a phone or another PC reaches the VM's TV services (SSAP on ports 3000 and 3001) at the
 VM's address. For a client on another machine, make the VM listen there
-(`beanjar settings tv1 set listen=0.0.0.0`) or put it on the LAN (`link=lan`); see
+(`beanjar config set tv1 listen=0.0.0.0`) or put it on the LAN (`link=lan`); see
 [Network](vms.md#network). SSAP pairs a client only when it is accepted on the TV's screen, as on
 a TV.
 

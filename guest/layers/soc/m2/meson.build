@@ -31,7 +31,8 @@
 # which tvservice NEEDs; its other names in usr/lib made links to the shim).
 # libkadaptor: MStar's KADP (bsppart's libkadaptor.so.0.1.0, no SONAME: its users NEED libkadaptor.so),
 # whose XC window calls run on a user-mode Utopia instance on W16R; the shim passes them to a
-# kernel-mode one too, for mstar-utopia.ko's window decoder (src/libkadaptor/kadaptor-xc.c), and
+# kernel-mode one too, for mstar-utopia.ko's window decoder (src/libkadaptor/kadaptor-xc.c), answers
+# tv.capture's questions to that user-mode XC and its DIP (kadaptor-capture.c), and
 # answers the DVR key that MStar's TEE would decrypt from the VM's store (kadaptor-pvrkey.c).
 hal_stock = {
   'libdile_gal': ['libdile_gal.so.1', 'libdile_gal.so.1.0.2', []],
@@ -39,7 +40,7 @@ hal_stock = {
   'libkadaptor': ['libkadaptor.so', 'libkadaptor.so.0.1.0', [], 'bsppart'],
   'libhal_crypto': ['libhal_crypto.so', 'libhal_crypto.so.0.1.0', ['libhal_crypto.so.0'], 'bsppart'],
 }
-kadaptor_source = ['kadaptor-xc.c', 'kadaptor-pvrkey.c']
+kadaptor_source = ['kadaptor-xc.c', 'kadaptor-capture.c', 'kadaptor-pvrkey.c']
 # Where the media elements (guest/layers/soc/src/video) go: the stock plugins' directory, and which:
 # W16R's GStreamer is 1.2.4 (GLib 2.40), and its media elements are MStar's: the gst-omx decoders
 # and omxaudiosink of libgstomx.so (by gstomx.conf's sections), mvsink and masink.

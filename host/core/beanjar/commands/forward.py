@@ -12,7 +12,7 @@ import tempfile
 from .. import framing, remote
 from ..core import Error
 from .common import Usage, emit, kv_lines, parse_size, read_new_password
-from .devices import cmd_usb_plug, remote_tuner, usb_attach_usage
+from .devices import plug_usb, remote_tuner, usb_attach_usage
 from .mitm import mitm_cleared
 from .shell import remote_shell
 
@@ -31,7 +31,7 @@ def remote_failure(rc, err):
 def run_remote(a, host, words, stdin=None, timeout=None):
     """Runs words on host and relays the result: stdout as it is, stderr (a prefixed line each in
     text mode, as it comes; with --json the remote's own JSON error, after it ends), its status."""
-    as_json = a.json or "--json" in words  # vnc start's, after the name, is among its words
+    as_json = a.json
     rc, out, err = remote.call(
         host,
         remote.hosts()[host],
@@ -52,7 +52,7 @@ def run_remote(a, host, words, stdin=None, timeout=None):
 def remote_info(a, host, name):
     from .. import gpu
 
-    rc, out, err = remote.call(host, remote.hosts()[host], ["info", remote.own(name), "--json"])
+    rc, out, err = remote.call(host, remote.hosts()[host], ["show", remote.own(name), "--json"])
     if rc:
         remote_failure(rc, err)
     try:
@@ -60,7 +60,7 @@ def remote_info(a, host, name):
         gpu_label = gpu.label(data["gpu"])
     except (ValueError, KeyError, TypeError):
         raise remote.HostError(
-            host, "its beanjar info is not what this one reads: update it"
+            host, "its beanjar show is not what this one reads: update it"
         ) from None
     data = {"host": host, **data}
     return emit(a, data, "\n".join(kv_lines(dict(data, gpu=gpu_label))))
@@ -72,9 +72,9 @@ def png_size(png):
 
 def remote_picture(a, host, name):
     """The screenshot transport, shared by screenshot and local element inference."""
-    size = getattr(a, "size", None)
-    parse_size(size) if size else None
-    words = ["screenshot", remote.own(name), "-"] + (["--size", size] if size else [])
+    frame = getattr(a, "frame", None)
+    parse_size(frame) if frame else None
+    words = ["screenshot", remote.own(name), "-"] + (["--frame", frame] if frame else [])
     words += ["--last"] if getattr(a, "last", False) else []
     rc, png, err = remote.call(
         host,
@@ -125,10 +125,10 @@ def remote_screenshot(a, host, name):
 
 
 def remote_password(a, host, name):
-    """vnc password NAME set: the new password is read here (FILE, stdin, a prompt) and goes to the
+    """vnc password set NAME: the new password is read here (FILE, stdin, a prompt) and goes to the
     remote beanjar on its stdin, never in an argument."""
     password = read_new_password(a.file)
-    words = ["vnc", "password", remote.own(name), "set"] + (["--json"] if a.json else [])
+    words = ["vnc", "password", "set", remote.own(name)] + (["--json"] if a.json else [])
     return run_remote(a, host, words, stdin=(password + "\n").encode())
 
 
@@ -141,30 +141,33 @@ def bare_new_name(a):
         )
 
 
-def remote_command(a, argv, host, name):
-    """The command a on the VM called name on host, run there by that host's beanjar."""
+def remote_command(a, words, host, name):
+    """The command a on the VM called name on host, run there by that host's beanjar; words is
+    the command line without its global options (parser.parse)."""
     kind = a.remote
     if kind == "viewer":
         raise Error(
             f"the viewer is a window on the machine that runs the VM, and {name} runs on {host}: "
             f"beanjar vnc start {host}/{name} serves its picture over VNC (its lan address is in "
-            f"beanjar info {host}/{name}; the password: beanjar vnc password {host}/{name} show)"
+            f"beanjar show {host}/{name}; the password: beanjar vnc password show {host}/{name})"
         )
-    if kind == "authkeys" and a.verb == "add-mine":
+    if kind == "authkeys-add":
         raise Error(
-            f"add-mine adds this machine's ~/.ssh/*.pub: run it on {host} for {name}, or add "
+            f"add --mine adds this machine's ~/.ssh/*.pub: run it on {host} for {name}, or add "
             f"the keys to {name}'s identity/authorized_keys there"
         )
-    if kind == "keymodel" and a.verb == "install":
-        raise Error(f"key model install reads a file on this machine: run it on {host} for {name}")
-    if kind == "info":
+    if kind == "keymodel-set":
+        raise Error(f"key model set reads a file on this machine: run it on {host} for {name}")
+    if kind == "show":
         return remote_info(a, host, name)
     if kind == "rename":
         bare_new_name(a)
+    nwords = len(a.path)
     if kind == "pipe":
         # a byte stream both ways (vnc pipe, remote pipe): this process's stdio, unbuffered
-        words = remote.rewrite(argv, 2, a.name, name)
-        return remote.attach(host, remote.hosts()[host], words)
+        return remote.attach(
+            host, remote.hosts()[host], remote.rewrite(words, nwords, a.name, name)
+        )
     if kind == "mitm-connect":
         from .. import inspector
 
@@ -176,18 +179,19 @@ def remote_command(a, argv, host, name):
     if kind == "screenshot":
         return remote_screenshot(a, host, name)
     if kind == "usb-attach":
+        if a.device or a.camera:
+            a.name = name
+            return plug_usb(None, a, host)
         usb_attach_usage(a, host)
-    if kind == "usb-plug":
-        a.name = name
-        return cmd_usb_plug(None, a, host)
     if kind == "tuner":
         return remote_tuner(a, host, name)
     if kind == "shell":
         return remote_shell(a, host, name)
-    if kind == "password" and a.verb == "set":
+    if kind == "password-set":
         return remote_password(a, host, name)
-    nwords = 1 + hasattr(a, "area") + hasattr(a, "verb_group")
-    words = remote.rewrite(argv, nwords, a.name, name)
-    if a.json and "--json" not in words:
-        words.append("--json")
+    words = remote.rewrite(words, nwords, a.name, name)
+    if a.json:
+        # at the end, but before a `--`: what follows it is the command's own (start's kernel
+        # words, beanjar-vnc's options)
+        words.insert(words.index("--") if "--" in words else len(words), "--json")
     return run_remote(a, host, words)

@@ -217,6 +217,13 @@ LINKS = ("nat", "lan", "off")
 MODES = ("mitm", "direct")
 
 
+# LG's online services (docs/dev/architecture/network.md, "LG services"): mock, the default, keeps
+# the guest from LG's telemetry and cloud hosts (host/helpers/network/lg_hosts.py) and answers its
+# online check itself; real lets it reach every LG host as a TV does. One or the other, never mixed.
+LG_SERVICES = ("mock", "real")
+DEFAULT_LG_SERVICES = "mock"
+
+
 LAN_NOT_IMPLEMENTED = "link=lan with mode=direct is not implemented yet"
 
 
@@ -281,13 +288,15 @@ SETTINGS = {
     "listen": "LISTEN_ADDRESS",
     "forward": "FORWARD",
     "address": "NET_ADDRESS",
+    "lan_access": "NET_LAN_ACCESS",
+    "lg_services": "NET_LG_SERVICES",
     "mitm_flows": "MITM_FLOWS",
     "mitm_flow_bytes": "MITM_FLOW_BYTES",
 }
 
 
-# Each setting as `beanjar settings --help` describes it: (its values, its default, what it does,
-# what `settings NAME unset KEY` brings back, or None where it has no unset). Configure's empty value
+# Each setting as `beanjar config set --help` describes it: (its values, its default, what it does,
+# what `config unset NAME KEY` brings back, or None where it has no unset). Configure's empty value
 # for these keys is that unset; the others refuse an empty value or (layers) take it as no layers.
 SETTING_HELP = {
     "fw": (
@@ -408,6 +417,24 @@ SETTING_HELP = {
         "link=lan: the VM's LAN address",
         "dhcp",
     ),
+    "lan_access": (
+        "|".join(ONOFF),
+        "off",
+        "link=nat: let the guest reach the LAN (private, shared and link-local addresses, "
+        "multicast) and this host's own non-loopback addresses; off refuses them. The internet "
+        "is reached either way, this host's loopback never. A link=lan VM is on the LAN anyway",
+        "off",
+    ),
+    "lg_services": (
+        "|".join(LG_SERVICES),
+        DEFAULT_LG_SERVICES,
+        "LG's online services: mock refuses LG's telemetry and cloud hosts (crash and analytics "
+        "uploads, beacons, ads, ACR, ThinQ and IoT, QuickSet, firmware update, remote diagnostics, "
+        "voice) in every mode, answers LG's online check itself and never passes TLS to an LG host "
+        "through uninspected; real reaches every LG host as a TV does, for a VM with a real model "
+        "key",
+        DEFAULT_LG_SERVICES,
+    ),
     "mitm_flows": (
         "N",
         str(MITM_FLOWS),
@@ -481,7 +508,7 @@ MANIFEST_KEYS = (
 )
 
 
-# A VM's tags (vm.toml's metadata.tags; create --tag, beanjar tag): short labels for finding and
+# A VM's tags (vm.toml's metadata.tags; create --tag, beanjar config set NAME tags=...): short labels for finding and
 # sorting VMs (list --tag), kept with its settings and copied by clone. Lower-case letters, digits
 # and dashes; conventions only (host/core/README.md): scratch, keep.
 TAG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
@@ -562,6 +589,8 @@ def validate(cfg, saved=False):
         ("audio", AUDIOS),
         ("free_page_reporting", ONOFF),
         ("updatable", ONOFF),
+        ("lan_access", ONOFF),
+        ("lg_services", LG_SERVICES),
         ("userland", USERLANDS),
         ("guest_kernel", GUEST_KERNELS),
         ("debug_mode", tuple(DEBUG_MODES)),
@@ -632,6 +661,8 @@ def validate(cfg, saved=False):
             layermeta.parse_forward(cfg["forward"])
         except layermeta.Error as e:
             raise Error(str(e), "forward") from None
+    if cfg.get("lan_access") == "on" and link == "lan":
+        raise Error("lan_access is for link=nat: a link=lan VM is on the LAN anyway", "lan_access")
     if "address" in cfg:
         from . import keys
 

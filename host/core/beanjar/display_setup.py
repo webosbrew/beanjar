@@ -22,7 +22,6 @@ def prepare(
     *,
     deadline=30.0,
     resume=True,
-    physical_size=(200, 500),
     configure=set_ui_info,
     command=None,
     alive=None,
@@ -37,7 +36,7 @@ def prepare(
     last = "QEMU display has not appeared"
     while alive() and clock() < end:
         try:
-            configure(address, min(1.0, end - clock()), physical_size=physical_size)
+            configure(address, min(1.0, end - clock()))
             break
         except (ImportError, ModuleNotFoundError):
             raise Error("secondary display setup requires Python Gio (python3-gi)") from None
@@ -63,22 +62,9 @@ def main():
     parent, address, sock = int(sys.argv[1]), sys.argv[2], sys.argv[3]
     try:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument(
-            "--physical-size",
-            nargs=2,
-            type=int,
-            default=(200, 500),
-            metavar=("WIDTH_MM", "HEIGHT_MM"),
-        )
         parser.add_argument("--keep-paused", action="store_true")
         args = parser.parse_args(sys.argv[4:])
-        prepare(
-            address,
-            sock,
-            parent,
-            resume=not args.keep_paused,
-            physical_size=tuple(args.physical_size),
-        )
+        prepare(address, sock, parent, resume=not args.keep_paused)
     except Exception as exc:
         print(f"display setup failed: {exc}; stopping paused QEMU", file=sys.stderr, flush=True)
         from .launch import qmp

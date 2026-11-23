@@ -112,6 +112,43 @@ class LifecycleTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(rt, vmunits.REASON_FILE)))
         self.assertFalse(os.path.exists(os.path.join(rt, "netns")))
 
+    def test_fresh_state_kept_across_restarts(self):
+        """STATE=none: one temporary state for the whole run. Every start gets the same
+        RUN_DIR/state/.fresh as FRESH_STATE and finds what the starts before it wrote there (as a
+        set keeps its writes across a reboot); a leftover of an earlier run is gone before the
+        first start, and the run's end removes the directory."""
+        fresh = os.path.join(self.run_dir, "state", ".fresh")
+        os.makedirs(fresh)
+        with open(os.path.join(fresh, "stale.img"), "w") as f:
+            f.write("an earlier run's\n")
+        rc, runs, out = self.unit_run("reset,reset,poweroff", STATE="none")
+        self.assertEqual((rc, runs), (0, 3), out)
+        with open(os.path.join(self.run_dir, "fake-fresh.jsonl")) as f:
+            seen = [json.loads(line) for line in f]
+        self.assertEqual([s["dir"] for s in seen], [fresh] * 3)
+        self.assertEqual([s["files"] for s in seen], [[], ["run0.img"], ["run0.img", "run1.img"]])
+        self.assertFalse(os.path.exists(fresh), "the run's end discards its temporary state")
+
+    def test_persistent_state_has_no_fresh_state(self):
+        state = os.path.join(self.tmp, "state")
+        rc, runs, out = self.unit_run("reset,poweroff", STATE=state)
+        self.assertEqual((rc, runs), (0, 2), out)
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "fake-fresh.jsonl")))
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "state", ".fresh")))
+
+    def test_post_discards_a_killed_runs_fresh_state(self):
+        """ExecStopPost (`unit post`) removes the temporary state a run killed before its own
+        cleanup (SIGKILL) left, and leaves a persistent state alone."""
+        fresh = os.path.join(self.run_dir, "state", ".fresh")
+        os.makedirs(fresh)
+        env = dict(RUN_DIR=self.run_dir, LOG_DIR=self.logs)
+        with mock.patch.dict(os.environ, dict(env, STATE=os.path.join(self.tmp, "st"))):
+            self.assertEqual(unit.main(["post"]), 0)
+        self.assertTrue(os.path.isdir(fresh))
+        with mock.patch.dict(os.environ, dict(env, STATE="none")):
+            self.assertEqual(unit.main(["post"]), 0)
+        self.assertFalse(os.path.exists(fresh))
+
     def test_power_off(self):
         rc, runs, out = self.unit_run("poweroff")
         self.assertEqual((rc, runs), (0, 1))

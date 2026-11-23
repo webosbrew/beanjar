@@ -62,6 +62,9 @@ gl_adapt_compositor = gl_compositor_integration == 'adapted'
 # real 80x95 BO renders through the owned cursor port. Keep this route scoped;
 # other native targets retain their original cursor policy.
 gl_native_cursor_bridge = not gl_adapt_compositor and guest_target == 'o22n2-spacebuns'
+# Native Spacebuns shows LG's own two outputs on one TV connector: the kernel words of
+# native-tv-rootfs give the one virtio scanout a TV connector and an overlay plane, as a set's.
+gl_native_tv_head = not gl_adapt_compositor and guest_target == 'o22n2-spacebuns'
 
 subdir('mesa')          # libffi, libdrm, Wayland and Mesa (mesa_dep, wl_compat, mesa_lib)
 # The OpenGL ES versions a TV's GPU may have, and the template of the file that states it
@@ -187,8 +190,7 @@ if gl_adapt_compositor
 else
   # No scanout/input preload, window adapter or weston-setup: the latter's presence
   # enables the initramfs compatibility rewrite of atomic/output settings.
-  # The native helper selects the measured virtio format and, for O22N2
-  # Spacebuns only, matching modes/logical sizes. Custom user ini files take precedence.
+  # The native helper selects the measured virtio format. Custom user ini files take precedence.
   gl_layer_args += ['--tree', meson.current_source_dir() / 'native-rootfs', '.']
   native_profile_data = configuration_data()
   native_profile_data.set('TARGET', guest_target)
@@ -197,6 +199,9 @@ else
   gl_layer_args += ['--file', native_profile, 'usr/share/beanjar/native-weston-target', '644']
   if gl_native_cursor_bridge
     gl_layer_args += ['--tree', meson.current_source_dir() / 'native-cursor-rootfs', '.']
+  endif
+  if gl_native_tv_head
+    gl_layer_args += ['--tree', meson.current_source_dir() / 'native-tv-rootfs', '.']
   endif
   foreach f : ['etc/init/gl-devperms.conf',
                'etc/systemd/system/basic.target.d/emulator-gl-devperms.conf',

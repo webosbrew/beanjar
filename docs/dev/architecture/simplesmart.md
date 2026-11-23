@@ -52,6 +52,10 @@ the launcher puts the board line on the kernel's command line itself, first: `li
 (`AF_UTIL_GetMacAddressFromCmdline`) reads only the first 512 bytes and RELEASE 1024. With the
 board line elsewhere, `appctrl` and `upctrl` crashed printing a NULL `macadr` and RELEASE's
 hwopt search missed. The VM's MAC and serial replace `macadr=` and `serialNum=`.
+The board's model is the firmware's broadcast standard's: `targets.firmware_broadcast` reads it
+from `RELEASE.cfg`'s `modelName` (`ATSC-M2`, `DVB-M2`), and a DVB build (05.00.06, EU) boots
+`board-dvb.cmdline` (`broadcast_boards`), the European LH570V of its `mspec.EU.LCD`; the US
+builds the US LH5700 of `board.cmdline`. Everything else on the two lines is the same.
 
 **RAM** is the 1 GiB of SS1A's two 512 MiB MIUs (`vend.pak`'s `mmap.ini`), not an hwopt digit.
 **The display** is the panel's size (hwopt digit 3, `DILE_BOARDINFO_GetDisplayResolution`):

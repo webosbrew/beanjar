@@ -102,7 +102,7 @@ def main():
     a = ap.parse_args()
     info = json.loads(
         subprocess.run(
-            [BEANJAR, "info", a.name, "--json"],
+            [BEANJAR, "show", a.name, "--json"],
             capture_output=True,
             text=True,
             check=True,

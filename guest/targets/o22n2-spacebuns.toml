@@ -1,3 +1,13 @@
 models = ["W24G"]
 bring_up = ["W24G"]
 de_histogram = true
+# This GoogleHomePlatform build's google-home-controller switches sdx to the QA2 server on its first
+# boot; sdx resets the EULA and eula-service reboots the set once. The second boot keeps QA2 and stays
+# up (docs/research/spacebuns-fresh-state-restarts.md). scripts/regress follows that one restart.
+first_boot_restart = true
+
+# W24G spacebuns (02.68.80) keeps queue's scaler and capture clients: its nyxVscaler module opens
+# /dev/video27..33 and its nyxScreenCapture module /dev/video60, as queue's do. Without the scaler
+# model videooutputd's connect fails ("invalid fd for vdo") and no video window is set.
+lg_scaler = [3840, 2160]
+v4l2_capture = true

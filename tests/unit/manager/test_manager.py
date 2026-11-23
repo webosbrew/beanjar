@@ -278,7 +278,7 @@ class ManagerTest(unittest.TestCase):
             self.fail(f"beanjar {' '.join(args)} --json: not JSON\n{p.stdout}\n{p.stderr}")
 
     def info(self, name):
-        return self.cli_json("info", name)
+        return self.cli_json("show", name)
 
     def lib(self):
         return core.Library(self.lib_dir, self.repo)
@@ -394,24 +394,24 @@ class ManagerTest(unittest.TestCase):
                 ok=False,
             ),
         )
-        self.cli("settings", "tv1", "set", "mem=1024", "link=off", "layers=gl,devmode")
+        self.cli("config", "set", "tv1", "mem=1024", "link=off", "layers=gl,devmode")
         cfg = tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
         self.assertEqual(
             (cfg["mem"], cfg["link"], cfg["mode"], cfg["layers"]),
             (1024, "off", "mitm", ["gl", "devmode"]),
         )
         self.assertEqual(self.listing()["tv1"]["network"], "off")
-        self.assertIn("one of", self.cli("settings", "tv1", "set", "link=bogus", ok=False))
-        self.assertIn("one of", self.cli("settings", "tv1", "set", "mode=off", ok=False))
-        self.assertIn("KEY one of", self.cli("settings", "tv1", "set", "net=off", ok=False))
-        self.assertIn("KEY one of", self.cli("settings", "tv1", "set", "NET_LINK=off", ok=False))
+        self.assertIn("one of", self.cli("config", "set", "tv1", "link=bogus", ok=False))
+        self.assertIn("one of", self.cli("config", "set", "tv1", "mode=off", ok=False))
+        self.assertIn("KEY one of", self.cli("config", "set", "tv1", "net=off", ok=False))
+        self.assertIn("KEY one of", self.cli("config", "set", "tv1", "NET_LINK=off", ok=False))
         self.assertIn(
-            "address is for link=lan", self.cli("settings", "tv1", "set", "address=dhcp", ok=False)
+            "address is for link=lan", self.cli("config", "set", "tv1", "address=dhcp", ok=False)
         )
         self.cli(
-            "settings",
-            "tv1",
+            "config",
             "set",
+            "tv1",
             "link=lan",
             "mode=direct",
             "address=192.168.1.50/24,192.168.1.1",
@@ -428,64 +428,98 @@ class ManagerTest(unittest.TestCase):
             "lan: on its own LAN address, and the host side of its relay on its address",
         )
         self.assertIn(
-            "listen is for link=nat", self.cli("settings", "tv1", "set", "listen=0.0.0.0", ok=False)
+            "listen is for link=nat", self.cli("config", "set", "tv1", "listen=0.0.0.0", ok=False)
         )
         out = self.cli("start", "tv1", ok=False)
         self.assertIn("link=lan with mode=direct is not implemented yet", out)
         self.assertEqual(self.listing()["tv1"]["state"], "Off")
-        self.cli("settings", "tv1", "set", "mode=mitm")
+        self.cli("config", "set", "tv1", "mode=mitm")
         self.assertIn("needs the library's lan_parent", self.cli("start", "tv1", ok=False))
         self.assertEqual(self.listing()["tv1"]["state"], "Off")
         self.assertIn(
-            "address is for link=lan", self.cli("settings", "tv1", "set", "link=nat", ok=False)
+            "address is for link=lan", self.cli("config", "set", "tv1", "link=nat", ok=False)
         )
-        self.cli("settings", "tv1", "unset", "address")
-        self.cli("settings", "tv1", "set", "link=nat", "mode=mitm")
+        self.cli("config", "unset", "tv1", "address")
+        self.cli("config", "set", "tv1", "link=nat", "mode=mitm")
         cfg = tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
         self.assertEqual((cfg["link"], cfg["mode"], "address" in cfg), ("nat", "mitm", False))
         # the inspector's flow history: vmsettings.MITM_FLOWS by default, in status, the default not written out
         self.assertEqual(self.info("tv1")["mitm_flows"], vmsettings.MITM_FLOWS)
-        self.cli("settings", "tv1", "set", "mitm_flows=200")
+        self.cli("config", "set", "tv1", "mitm_flows=200")
         self.assertEqual(
             tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))["mitm_flows"], 200
         )
         self.assertEqual(self.info("tv1")["mitm_flows"], 200)
-        self.assertIn(
-            "0 for no limit", self.cli("settings", "tv1", "set", "mitm_flows=-5", ok=False)
-        )
-        self.cli("settings", "tv1", "set", f"mitm_flows={vmsettings.MITM_FLOWS}")
+        self.assertIn("0 for no limit", self.cli("config", "set", "tv1", "mitm_flows=-5", ok=False))
+        self.cli("config", "set", "tv1", f"mitm_flows={vmsettings.MITM_FLOWS}")
         self.assertNotIn("mitm_flows", tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml")))
-        self.cli("settings", "tv1", "set", "mitm_flows=50")
-        self.cli("settings", "tv1", "unset", "mitm_flows")
+        self.cli("config", "set", "tv1", "mitm_flows=50")
+        self.cli("config", "unset", "tv1", "mitm_flows")
         self.assertNotIn("mitm_flows", tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml")))
         self.assertEqual(self.info("tv1")["mitm_flows"], vmsettings.MITM_FLOWS)
         self.assertIn(
-            "unset mitm_flows", self.cli("settings", "tv1", "set", "mitm_flows=", ok=False)
+            "unset tv1 mitm_flows", self.cli("config", "set", "tv1", "mitm_flows=", ok=False)
         )
         # and its byte budget: off by default, a size, empty or 0 off again
         self.assertEqual(self.info("tv1")["mitm_flow_bytes"], "0")
-        self.cli("settings", "tv1", "set", "mitm_flow_bytes=200m")
+        self.cli("config", "set", "tv1", "mitm_flow_bytes=200m")
         self.assertEqual(
             tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))["mitm_flow_bytes"], "200M"
         )
         self.assertEqual(self.info("tv1")["mitm_flow_bytes"], "200M")
         self.assertIn(
             "a size such as 200M",
-            self.cli("settings", "tv1", "set", "mitm_flow_bytes=lots", ok=False),
+            self.cli("config", "set", "tv1", "mitm_flow_bytes=lots", ok=False),
         )
-        self.cli("settings", "tv1", "unset", "mitm_flow_bytes")
+        self.cli("config", "unset", "tv1", "mitm_flow_bytes")
         self.assertNotIn(
             "mitm_flow_bytes", tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
         )
-        self.cli("settings", "tv1", "set", "link=off")
-        self.assertIn("positive number", self.cli("settings", "tv1", "set", "mem=lots", ok=False))
+        self.cli("config", "set", "tv1", "link=off")
+        self.assertIn("positive number", self.cli("config", "set", "tv1", "mem=lots", ok=False))
         self.cli("delete", "tv2")
         self.assertEqual(sorted(self.listing()), ["tv1"])
+
+    def test_repo_option_is_for_one_command(self):
+        """--repo names the checkout for that command only: config.toml is not written (#238);
+        `library config set repo=DIR` is the one way to store it, and without any known checkout the error says so."""
+        config = os.path.join(self.lib_dir, "config.toml")
+        scratch = os.path.join(self.tmp, "scratch-copy")
+        os.makedirs(scratch)
+        self.cli("library", "config", "show")  # --repo self.repo, for this command
+        self.assertFalse(os.path.exists(config))
+        self.cli("library", "config", "set", "mac_prefix=02:BE:A0")
+        with open(config, "rb") as f:
+            before = f.read()
+        out = subprocess.run(
+            [sys.executable, "-m", "beanjar", "--repo", scratch, "library", "config", "show"],
+            env=self.env, capture_output=True, text=True, timeout=60,
+        ).stdout  # fmt: skip
+        self.assertNotIn(scratch, out)
+        with open(config, "rb") as f:
+            self.assertEqual(f.read(), before)
+        self.assertNotIn("repo", tload(config))
+        self.assertEqual(core.Library(self.lib_dir, scratch).repo, scratch)
+        with open(config, "rb") as f:
+            self.assertEqual(f.read(), before)
+        # first use from a checkout: the running tree, in memory only
+        self.assertEqual(core.Library(self.lib_dir).repo, core.default_repo())
+        with open(config, "rb") as f:
+            self.assertEqual(f.read(), before)
+        # nothing known at all: the error names the command that stores a checkout
+        with mock.patch.object(core, "default_repo", return_value=None):
+            with self.assertRaises(core.Error) as e:
+                core.Library(self.lib_dir).repo
+        self.assertIn("beanjar library config set repo=DIR", str(e.exception))
+        self.cli("library", "config", "set", f"repo={scratch}")
+        self.assertEqual(tload(config)["repo"], scratch)
+        self.assertIn(f"repo: {scratch}", self.cli("library", "config", "show"))
+        self.assertEqual(core.Library(self.lib_dir).repo, scratch)
 
     def test_identity(self):
         """Each VM is a TV of its own: a MAC of the library's mac_prefix and a serial, made at create,
         unique in the library, editable with set; made at start when vm.toml has none."""
-        out = self.cli("library", "config")
+        out = self.cli("library", "config", "show")
         self.assertIn("mac_prefix: a8:23:fe", out)  # the default, shown
         self.cli("create", "tv1", "--import", "--firmware", self.fw_src)
         a = self.vm_toml("tv1")
@@ -558,7 +592,7 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn(b["serial"], serials)
         self.assertGreater(len(macs), 190, "random suffixes")
         # set: validated and normalised
-        self.cli("settings", "tv1", "set", "mac=02:AA:BB:CC:DD:EE", "serial=123abcd45678")
+        self.cli("config", "set", "tv1", "mac=02:AA:BB:CC:DD:EE", "serial=123abcd45678")
         a = self.vm_toml("tv1")
         self.assertEqual((a["mac"], a["serial"]), ("02:aa:bb:cc:dd:ee", "123ABCD45678"))
         for bad in (
@@ -569,8 +603,8 @@ class ManagerTest(unittest.TestCase):
             "serial=" + "9" * 17,
             "serial=ab-c",
         ):
-            self.assertIn(bad.split("=")[0], self.cli("settings", "tv1", "set", bad, ok=False))
-        self.assertIn('"mac": "02:aa:bb:cc:dd:ee"', self.cli("info", "tv1", "--json"))
+            self.assertIn(bad.split("=")[0], self.cli("config", "set", "tv1", bad, ok=False))
+        self.assertIn('"mac": "02:aa:bb:cc:dd:ee"', self.cli("show", "tv1", "--json"))
         # missing: made at the start (the launcher, vmidentity.ensure_identity), written back, with a warning
         cfg = self.vm_toml("tv2")
         del cfg["mac"], cfg["serial"]
@@ -617,7 +651,7 @@ class ManagerTest(unittest.TestCase):
         )
         self.assertEqual(vmidentity.slots_taken(self.lib_dir)[3], dev)
         # not settable, and checked
-        self.assertIn("KEY one of", self.cli("settings", "tv4", "set", "slot=9", ok=False))
+        self.assertIn("KEY one of", self.cli("config", "set", "tv4", "slot=9", ok=False))
         for bad in (0, 255, True, "2"):
             with self.assertRaisesRegex(core.Error, "slot"):
                 vmsettings.validate({"slot": bad})
@@ -725,7 +759,7 @@ class ManagerTest(unittest.TestCase):
         self.assertRegex(read("tv1", "tee-huk").decode(), "^[0-9a-f]{64}\n$")
         # status: how to ssh in, for the VM's layers
         self.assertEqual(self.info("tv1")["ssh"], {})
-        self.cli("settings", "tv1", "set", "layers=normal,rootssh,devmode")
+        self.cli("config", "set", "tv1", "layers=normal,rootssh,devmode")
         st = self.info("tv1")
         self.assertEqual(st["identity"], ident["tv1"])
         self.assertIsNone(st["inspector"])  # stopped: no inspector, no password file
@@ -743,10 +777,10 @@ class ManagerTest(unittest.TestCase):
         # developer mode (its layer.toml), and set refuses it alone
         self.assertIn(
             "layer hbchannel requires devmode",
-            self.cli("settings", "tv1", "set", "layers=normal,hbchannel", ok=False),
+            self.cli("config", "set", "tv1", "layers=normal,hbchannel", ok=False),
         )
         self.assertEqual(self.info("tv1")["ssh"], st["ssh"])
-        self.cli("settings", "tv1", "set", "layers=normal,hbchannel,devmode")
+        self.cli("config", "set", "tv1", "layers=normal,hbchannel,devmode")
         hb = self.info("tv1")["ssh"]
         self.assertEqual(hb["root"], st["ssh"]["root"])
         self.assertIn("devmode", hb)
@@ -775,26 +809,26 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(keys.ensure(ident["tv1"], warn=said.append), [], "nothing more to make")
 
     def test_authorized_keys(self):
-        """beanjar identity authorized-keys NAME: what the guest gets, each key with whose it is. A
-        new VM has only its own client key; add-mine adds the user's ~/.ssh/*.pub (certificates and
+        """beanjar identity authorized-keys show|reset|add NAME: what the guest gets, each key with
+        whose it is. A new VM has only its own client key; add --mine adds the user's ~/.ssh/*.pub (certificates and
         private keys left out) without their comments; reset takes them out again, as for a VM
         made when their keys went in by default."""
         self.cli("create", "tv1", "--import", "--firmware", self.fw_src)
         ident = os.path.join(self.lib_dir, "vms", "tv1", "identity")
         path = os.path.join(ident, "authorized_keys")
 
-        def show(*verb):
-            return json.loads(self.cli("identity", "authorized-keys", "tv1", *verb, "--json"))
+        def show(verb="show", *more):
+            return json.loads(self.cli("identity", "authorized-keys", verb, "tv1", *more, "--json"))
 
         def whose(r):
             return [(k["type"], k["whose"]) for k in r["keys"]]
 
         self.assertEqual(whose(show()), [("ssh-ed25519", "vm")])
         self.assertEqual(show()["path"], path)
-        self.assertEqual(whose(show("add-mine")), [
+        self.assertEqual(whose(show("add", "--mine")), [
             ("ssh-ed25519", "mine"), ("ssh-rsa", "mine"), ("ssh-ed25519", "vm")
         ])  # fmt: skip
-        self.assertEqual(whose(show("add-mine")), whose(show()), "each key once")
+        self.assertEqual(whose(show("add", "--mine")), whose(show()), "each key once")
         with open(path) as f:
             text = f.read()
         self.assertNotIn("me@pc", text)
@@ -814,14 +848,15 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn("@", guest, "no key's comment goes into the guest")
         self.assertIn("beanjar tv1", slurp(os.path.join(ident, "id_ed25519.pub")))
         self.assertIn(
-            "reset: 2 key(s) removed", self.cli("identity", "authorized-keys", "tv1", "reset")
+            "reset: 2 key(s) removed", self.cli("identity", "authorized-keys", "reset", "tv1")
         )
         self.assertEqual(whose(show()), [("ssh-ed25519", "vm")])
         # a line that is not a key is refused rather than handed over as it is
         with open(path, "a") as f:
             f.write("me@pc\n")
         self.assertIn(
-            "not a public key line", self.cli("identity", "authorized-keys", "tv1", ok=False)
+            "not a public key line",
+            self.cli("identity", "authorized-keys", "show", "tv1", ok=False),
         )
 
     def test_ca(self):
@@ -882,8 +917,8 @@ class ManagerTest(unittest.TestCase):
         with open(src, "wb") as f:
             f.write(key)  # no final newline, readable by all: accepted
         os.chmod(src, 0o644)
-        self.assertIn("no model key: the built-in", self.cli("key", "model", "tv1"))
-        out = self.cli("key", "model", "tv1", "install", src)
+        self.assertIn("no model key: the built-in", self.cli("key", "model", "show", "tv1"))
+        out = self.cli("key", "model", "set", "tv1", src)
         self.assertIn("provisioned model key", out)
         self.assertNotIn(key.decode(), out)
         dest = os.path.join(self.lib_dir, "vms", "tv1", "identity", "sestore.toml")
@@ -902,7 +937,7 @@ class ManagerTest(unittest.TestCase):
         for bad in (key[:-1], key + b"x", b"!" * 44, base64.b64encode(os.urandom(31))):
             with open(src, "wb") as f:
                 f.write(bad)
-            out = self.cli("key", "model", "tv1", "install", src, ok=False)
+            out = self.cli("key", "model", "set", "tv1", src, ok=False)
             self.assertIn("model key must", out)
             self.assertNotIn(bad.decode(), out)
         self.assertEqual(
@@ -911,17 +946,16 @@ class ManagerTest(unittest.TestCase):
             "a refused key leaves the old one",
         )
         self.assertIn(
-            "No such file", self.cli("key", "model", "tv1", "install", src + "-none", ok=False)
+            "No such file", self.cli("key", "model", "set", "tv1", src + "-none", ok=False)
         )
         self.assertIn(
-            "only beanjar key model tv1 install takes a FILE",
-            self.cli("key", "model", "tv1", "clear", src, ok=False),
+            "unrecognized arguments", self.cli("key", "model", "unset", "tv1", src, ok=False)
         )
-        self.assertIn("no model key", self.cli("key", "model", "tv1", "clear"))
+        self.assertIn("no model key", self.cli("key", "model", "unset", "tv1"))
         self.assertEqual(tload(dest)["items"], {})
         self.assertFalse(os.path.exists(os.path.join(os.path.dirname(dest), "model-secret")))
-        self.cli("key", "model", "tv1", "clear")  # clearing none is fine
-        self.assertIn("no VM named", self.cli("key", "model", "nope", "clear", ok=False))
+        self.cli("key", "model", "unset", "tv1")  # clearing none is fine
+        self.assertIn("no VM named", self.cli("key", "model", "unset", "nope", ok=False))
 
     def test_new_identity(self):
         """new-identity makes a VM another TV: its state wiped (every disk, as wipe), a new MAC of the
@@ -933,7 +967,7 @@ class ManagerTest(unittest.TestCase):
         src = os.path.join(self.tmp, "key")
         with open(src, "wb") as f:
             f.write(base64.b64encode(os.urandom(32)))
-        self.cli("key", "model", "tv1", "install", src)
+        self.cli("key", "model", "set", "tv1", src)
         vm_dir = os.path.join(self.lib_dir, "vms", "tv1")
         ident = os.path.join(vm_dir, "identity")
         state = os.path.join(vm_dir, "state")
@@ -943,7 +977,7 @@ class ManagerTest(unittest.TestCase):
                 f.write("old")
         with open(os.path.join(ident, "authorized_keys"), "a") as f:
             f.write("ssh-ed25519 AAAAmine user@edit\n")
-        self.cli("vnc", "password", "tv1", "set", input="throwaway-one\n")
+        self.cli("vnc", "password", "set", "tv1", input="throwaway-one\n")
 
         def files(d):
             return {n: slurp(os.path.join(d, n), "rb") for n in os.listdir(d)}
@@ -951,7 +985,7 @@ class ManagerTest(unittest.TestCase):
         before, cfg = files(ident), self.vm_toml("tv1")
         other = (files(os.path.join(self.lib_dir, "vms", "tv2", "identity")), self.vm_toml("tv2"))
         ca = files(os.path.join(self.lib_dir, "ca"))
-        out = self.cli("identity", "renew", "tv1")
+        out = self.cli("identity", "reset", "tv1")
         after, new = files(ident), self.vm_toml("tv1")
         self.assertRegex(new["mac"], r"^02:42:be(:[0-9a-f]{2}){3}$")
         self.assertNotEqual(new["mac"], cfg["mac"])
@@ -991,13 +1025,13 @@ class ManagerTest(unittest.TestCase):
             other,
             "another VM untouched",
         )
-        self.assertIn("no VM named", self.cli("identity", "renew", "nope", ok=False))
+        self.assertIn("no VM named", self.cli("identity", "reset", "nope", ok=False))
         # the DVR key is the set's own: a new identity drops it, its next start makes another
         from beanjar import sestore
 
         sestore.ensure_dvr_key(ident)
         self.assertIn(sestore.DVR_KEY, sestore.load(ident)[1])
-        self.cli("identity", "renew", "tv1")
+        self.cli("identity", "reset", "tv1")
         self.assertNotIn(sestore.DVR_KEY, sestore.load(ident)[1])
         self.assertTrue(sestore.has_model(ident), "the model key kept")
 
@@ -1011,7 +1045,7 @@ class ManagerTest(unittest.TestCase):
         model_key = base64.b64encode(os.urandom(32))
         with open(src, "wb") as f:
             f.write(model_key)
-        self.cli("key", "model", name, "install", src)
+        self.cli("key", "model", "set", name, src)
         os.unlink(src)
         from beanjar import sestore
 
@@ -1028,7 +1062,7 @@ class ManagerTest(unittest.TestCase):
             f.truncate(64 << 20)
         with open(os.path.join(vm_dir, "identity", "authorized_keys"), "a") as f:
             f.write("ssh-ed25519 AAAAmine user@edit\n")
-        self.cli("vnc", "password", name, "set", input="throwaway-one\n")
+        self.cli("vnc", "password", "set", name, input="throwaway-one\n")
         return vm_dir, model_key.decode()
 
     def check_clone(self, src_dir, dst_dir, out, model_key):
@@ -1092,7 +1126,7 @@ class ManagerTest(unittest.TestCase):
 
     def test_clone(self):
         """clone makes DEST a copy of SRC as another TV: settings, state and secure-store keys kept,
-        a new identity as renew makes one, the state not wiped, the EEPROM's serial rewritten; SRC
+        a new identity as identity reset makes one, the state not wiped, the EEPROM's serial rewritten; SRC
         untouched; a DEST that exists refused."""
         src_dir, model_key = self.clone_source()
         os.makedirs(os.path.join(src_dir, "logs"), exist_ok=True)
@@ -1128,7 +1162,7 @@ class ManagerTest(unittest.TestCase):
             snapshot,
             "SRC untouched",
         )
-        self.assertEqual(self.cli_json("key", "model", "tv2")["model_key"], True)
+        self.assertEqual(self.cli_json("key", "model", "show", "tv2")["model_key"], True)
         self.assertIn("exists", self.cli("clone", "tv1", "tv2", ok=False))
         self.assertIn("no VM named", self.cli("clone", "nope", "tv3", ok=False))
         self.assertIn("invalid VM name", self.cli("clone", "tv1", "bad,name", ok=False))
@@ -1186,8 +1220,8 @@ class ManagerTest(unittest.TestCase):
 
         def call_json(host, uri, argv, timeout=None):
             lib = core.Library(libs[host], self.repo)  # opening it gives a VM without a slot one
-            vm = lib.vm(argv[1].removeprefix("local/"))
-            if argv[0] == "info":
+            vm = lib.vm(argv[-1].removeprefix("local/"))
+            if argv[0] == "show":
                 return {"dir": vm.dir, "state": vm.state()[0], "address": vm.address()}
             return {}
 
@@ -1246,9 +1280,9 @@ class ManagerTest(unittest.TestCase):
         vm_dir, model_key = self.clone_source("tv1")
         self.cli("create", "tv2", "--import", "--firmware", self.fw_src)
         self.cli(
-            "settings",
-            "tv1",
+            "config",
             "set",
+            "tv1",
             "link=lan",
             "mode=mitm",
             "address=192.168.1.50/24,192.168.1.1",
@@ -1299,8 +1333,8 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(new_info["address"], info["address"], "the same slot and address")
         self.assertEqual(new_info["lan_hostname"], "tv-renamed")
         self.assertEqual(new_info["state"], "Off")
-        self.assertEqual(self.cli_json("key", "model", "tv-renamed")["model_key"], True)
-        self.assertEqual(self.cli("vnc", "password", "tv-renamed", "show"), "throwaway-one\n")
+        self.assertEqual(self.cli_json("key", "model", "show", "tv-renamed")["model_key"], True)
+        self.assertEqual(self.cli("vnc", "password", "show", "tv-renamed"), "throwaway-one\n")
         self.assertNotIn(model_key, json.dumps(r))
         self.assertEqual(self.tree_files(os.path.join(self.lib_dir, "vms", "tv2")), other)
         self.assertEqual(self.leftovers(), [])
@@ -1449,7 +1483,7 @@ class ManagerTest(unittest.TestCase):
         self.assertIn(FW, self.cli("list"))
         self.assertEqual(
             sorted(os.listdir(self.lib_dir)),
-            [".slots.lock", "ca", "ca.lock", "config.toml", "vms"],
+            [".slots.lock", "ca", "ca.lock", "vms"],
             "no firmware library",
         )
         self.assertEqual(self.leftovers(), [])
@@ -1756,7 +1790,7 @@ class ManagerTest(unittest.TestCase):
         ext_name = "05.06.10.02-HE_DTV_WT1H_AFAAABAA"  # a firmware this tree boots, by its name
         ext = self.fw_dir(ext_name)
         ext_before = self.tree(ext)
-        self.cli("settings", "a", "set", f"fw={ext}")
+        self.cli("config", "set", "a", f"fw={ext}")
         self.assertEqual(self.vm_toml("a")["fw"], ext)
         env = core.vm_launcher_env(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))
         self.assertEqual(
@@ -1774,24 +1808,24 @@ class ManagerTest(unittest.TestCase):
         unknown = self.fw_dir("unknown")
         self.assertIn(
             "firmware might be unsupported",
-            self.cli("settings", "a", "set", f"fw={unknown}", ok=False),
+            self.cli("config", "set", "a", f"fw={unknown}", ok=False),
         )
         self.cli("start", "a")
         self.cli("stop", "a")
-        self.assertIn("no rootfs.pak", self.cli("settings", "a", "set", f"fw={self.tmp}", ok=False))
+        self.assertIn("no rootfs.pak", self.cli("config", "set", "a", f"fw={self.tmp}", ok=False))
         self.assertIn(
             "no rootfs.pak",
-            self.cli("settings", "a", "set", "fw=" + FW, ok=False),
+            self.cli("config", "set", "a", "fw=" + FW, ok=False),
             "no firmware names",
         )
         # back to its own firmware/: fw= (or the path of its firmware/) drops the key
-        self.cli("settings", "a", "unset", "fw")
+        self.cli("config", "unset", "a", "fw")
         self.assertNotIn("fw", self.vm_toml("a"))
-        self.cli("settings", "a", "set", f"fw={ext}")
-        self.cli("settings", "a", "set", f"fw={own}")
+        self.cli("config", "set", "a", f"fw={ext}")
+        self.cli("config", "set", "a", f"fw={own}")
         self.assertNotIn("fw", self.vm_toml("a"))
         # deleting a VM deletes its firmware, and nothing it does not own
-        self.cli("settings", "b", "set", f"fw={ext}")
+        self.cli("config", "set", "b", f"fw={ext}")
         self.cli("delete", "b")
         self.assertFalse(os.path.exists(os.path.join(self.lib_dir, "vms", "b")))
         self.cli("delete", "a")
@@ -1814,34 +1848,36 @@ class ManagerTest(unittest.TestCase):
         rows = self.listing()
         self.assertEqual((rows["a"]["tags"], rows["b"]["tags"]), (["scratch", "camera"], []))
         self.assertEqual(self.info("a")["tags"], ["scratch", "camera"])
-        self.assertIn("tags: scratch,camera", self.cli("info", "a"))
+        self.assertIn("tags: scratch,camera", self.cli("show", "a"))
         self.assertIn("scratch,camera", self.cli("list"))
         names = lambda *w: [r["name"] for r in self.cli_json("list", *w)]
         self.assertEqual(names("--tag", "scratch"), ["a"])
         self.assertEqual(names("--tag", "SCRATCH", "--tag", "camera"), ["a"])
         self.assertEqual(names("--tag", "scratch", "--tag", "keep"), [])
         self.assertIn("tagged keep", self.cli("list", "--tag", "keep"))
-        # tag: shown, added (+T or T) and removed (-T), --json anywhere
-        self.assertEqual(self.cli("tag", "b").strip(), "b: no tags")
+        # tags are a config key: shown, set (in place of the ones it has) and unset
+        self.assertIn("tags: (default)", self.cli("config", "show", "b"))
+        self.assertIsNone(self.cli_json("config", "show", "b")["tags"])
         self.assertEqual(
-            self.cli_json("tag", "b", "+keep", "Lab-2", "-nope"),
-            {"name": "b", "tags": ["keep", "lab-2"]},
+            self.cli_json("config", "set", "b", "tags=keep,Lab-2,keep")["tags"], ["keep", "lab-2"]
         )
-        self.assertEqual(self.cli("tag", "a", "-scratch", "+keep").strip(), "a: camera, keep")
+        self.assertIn("tags: camera,keep", self.cli("config", "set", "a", "tags=camera,keep"))
         self.assertEqual(names("--tag", "keep"), ["a", "b"])
-        for bad in ("+-x", "+a_b", "+" + "x" * 33, "+"):
+        for bad in ("-x", "a_b", "x" * 33, "a,,b"):
             with self.subTest(bad):
-                self.assertIn("tag ", self.cli("tag", "b", bad, ok=False))
-        self.assertIn("unknown option --nope", self.cli("tag", "b", "--nope", ok=False))
+                self.assertIn("tag ", self.cli("config", "set", "b", f"tags={bad}", ok=False))
+        self.assertIn("unset b tags", self.cli("config", "set", "b", "tags=", ok=False))
         self.assertIn("tag 'a b'", self.cli("create", "c", "--firmware", self.fw_src,
                                              "--tag", "a b", ok=False))  # fmt: skip
         self.assertIn("tag", self.cli("list", "--tag", "-x", ok=False))
         # while it runs, and the launch does not see them
         self.cli("start", "b")
-        self.assertEqual(self.cli_json("tag", "b", "-keep")["tags"], ["lab-2"])
+        self.assertEqual(self.cli_json("config", "set", "b", "tags=lab-2")["tags"], ["lab-2"])
         self.assertEqual(self.listing()["b"]["tags"], ["lab-2"])
+        self.assertIn("not off", self.cli("config", "set", "b", "tags=x", "smp=2", ok=False))
+        self.assertEqual(self.listing()["b"]["tags"], ["lab-2"], "nothing changed")
         self.cli("stop", "b")
-        self.cli_json("tag", "b", "-lab-2")
+        self.assertIsNone(self.cli_json("config", "unset", "b", "tags")["tags"])
         self.assertNotIn("tags", self.vm_toml("b"))
         # clone copies them; a hand-edited vm.toml with a bad tag is refused on reading
         self.cli("clone", "a", "d")
@@ -1851,13 +1887,14 @@ class ManagerTest(unittest.TestCase):
             text = f.read()
         with open(path, "w") as f:
             f.write(text.replace('tags = ["camera", "keep"]', 'tags = ["Camera"]'))
-        self.assertIn("lower-case", self.cli("info", "d", ok=False))
+        self.assertIn("lower-case", self.cli("show", "d", ok=False))
 
     def test_reason(self):
-        """Why a VM runs (start --reason, reason): in list, info and --json; stop refuses it
-        without --force; it lives in the unit's runtime directory, gone with the unit."""
+        """Why a VM runs (start --reason, status set NAME reason=TEXT): in list, show, status show
+        and --json; stop refuses it without --force; it lives in the unit's runtime directory,
+        gone with the unit."""
         self.cli("create", "a", "--import", "--firmware", self.fw_src)
-        self.assertIn("is off", self.cli("reason", "a", "x", ok=False))
+        self.assertIn("is off", self.cli("status", "set", "a", "reason=x", ok=False))
         if not self.systemd:
             # the setsid fallback has no unit to hold a reason: refused before the start
             self.assertIn("needs a user systemd", self.cli("start", "a", "--reason", "x", ok=False))
@@ -1876,7 +1913,7 @@ class ManagerTest(unittest.TestCase):
         listing = self.cli("list")
         self.assertIn("REASON", listing)
         self.assertIn("bisecting the camera's MJPEG pa\u2026", listing)
-        self.assertIn("reason.text: " + long.strip(), self.cli("info", "a"))
+        self.assertIn("reason.text: " + long.strip(), self.cli("show", "a"))
         # stop refuses, saying why, and leaves it running
         out = self.cli("stop", "a", ok=False)
         self.assertIn("runs for a reason: " + long.strip(), out)
@@ -1884,16 +1921,22 @@ class ManagerTest(unittest.TestCase):
         self.assertIn("--force", out)
         self.assertEqual(self.listing()["a"]["state"], "Running")
         # changed, then cleared: stop needs no --force then
-        self.assertIn("a: keep (set ", self.cli("reason", "a", "  keep\n "))
-        self.assertIsNone(self.cli_json("reason", "a", "")["reason"])
-        self.assertIn("a: no reason", self.cli("reason", "a"))
-        self.assertIn("at most", self.cli("reason", "a", "x" * 301, ok=False))
-        self.cli("reason", "a", "again")
+        self.assertEqual(self.cli_json("status", "show", "a"), {"name": "a", "reason": reason})
+        self.assertIn("a: keep (set ", self.cli("status", "set", "a", "reason=  keep\n "))
+        self.assertIsNone(self.cli_json("status", "unset", "a", "reason")["reason"])
+        self.assertIn("a: no reason", self.cli("status", "show", "a"))
+        self.assertIn("at most", self.cli("status", "set", "a", "reason=" + "x" * 301, ok=False))
+        self.assertIn("status unset a reason", self.cli("status", "set", "a", "reason=", ok=False))
+        self.assertIn(
+            "KEY=VALUE with KEY one of reason", self.cli("status", "set", "a", "x=1", ok=False)
+        )
+        self.cli("status", "set", "a", "reason=again", "--by", "agent-8")
+        self.assertEqual(self.cli_json("status", "show", "a")["reason"]["by"], "agent-8")
         out = self.cli("stop", "a", "--force")
         self.assertIn("although it runs for a reason: again", out)
         self.assertFalse(os.path.exists(path), "systemd removed it with the unit")
         self.assertIsNone(self.listing()["a"]["reason"])
-        self.assertIn("is off", self.cli("reason", "a", "x", ok=False))
+        self.assertIn("is off", self.cli("status", "set", "a", "reason=x", ok=False))
         # a new start has no reason of the last one
         self.cli("start", "a")
         self.assertIsNone(self.listing()["a"]["reason"])
@@ -1910,7 +1953,7 @@ class ManagerTest(unittest.TestCase):
         self.cli("create", "a", "--import", "--firmware", self.fw_src, "--mem", "1024")
         rows = self.listing()
         self.assertEqual((rows["a"]["mem"], rows["a"]["guest_ram"]), (1024, 1024))
-        self.cli("settings", "a", "set", "userland=qemu-user")
+        self.cli("config", "set", "a", "userland=qemu-user")
         rows = self.listing()
         self.assertEqual((rows["a"]["mem"], rows["a"]["guest_ram"]), (1024, 1536))
         self.assertRegex(self.cli("list"), r"\b1024\+512\b")
@@ -1987,8 +2030,8 @@ class ManagerTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.lib_dir, "vms", "b", "start.lock")))
         self.assertIn("not off", self.cli("wipe", "a", ok=False))
         self.assertIn("not off", self.cli("delete", "a", ok=False))
-        self.assertIn("not off", self.cli("settings", "a", "set", "mem=1", ok=False))
-        self.assertIn("not off", self.cli("key", "model", "a", "clear", ok=False))
+        self.assertIn("not off", self.cli("config", "set", "a", "mem=1", ok=False))
+        self.assertIn("not off", self.cli("key", "model", "unset", "a", ok=False))
         # the library's addresses: changed only while every VM of it (and its development libraries) is off
         self.assertIn(
             "every VM of the library is off: stop a",
@@ -1998,7 +2041,7 @@ class ManagerTest(unittest.TestCase):
             "addresses: 127.0.1", self.cli("library", "config", "set", "addresses=127.0.1")
         )  # no change: allowed
         mac = self.vm_toml("a")["mac"]
-        self.assertIn("not off", self.cli("identity", "renew", "a", ok=False))
+        self.assertIn("not off", self.cli("identity", "reset", "a", ok=False))
         self.assertIn(
             "a is running: clone copies a VM that is off", self.cli("clone", "a", "a2", ok=False)
         )
@@ -2038,16 +2081,16 @@ class ManagerTest(unittest.TestCase):
         info = self.info("a")
         for k in ("name", "state", "pid", "vnc", "dir", "model_key", "identity", "ssh"):
             self.assertIn(k, info)
-        settings = self.cli_json("settings", "a")
-        self.assertEqual(set(settings), set(vmsettings.SETTINGS))
+        settings = self.cli_json("config", "show", "a")
+        self.assertEqual(set(settings), {*vmsettings.SETTINGS, "tags"})
         self.assertIsNone(settings["mem"], "unset: the default")
-        self.assertEqual(self.cli_json("settings", "a", "set", "smp=2")["smp"], 2)
-        self.assertIsNone(self.cli_json("settings", "a", "unset", "listen")["listen"])
+        self.assertEqual(self.cli_json("config", "set", "a", "smp=2")["smp"], 2)
+        self.assertIsNone(self.cli_json("config", "unset", "a", "listen")["listen"])
         # broadcast has an unset: the firmware's own, else the chip's default board
-        self.assertIsNone(self.cli_json("settings", "a", "unset", "broadcast")["broadcast"])
-        self.assertIn("mac_prefix", self.cli_json("library", "config"))
+        self.assertIsNone(self.cli_json("config", "unset", "a", "broadcast")["broadcast"])
+        self.assertIn("mac_prefix", self.cli_json("library", "config", "show"))
         self.assertEqual(
-            self.cli_json("host", "config"),
+            self.cli_json("host", "config", "show"),
             {
                 "max_running": None,
                 "firmware_dirs": ["/srv/beanjar/firmware"],
@@ -2055,42 +2098,41 @@ class ManagerTest(unittest.TestCase):
                 "runner": "auto",
             },
         )
-        where = self.cli_json("vnc", "password", "a")
-        self.assertEqual(set(where), {"name", "password_file"}, "never the password")
+        where = {"password_file": self.cli_json("show", "a")["vnc_password_file"]}
         self.assertEqual(
-            self.cli_json("vnc", "password", "a", "show")["password"],
+            self.cli_json("vnc", "password", "show", "a")["password"],
             slurp(where["password_file"]).strip(),
         )
         self.assertEqual(
-            set(self.cli_json("vnc", "password", "a", "reset")), {"name", "password_file"}
+            set(self.cli_json("vnc", "password", "reset", "a")), {"name", "password_file"}
         )
-        self.assertFalse(self.cli_json("key", "model", "a")["model_key"])
+        self.assertFalse(self.cli_json("key", "model", "show", "a")["model_key"])
         self.assertEqual(self.cli_json("key", "list", "a")["name"], "a")
         self.assertEqual(self.cli_json("wipe", "a")["parts"], None)
-        self.assertEqual(self.cli_json("identity", "renew", "b")["name"], "b")
+        self.assertEqual(self.cli_json("identity", "reset", "b")["name"], "b")
         started = self.cli_json("start", "a")
         self.assertEqual((started["name"], started["state"]), ("a", "running"))
         self.assertTrue(started["pid"])
         self.assertEqual(self.cli_json("vnc", "stop", "a"), {"name": "a", "stopped": False})
         self.assertEqual(self.cli_json("viewer", "close", "a"), {"name": "a", "closed": False})
         # a failed operation: 1; text on stderr, nothing on stdout
-        rc, out, err = self.run_cli("settings", "a", "set", "mem=1")
+        rc, out, err = self.run_cli("config", "set", "a", "mem=1")
         self.assertEqual((rc, out), (1, ""))
         self.assertIn("beanjar: VM a is not off", err)
-        error = self.cli_json("settings", "a", "set", "mem=1", ok=False)
+        error = self.cli_json("config", "set", "a", "mem=1", ok=False)
         self.assertIn("not off", error["error"])
         self.assertNotIn("usage", error)
         self.assertEqual(self.cli_json("stop", "a"), {"name": "a", "state": "off"})
-        self.assertIn("no VM named", self.cli_json("info", "nope", ok=False)["error"])
+        self.assertIn("no VM named", self.cli_json("show", "nope", ok=False)["error"])
         # usage errors: 2, from argparse and from the commands' own checks alike
         for argv in (
             ["bogus"],
-            ["settings", "a", "set"],
-            ["settings", "a", "set", "fw="],
-            ["settings", "a", "unset", "mem"],
-            ["settings", "a", "set", "nokey=1"],
-            ["vnc", "password", "a", "show", "F"],
-            ["key", "model", "a", "install"],
+            ["config", "set", "a"],
+            ["config", "set", "a", "fw="],
+            ["config", "unset", "a", "mem"],
+            ["config", "set", "a", "nokey=1"],
+            ["vnc", "password", "show", "a", "F"],
+            ["key", "model", "set", "a"],
         ):
             with self.subTest(argv):
                 rc, out, err = self.run_cli(*argv, "--json")
@@ -2098,8 +2140,8 @@ class ManagerTest(unittest.TestCase):
                 self.assertTrue(json.loads(err)["usage"])
                 rc, out, err = self.run_cli(*argv)
                 self.assertEqual((rc, out), (2, ""), err)
-        rc, out, err = self.run_cli("settings", "a", "set", "fw=")
-        self.assertIn("beanjar settings a unset fw", err)
+        rc, out, err = self.run_cli("config", "set", "a", "fw=")
+        self.assertIn("beanjar config unset a fw", err)
         self.cli("delete", "b", "--json")
         self.assertEqual([r["name"] for r in self.cli_json("list")], ["a"])
 
@@ -2115,12 +2157,12 @@ class ManagerTest(unittest.TestCase):
         path = os.path.join(cfg_home, "beanjar", "config.toml")
         self.assertEqual(hostconfig.global_config_path(), path)
         self.addCleanup(lambda: os.path.exists(path) and os.unlink(path))
-        self.assertIn("max_running: (not set: no limit)", self.cli("host", "config"))
+        self.assertIn("max_running: (not set: no limit)", self.cli("host", "config", "show"))
         self.assertFalse(os.path.exists(self.lib_dir), "host config makes no library")
         self.assertIn("max_running: 2", self.cli("host", "config", "set", "max_running=2"))
         self.assertEqual(tload(path), {"max_running": 2})
         self.assertTrue(slurp(path).startswith("# "), "no header comment")
-        self.assertIn("max_running: 2", self.cli("host", "config"))
+        self.assertIn("max_running: 2", self.cli("host", "config", "show"))
         self.assertEqual(hostconfig.max_running(), 2)
         for bad in ("0", "-1", "two", "1.5", "true"):
             with self.subTest(bad):
@@ -2148,12 +2190,14 @@ class ManagerTest(unittest.TestCase):
         self.assertIsNone(hostconfig.max_running())
         with open(path, "w") as f:
             f.write("max_running = 0\n")
-        self.assertIn(f"{path}: max_running is how many VMs", self.cli("host", "config", ok=False))
+        self.assertIn(
+            f"{path}: max_running is how many VMs", self.cli("host", "config", "show", ok=False)
+        )
         # firmware_dirs: the host's firmware collections, default /srv/beanjar/firmware
         os.unlink(path)
         self.assertIn(
             "firmware_dirs: /srv/beanjar/firmware (not set: the default)",
-            self.cli("host", "config"),
+            self.cli("host", "config", "show"),
         )
         self.assertEqual(paths.firmware_dirs(), ["/srv/beanjar/firmware"])
         self.assertIn(
@@ -2174,7 +2218,7 @@ class ManagerTest(unittest.TestCase):
         path = hostconfig.global_config_path()
         self.addCleanup(lambda: os.path.exists(path) and os.unlink(path))
         self.assertEqual(capacity.memory_headroom_mib(), 1024)
-        self.assertEqual(self.cli_json("host", "config")["memory_headroom_mib"], 1024)
+        self.assertEqual(self.cli_json("host", "config", "show")["memory_headroom_mib"], 1024)
         hostconfig.write_global_config({"hosts": {"lab": {"uri": "ssh://example.invalid"}}})
         self.cli("host", "config", "set", "memory_headroom_mib=896")
         self.assertEqual(capacity.memory_headroom_mib(), 896)
@@ -2232,7 +2276,7 @@ class ManagerTest(unittest.TestCase):
                 f.write(f"memory_headroom_mib = {bad}\n")
             self.assertIn(
                 f"{path}: memory_headroom_mib",
-                self.cli("host", "config", ok=False),
+                self.cli("host", "config", "show", ok=False),
             )
 
     def test_max_running(self):
@@ -2362,7 +2406,7 @@ class ManagerTest(unittest.TestCase):
             (["ares-fake", "-d", "tv2"], "VM tv2 has no devmode layer"),
             (["ares-fake", "--root", "-d", "tv2"], "VM tv2 has no root SSH"),
             (["ares-fake", "--root", "-d", "tv2"], "hbchannel (with devmode) or rootssh."),
-            (["ares-fake", "--root", "-d", "tv2"], "settings tv2 set layers=normal,gl,rootssh`"),
+            (["ares-fake", "--root", "-d", "tv2"], "config set tv2 layers=normal,gl,rootssh`"),
             (["ares-fake", "--root", "-d", "tv1"], "VM tv1 is not running"),
         ):
             with self.subTest(args):
@@ -2502,15 +2546,15 @@ class ManagerTest(unittest.TestCase):
             self.lib().vm("a").listeners(), [("127.0.1.1", p) for p in ssap + [9922, 9991]]
         )
         for bad in ("lan", "::", "1.2.3", "0.0.0.0/0"):
-            self.assertIn("listen", self.cli("settings", "a", "set", f"listen={bad}", ok=False))
-        self.cli("settings", "a", "set", "listen= 127.0.1.201")
+            self.assertIn("listen", self.cli("config", "set", "a", f"listen={bad}", ok=False))
+        self.cli("config", "set", "a", "listen= 127.0.1.201")
         path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
         self.assertIn('listen = "127.0.1.201"', slurp(path))
         self.assertEqual(core.vm_launcher_env(path)["LISTEN_ADDRESS"], "127.0.1.201")
         st = self.info("a")
         self.assertEqual((st["listen"], st["address"]), ("127.0.1.201", "127.0.1.1"))
         self.assertTrue(st["ssh"]["devmode"].endswith("prisoner@127.0.1.201"), st["ssh"])
-        self.cli("settings", "b", "set", "listen=0.0.0.0")
+        self.cli("config", "set", "b", "listen=0.0.0.0")
         st = self.info("b")
         self.assertTrue(
             st["ssh"]["devmode"].endswith("prisoner@127.0.1.2"),
@@ -2519,7 +2563,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(
             self.lib().vm("b").listeners(), [("0.0.0.0", p) for p in ssap + [9922, 9991]]
         )
-        self.cli("settings", "c", "set", "link=off", "listen=127.0.1.201")
+        self.cli("config", "set", "c", "link=off", "listen=127.0.1.201")
         self.assertEqual(self.lib().vm("c").listeners(), [], "link=off forwards nothing")
         self.cli("start", "a")
         out = self.cli("start", "b", ok=False)
@@ -2539,9 +2583,46 @@ class ManagerTest(unittest.TestCase):
                 "cannot start VM a: its service port 127.0.1.201:9922 (listen): port 9922 is taken",
                 out,
             )
-        self.cli("settings", "a", "unset", "listen")
+        self.cli("config", "unset", "a", "listen")
         self.assertNotIn("listen", slurp(path))
         self.assertEqual(self.lib().vm("a").listeners()[0], ("127.0.1.1", 3000))
+
+    def test_lg_services(self):
+        """lg_services (network.lg_services, NET_LG_SERVICES): real written out, mock the default
+        and not written, a bad value refused."""
+        self.cli("create", "a", "--import", "--firmware", self.fw_src)
+        path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
+        self.assertNotIn("lg_services", slurp(path))
+        self.cli("config", "set", "a", "lg_services=real")
+        self.assertIn('lg_services = "real"', slurp(path))
+        self.assertEqual(core.vm_launcher_env(path)["NET_LG_SERVICES"], "real")
+        self.assertIn("lg_services", self.cli("config", "set", "a", "lg_services=on", ok=False))
+        self.cli("config", "set", "a", "lg_services=mock")
+        self.assertNotIn("lg_services", slurp(path))
+        self.cli("config", "set", "a", "lg_services=real")
+        self.cli("config", "unset", "a", "lg_services")
+        self.assertNotIn("lg_services", slurp(path))
+
+    def test_lan_access(self):
+        """lan_access (network.lan_access, NET_LAN_ACCESS): on written out, off the default and
+        not; `unset` brings off back; a link=lan VM refuses it."""
+        self.cli("create", "a", "--import", "--firmware", self.fw_src)
+        path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
+        self.assertNotIn("lan_access", slurp(path))
+        self.cli("config", "set", "a", "lan_access=on")
+        self.assertIn('lan_access = "on"', slurp(path))
+        self.assertEqual(core.vm_launcher_env(path)["NET_LAN_ACCESS"], "on")
+        self.assertIn("lan_access", self.cli("config", "set", "a", "lan_access=yes", ok=False))
+        self.cli("config", "set", "a", "lan_access=off")
+        self.assertNotIn("lan_access", slurp(path))
+        self.cli("config", "set", "a", "lan_access=on")
+        self.cli("config", "unset", "a", "lan_access")
+        self.assertNotIn("lan_access", slurp(path))
+        self.cli("config", "set", "a", "lan_access=on")
+        self.assertIn(
+            "lan_access is for link=nat",
+            self.cli("config", "set", "a", "link=lan", ok=False),
+        )
 
     def test_forward(self):
         """forward (network.forward, FORWARD): the VM's own guest ports, normalised by set
@@ -2551,9 +2632,9 @@ class ManagerTest(unittest.TestCase):
             self.skipTest("this host listens on 8080 or 8081 on every address")
         self.cli("create", "a", "--import", "--firmware", self.fw_src)
         path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
-        self.assertIsNone(self.cli_json("settings", "a")["forward"])
+        self.assertIsNone(self.cli_json("config", "show", "a")["forward"])
         self.assertEqual(
-            self.cli_json("settings", "a", "set", "forward= 8080, 8081:80")["forward"],
+            self.cli_json("config", "set", "a", "forward= 8080, 8081:80")["forward"],
             "8080,8081:80",
         )
         self.assertIn('forward = "8080,8081:80"', slurp(path))
@@ -2569,12 +2650,12 @@ class ManagerTest(unittest.TestCase):
             ("8080,8080", "twice"),
         ):
             with self.subTest(bad=bad):
-                self.assertIn(why, self.cli("settings", "a", "set", f"forward={bad}", ok=False))
+                self.assertIn(why, self.cli("config", "set", "a", f"forward={bad}", ok=False))
         self.assertIn('forward = "8080,8081:80"', slurp(path), "a refused value changes nothing")
-        self.cli("settings", "a", "set", "forward=9922")
+        self.cli("config", "set", "a", "forward=9922")
         self.assertIn(
             "already the devmode layer's",
-            self.cli("settings", "a", "set", "layers=normal,gl,devmode", ok=False),
+            self.cli("config", "set", "a", "layers=normal,gl,devmode", ok=False),
         )
         # another listener of the host on a forwarded port refuses the start, naming it
         with socket.socket() as s:
@@ -2583,32 +2664,32 @@ class ManagerTest(unittest.TestCase):
             s.listen()
             self.assertIn("127.0.1.1:9922", self.cli("start", "a", ok=False))
         self.assertEqual(self.listing()["a"]["state"], "Off")
-        self.cli("settings", "a", "unset", "forward")
+        self.cli("config", "unset", "a", "forward")
         self.assertNotIn("forward", slurp(path))
         self.assertEqual([p for _a, p in self.lib().vm("a").listeners()], [3000, 3001])
-        self.assertIn("unset forward", self.cli("settings", "a", "set", "forward=", ok=False))
+        self.assertIn("unset a forward", self.cli("config", "set", "a", "forward=", ok=False))
 
     def test_debug_mode_setting(self):
         """debug_mode: debug is the default and is not written out; event and release are, as
         DEBUG_MODE; unset (or debug) brings the default back; anything else is refused."""
         self.cli("create", "a", "--import", "--firmware", self.fw_src)
         path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
-        self.assertIsNone(self.cli_json("settings", "a")["debug_mode"])
+        self.assertIsNone(self.cli_json("config", "show", "a")["debug_mode"])
         self.assertEqual(
-            self.cli_json("settings", "a", "set", "debug_mode=release")["debug_mode"], "release"
+            self.cli_json("config", "set", "a", "debug_mode=release")["debug_mode"], "release"
         )
         self.assertIn('debug_mode = "release"', slurp(path))
         self.assertEqual(core.vm_launcher_env(path)["DEBUG_MODE"], "release")
         self.assertEqual(self.info("a")["debug_mode"], "release")
-        self.assertIn("debug_mode", self.cli("settings", "a", "set", "debug_mode=quiet", ok=False))
-        self.assertIn("unset", self.cli("settings", "a", "set", "debug_mode=", ok=False))
+        self.assertIn("debug_mode", self.cli("config", "set", "a", "debug_mode=quiet", ok=False))
+        self.assertIn("unset", self.cli("config", "set", "a", "debug_mode=", ok=False))
         self.assertEqual(
-            self.cli_json("settings", "a", "set", "debug_mode=event")["debug_mode"], "event"
+            self.cli_json("config", "set", "a", "debug_mode=event")["debug_mode"], "event"
         )
-        self.assertIsNone(self.cli_json("settings", "a", "unset", "debug_mode")["debug_mode"])
+        self.assertIsNone(self.cli_json("config", "unset", "a", "debug_mode")["debug_mode"])
         self.assertNotIn("debug_mode", slurp(path))
-        self.cli("settings", "a", "set", "debug_mode=release")
-        self.cli("settings", "a", "set", "debug_mode=debug")
+        self.cli("config", "set", "a", "debug_mode=release")
+        self.cli("config", "set", "a", "debug_mode=debug")
         self.assertNotIn("debug_mode", slurp(path))
 
     def test_concurrent_starts_admitted_once(self):
@@ -2860,15 +2941,15 @@ class ManagerTest(unittest.TestCase):
         self.cli("create", "a", "--import", "--firmware", self.fw_src)
         serial = core.vmconfig.read(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))["serial"]
         self.assertEqual(seen(), [f"force {serial}"])
-        self.cli("settings", "a", "set", "smp=2")
+        self.cli("config", "set", "a", "smp=2")
         self.assertEqual(len(seen()), 1)
-        self.cli("settings", "a", "set", "serial=NEW123")
+        self.cli("config", "set", "a", "serial=NEW123")
         self.assertEqual(seen()[-1], "ensure NEW123")
-        self.cli("settings", "a", "set", "debug_mode=release")
+        self.cli("config", "set", "a", "debug_mode=release")
         self.assertEqual(len(seen()), 3)
         self.cli("prepare", "a")
         self.assertEqual(seen()[-1], "force NEW123")
-        self.cli("identity", "renew", "a")
+        self.cli("identity", "reset", "a")
         renewed = core.vmconfig.read(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))["serial"]
         self.assertEqual(seen()[-1], f"ensure {renewed}")
         open(os.path.join(self.lib_dir, "vms", "a", "fail-prepare"), "w").close()
@@ -2891,7 +2972,7 @@ class ManagerTest(unittest.TestCase):
                 open(os.path.join(state, p + ".img"), "w").close()
 
         fill()
-        self.cli("vnc", "password", "a", "set", input="throwaway-kept\n")
+        self.cli("vnc", "password", "set", "a", input="throwaway-kept\n")
         self.cli("wipe", "a", "--part", "db8", "--part", "appstore")
         self.assertEqual(
             sorted(os.listdir(state)),
@@ -2905,7 +2986,7 @@ class ManagerTest(unittest.TestCase):
         self.cli("wipe", "a")
         self.assertFalse(os.path.exists(state) and os.listdir(state))
         # the state goes, the identity's VNC password stays
-        self.assertEqual(self.cli("vnc", "password", "a", "show"), "throwaway-kept\n")
+        self.assertEqual(self.cli("vnc", "password", "show", "a"), "throwaway-kept\n")
 
     # ---------------------------------------------------------------- viewer
     def test_view_unview(self):
@@ -3026,7 +3107,7 @@ class ManagerTest(unittest.TestCase):
         self.assertIn(f"--listen {address} --port {chosen} ", slurp(log))
         self.cli("vnc", "stop", "a")
         # a password set with vnc password, also off loopback; it reaches beanjar-vnc only in the file
-        self.cli("vnc", "password", "a", "set", input="throwaway pass\n")
+        self.cli("vnc", "password", "set", "a", input="throwaway pass\n")
         out = self.cli("vnc", "start", "--listen", "192.0.2.1", "a", "--port", str(port))
         self.assertIn(f"vnc://192.0.2.1:{port}, password in {password_file}", out)
         self.assertEqual(slurp(password_file), "throwaway pass\n")
@@ -3039,7 +3120,7 @@ class ManagerTest(unittest.TestCase):
         )
         self.assertEqual(self.info("a")["vnc"]["url"], f"vnc://192.0.2.1:{port}")
         # a change while it runs: written, and beanjar-vnc keeps its own until it restarts
-        out = self.cli("vnc", "password", "a", "reset")
+        out = self.cli("vnc", "password", "reset", "a")
         self.assertIn(f"beanjar-vnc (pid {vpid}) keeps the old password until it restarts", out)
         self.assertIn("takes effect at the next beanjar vnc start", out)
         self.assertTrue(core.proc_alive(vpid, "beanjar-vnc"))
@@ -3069,30 +3150,29 @@ class ManagerTest(unittest.TestCase):
         ident = os.path.join(self.lib_dir, "vms", "a", "identity")
         path = os.path.join(ident, "vnc.password")
         self.assertFalse(os.path.exists(path))
-        out = self.cli("vnc", "password", "a")
-        self.assertEqual(
-            out,
-            f"a: VNC password in {path} (any user name; beanjar vnc password a show prints it)\n",
-        )
+        out = self.cli("show", "a")
+        self.assertIn(f"vnc_password_file: {path}\n", out)
+        self.assertFalse(os.path.exists(path), "show names it, makes none")
+        first = self.cli("vnc", "password", "show", "a")
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
-        first = slurp(path)
+        self.assertEqual(slurp(path), first)
         self.assertRegex(first, r"^[2-9a-hjkmnp-z]{20}\n$")
-        self.assertNotIn(first.strip(), out, "not printed without show")
-        self.assertEqual(self.cli("vnc", "password", "a", "show"), first, "persistent")
+        self.assertNotIn(first.strip(), self.cli("show", "a"), "not printed by show NAME")
+        self.assertEqual(self.cli("vnc", "password", "show", "a"), first, "persistent")
         self.assertEqual(slurp(path), first)
         # set from stdin (no FILE, or -) and from a file; a CRLF line end is not part of it
-        out = self.cli("vnc", "password", "a", "set", input="Throwaway 1!\n")
+        out = self.cli("vnc", "password", "set", "a", input="Throwaway 1!\n")
         self.assertIn("takes effect at the next beanjar vnc start", out)
         self.assertNotIn("Throwaway", out)
         self.assertEqual(slurp(path), "Throwaway 1!\n")
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
-        self.cli("vnc", "password", "a", "set", "-", input="throwaway-2\r\n")
-        self.assertEqual(self.cli("vnc", "password", "a", "show"), "throwaway-2\n")
+        self.cli("vnc", "password", "set", "a", "-", input="throwaway-2\r\n")
+        self.assertEqual(self.cli("vnc", "password", "show", "a"), "throwaway-2\n")
         src = os.path.join(self.tmp, "pw")
         with open(src, "w") as f:
             f.write("throwaway-3")
-        self.cli("vnc", "password", "a", "set", src)
-        self.assertEqual(self.cli("vnc", "password", "a", "show"), "throwaway-3\n")
+        self.cli("vnc", "password", "set", "a", src)
+        self.assertEqual(self.cli("vnc", "password", "show", "a"), "throwaway-3\n")
         # refused, and the password kept: empty, not one line, not printable ASCII, a space at
         # an end, longer than RSA-AES's 255 bytes
         for given, why in (
@@ -3106,29 +3186,29 @@ class ManagerTest(unittest.TestCase):
             ("x" * 256 + "\n", "RSA-AES takes 255"),
         ):
             self.assertIn(
-                why, self.cli("vnc", "password", "a", "set", input=given, ok=False), given
+                why, self.cli("vnc", "password", "set", "a", input=given, ok=False), given
             )
         self.assertIn(
-            "cannot read", self.cli("vnc", "password", "a", "set", src + ".none", ok=False)
+            "cannot read", self.cli("vnc", "password", "set", "a", src + ".none", ok=False)
         )
         self.assertEqual(slurp(path), "throwaway-3\n")
-        self.cli("vnc", "password", "a", "set", input="x" * 255 + "\n")
+        self.cli("vnc", "password", "set", "a", input="x" * 255 + "\n")
         # reset: a new random one, printed only by show
-        out = self.cli("vnc", "password", "a", "reset")
+        out = self.cli("vnc", "password", "reset", "a")
         self.assertIn("a new random VNC password in", out)
         new = slurp(path)
         self.assertRegex(new, r"^[2-9a-hjkmnp-z]{20}\n$")
         self.assertNotIn(new.strip(), out)
-        self.cli("vnc", "password", "a", "reset")
-        shown = self.cli("vnc", "password", "a", "show")
+        self.cli("vnc", "password", "reset", "a")
+        shown = self.cli("vnc", "password", "show", "a")
         self.assertRegex(shown, r"^[2-9a-hjkmnp-z]{20}\n$")
         self.assertNotEqual(shown, new)
         self.assertEqual(slurp(path), shown)
         self.assertIn(
-            "only beanjar vnc password a set takes a FILE",
-            self.cli("vnc", "password", "a", "reset", "x", ok=False),
+            "unrecognized arguments",
+            self.cli("vnc", "password", "reset", "a", "x", ok=False),
         )
-        self.assertIn("no VM named", self.cli("vnc", "password", "nope", ok=False))
+        self.assertIn("no VM named", self.cli("vnc", "password", "show", "nope", ok=False))
 
 
 class LayersTest(unittest.TestCase):
@@ -3454,16 +3534,33 @@ class TomlTest(unittest.TestCase):
 
 
 class CliParseTest(unittest.TestCase):
-    """The command line's shape (host/core/README.md, "Commands"): each form parses to its
-    operation, and the old flat names are refused as usage errors (exit status 2)."""
+    """The command line's shape (host/core/README.md, "Commands"; AGENTS.md's guideline): each
+    form parses to its operation, the verb before the VM; the global options anywhere; a group
+    without its verb is its help and exit status 2; a wrong order is an error naming the right
+    form; the old names are refused as usage errors (exit status 2)."""
 
     def parse(self, *argv):
         from beanjar.commands import parser
 
-        return parser.build().parse_args(list(argv))
+        return parser.parse(list(argv))
+
+    def run_cli(self, *argv):
+        """`python3 -m beanjar ARGV` in a process of its own: (status, stdout, stderr). No VM
+        is needed for what these ask: help and usage errors, a library of its own, no hosts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(
+                os.environ,
+                PYTHONPATH=os.path.join(TOP, "host", "core"),
+                XDG_CONFIG_HOME=os.path.join(tmp, "config"),
+                BEANJAR_LIBRARY=os.path.join(tmp, "lib"),
+            )
+            p = subprocess.run(
+                [sys.executable, "-m", "beanjar", *argv], env=env, capture_output=True, text=True
+            )
+        return p.returncode, p.stdout, p.stderr
 
     def test_forms(self):
-        from beanjar.commands import display, identity, mitm, settings, vms
+        from beanjar.commands import devices, display, identity, mitm, sensors, settings, vms
 
         for argv, func, attrs in (
             (["list", "--all", "--json"], vms.cmd_list, {"all": True, "json": True}),
@@ -3482,22 +3579,25 @@ class CliParseTest(unittest.TestCase):
                 vms.cmd_start,
                 {"reason": "bisect", "by": "agent", "args": []},
             ),
-            (["reason", "tv1"], vms.cmd_reason, {"name": "tv1", "text": None}),
-            (["tag", "tv1", "+a", "-b", "c"], vms.cmd_tag, {"changes": ["+a", "-b", "c"]}),
+            (["status", "show", "tv1"], vms.cmd_status, {"verb": "show", "items": []}),
+            (
+                ["status", "set", "pi/tv1", "reason=bisect", "--by", "agent"],
+                vms.cmd_status,
+                {"verb": "set", "name": "pi/tv1", "items": ["reason=bisect"], "by": "agent"},
+            ),
+            (["status", "unset", "tv1", "reason"], vms.cmd_status, {"items": ["reason"]}),
             (["list", "--tag", "a", "--tag", "b"], vms.cmd_list, {"tag": ["a", "b"]}),
             (["create", "tv1", "--tag", "x"], vms.cmd_create, {"tag": ["x"]}),
-            (["reason", "pi/tv1", ""], vms.cmd_reason, {"name": "pi/tv1", "text": ""}),
-            (["info", "tv1", "--json"], vms.cmd_info, {"name": "tv1", "json": True}),
+            (["show", "tv1", "--json"], vms.cmd_show, {"name": "tv1", "json": True}),
             (["delete", "tv1"], vms.cmd_delete, {"name": "tv1"}),
             (["wipe", "tv1", "--part", "db8"], vms.cmd_wipe, {"part": ["db8"]}),
-            (["settings", "tv1"], settings.cmd_settings, {"verb": None, "items": []}),
-            (["settings", "tv1", "show"], settings.cmd_settings, {"verb": "show"}),
+            (["config", "show", "tv1"], settings.cmd_config, {"verb": "show", "items": []}),
             (
-                ["settings", "tv1", "set", "mem=1024", "smp=2"],
-                settings.cmd_settings,
-                {"verb": "set", "items": ["mem=1024", "smp=2"]},
+                ["config", "set", "tv1", "mem=1024", "smp=2", "tags=a,b"],
+                settings.cmd_config,
+                {"verb": "set", "items": ["mem=1024", "smp=2", "tags=a,b"]},
             ),
-            (["settings", "tv1", "unset", "fw"], settings.cmd_settings, {"verb": "unset"}),
+            (["config", "unset", "tv1", "fw", "tags"], settings.cmd_config, {"verb": "unset"}),
             (
                 ["viewer", "open", "tv1", "--remote"],
                 display.cmd_viewer_open,
@@ -3510,35 +3610,25 @@ class CliParseTest(unittest.TestCase):
                 {"name": "tv1"},
             ),
             (["vnc", "stop", "tv1"], display.cmd_vnc_stop, {"name": "tv1"}),
+            (["vnc", "password", "show", "tv1"], display.cmd_vnc_password, {"verb": "show"}),
+            (["vnc", "password", "set", "tv1", "F"], display.cmd_vnc_password, {"file": "F"}),
+            (["vnc", "password", "set", "tv1"], display.cmd_vnc_password, {"file": None}),
+            (["vnc", "password", "reset", "tv1"], display.cmd_vnc_password, {"verb": "reset"}),
+            (["identity", "reset", "tv1"], identity.cmd_identity_reset, {"name": "tv1"}),
             (
-                ["vnc", "password", "tv1"],
-                display.cmd_vnc_password,
-                {"verb": None, "file": None},
+                ["identity", "authorized-keys", "add", "tv1", "--mine"],
+                identity.cmd_authorized_keys,
+                {"verb": "add", "mine": True},
             ),
-            (
-                ["vnc", "password", "tv1", "set", "F"],
-                display.cmd_vnc_password,
-                {"file": "F"},
-            ),
-            (
-                ["vnc", "password", "tv1", "reset"],
-                display.cmd_vnc_password,
-                {"verb": "reset"},
-            ),
-            (["identity", "renew", "tv1"], identity.cmd_identity_renew, {"name": "tv1"}),
-            (["key", "model", "tv1"], identity.cmd_key_model, {"verb": None}),
-            (
-                ["key", "model", "tv1", "install", "F"],
-                identity.cmd_key_model,
-                {"file": "F"},
-            ),
-            (["key", "model", "tv1", "clear"], identity.cmd_key_model, {"verb": "clear"}),
+            (["key", "model", "show", "tv1"], identity.cmd_key_model, {"verb": "show"}),
+            (["key", "model", "set", "tv1", "F"], identity.cmd_key_model, {"file": "F"}),
+            (["key", "model", "unset", "tv1"], identity.cmd_key_model, {"verb": "unset"}),
             (["key", "list", "tv1"], identity.cmd_key_list, {"name": "tv1"}),
-            (["library", "config"], settings.cmd_library_config, {"verb": None}),
+            (["library", "config", "show"], settings.cmd_library_config, {"verb": "show"}),
             (
                 ["library", "config", "set", "mac_prefix=02:00:00"],
                 settings.cmd_library_config,
-                {},
+                {"items": ["mac_prefix=02:00:00"]},
             ),
             (
                 ["host", "config", "unset", "max_running"],
@@ -3546,6 +3636,33 @@ class CliParseTest(unittest.TestCase):
                 {"verb": "unset"},
             ),
             (["mitm", "show", "tv1"], mitm.cmd_mitm_show, {"name": "tv1"}),
+            (["sensor", "show", "rotate", "tv1"], sensors.cmd_rotate, {"angle": None}),
+            (["sensor", "set", "rotate", "tv1", "90"], sensors.cmd_rotate, {"angle": 90}),
+            (["sensor", "set", "light", "tv1", "5", "6"], sensors.cmd_light, {"values": [5, 6]}),
+            (["sensor", "show", "light", "tv1"], sensors.cmd_light, {"values": []}),
+            (["io", "tuner", "list", "tv1"], devices.cmd_tuner, {"verb": "list"}),
+            (
+                ["io", "tuner", "map", "tv1", "7", "14"],
+                devices.cmd_tuner,
+                {"verb": "map", "channels": ["7", "14"]},
+            ),
+            (["io", "tuner", "unmap", "tv1", "all"], devices.cmd_tuner, {"channels": ["all"]}),
+            (
+                ["io", "usb", "attach", "tv1", "--camera", "--pattern", "ball"],
+                devices.cmd_usb_attach,
+                {"camera": True, "pattern": "ball"},
+            ),
+            (
+                ["io", "usb", "mkimage", "F", "--fs", "fat32", "--overwrite"],
+                devices.cmd_usb_mkimage,
+                {"overwrite": True},
+            ),
+            (
+                ["screenshot", "tv1", "-", "--frame", "384x216"],
+                display.cmd_screenshot,
+                {"frame": "384x216"},
+            ),
+            (["elements", "--from-png", "F"], display.cmd_elements, {"from_png": "F"}),
         ):
             with self.subTest(argv):
                 a = self.parse(*argv)
@@ -3554,9 +3671,183 @@ class CliParseTest(unittest.TestCase):
                     self.assertEqual(getattr(a, k), v, k)
                 self.assertIn("json", vars(a), "every command takes --json")
 
+    def test_global_options_anywhere(self):
+        """--json, --library and --repo go anywhere on the line: before the command, between a
+        group and its verb, after the VM; not in shell's command, nor after --."""
+        from beanjar.commands import vms
+
+        for argv in (
+            ["--json", "--library", "L", "list"],
+            ["list", "--library", "L", "--json"],
+            ["list", "--json", "--library=L"],
+        ):
+            with self.subTest(argv):
+                a = self.parse(*argv)
+                self.assertIs(a.func, vms.cmd_list)
+                self.assertEqual((a.json, a.library), (True, "L"))
+        a = self.parse("vnc", "--json", "password", "--repo", "R", "show", "tv1")
+        self.assertEqual((a.json, a.repo, a.verb, a.name), (True, "R", "show", "tv1"))
+        self.assertEqual(a.path, ["vnc", "password", "show"])
+        self.assertEqual(a.words, ["vnc", "password", "show", "tv1"], "the line without them")
+        a = self.parse("config", "set", "tv1", "smp=2", "--json")
+        self.assertEqual((a.json, a.items), (True, ["smp=2"]))
+        a = self.parse("vnc", "start", "tv1", "--fps", "60", "--json", "--library", "L")
+        self.assertEqual((a.json, a.library, a.args), (True, "L", ["--fps", "60"]))
+        # shell: what follows NAME is the command, its --json and --library its own
+        a = self.parse("--library", "L", "shell", "-T", "tv1", "ls", "--json", "--library", "x")
+        self.assertEqual((a.json, a.library), (False, "L"))
+        self.assertEqual(a.command, ["ls", "--json", "--library", "x"])
+        a = self.parse("start", "tv1", "--", "--json")
+        self.assertEqual((a.json, a.args), (False, ["--json"]))
+        rc, out, err = self.run_cli("host", "list", "--json")
+        self.assertEqual((rc, out.strip()), (0, "[]"), err)
+
+    def test_durations(self):
+        """Durations carry a unit (ms, s, m); a bare number is refused."""
+        import argparse
+
+        from beanjar.commands import common
+
+        for text, seconds in (("200ms", 0.2), ("1.5s", 1.5), ("2m", 120.0), ("0ms", 0.0)):
+            self.assertAlmostEqual(common.duration(text), seconds)
+        for bad in ("100", "1.5", "", "ms", "-1s", "1h", "1 s", "1.s"):
+            with self.subTest(bad), self.assertRaises(argparse.ArgumentTypeError):
+                common.duration(bad)
+        a = self.parse("remote", "press", "tv1", "HOME", "--hold", "250ms")
+        self.assertAlmostEqual(a.hold, 0.25)
+        self.assertAlmostEqual(self.parse("remote", "press", "tv1", "HOME").hold, 0.1)
+        a = self.parse("remote", "click", "tv1", "1", "2", "--settle", "0s", "--hold", "1s")
+        self.assertEqual((a.settle, a.hold), (0.0, 1.0))
+        a = self.parse("remote", "swipe", "tv1", "1", "2", "3", "4", "--time", "0.5s")
+        self.assertAlmostEqual(a.time, 0.5)
+        self.assertEqual(self.parse("screensaver", "stop", "tv1", "--timeout", "2m").timeout, 120)
+        self.assertEqual(self.parse("screensaver", "stop", "tv1").timeout, 60)
+        rc, _out, err = self.run_cli("remote", "press", "tv1", "HOME", "--hold", "100")
+        self.assertEqual(rc, 2)
+        self.assertIn("invalid duration '100'", err)
+        rc, _out, err = self.run_cli("screensaver", "start", "tv1", "--timeout", "1s")
+        self.assertEqual(rc, 2)
+        self.assertIn("5 to 300 seconds", err)
+
+    def test_group_without_verb(self):
+        """A group without its verb prints its help on stderr and exits 2; with --json one JSON
+        error; `beanjar` without a command the same."""
+        for argv, verbs in (
+            (["config"], "show,set,unset"),
+            (["status"], "show,set,unset"),
+            (["vnc", "password"], "show,set,reset"),
+            (["library", "config"], "show,set,unset"),
+            (["host", "config"], "show,set,unset"),
+            (["identity", "authorized-keys"], "show,reset,add"),
+            (["key", "model"], "show,set,unset"),
+            (["io", "tuner"], "list,map,unmap"),
+            (["sensor", "show"], "light,presence,temperature,rotate"),
+            (["io"], "tuner,usb"),
+            ([], "list,create"),
+        ):
+            with self.subTest(argv):
+                rc, out, err = self.run_cli(*argv)
+                self.assertEqual(rc, 2, err)
+                self.assertEqual(out, "")
+                self.assertIn("usage: beanjar", err)
+                for verb in verbs.split(","):
+                    self.assertIn(f"\n    {verb} ", err)
+        rc, out, err = self.run_cli("vnc", "password", "--json")
+        self.assertEqual(rc, 2)
+        error = json.loads(err)
+        self.assertTrue(error["usage"])
+        self.assertIn("beanjar vnc password needs one of: show, set, reset", error["error"])
+        rc, out, _err = self.run_cli("config", "--help")
+        self.assertEqual(rc, 0, "asked for, the help is no error")
+        self.assertIn("usage: beanjar config", out)
+
+    def test_wrong_order(self):
+        """A VM where the verb should be, a verb where the VM should be, a KEY=VALUE before the VM:
+        a usage error naming the right form."""
+        for argv, says in (
+            (
+                ["vnc", "password", "tv1", "show"],
+                "the verb comes first: beanjar vnc password show tv1",
+            ),
+            (
+                ["config", "tv1", "set", "mem=1"],
+                "the verb comes first: beanjar config set tv1 mem=1",
+            ),
+            (["tv1", "start"], "the verb comes first: beanjar start tv1"),
+            (
+                ["vnc", "tv1", "password", "show"],
+                "the verb comes first: beanjar vnc password show tv1",
+            ),
+            (
+                ["sensor", "tv1", "show", "rotate"],
+                "the verb comes first: beanjar sensor show rotate tv1",
+            ),
+            (["--json", "ares-install", "-d", "tv1"], "ares-install takes no --json"),
+            (
+                ["io", "tuner", "tv1", "map", "7"],
+                "the verb comes first: beanjar io tuner map tv1 7",
+            ),
+            (
+                ["key", "model", "tv1", "set", "F"],
+                "the verb comes first: beanjar key model set tv1 F",
+            ),
+            (
+                ["sensor", "rotate", "tv1", "90"],
+                "beanjar sensor takes its verb first: beanjar sensor show|set rotate tv1 90",
+            ),
+            (
+                ["identity", "authorized-keys", "tv1", "add-mine"],
+                "the verb comes before the VM: beanjar identity authorized-keys VERB NAME",
+            ),
+            (
+                ["config", "set", "mem=1", "tv1", "smp=2"],
+                "the VM comes before KEY=VALUE: beanjar config set tv1 mem=1 smp=2",
+            ),
+            (
+                ["status", "set", "reason=x", "tv1"],
+                "the VM comes before KEY=VALUE: beanjar status set tv1 reason=x",
+            ),
+            (
+                ["vnc", "password", "set", "show", "tv1"],
+                "'show' is a verb of beanjar vnc password, which comes before the VM: "
+                "beanjar vnc password show NAME",
+            ),
+        ):
+            with self.subTest(argv):
+                rc, out, err = self.run_cli(*argv)
+                self.assertEqual((rc, out), (2, ""), err)
+                self.assertIn(says, err)
+        rc, _out, err = self.run_cli("vnc", "password", "tv1", "show", "--json")
+        self.assertEqual(json.loads(err), {
+            "error": "the verb comes first: beanjar vnc password show tv1", "usage": True
+        })  # fmt: skip
+
+    def test_version(self):
+        import contextlib
+        import io
+        import json
+
+        from beanjar import commands
+
+        for argv, check in (
+            (["--version"], lambda t: self.assertRegex(t, r"^beanjar \S+.*\n$")),
+            (["--library", "x", "--version"], lambda t: self.assertTrue(t.startswith("beanjar "))),
+            (
+                ["--version", "--json"],
+                lambda t: self.assertEqual(json.loads(t).keys(), {"name", "version"}),
+            ),
+        ):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(commands.main(argv), 0)
+            check(out.getvalue())
+            self.assertEqual(out.getvalue().count("\n"), 1)
+
     def test_old_names_refused(self):
         import contextlib
         import io
+
+        from beanjar.commands.common import Usage
 
         for argv in (
             ["status", "tv1"],
@@ -3570,17 +3861,31 @@ class CliParseTest(unittest.TestCase):
             ["model-key", "tv1"],
             ["mitm-setup"],
             ["mitm", "setup"],  # mitmproxy is the user's own (mitmtool.py): nothing to set up
-            ["config"],
             ["config", "--global"],
-            ["vnc", "password", "tv1", "--show"],
-            ["key", "model", "tv1", "F"],
+            ["info", "tv1"],
+            ["settings", "tv1"],
+            ["reason", "tv1", "x"],
+            ["tag", "tv1", "+x"],
+            ["identity", "renew", "tv1"],
+            ["io", "usb", "plug", "tv1", "--camera"],
+            ["vnc", "password", "tv1"],
+            ["vnc", "password", "show", "tv1", "--show"],
+            ["key", "model", "show", "tv1", "F"],
             ["stop", "tv1", "--unplug", "--no-fallback"],
-            ["reason", "tv1", "a", "b"],
+            ["screenshot", "tv1", "-", "--size", "384x216"],
+            ["elements", "--image", "F"],
+            ["io", "usb", "mkimage", "F", "--fs", "fat32", "--force"],
+            ["identity", "authorized-keys", "add", "tv1"],
         ):
             with self.subTest(argv), contextlib.redirect_stderr(io.StringIO()):
-                with self.assertRaises(SystemExit) as e:
+                try:
                     self.parse(*argv)
-                self.assertEqual(e.exception.code, 2)
+                except SystemExit as e:
+                    self.assertEqual(e.code, 2)
+                except Usage:
+                    pass
+                else:
+                    self.fail(f"{argv} parsed")
 
     def test_ares_help(self):
         """`beanjar --help` lists the ares-TOOL form; `ares-TOOL --help` without -d is beanjar's own
@@ -3595,10 +3900,10 @@ class CliParseTest(unittest.TestCase):
                 "beanjar ares-TOOL [--root] -d NAME [ARGS...]", " ".join(p.stdout.split())
             )
 
-    def test_settings_help(self):
-        """`settings --help` lists every setting, from the table that holds them (vmsettings.SETTING_HELP)."""
+    def test_config_help(self):
+        """`config set --help` lists every setting and tags, from the table that holds them (vmsettings.SETTING_HELP)."""
         p = subprocess.run(
-            [sys.executable, "-m", "beanjar", "settings", "--help"],
+            [sys.executable, "-m", "beanjar", "config", "set", "--help"],
             env=dict(os.environ, PYTHONPATH=os.path.join(TOP, "host", "core")),
             capture_output=True,
             text=True,
@@ -3607,6 +3912,7 @@ class CliParseTest(unittest.TestCase):
         for k in vmsettings.SETTINGS:
             self.assertIn(f"\n  {k}=", p.stdout)
         self.assertIn("unset: dhcp", p.stdout)
+        self.assertIn("\n  tags=TAG[,TAG...]", p.stdout)
         self.assertEqual(set(vmsettings.SETTING_HELP), set(vmsettings.SETTINGS))
 
 

@@ -291,6 +291,8 @@ static bool lm14_trap_page(u64 page)
 {
     if (hwi2c_enabled() && (page == LM14_HWI2C_PAGE0 || page == LM14_HWI2C_PAGE1))
         return true;
+    if (swi2c_enabled() && page == swi2c_page())
+        return true;
     for (unsigned int i = 0; i < ARRAY_SIZE(lm14_trap_pages); i++)
         if (page == lm14_trap_pages[i] && (i < 3 ? lm14_unprovisioned : lm14_pq_y_sram))
             return true;
@@ -338,6 +340,8 @@ static int lm14_mmio_access(u64 addr, unsigned int width, bool write, u32 *value
 
     if ((addr & PAGE_MASK) == LM14_HWI2C_PAGE0 || (addr & PAGE_MASK) == LM14_HWI2C_PAGE1)
         return lm14_hwi2c_access(addr, width, write, value);
+    if (swi2c_enabled() && (addr & PAGE_MASK) == swi2c_page())
+        return swi2c_access(addr, width, write, value);
     for (unsigned int i = 0; i < ARRAY_SIZE(lm14_trap_pages); i++)
         if ((addr & PAGE_MASK) == lm14_trap_pages[i])
             page = lm14_trap_bytes[i];
@@ -393,7 +397,7 @@ static int lm14_mmio_access(u64 addr, unsigned int width, bool write, u32 *value
 
 int lm14_mmio_registers(void)
 {
-    if (!lm14_unprovisioned && !lm14_pq_y_sram && !hwi2c_enabled())
+    if (!lm14_unprovisioned && !lm14_pq_y_sram && !hwi2c_enabled() && !swi2c_enabled())
         return 0;
     if (!lm14)
         return -EINVAL;
@@ -407,6 +411,13 @@ int lm14_mmio_registers(void)
     if (hwi2c_enabled() && (!lgemu_store_ptr(&registers, LM14_HWI2C_PAGE0) ||
                             !lgemu_store_ptr(&registers, LM14_HWI2C_PAGE1)))
         return -ENOMEM;
+    if (swi2c_enabled()) {
+        u8 *page = lgemu_store_ptr(&registers, swi2c_page());
+
+        if (!page)
+            return -ENOMEM;
+        swi2c_reset_pads(page);
+    }
     registers.trap_page = lm14_trap_page;
     registers.access = lm14_mmio_access;
     return 0;
@@ -514,7 +525,7 @@ int registers_preset(void)
 {
     unsigned int x;
 
-    if (lm14_unprovisioned || lm14_pq_y_sram || hwi2c_enabled()) {
+    if (lm14_unprovisioned || lm14_pq_y_sram || hwi2c_enabled() || swi2c_enabled()) {
         u32 fields[3];
         /* The synchronous device owns these pages. Do not permit a second
          * polling writer selected through the generic XC/profile knobs. */
@@ -549,6 +560,8 @@ int registers_preset(void)
                     return -EINVAL;
                 if (hwi2c_enabled() && ((addr & PAGE_MASK) == LM14_HWI2C_PAGE0 ||
                                         (addr & PAGE_MASK) == LM14_HWI2C_PAGE1))
+                    return -EINVAL;
+                if (swi2c_enabled() && (addr & PAGE_MASK) == swi2c_page())
                     return -EINVAL;
             }
         }

@@ -3,12 +3,14 @@
 # lginit_app mounts the paks from /dev/mmcblk0pN, but the vendor pak: init mounts it (/mnt/vendor),
 # so that the netcast45 layer's libgal.so lies over the vendor's (lginit exports
 # LD_PRELOAD=/mnt/vendor/libgal.so to every process), and its partition has no node, so
-# lginit_app's own mount of it fails as for the partitions the firmware leaves absent (tplist,
-# idfile, cert...); it goes on (measured). The same for the lglib pak (/mnt/lg/res/lglib), where the
+# lginit_app's own mount of it fails as for the partitions the firmware leaves absent (idfile,
+# cert..., and tplist in the US builds: the European ones ship its tpli.pak, the satellite
+# transponder list, which lginit_app mounts from its node); it goes on (measured). The same for the lglib pak (/mnt/lg/res/lglib), where the
 # layer's Mesa-backed libEGL, GLES and libMali lie over the vendor's Mali libraries: processes
 # that find them there by path (chrome) get the emulator's. The partition map is lginit_app's partinfo (63
 # entries). The read-write partitions RELEASE mounts (system_app p61, data p62; apps p63) at the
-# map's sizes; the eMMC NVM and the I2C EEPROM start blank, as SimpleSmart's. The board's 1 GiB of
+# map's sizes; the eMMC NVM starts blank, the I2C EEPROM as a new chip with the fields its factory
+# leaves ([nvm] below). The board's 1 GiB of
 # each of two MIUs is not all the VM's: 1 GiB of RAM, as the bring-up probe. Its UHD panel
 # (RELEASE.cfg eDispResolution 3840x2160) is behind the URSA9 FRC; the VM's display is the
 # emulator's 1920x1080 (the GOP's planes are placed in it).
@@ -43,6 +45,7 @@ paks = [
     { file = "extr", serial = "extra" },
     { file = "estr", serial = "estreamer" },
     { file = "mode", serial = "model" },
+    { file = "tpli", serial = "tplist", optional = true },
 ]
 state_disks = { system_app = "130M", data = "290M", apps = "1472M" }
 nvm_disks = { nvram = "6M", eeprom = "32K" }
@@ -51,6 +54,28 @@ partmap = { pak = "lgin", path = "/lginit_app" }
 
 [nvm]
 eeprom = "eeprom"
+# A new chip: 0xFF but what RELEASE's own code says a factory leaves (beanjar/nvmfactory.py reads
+# it out of each build and refuses one whose code differs). Without the first-boot marker every
+# boot is a factory first power-on (UI_SUMODE_DoPowerOnlyStartApp, from MAIN_StartApplication),
+# which never returns on the VM: a black screen, no micom power-state read. The marker:
+# DDI_NVM_FinishFirstBootUp writes 0x20100118 at 0x10. The preserve DB: DDI_NVM_InitPreserveDB's
+# defaults when its mark at 0x734 is not 7 (0x734 = 7, InstopReserve 0x738 = 0, INSTOP_INFO 0x739 =
+# 0, the baud 0x73c = 7, 1stBootAfterInstop 0x740 = 0). INSTOP_INFO is the default 0, deliberately
+# not the 1 SUMODE_DoInStop leaves on a shipped set: with 1 the first-use wizard runs
+# (UI_SETUPWIZARD_IsAvailable: registry 0x521 == 0, not power-only, FactoryDB 49 == 1), and the
+# state its completion leaves is in the eMMC NVM's registry ring, which the emulator does not
+# prepare; with 0 the set starts on the dashboard with the firmware's own defaults for its group.
+factory = { pak = "lgap", path = "/RELEASE" }
+# OSA_MD_GetDebugStatus reads it (DDI_NVM_Read(0x18a, 1)) and reads above 2 as 2; the IN-START
+# screen's names: 0 DEBUG, 1 EVENT, 2 RELEASE (OSA_MD_InstallDebugStatus: nonzero turns the
+# kernel's printk off; OSA_MD_SetDbgMode: 2 sets kernel.panic 1, a crash then restarts the set).
+# A new chip's first boot runs in RELEASE all the same: its SysDB mark (0x14) does not match, and
+# DDI_NVM_InitSysDB then writes the SysDB's defaults, the debug status among them
+# (OSA_MD_InitDebugStatus: the compiled 2). Those defaults are not a table to copy: some depend on
+# the model's configuration at run time (the byte at 0x178 from the model data), so the chip does
+# not get them. Every later start brings the byte to the VM's mode.
+debug_status_offset = 0x18A
+debug_status_values = [0, 1, 2]
 
 [partitions]
 partinfo = "partinfo"
@@ -68,6 +93,7 @@ patch = "patch"
 pqldb = "pqldb"
 extra = "extra"
 estreamer = "estreamer"
+tplist = "tplist"
 system_app = "system_app"
 data = "data"
 apps = "apps"

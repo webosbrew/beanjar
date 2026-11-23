@@ -14,6 +14,7 @@
 #include "peer.h"
 #include "capture.h"
 #include "pace.h"
+#include "disable.h"
 #include <errno.h>
 #include "../../../include/webos-ir.h"
 #include <EGL/egl.h>
@@ -133,6 +134,11 @@ struct wv {
     gint64 scanout_at;
     guint scanout_timer;
     unsigned skipped;
+    /* a Disable not applied yet (disable.h): a scanout before its deadline cancels it, wv_poll
+     * applies it after; disables counts those that came, disables_dropped those a scanout
+     * cancelled */
+    struct disable disable;
+    unsigned disables, disables_dropped;
     /* 2D Scanout/Update (pixels in the message): QEMU's surface as the messages leave it, rows
      * packed (width * 4), in shadow_format; kept so that idle updates need only a copy here */
     unsigned char *shadow;
@@ -1163,6 +1169,11 @@ static void method(GDBusConnection *conn, const gchar *sender, const gchar *path
     v->dmabuf_updates += dmabuf;
     current(v);
     int fence = -1; /* the reply waits for it */
+    if (disable_pending(&v->disable) && (!strcmp(name, "ScanoutDMABUF") ||
+                                         !strcmp(name, "ScanoutMap") || !strcmp(name, "Scanout"))) {
+        disable_cancel(&v->disable); /* QEMU's stray Disable before a flip (disable.h) */
+        v->disables_dropped++;
+    }
     if (!strcmp(name, "ScanoutDMABUF")) {
         unmap(v);
         drop_shadow(v);
@@ -1210,9 +1221,9 @@ static void method(GDBusConnection *conn, const gchar *sender, const gchar *path
         }
         g_variant_unref(bytes);
     } else if (!strcmp(name, "Disable")) {
-        v->valid = 0;
-        touch(v);
-        input_release(&v->input);
+        /* provisional: the picture and held input stay until disable_poll applies it */
+        disable_arm(&v->disable, since);
+        v->disables++;
     }
     if (fence >= 0) {
         reply_later(v, call, fence, since);
@@ -1596,9 +1607,23 @@ unsigned wv_cursor(struct wv *v, void *rgba, int *width, int *height, int *hot_x
     }
     return v->cursor_serial;
 }
+/* From wv_poll: a Disable no scanout cancelled within DISABLE_WAIT_US is real (the guest turned its
+ * output off): the picture goes black, and keys and buttons held through the display
+ * are released, as nothing shown is left for them to act on. A stray Disable keeps both: it came
+ * between two flips of a display that never went away, and releasing then would cut a long press
+ * or a drag short under load. */
+static void disable_poll(struct wv *v)
+{
+    if (!disable_due(&v->disable, g_get_monotonic_time()))
+        return;
+    v->valid = 0;
+    touch(v);
+    input_release(&v->input);
+}
 int wv_poll(struct wv *v)
 {
     current(v);
+    disable_poll(v);
     /* no-cursor: only what the front end's cursor shows is a change, not libim's moves */
     if (cursor_poll(&v->cursor) && (!v->no_cursor || cursor_count(v)))
         touch(v);
@@ -2048,6 +2073,8 @@ long wv_counter(struct wv *v, const char *name)
         {"ir_sent", v->ir.sent},
         {"ir_errors", v->ir.errors},
         {"valid", v->valid},
+        {"disables", v->disables},
+        {"disables_dropped", v->disables_dropped},
         {"width", v->width},
         {"height", v->height},
         {"cache_w", v->cache_w},

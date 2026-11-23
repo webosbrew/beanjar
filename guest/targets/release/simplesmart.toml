@@ -4,7 +4,8 @@
 # the paks itself from /dev/mmcblk0pN (its mount tables), and procmgr starts RELEASE. So init
 # mounts only the root (root.pak, p18, LZO) and lginit (lgin.pak, p19, where the bootloader's
 # lginit= puts it); every other pak is attached and has its node. The paks are epk2extract's
-# four-letter names of the EPK2. No tplist, preload, emanual or cert pak ships: their partitions
+# four-letter names of the EPK2. No preload, emanual or cert pak ships (nor tplist in the US
+# builds; the European ones ship tpli.pak, the satellite transponder list): their partitions
 # have no node, and their mounts fail as on a set whose partition is empty. The partition map is
 # lginit_app's own `partinfo` (65 entries, partinfo p3: part.pak byte for byte). The read-write
 # partitions RELEASE formats and mounts (OSA_MountRWFS: system_app p58, data p59; apps p60) at
@@ -48,6 +49,7 @@ paks = [
     { file = "estr", serial = "estreamer" },
     { file = "mode", serial = "model" },
     { file = "swue", serial = "swue" },
+    { file = "tpli", serial = "tplist", optional = true },
 ]
 state_disks = { system_app = "130M", data = "290M", apps = "1520M" }
 nvm_disks = { nvram = "6M", eeprom = "32K" }
@@ -79,6 +81,7 @@ pqldb = "pqldb"
 extra = "extra"
 vendor = "vendor"
 estreamer = "estreamer"
+tplist = "tplist"
 system_app = "system_app"
 data = "data"
 apps = "apps"

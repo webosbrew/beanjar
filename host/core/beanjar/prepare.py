@@ -3,7 +3,7 @@
 """What a VM's start needs from its firmware, its model's board and its board settings, worked out
 ahead (docs/dev/architecture/manager.md, "Prepared board data"): when the VM is made (newvm.create),
 when a setting it depends on changes (core.Library.configure: fw, broadcast, debug_mode, serial;
-identity renew; a local clone), or with `beanjar prepare NAME`. A start only reads it.
+identity reset; a local clone), or with `beanjar prepare NAME`. A start only reads it.
 
 It is kept in the VM's directory, <vm>/prepared/ (the parent of its RUN_DIR: the checkout's
 development VMs and the regress instances have one too):
@@ -45,7 +45,7 @@ import sys
 
 from . import fwcache, lls, nvm, targets, partmap, paths
 
-VERSION = 2
+VERSION = 3
 DIR = "prepared"
 # the panel's refresh where the firmware's own decode of the board is not run (before webOS 5)
 DEFAULT_PANEL_HZ = 60

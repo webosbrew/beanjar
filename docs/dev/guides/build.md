@@ -170,6 +170,16 @@ library it wraps) and the guest build's integration tests (`tests/integration/la
 build directory, `build/coverage`, measures how much of the host programs these tests run
 ([coverage](coverage.md)).
 
+## Which checkout a library uses
+
+A library's `config.toml` keeps one checkout (`repo`), changed only with
+`beanjar library config set repo=DIR`. `beanjar --repo DIR COMMAND` uses `DIR` for that
+command alone and writes nothing, so a command run from a scratch worktree cannot repoint
+the shared library. A library with no stored checkout uses the checkout the running code comes from, in
+memory only; where no checkout is known at all, commands that need one refuse and name
+that command. The development library of a checkout (below) stores its own
+checkout when it is prepared.
+
 ## Development VM data
 
 `host/scripts/vm-launcher start` without `--dir` uses a managed development VM
@@ -261,7 +271,13 @@ resume once the last app is back in front (`<target>-resume.png`), then
 `host/scripts/vm-launcher stop`. A key that comes before the s2idle (a loaded host stretches the micom's standby to s2idle gap to seconds)
 is not lost: lgemu's micom latches it and wakes the SoC as it suspends. `STANDBY_KEY_EARLY=1` (headless) tests that: `standby.py wake-early`
 sends the key the moment the standby shows, and the step passes only if the guest wakes (console: `power key ... latched`,
-`the latched power key wakes the SoC as it suspends`). Each step has `--timeout` seconds (300; times 4 under TCG, "Two lanes" below). It starts nothing while a VM, mitmweb,
+`the latched power key wakes the SoC as it suspends`). A guest restart (the unit's `run/restarts` and
+`run/restarting`) ends the step waiting on it and fails the target, with one exception: a target whose file
+says `first_boot_restart = true` (W24G spacebuns: its firmware reboots the set once on the first boot of a
+fresh state, as a set of it does at its first setup; `docs/research/spacebuns-fresh-state-restarts.md`) has
+that one restart followed. The runner waits for the unit's new QEMU, which keeps the run's state, and runs
+the steps again from the boot step; a second restart, or a VM that does not run again, fails. The target's
+line and `summary.json` say `restarts=1`. Each step has `--timeout` seconds (300; times 4 under TCG, "Two lanes" below). It starts nothing while a VM, mitmweb,
 slirp4netns, a viewer or a regress unit (`beanjar-vm-regress-*`) runs on the VM host, never uses a library VM, and
 ends the run if a stopped VM leaves any of them behind. Results, copied back here:
 `build/regress/<run>/<target>.png`, `build/regress/<run>/<target>/` (the steps' output, the logs
@@ -318,7 +334,7 @@ from one checkout without sharing a file:
 | | default instance | `INSTANCE=<id>` |
 |---|---|---|
 | `RUN_DIR`, `LOG_DIR` (sockets, `qemu.pid`, `console.log`, `qemu.out`, `share/{host,vm,out}`) | `build/` | `build/instances/<id>/` |
-| state (`STATE`'s default; `STATE=none`'s blank disks and its programmed EEPROM) | `build/state/{default,.blank}` | `build/instances/<id>/state/{default,.blank}` |
+| state (`STATE`'s default; `STATE=none`'s one temporary state of the unit's run, `.fresh`, kept across guest restarts and removed when the run ends; a foreground run's blank disks, `.blank`) | `build/state/{default,.fresh,.blank}` | `build/instances/<id>/state/{default,.fresh,.blank}` |
 | `SAVED_LOG_DIR` | `build/logs` | `build/instances/<id>/logs` |
 | systemd user unit | its development VM's, `beanjar-vm-<tag>-dev-<hash>`; regress: `beanjar-vm-regress-default` | its development VM's; regress: `beanjar-vm-regress-<id>` |
 
@@ -388,6 +404,16 @@ the wake, and `guest.sh resumed`'s 30 s. The steps get it as `TIME_SCALE=` on th
 console, and `guest.sh`, `check-m1.sh` and `app-calls.sh` stretch their own luna-send limits and
 poll budgets by it. Under KVM it is 1 and nothing changes.
 
+#### NetCast line
+
+The NetCast-line targets (`lm14-netcast45`, `m2-simplesmart`) have no bootd, Luna or tvservice
+for these checks to ask, so `scripts/regress` leaves them out (`targets.BRING_UP`).
+`tests/regress/netcast/run.py --firmware FW` checks them instead (its README): a headless VM made
+through the beanjar CLI must initialise our GAL, start its power stack, draw its stock dashboard
+after HOME and change it on RIGHT, within `--timeout`. Under KVM the dashboard must be filled in (a
+screenshot with enough non-black pixels and enough distinct colours); under TCG, where FX HOME stays
+an empty tile skeleton, only drawn, and RIGHT is skipped. A black screen fails on both.
+
 ### Bring-up checklist
 
 Both modes run a `checklist` step after app-calls, before the screenshot in a graphics run. It looks
@@ -430,8 +456,11 @@ scripts/regress --tv --keep-going                        # graphics: one at a ti
 scripts/regress --tv --headless --local --keep-going     # this PC, TCG
 ```
 
-The network step needs `NET_LINK=nat NET_MODE=direct` (QEMU's slirp: the guest is 10.0.2.15, the router and the VM
-host 10.0.2.2, DNS 10.0.2.3), which `--tv` sets; any other network is a usage error. A graphics run
+The suite needs `NET_LINK=nat NET_MODE=direct` (the VM's own network namespace: the guest is 10.0.2.15, the router
+slirp4netns's 10.0.2.2, DNS the LG services mock's 10.0.2.254; [network.md](../architecture/network.md)), which `--tv`
+sets; any other network is a usage error. Its test server, `tests/regress/http-token.py`, runs in that namespace
+(`host/scripts/vm-launcher netns-exec`) at 10.0.2.254, beside the mock: only that VM's guest reaches it, and the
+guest still never reaches the host's loopback. A graphics run
 adds the `devmode` layer (`LAYERS=normal,gl,devmode`, unless `LAYERS` is given) for the test app's
 install. luna-info and network only read: no setter is called; the audio step changes the
 volume and puts it back.
@@ -475,15 +504,15 @@ volume and puts it back.
   its own `.fini_array`, so every KADP process prints the failed take of `_MMIO_Mutex` as it
   exits, on a real set too (`tv-expect-gen.py` reads the order, the messages and the mutex name
   from `libkadaptor`).
-- `network`: `tests/regress/http-token.py` serves a random token on the VM host's 127.0.0.1 for the
+- `network`: `tests/regress/http-token.py` serves a random token in the VM's namespace for the
   step's length. `tv.sh network` reports eth0's address and routes, the resolver, the connection
   manager (`getStatus` under both names; webOS 1 and 2 have only `com.palm`'s `getstatus`), a
   lookup of `example.com` with busybox's `nslookup`, which every firmware has (its reverse lookups
   take up to 20 s; W17H's glibc 2.19 answers `getent ahosts` with nothing where `wget` and `curl`
   resolve) and the token fetched with `wget`. The checks: `dhcp-lease` (eth0 10.0.2.15, default
   route via 10.0.2.2), `connman-wired` (connected on eth0 by DHCP, with that address, gateway and
-  DNS 10.0.2.3), `dns` (an address the VM host resolves too), `http` (the token, and the server's
-  log of the request) and `online` (`onInternet` and `isInternetConnectionAvailable` as connman's
+  DNS 10.0.2.254), `dns` (an address the VM host resolves too), `http` (the token, and the server's
+  log of the request from the guest's own 10.0.2.15) and `online` (`onInternet` and `isInternetConnectionAvailable` as connman's
   own check would find from the VM host: an answer from the firmware's `Ipv4StatusUrl` in
   `etc/connman/main.conf`, `http://lgtvonline.lge.com/`, or, with `TakeDnsIpResolutionAsOnline`,
   its name resolving). `dns` and `online` depend on the VM host's own network; the HTTP fetch does
@@ -554,7 +583,7 @@ judging, the generator's parsing and the files.
 - `tee`: where the firmware has a TEE client (the table's `tee`: `tv-expect-gen.py` lists
   every ELF file of the target's paks that names `/dev/tee`, the Realtek targets' libkadaptor and
   tee-supplicant, and the TAs in `usr/lib/optee_armtz`; elsewhere one SKIP citing that none of the
-  N files does), `tests/regress/tv.sh tee` runs `tests/regress/tee/tee-probe` (`build/tests/tee`) in webOS
+  N files does), `tests/regress/tv.sh tee` runs `tests/regress/tee/tee-probe` (`build/tests/regress/tee`) in webOS
   through the firmware's own libteec (libkadaptor's `TEEC_*`, loaded at run time) against rtk.ko's
   `/dev/tee0`. Checked
   (`tvsuite.judge_tee`): `/dev/tee0` is a character device; the secure-store TA's session opens and
@@ -625,8 +654,8 @@ judging, the generator's parsing and the files.
   and the audio's sizes, launches the app with `{"mode":"decode","case":...}`, waits for the page's
   end, closes it, and gives the case its parts of both logs and the audio (`tvsuite.py slice`). The page logs every event (and `canPlayType`/`isTypeSupported` of its MIME
   types, the MSE calls, `error` codes) to the console and, since not every firmware's WebAppMgr puts
-  the console in PmLog (WT1H's does not), as image GETs to a server on the VM host
-  (`http-token.py`, slirp's 10.0.2.2). `tvsuite.media_facts` (on the VM host) and
+  the console in PmLog (WT1H's does not), as image GETs to the suite's server
+  in the VM's namespace (`http-token.py`, at 10.0.2.254). `tvsuite.media_facts` (on the VM host) and
   `tvsuite.judge_decode` check, per case: the page's `playing`, `currentTime` to within 1.5 s of
   the clip's end, `ended` and no `error`; the host's decoder for the case's codec, 75 % of the
   clip's pictures shown with their pts spanning the clip, the video's end of stream, a scaler
@@ -657,7 +686,7 @@ judging, the generator's parsing and the files.
   directory puts them side by side, labelled target and case, for a look at what played.
 - `smp` (graphics; headless SKIP): a native app's own media pipeline, as moonlight-tv's (ss4s)
   plays its stream. `tests/regress/smp/pack.sh` packs the SMP check app (`tests/regress/smp`: `smpcheck`, the
-  guest build's `build/tests/smp/smpcheck`, with an 8 s 720p30 H.264 clip made at test time) with
+  guest build's `build/tests/regress/smp/smpcheck`, with an 8 s 720p30 H.264 clip made at test time) with
   `ares-package`; it is installed with `dev/install` and sam launches it (`tv.sh smp`). It opens a
   full-screen transparent window as SDL's webOS window does (the app is then the foreground one),
   registers with ACB (`libAcbAPI`: media id, full-screen display window, sink, states) and loads

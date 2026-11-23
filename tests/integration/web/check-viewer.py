@@ -427,7 +427,7 @@ async def rotation_checks(c, tmp, url):
     """A set that turns to portrait (its list row's portrait): the remote socket's "rotation N"
     turns noVNC's canvas (360 - N) % 360 clockwise, a finger and a click on the turned picture
     land on the panel's own pixels (the guest display's), and Rotate turns the set a quarter
-    clockwise (beanjar sensor rotate with the next setting)."""
+    clockwise (beanjar sensor set rotate with the next setting)."""
     log = Path(tmp, "input.log")
     Path(tmp, "portrait").touch()
     Path(tmp, "rotation").write_text("rotation=90\n")

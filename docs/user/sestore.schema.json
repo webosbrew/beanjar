@@ -41,9 +41,9 @@
           "type": "string"
         },
         "hex": {
-          "description": "The value as hexadecimal digits, two per byte. Written without separators.",
+          "description": "The value as hexadecimal digits, two per byte. ASCII whitespace (space, tab, newline) between bytes, or around the digits, is ignored; a byte is never split.",
           "type": "string",
-          "pattern": "^([0-9A-Fa-f]{2})*$"
+          "pattern": "^[ \\t\\n\\v\\f\\r]*([0-9A-Fa-f]{2}[ \\t\\n\\v\\f\\r]*)*$"
         },
         "file": {
           "description": "Path of a file whose exact bytes are the value. Relative paths resolve beside this TOML; absolute paths are accepted. The file needs owner-only permissions and at most 65536 bytes.",
@@ -69,7 +69,7 @@
         {
           "properties": {
             "text": { "pattern": "^[A-Za-z0-9+/]{43}=$" },
-            "hex": { "pattern": "^([0-9A-Fa-f]{2}){44}$" },
+            "hex": { "pattern": "^[ \\t\\n\\v\\f\\r]*([0-9A-Fa-f]{2}[ \\t\\n\\v\\f\\r]*){44}$" },
             "nul_terminated": { "const": false }
           }
         }
@@ -82,7 +82,7 @@
         {
           "properties": {
             "text": { "minLength": 1, "maxLength": 1999, "pattern": "^[^\\u0000]*$" },
-            "hex": { "minLength": 2, "maxLength": 3998 },
+            "hex": { "pattern": "^[ \\t\\n\\v\\f\\r]*([0-9A-Fa-f]{2}[ \\t\\n\\v\\f\\r]*){1,1999}$" },
             "nul_terminated": { "const": false }
           }
         }
@@ -105,14 +105,14 @@
         { "$ref": "#/definitions/entry" },
         {
           "properties": {
-            "hex": { "pattern": "^([0-9A-Fa-f]{2}){16}$" }
+            "hex": { "pattern": "^[ \\t\\n\\v\\f\\r]*([0-9A-Fa-f]{2}[ \\t\\n\\v\\f\\r]*){16}$" }
           },
           "if": {
             "required": ["nul_terminated", "hex"],
             "properties": { "nul_terminated": { "const": true } }
           },
           "then": {
-            "properties": { "hex": { "pattern": "^([0-9A-Fa-f]{2}){15}$" } }
+            "properties": { "hex": { "pattern": "^[ \\t\\n\\v\\f\\r]*([0-9A-Fa-f]{2}[ \\t\\n\\v\\f\\r]*){15}$" } }
           }
         }
       ]

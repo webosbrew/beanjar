@@ -9,3 +9,29 @@ base = "o22n2"
 # Its only queue firmware is the Japanese ARIB build (W25G 43.21.96), whose model_id.json says
 # ARIB: it boots the Japanese OLED55C5PJA (board-arib.cmdline), from that firmware's own generators.
 broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emulator/board-dvb.cmdline", arib = "/etc/emulator/board-arib.cmdline" }
+# Its tuners stay as they were before O22N2 took the analog tuner, the lock's commands and dtv_soc
+# (soc/o22n2.toml): those are verified on W24G only.
+broadcast_params = {}
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x26a0",
+    "ace_rev=0x26a0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x02904044",
+    "ucom=1",
+    "gpio_lines=144",
+    "gpio_level=16:1,98:1,21:1,43:1",
+]
+
+[[modules]]
+name = "webos_tv"
+params = [
+    "platform=wfm",
+    "frontends=2",
+    "delsys=3+16+1,5+6",
+    "version=2.1.0",
+    "version_cmd=0x68",
+]

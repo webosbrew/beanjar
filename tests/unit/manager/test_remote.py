@@ -54,9 +54,9 @@ class Fake:
             return 255, b"", f"ssh: {h['down']}\n"
         words = remote_argv.split()
         # a host with hosts of its own ("indirect"): a bare name or a plain list reaches theirs
-        if words[1] == "settings":
-            name = words[2].removeprefix("local/")
-            found = h.get("vms", []) + (h.get("indirect_vms", []) if name == words[2] else [])
+        if words[1:3] == ["config", "show"]:
+            name = words[3].removeprefix("local/")
+            found = h.get("vms", []) + (h.get("indirect_vms", []) if name == words[3] else [])
             if name in found:
                 return 0, b"{}", ""
             return 1, b"", json.dumps({"error": f"no VM named {name}"}) + "\n"
@@ -177,7 +177,7 @@ class SshTest(Base):
             return dict(line.split(None, 1) for line in result.stdout.splitlines() if " " in line)
 
         listing = config(["list", "--json"])
-        screenshot = config(["screenshot", "tv", "-", "--size", "384x216"])
+        screenshot = config(["screenshot", "tv", "-", "--frame", "384x216"])
         self.assertEqual(listing["controlmaster"], "auto")
         self.assertEqual(listing["controlpersist"], "60")
         self.assertEqual(listing["controlpath"], screenshot["controlpath"])
@@ -187,14 +187,14 @@ class SshTest(Base):
         self.assertNotEqual(listing["controlpath"], other["controlpath"])
 
     def test_argv(self):
-        argv = remote.ssh_argv("ssh://me@pi:2222", ["info", "tv 1", "--json"], control="/run/c")
+        argv = remote.ssh_argv("ssh://me@pi:2222", ["show", "tv 1", "--json"], control="/run/c")
         self.assertEqual(argv[0], "ssh")
         for opt in ("BatchMode=yes", "ConnectTimeout=5", "ControlMaster=auto", "ControlPersist=60",
                     "ControlPath=/run/c/%C"):  # fmt: skip
             self.assertIn(opt, argv)
         self.assertEqual(argv[argv.index("-p") + 1], "2222")
         self.assertEqual(argv[argv.index("-l") + 1], "me")
-        self.assertEqual(argv[-3:], ["--", "pi", "beanjar info 'tv 1' --json"])
+        self.assertEqual(argv[-3:], ["--", "pi", "beanjar show 'tv 1' --json"])
         plain = remote.ssh_argv("ssh://alias", ["list"], control="/c")
         self.assertNotIn("-p", plain)
         self.assertNotIn("-l", plain)
@@ -250,6 +250,14 @@ class LocateTest(Base):
             self.locate("nowhere", local)
         self.assertEqual(self.locate("bad name!")[0], (None, "bad name!"))
 
+    def test_pinned_library(self):
+        self.add(pi={"vms": ["both"]}, nuc={"vms": ["both"]})
+        found = remote.locate("both", lambda n: True, lambda _: None, pinned=True)
+        self.assertEqual(found, (None, "both"))
+        found = remote.locate("pi/both", lambda n: True, print, pinned=True)
+        self.assertEqual(found, ("pi", "both"))
+        self.assertEqual(self.fake.calls, [], "pinned asks no host")
+
     def test_host_down(self):
         self.add(pi={"vms": [], "down": "Connection refused"}, nuc={"vms": ["tv"]})
         (found, warnings) = self.locate("tv")
@@ -268,7 +276,7 @@ class CommandsTest(Base):
         self.assertEqual(err, "pi: progress\n")
         self.assertEqual(self.fake.calls[-1][:2], ("pi", "beanjar stop local/tv --unplug"))
         rc, out, err = self.beanjar(
-            "--library", os.path.join(self.tmp, "lib2"), "stop", "tv", "--json"
+            "--library", os.path.join(self.tmp, "lib2"), "stop", "pi/tv", "--json"
         )
         self.assertEqual(self.fake.calls[-1][1], "beanjar stop local/tv --json")
         self.assertEqual(err, "progress\n", "--json: the remote's stderr as it is")
@@ -277,17 +285,26 @@ class CommandsTest(Base):
             self.assertEqual(self.beanjar("wipe", "pi/tv")[0], status)
 
     def test_reason(self):
-        """start --reason, reason and stop --force on HOST/NAME run on that host, the text as it is
-        (an empty one too: the remote shell gets it quoted)."""
+        """start --reason, status set and unset, config set tags= and stop --force on HOST/NAME
+        run on that host, the text as it is (the remote shell gets it quoted), --json at the end
+        wherever it was given."""
         self.add(pi={"vms": ["tv"]})
         for words, remote_line in (
             (("start", "pi/tv", "--reason", "a b", "--by", "me"),
              "beanjar start local/tv --reason 'a b' --by me"),
-            (("reason", "pi/tv", "why not"), "beanjar reason local/tv 'why not'"),
-            (("reason", "pi/tv", ""), "beanjar reason local/tv ''"),
+            (("status", "set", "pi/tv", "reason=why not"),
+             "beanjar status set local/tv 'reason=why not'"),
+            (("status", "unset", "pi/tv", "reason"), "beanjar status unset local/tv reason"),
+            (("--json", "status", "show", "pi/tv"), "beanjar status show local/tv --json"),
+            (("--json", "start", "pi/tv", "--", "quiet"), "beanjar start local/tv --json -- quiet"),
             (("stop", "pi/tv", "--force"), "beanjar stop local/tv --force"),
-            (("tag", "pi/tv", "+keep", "-scratch"), "beanjar tag local/tv +keep -scratch"),
-            (("tag", "pi/tv", "-scratch", "--json"), "beanjar tag local/tv -scratch --json"),
+            (("config", "set", "pi/tv", "tags=keep,lab"),
+             "beanjar config set local/tv tags=keep,lab"),
+            (("config", "--json", "unset", "pi/tv", "tags"),
+             "beanjar config unset local/tv tags --json"),
+            (("sensor", "set", "rotate", "pi/tv", "90"), "beanjar sensor set rotate local/tv 90"),
+            (("remote", "press", "pi/tv", "HOME", "--hold", "1s"),
+             "beanjar remote press local/tv HOME --hold 1s"),
         ):  # fmt: skip
             with self.subTest(words):
                 rc, _out, err = self.beanjar(*words)
@@ -326,23 +343,23 @@ class CommandsTest(Base):
         for argv, text in (
             (("viewer", "open", "pi/tv"), "beanjar vnc start pi/tv"),
             (("viewer", "open", "tv"), "beanjar vnc start pi/tv"),
-            (("key", "model", "pi/tv", "install", "F"), "run it on pi"),
+            (("key", "model", "set", "pi/tv", "F"), "run it on pi"),
             (("create", "pi/tv", "--firmware", "D"), "on this machine only"),
         ):
             with self.subTest(argv):
                 rc, _out, err = self.beanjar(*argv)
                 self.assertNotEqual(rc, 0)
                 self.assertIn(text, err)
-        self.assertEqual([c for c in self.fake.calls if "settings" not in c[1]], [])
+        self.assertEqual([c for c in self.fake.calls if "config show" not in c[1]], [])
 
     def test_info(self):
         self.add(pi={"vms": ["tv"]})
         data = {"name": "tv", "state": "Off", "dir": "/pi/vms/tv", "gpu": {"enabled": False}}
         self.fake.reply = (0, json.dumps(data).encode(), "")
-        rc, out, _ = self.beanjar("info", "pi/tv", "--json")
+        rc, out, _ = self.beanjar("show", "pi/tv", "--json")
         self.assertEqual(json.loads(out), {"host": "pi", **data})
-        self.assertEqual(self.fake.calls[-1][1], "beanjar info local/tv --json")
-        rc, out, _ = self.beanjar("info", "tv")
+        self.assertEqual(self.fake.calls[-1][1], "beanjar show local/tv --json")
+        rc, out, _ = self.beanjar("show", "tv")
         self.assertIn("host: pi", out)
         self.assertIn("dir: /pi/vms/tv", out)
 
@@ -350,9 +367,9 @@ class CommandsTest(Base):
         self.add(pi={"vms": ["tv"]})
         self.fake.reply = (0, PNG, "")
         target = os.path.join(self.tmp, "shot.png")
-        rc, out, _ = self.beanjar("screenshot", "pi/tv", target, "--size", "800x600", "--json")
+        rc, out, _ = self.beanjar("screenshot", "pi/tv", target, "--frame", "800x600", "--json")
         self.assertEqual(rc, 0)
-        self.assertEqual(self.fake.calls[-1][1], "beanjar screenshot local/tv - --size 800x600")
+        self.assertEqual(self.fake.calls[-1][1], "beanjar screenshot local/tv - --frame 800x600")
         with open(target, "rb") as f:
             self.assertEqual(f.read(), PNG)
         self.assertEqual(json.loads(out)["width"], 1280)
@@ -387,17 +404,17 @@ class CommandsTest(Base):
         path = os.path.join(self.tmp, "pw")
         with open(path, "w") as f:
             f.write("s3cret\n")
-        rc, _out, _err = self.beanjar("vnc", "password", "pi/tv", "set", path)
+        rc, _out, _err = self.beanjar("vnc", "password", "set", "pi/tv", path)
         self.assertEqual(rc, 0)
         host, argv, stdin = self.fake.calls[-1]
-        self.assertEqual(argv, "beanjar vnc password local/tv set")
+        self.assertEqual(argv, "beanjar vnc password set local/tv")
         self.assertEqual(stdin, b"s3cret\n")
         self.assertNotIn("s3cret", argv)
 
     def test_local_prefix(self):
         """local/NAME is this machine's NAME: the library is asked, not a host."""
         self.add(pi={"vms": []})
-        rc, _out, err = self.beanjar("info", "local/nope")
+        rc, _out, err = self.beanjar("show", "local/nope")
         self.assertEqual((rc, err), (1, "beanjar: no VM named nope\n"))
         self.assertEqual(self.fake.calls, [])
 
@@ -568,7 +585,7 @@ class PointerMappingTest(unittest.TestCase):
         self.assertEqual(framing.frame_to_source(1279, 719, (1280, 720), (1280, 720)), (1279, 719))
         self.assertEqual(framing.frame_to_source(640, 360, (1280, 720), (3840, 2160)), (1921, 1081))
         self.assertEqual(framing.frame_to_source(1279, 718, (1280, 720), (1366, 768)), (1365, 767))
-        # a frame larger than the display (screenshot --size 3840x2160 of a 1080p one)
+        # a frame larger than the display (screenshot --frame 3840x2160 of a 1080p one)
         self.assertEqual(
             framing.frame_to_source(3839, 2159, (3840, 2160), (1920, 1080)), (1919, 1079)
         )
@@ -676,7 +693,8 @@ class PointerCliTest(Base):
             rc, _, _ = self.beanjar("remote", "move", "tv", "1", "2", "--frame", "1920x1080")
             self.assertEqual((rc, seen[-1][:4]), (0, ("move", 1, 2, (1920, 1080))))
             for bad in (["-1", "2"], ["x", "2"], ["1"], ["1", "2", "--button", "back"],
-                        ["1", "2", "--frame", "big"], ["1", "2", "--settle", "-5"]):  # fmt: skip
+                        ["1", "2", "--frame", "big"], ["1", "2", "--settle", "-5ms"],
+                        ["1", "2", "--settle", "300"]):  # fmt: skip
                 self.assertEqual(self.beanjar("remote", "click", "tv", *bad)[0], 2, bad)
             self.assertEqual(self.beanjar("remote", "move", "tv", "1", "2", "--hold", "5")[0], 2)
 
@@ -847,8 +865,8 @@ class AresRemoteTest(Base):
     def transport(self, argv, stdin=None, on_stderr=None, timeout=None):
         command = argv[-1]
         self.helper.append(command)
-        if command.startswith("beanjar settings "):
-            known = command.split()[2] == "local/tv"
+        if command.startswith("beanjar config show "):
+            known = command.split()[3] == "local/tv"
             return (0, b"{}", "") if known else (1, b"", '{"error": "no VM named x"}\n')
         if command == "true":  # run to start the shared connection (remote.ensure_master)
             open(os.path.join(self.dir, "master"), "w").close()
@@ -909,7 +927,7 @@ class AresRemoteTest(Base):
         self.assertEqual((got["key"], got["mode"]), ("KEY\n", 0o600))
         self.assert_clean()
         self.assertEqual(
-            [c for c in self.helper if not c.startswith("beanjar settings ")],
+            [c for c in self.helper if not c.startswith("beanjar config show ")],
             ["beanjar _ares local/tv --json"],
             "one call to the host",
         )
@@ -932,7 +950,7 @@ class AresRemoteTest(Base):
 
     def test_refused(self):
         for change, message in (
-            ({"layers": ["hbchannel"]}, "settings tv set layers=hbchannel,devmode`"),
+            ({"layers": ["hbchannel"]}, "config set tv layers=hbchannel,devmode`"),
             ({"running": False}, "VM tv is not running"),
             ({"address": None}, "VM tv has no address"),
             ({"key": None}, "VM tv has no developer key"),
@@ -992,7 +1010,7 @@ class AresRemoteTest(Base):
         self.assertEqual(rc, 1)
         self.assertIn("VM tv has no root SSH", err)
         self.assertIn("port 22, hbchannel or rootssh.", err)
-        self.assertIn("`beanjar settings tv set layers=devmode,rootssh`", err)
+        self.assertIn("`beanjar config set tv layers=devmode,rootssh`", err)
         self.root_target.update(port=6622, key=None)
         rc, _out, err = self.beanjar("ares-fake", "--root", "-d", "pi/tv")
         self.assertEqual(rc, 1)
@@ -1128,7 +1146,7 @@ class MitmConnectTest(AresRemoteTest):
         (cancel,) = self.requests("cancel")
         self.assertEqual(cancel[cancel.index("-L") + 1], listen)
         self.assertEqual(
-            [c for c in self.helper if not c.startswith("beanjar settings ")],
+            [c for c in self.helper if not c.startswith("beanjar config show ")],
             ["beanjar mitm show local/tv --password --json"],
             "one call to the host",
         )

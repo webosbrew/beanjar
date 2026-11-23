@@ -104,6 +104,62 @@ def test_dvr_and_youtube_patterns_agree_with_validate_item(schema):
     assert ssg["maxLength"] == 1999 and ssg["minLength"] == 1
 
 
+HEX_SPELLINGS = [
+    "",
+    "00",
+    "0011",
+    "AaBb",
+    "00 11",
+    " 00",
+    "00 ",
+    "00  11",
+    "00\t11",
+    "00\n11",
+    "00\r\n11",
+    "00\x0b11",
+    "00\x0c11",
+    "0x00",
+    "00:11",
+    "00-11",
+    "00_11",
+    "0 0",
+    "001",
+    "0",
+    "zz",
+    "00\u00a011",
+    "00\u200311",
+    "\uff10\uff10",
+    "00\x0011",
+]
+
+
+def loader_accepts_hex(tmp_path, spelling):
+    path = tmp_path / "sestore.toml"
+    path.write_text("[items]\ngeneric = { hex = " + json.dumps(spelling) + " }\n")
+    path.chmod(0o600)
+    try:
+        return sestore.load_file(path)[1]["generic"]
+    except sestore.Error:
+        return None
+
+
+@pytest.mark.parametrize("spelling", HEX_SPELLINGS)
+def test_hex_spellings_schema_agrees_with_loader(schema, tmp_path, spelling):
+    pattern = re.compile(schema["definitions"]["entry"]["properties"]["hex"]["pattern"])
+    decoded = loader_accepts_hex(tmp_path, spelling)
+    assert (pattern.fullmatch(spelling) is not None) == (decoded is not None)
+    if decoded is not None:
+        assert decoded == bytes.fromhex("".join(spelling.split()))
+
+
+def test_hex_length_patterns_count_bytes_not_characters(schema):
+    dvr = re.compile(definition(schema, "dvr_key")["hex"]["pattern"])
+    assert dvr.fullmatch(" ".join(["00"] * 16))
+    assert not dvr.fullmatch(" ".join(["00"] * 17))
+    model = re.compile(definition(schema, "model_key")["hex"]["pattern"])
+    assert model.fullmatch("00\n" * 44) and not model.fullmatch("00 " * 43)
+
+
 def test_guide_example_is_schema_shaped(schema):
     data = guide_example()
     assert set(data) <= set(schema["properties"])
@@ -130,6 +186,8 @@ DOCUMENTS = [
     ('[items]\nx = { text = "x", extra = 1 }\n', False),
     ('[items]\nx = { text = "x", nul_terminated = "yes" }\n', False),
     ('[items]\nx = { hex = "abc" }\n', False),
+    ('[items]\nx = { hex = "00 11\\n22" }\n', True),
+    ('[items]\nx = { hex = "00:11" }\n', False),
     ('[items]\nx = { file = "" }\n', False),
     ('[items]\n"1D492999" = { text = "short" }\n', False),
     (f'[items]\n"1D492999" = {{ text = "{KEY}", nul_terminated = true }}\n', False),

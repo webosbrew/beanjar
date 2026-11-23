@@ -76,10 +76,11 @@ Environment (both):
                       VM_ADDRESS for the host itself
               off     no network, like a TV with no cable: the NIC is present with its link down and
                       nothing behind it (netns.net_off). No port forwards. NET_MODE is ignored.
-  NET_MODE  mitm (default) or direct (vm.toml's network.mode), with NET_LINK=nat:
-              mitm    the internet through a rootless network namespace (netns.py; needs unshare,
-                      ip and slirp4netns): DHCP, real DNS and NAT as with direct, except that
-                      every TCP and UDP connection is routed into mitmweb's TUN device (tun
+  NET_MODE  mitm (default) or direct (vm.toml's network.mode), with NET_LINK=nat. Both run in a
+            rootless network namespace (netns.py; needs unshare, ip, slirp4netns and unprivileged
+            user namespaces) with slirp4netns's NAT as its uplink: DHCP (10.0.2.15), real DNS at
+            10.0.2.3, the router 10.0.2.2, and the host's loopback out of reach in either mode:
+              mitm    every TCP and UDP connection is routed into mitmweb's TUN device (tun
                       mode; the user's own mitmproxy 12.0.1 or newer, mitmtool.py, NETNS_MITMWEB),
                       which records it and forwards it live (host/helpers/network/mitm_addon.py);
                       without a usable mitmweb the guest goes out directly. Inspector
@@ -89,7 +90,18 @@ Environment (both):
                       layer, and the guest adds it to the firmware's trust stores at boot. The
                       proxy does not verify upstream servers (ssl_insecure); a TLS failure has
                       later connections to that endpoint passed through undecrypted (mitm_addon.py).
-              direct  the internet through QEMU's user-mode NAT (slirp: DHCP, DNS at 10.0.2.3)
+              direct  the same namespace without mitmweb: nothing is inspected
+  NET_LAN_ACCESS  on or off (default; vm.toml's network.lan_access), with NET_LINK=nat: on lets
+            the guest reach the LAN (the private ranges, shared address space, link-local and
+            multicast) and the host's own non-loopback addresses, which off refuses (netns.py's
+            BLOCK_PREF and HOST_PREF rules). NET_LINK=lan is always on. The internet is reached
+            either way, the host's loopback never
+  NET_LG_SERVICES  mock (default; vm.toml's network.lg_services) or real, with NET_LINK=nat or
+            lan: mock refuses LG's telemetry and cloud hosts (host/helpers/network/lg_hosts.py) by
+            the namespace's resolver and policy rules, answers LG's online check, SDP and web
+            hosts there (host/helpers/network/lg_mock.py, lg_sdp.py; the guest trusts the proxy's
+            CA in direct too) and has mitm_addon.py pass no LG host through undecrypted; real
+            reaches LG as a TV does
   NET_ADDRESS  NET_LINK=lan only: dhcp (default) or A.B.C.D/NN,GATEWAY (vm.toml's network.address)
   MITM_FLOWS  NET_MODE=mitm only: how many flows the inspector keeps (vm.toml's network.mitm_flows,
             default 5000, 0 for all of them); the oldest finished ones are dropped
@@ -102,11 +114,17 @@ Environment (both):
             default build/firmware-cache) of the paks in UNCOMPRESSED_PAKS (default rootfs); a
             perf experiment of the checkout's VM, not a VM manager setting
   STATE     state directory with the persistent partition images (default RUN_DIR/state/default,
-            build/state/default; relative to the tree), or "none": the same disks backed by blank
-            images in RUN_DIR/state/.blank that QEMU never writes (snapshot=on; QEMU keeps the writes
-            in an unlinked file in TMPDIR; the launcher programs the blank EEPROM there). The guest
-            formats blank ones with the firmware's own mkfs.ext4. QEMU locks the images, so two VMs
-            cannot share a state. `host/scripts/vm-launcher reset-state` wipes one.
+            build/state/default; relative to the tree), or "none": a fresh state, the VM's
+            persistent one untouched. In a unit (unit.run) that is FRESH_STATE, the run's one
+            temporary state directory (lifecycle.fresh_state, RUN_DIR/state/.fresh), empty at the
+            run's start: its disks and EEPROM are made and programmed at the first launch, used as
+            they are by every launch after a guest restart, as a set keeps what it wrote across a
+            reboot, and removed when the run ends. Without FRESH_STATE (a foreground run, where QEMU
+            resets in place) the disks are blank images in RUN_DIR/state/.blank that QEMU never
+            writes (snapshot=on; QEMU keeps the writes in an unlinked file in TMPDIR until it exits;
+            the launcher programs the blank EEPROM there). The guest formats blank disks with the
+            firmware's own mkfs.ext4. QEMU locks the images, so two VMs cannot share a state.
+            `host/scripts/vm-launcher reset-state` wipes one.
   MAC, SERIAL  the TV's board MAC (the NIC's, and ethaddr=) and serial number (serialNum=): a
             VM's own (vm.toml's mac and serial) on the kernel cmdline as webos.ethaddr= and
             webos.serial=; unset, board.cmdline's (a8:23:fe:12:34:56, 501RAXX00001) stand
@@ -274,8 +292,9 @@ def tcg_tb_mib(env):
 
 
 # How much slower than a TV the guest runs, by ACCEL: the factor the guest's fixed fallback timers
-# (bootd's signal waits; webos.time_scale=, guest/initramfs/rootfs/init, guest/layers/webos/src/bootd-scale)
-# and scripts/regress's own deadlines are stretched by. KVM runs at TV speed. Under TCG, with four
+# (bootd's signal waits and memchute's heartbeat; webos.time_scale=, guest/initramfs/rootfs/init,
+# guest/layers/webos/src/bootd-scale and memchute-scale) and scripts/regress's own deadlines are
+# stretched by. KVM runs at TV speed. Under TCG, with four
 # VMs on the PC, tvservice's tv-ready came up to 94 s after bootd began its 60 s wait (m3) and 45 s
 # into h13's 30 s (scratch/timed-gates-study.md, section 6), i.e. up to 1.6 times the timeout;
 # alone, core-boot-done was 1.3 to 2.5 times KVM's (docs/dev/guides/build.md). 4 leaves 2.5 times that margin
@@ -291,12 +310,12 @@ size_bytes = targets.size_bytes
 
 
 class Plan:
-    """A launch: argv (QEMU and its arguments), wrap (None, "mitm" or "off": what netns.py puts in
-    front of QEMU), env (the environment to run it in), disks ([(image, size, seed)] to create;
+    """A launch: argv (QEMU and its arguments), wrap ("netns" or "off": what netns.py puts in
+    front of QEMU, netns.run or netns.off), env (the environment to run it in), disks ([(image, size, seed)] to create;
     seed, the file a new one starts with, or None; images to remove first in remove), partmap (the
     firmware's partinfo disk image in the cache; None in a dry plan), identity_dir, layer_dir and ca (the per-VM layer
     that guest_layer() makes; ca, the proxy CA's certificate, None
-    unless NET_MODE=mitm), ca_dir (the proxy's CA, NETSTUB_CA), run_dir, host_dir and out_dir (the
+    unless NET_MODE=mitm or LG's services are mocked in direct), ca_dir (the proxy's CA, NETSTUB_CA), run_dir, host_dir and out_dir (the
     guest's other shares, share.py), tree, fw (the firmware directory) and fw_name (its name),
     target (the firmware's (chip, release), paths.firmware_target)."""
 
@@ -522,7 +541,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # the set's eMMC partition is writable: its mount(2) passes no MS_RDONLY, which a read-only
     # disk refuses. The others are read-only.
     lowers = {pl.serial for pl in targets.release(p.target).pak_lowers}
-    for file, serial, mount in targets.paks(p.target, fw):
+    for file, serial, mount, _optional in targets.paks(p.target, fw):
         img = os.path.join(fw, file + ".pak")
         if not os.path.isfile(img):
             continue
@@ -570,7 +589,10 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     run_dir = os.path.join(top, _get(env, "RUN_DIR", "build"))
     state = _get(env, "STATE", os.path.join(run_dir, "state", "default"))
     state_opt = ""
-    if state == "none":
+    fresh = state == "none" and env.get("FRESH_STATE")
+    if fresh:
+        state = fresh  # the run's temporary state (unit.run): kept across guest restarts
+    elif state == "none":
         state, state_opt = os.path.join(run_dir, "state", ".blank"), ",snapshot=on"
     elif not state.startswith("/"):
         state = os.path.join(top, state)
@@ -592,7 +614,11 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         except (partmap.Error, OSError) as e:
             raise Error(f"partition map: {e}") from None
     # firmware.updatable: the whole-disk /dev/mmcblk0 the stock updater writes into. partinfo is
-    # attached snapshot=on so the updater's bank-swap write to it is discarded with the rest.
+    # attached snapshot=on so the updater's bank-swap write to it is discarded with the rest, when
+    # this QEMU exits: a guest restart included, in a fresh state's run (FRESH_STATE) as in a
+    # persistent one. A set keeps the swap across its reboot, but here the bank it points at is the
+    # scratch overlay's, which the same exit discards, and the paks stay the firmware's files: a
+    # swap kept alone would name partitions no disk holds.
     p.updatable = _get(env, "UPDATABLE", "off")
     if p.updatable not in ("on", "off"):
         raise Error(f"UPDATABLE={p.updatable}: on or off")
@@ -646,7 +672,13 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             p.disks.append((img, size, seed))
         elif not os.path.isfile(img):
             p.disks.append((img, size, seed))
-    say("state: none (fresh disks, discarded at power-off)" if state_opt else f"state: {state}")
+    if fresh:
+        say(
+            f"state: none (this run's fresh state in {state}: kept across guest restarts, "
+            "discarded when the run ends)"
+        )
+    else:
+        say("state: none (fresh disks, discarded at power-off)" if state_opt else f"state: {state}")
     # firmware.updatable: one scratch overlay disk sized to the whole eMMC, the dm-linear whole-disk
     # /dev/mmcblk0's backing (guest bin/beanjar-emmc). snapshot=on discards every write at power-off,
     # so the updater's raw writes to the inactive A/B bank never persist and never reach a real
@@ -703,7 +735,16 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         raise Error(f"unknown NET_MODE={net} (mitm or direct)")
     if link == "off":
         net = "off"
+    # the LAN and the host's own addresses: link=lan is on the LAN; link=nat only with
+    # NET_LAN_ACCESS=on. The host's loopback is out of reach either way (netns.py).
+    lan_access = _get(env, "NET_LAN_ACCESS", "off")
+    if lan_access not in vmsettings.ONOFF:
+        raise Error(f"NET_LAN_ACCESS={lan_access}: on or off")
+    lg_services = _get(env, "NET_LG_SERVICES", vmsettings.DEFAULT_LG_SERVICES)
+    if lg_services not in vmsettings.LG_SERVICES:
+        raise Error(f"NET_LG_SERVICES={lg_services}: {' or '.join(vmsettings.LG_SERVICES)}")
     if link == "lan":
+        lan_access = "on"
         # the mitm namespace one level in, its uplink a macvlan on the library's lan_parent (netns.lan)
         if net != "mitm":
             raise Error(vmsettings.LAN_NOT_IMPLEMENTED)
@@ -730,26 +771,29 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             NET_LINK="lan", NET_LAN_PARENT=parent, NET_ADDRESS=address, NET_LAN_HELPER=helper
         )
     fwd = []  # hostport:guestport
-    if net == "mitm":
-        p.wrap = "mitm"
+    if net in ("mitm", "direct"):
+        # both in netns.py's rootless namespace, slirp4netns its uplink with the host's loopback
+        # refused (QEMU's own slirp, -netdev user, maps 10.0.2.2 to it); direct without mitmweb
+        p.wrap = "netns"
         if not dry and not os.access(tree.relay(), os.X_OK):
-            raise Error(f"NET_MODE=mitm needs {tree.relay()} (scripts/build.sh host)")
-        flows = _get(env, "MITM_FLOWS", str(vmsettings.MITM_FLOWS))
-        if not flows.isdigit():
-            raise Error(f"MITM_FLOWS={flows}: a number, 0 for no limit")
-        p.env["MITM_FLOWS"] = str(int(flows))
-        try:
-            p.env["MITM_FLOW_BYTES"] = str(vmsettings.byte_size(env.get("MITM_FLOW_BYTES", "")))
-        except ValueError as e:
-            raise Error(f"MITM_FLOW_BYTES={e}") from None
-        for k, v in (
-            ("NETNS_TAP", "tap0"),
-            ("NETSTUB_LOG", os.path.join(top, _get(env, "LOG_DIR", "build"), "netstub.log")),
-        ):
-            p.env[k] = _get(env, k, v)
+            raise Error(f"NET_LINK={link} needs {tree.relay()} (scripts/build.sh host)")
+        p.env["NET_MODE"] = net
+        p.env["NET_LAN_ACCESS"] = lan_access
+        p.env["NET_LG_SERVICES"] = lg_services
+        p.env["NETNS_TAP"] = _get(env, "NETNS_TAP", "tap0")
+        if net == "mitm":
+            flows = _get(env, "MITM_FLOWS", str(vmsettings.MITM_FLOWS))
+            if not flows.isdigit():
+                raise Error(f"MITM_FLOWS={flows}: a number, 0 for no limit")
+            p.env["MITM_FLOWS"] = str(int(flows))
+            try:
+                p.env["MITM_FLOW_BYTES"] = str(vmsettings.byte_size(env.get("MITM_FLOW_BYTES", "")))
+            except ValueError as e:
+                raise Error(f"MITM_FLOW_BYTES={e}") from None
+            p.env["NETSTUB_LOG"] = _get(
+                env, "NETSTUB_LOG", os.path.join(top, _get(env, "LOG_DIR", "build"), "netstub.log")
+            )
         netdev = f"tap,id=net0,ifname={p.env['NETNS_TAP']},script=no,downscript=no"
-    elif net == "direct":
-        netdev = "user,id=net0,ipv6=off"  # IPv4 only: the guest keeps IPv6 link-local (docs/dev/guides/build.md)
     else:
         p.wrap = "off"
         netdev = "hubport,id=net0,hubid=0"
@@ -784,11 +828,8 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     addr = p.service_host
 
     def forward(host, guest):
-        nonlocal netdev
-        if net == "mitm":
+        if net in ("mitm", "direct"):
             fwd.append(f"{host}:{guest}")
-        elif net == "direct":
-            netdev += f",hostfwd=tcp:{listen}:{host}-:{guest}"
         else:
             say(
                 f"NET_LINK=off: no forward for host port {listen}:{host} (use NET_LINK=nat to reach the guest)"
@@ -866,6 +907,8 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     if net != "off":
         say(
             f"network: {link}, {net}, host address {p.address}"
+            + (", LAN access" if lan_access == "on" else "")
+            + (", real LG services" if lg_services == "real" else "")
             + (f", service ports on {listen}" if listen != p.address else "")
             + (
                 f", LAN on {p.env['NET_LAN_PARENT']} ({p.env['NET_ADDRESS']})"
@@ -875,9 +918,11 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         )
     # The proxy's CA (keys.ensure_ca): the library's for its VMs, the development library's ca/. Only
     # its certificate reaches the guest (guest_layer). Upstream servers are verified against
-    # mitmproxy's default roots, nothing of the firmware's (netns.py).
+    # mitmproxy's default roots, nothing of the firmware's (netns.py). With LG's services mocked
+    # the guest trusts it in direct too: lg_mock.py answers LG's SDP and web hosts with
+    # certificates it issues (netns.py).
     p.ca_dir = os.path.join(top, _get(env, "NETSTUB_CA", os.path.join(p.identity_dir, keys.CA)))
-    if net == "mitm":
+    if net == "mitm" or (net == "direct" and lg_services == "mock"):
         p.env["NETSTUB_CA"] = p.ca_dir
         p.ca = os.path.join(p.ca_dir, "ca.pem")
         say(f"proxy CA: {p.ca_dir}")
@@ -1259,12 +1304,9 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     machine = "q35" if guest_kernel == "x86-64" else "virt"
     memory = []
     # queue's Weston (the gl layer's weston-setup: TV-1 and TV-2 on two virtual heads, K8HP and O22
-    # alike) and Spacebuns' native one need a second output
-    two_outputs = (
-        (p.target[1] == "queue" or p.target == ("o22n2", "spacebuns"))
-        and "gl" in p.layers
-        and display_backend == "dbus"
-    )
+    # alike) needs a second output. Spacebuns' native one has one, as a set: its TV-2 output takes
+    # the overlay plane of the one CRTC (the gl layer's kernel words, guest kernel patch 0028).
+    two_outputs = p.target[1] == "queue" and "gl" in p.layers and display_backend == "dbus"
     if gpu and gpu_process(env, node, qemu, tree, say):
         # virgl in QEMU's vhost-user-gpu backend, its own process (docs/dev/architecture/gpu-process.md):
         # the same device to the guest, at the same resolution and id. The backend maps the guest's
@@ -1283,8 +1325,6 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         if p.target[1] == "queue":
             append += " virtio_gpu.tv_connector=1"
         p.display_setup = (dbus_addr, socks["QMP_SOCK"])
-        if p.target == ("o22n2", "spacebuns"):
-            p.display_setup += ("--physical-size", "0", "0")
         if "-S" in env.get("QEMU_EXTRA", "").split():
             p.display_setup += ("--keep-paused",)
     audio_default = "dbus" if display_backend == "dbus" else "none"
@@ -1538,8 +1578,8 @@ def gpu_backend(env, qemu, tree=paths.TREE):
 def gpu_process(env, node, qemu, tree=paths.TREE, say=print):
     """Whether the VM's virgl GPU runs in its own process (GPU_DEVICE): vhost-user-gpu; auto,
     on an aarch64 host whose render node is a GPU's (the Pi, the ROCK Pi 4s; the PC under WSL keeps virtio-gpu-gl, whose read-back it needs). A guest
-    with two outputs too: QEMU 10.0's backend aborts when one resource is on both, which spacebuns
-    does only at its last DRM close, on the way down, and every restart is a new QEMU with a new
+    with two outputs too: QEMU 10.0's backend aborts when one resource is on both, which a
+    two-output guest (queue) does only at its last DRM close, on the way down, and every restart is a new QEMU with a new
     backend (lifecycle.py; docs/dev/architecture/gpu-process.md). Error if vhost-user-gpu is asked for
     and cannot be run."""
     mode = env.get("GPU_DEVICE") or "auto"
@@ -1586,7 +1626,7 @@ def guest_layer(p):
       the release's gateway reads an SSG key (targets.Release.ssg_key):
         usr/palm/services/com.webos.service.secondscreen.gateway/certs/cert/ssg.server.cert.pem (0644)
                                                       keys.ssg_cert_data of it, over LG's certificate
-      NET_MODE=mitm (ca), 0644:
+      NET_MODE=mitm, or direct with NET_LG_SERVICES=mock (ca), 0644:
         etc/emulator/netstub-ca.pem                   ca_dir/ca.pem, the proxy CA's certificate
         etc/emulator/netstub-ca.hash                  its OpenSSL subject hash (guest/initramfs/rootfs/init links
                                                       etc/ssl/certs/<hash>.<first free n> to it)

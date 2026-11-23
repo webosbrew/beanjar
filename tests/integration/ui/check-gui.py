@@ -1147,8 +1147,8 @@ def main():
                 picture.picture.get_paintable() is not None
                 and not picture.badge.get_visible()
                 and picture.overlay.get_tooltip_text() == "Connect"
-                and ("tv1", ("--size", "384x216")) in shot_runs,
-                "running: the picture is live (beanjar screenshot --size 384x216), a click connects",
+                and ("tv1", ("--frame", "384x216")) in shot_runs,
+                "running: the picture is live (beanjar screenshot --frame 384x216), a click connects",
             )
             m.details.set_visible_child_name("console")
             n = len(shot_runs)
@@ -1338,7 +1338,7 @@ def main():
         check(
             tiles["state"].caption.get_text() == "Viewer open"
             and picture.overlay.get_tooltip_text() == "Show the Viewer"
-            and not [r for r in shot_runs[n:] if "--size" in r[1]],
+            and not [r for r in shot_runs[n:] if "--frame" in r[1]],
             "the viewer open: State says so, the picture shows it, no picture taken meanwhile",
         )
         check(

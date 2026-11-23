@@ -14,7 +14,10 @@ every command with an empty return and records them in run/fake-lifecycle.jsonl,
 n-th word of FAKE_LIFECYCLE (comma-separated, n counted in run/fake-runs; none: run on):
 reset (SHUTDOWN guest-reset, exit 0), poweroff (SHUTDOWN guest-shutdown, exit 0), enospc
 (BLOCK_IO_ERROR nospace, then on `quit` SHUTDOWN host-qmp-quit, exit 0). FAKE_ORPHAN=S leaves a child
-that lives S seconds after this exits, as the launcher's helpers outlive QEMU briefly."""
+that lives S seconds after this exits, as the launcher's helpers outlive QEMU briefly. With
+FRESH_STATE (unit.run's temporary state of a STATE=none run) each start records the directory and
+the files it finds there in run/fake-fresh.jsonl, then writes run<n>.img into it, as a guest writes
+its state disks."""
 
 import json
 import os
@@ -104,6 +107,13 @@ def lifecycle(path):
         n = 0
     with open(runs, "w") as f:
         f.write(str(n + 1))
+    fresh = os.environ.get("FRESH_STATE")
+    if fresh:
+        record = {"run": n, "dir": fresh, "files": sorted(os.listdir(fresh))}
+        with open(os.path.join(run, "fake-fresh.jsonl"), "a") as f:
+            f.write(json.dumps(record) + "\n")
+        with open(os.path.join(fresh, f"run{n}.img"), "w") as f:
+            f.write("written\n")
     words = os.environ.get("FAKE_LIFECYCLE", "").split(",")
     act = words[n] if n < len(words) else ""
     c = socket.socket(socket.AF_UNIX)

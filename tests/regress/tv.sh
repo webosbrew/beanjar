@@ -356,7 +356,7 @@ app_remove() {
 tee_step() {
 	lib=$1 sstore=$2
 	shift 2
-	probe=/mnt/host/build/tests/tee/tee-probe
+	probe=/mnt/host/build/tests/regress/tee/tee-probe
 	if [ -c /dev/tee0 ]; then echo "tee_dev=char"; else echo "tee_dev=$(ls -l /dev/tee0 2>&1 | cut -c1-60)"; fi
 	$T $((60 * scale)) $probe "$lib" open "$sstore" "$@" 2>&1
 	echo "probe_open_rc=$?"

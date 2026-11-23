@@ -72,7 +72,7 @@ ROTATIONS = (
     "90",
     "180",
     "270",
-)  # beanjar sensor rotate's angles (the set turned; 0 is standing)
+)  # beanjar sensor set rotate's angles (the set turned; 0 is standing)
 LOCAL = "local"  # this machine in HOST/NAME (the manager's remote.LOCAL)
 DEFAULT_PORT = 8059
 CHUNK = 1 << 16
@@ -420,8 +420,8 @@ class Server:
                     mitm=str(r.get("network") or "").endswith("+mitm"),
                     touch=bool(r.get("touch")),  # a touch screen: the viewer sends touches to it
                     portrait=bool(r.get("portrait")),  # turns to portrait: rotate, turned picture
-                    reason=r.get("reason"),  # why it runs (beanjar reason), None
-                    tags=r.get("tags") or [],  # its tags (beanjar tag)
+                    reason=r.get("reason"),  # why it runs (beanjar status), None
+                    tags=r.get("tags") or [],  # its tags (beanjar config: tags)
                     operation=self.operations.get(f"{row_host(r)}/{r['name']}"),
                 )
                 for r in rows
@@ -509,20 +509,20 @@ class Server:
         return web.json_response(operation, status=status, headers={"Cache-Control": "no-store"})
 
     async def rotate(self, request):
-        """`beanjar sensor rotate` with the body's angle (0, 90, 180 or 270): 200 with its JSON once the
+        """`beanjar sensor set rotate` with the body's angle (0, 90, 180 or 270): 200 with its JSON once the
         guest reports it, its refusal as 409."""
         spec = self.spec(request)
         angle = (await request.text()).strip()
         if angle not in ROTATIONS:
             raise web.HTTPBadRequest(text="the angle is 0, 90, 180 or 270")
-        rc, out, err = await self.run(["sensor", "rotate", "--json", spec, angle], 90)
+        rc, out, err = await self.run(["sensor", "set", "rotate", "--json", spec, angle], 90)
         if rc:
             return web.json_response({"error": error_text(err)}, status=409)
         try:
             return web.json_response(json.loads(out))
         except ValueError:
             return web.json_response(
-                {"error": "beanjar sensor rotate said nothing readable"}, status=502
+                {"error": "beanjar sensor set rotate said nothing readable"}, status=502
             )
 
     async def vnc_start(self, request):
@@ -610,7 +610,7 @@ class Server:
             if entry.mode is None or (entry.mode == "last" and entry.loaded):
                 return  # Off: --last only once, even when the answer is "no thumbnail yet"
             version = entry.version
-            words = ["--last"] if entry.mode == "last" else ["--size", "384x216"]
+            words = ["--last"] if entry.mode == "last" else ["--frame", "384x216"]
             rc, png, err = await self.run(["screenshot", spec, "-", *words], 30)
             if version != entry.version:
                 return  # a VM action or a new list changed its eligibility while capturing
@@ -633,10 +633,10 @@ class Server:
                 entry.checked = asyncio.get_running_loop().time()
 
     async def guest_rotation(self, spec, key="rotation"):
-        """The rotation a portrait model's guest last reported (`beanjar sensor rotate NAME`, key
+        """The rotation a portrait model's guest last reported (`beanjar sensor show rotate NAME`, key
         "rotation"), or the angle its set was left at ("saved", for a VM that is off); 0 when there
         is none."""
-        rc, out, _err = await self.run(["sensor", "rotate", "--json", spec], 15)
+        rc, out, _err = await self.run(["sensor", "show", "rotate", "--json", spec], 15)
         try:
             angle = json.loads(out).get(key) if rc == 0 else 0
         except (ValueError, AttributeError):

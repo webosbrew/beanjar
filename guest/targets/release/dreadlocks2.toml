@@ -19,6 +19,7 @@ version = "3.5"
 cap_last_cap = 37
 ddr_sizes = [768, 1024, 1280, 1536, 2048, 2560, 3072, 2048, 2048]
 peripherals = [
+    "sit",
     "usbhid", "hid-axff", "hid-dr", "hid-logitech", "hid-pl", "hid-sony", "hid-zpff", "xpad",
     "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
     "nls_utf8", "nls_iso8859-1", "snd-usb-audio", "cdc-acm", "uhid", "input-leds",

@@ -1,0 +1,7 @@
+# Emulator: no MStar kernel drivers to load (kdrv_lm15u.ko, LG's kdriver with Monaco's Utopia2K
+# kernel side, and the ALSA/MStar audio modules, built for LG's 3.10 kernel); the emulator's
+# mstar-utopia.ko stands in for kdrv_lm15u.ko and is loaded before init. Kept as a task: gm,
+# gpu-libs and tvservice's jobs start on "stopped kdrivers".
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: nothing to load"
+end script

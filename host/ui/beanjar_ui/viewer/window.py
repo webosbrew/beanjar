@@ -140,7 +140,7 @@ class ViewerWindow(Adw.ApplicationWindow):
         bar_h = pane.bar.measure(Gtk.Orientation.VERTICAL, -1)[1] if pane.bar else 0
         self.set_default_size(w, h + bar_h)
         # a set that turns to portrait (vm-info.toml's portrait): its rotate button, where the
-        # VM is a library's (beanjar sensor rotate NAME), and the window turned with the picture
+        # VM is a library's (beanjar sensor set rotate NAME), and the window turned with the picture
         self.rotate_button.set_visible(pane.can_rotate())
         self.rotate_separator.set_visible(pane.can_rotate())
         # the planes shown (More), a view setting of this window: the core leaves the hidden ones

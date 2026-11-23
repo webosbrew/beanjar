@@ -29,7 +29,10 @@ from the running process before (dlsym, dladdr1). On later starts the tool optio
 ToolOpt= (sync_tool_options) and the model name modelName= (sync_model), as lxboot's copy and the
 NVM do on a TV, and the serial follows the VM's own (sync_serial: vm.toml's serial, which
 guest/initramfs/rootfs/init also puts in serialNum=). The area is a factory's only: a programmed
-ContinentOptionDB is the TV's (its menus change it) and is not synced.
+ContinentOptionDB is the TV's (its menus change it) and is not synced. The debug status follows
+the VM's debug_mode at every start: a plain byte (sync_debug_status), and on webOS 4.x the
+32-byte block that the SoC encrypts on a TV and the emulator keeps clear (sync_debug_block,
+beanjar/nvmdebug.py).
 """
 
 import collections
@@ -134,9 +137,8 @@ def _relocated(data, dynamic, loads):
     return out
 
 
-def default_records(fw, nvm, tree=paths.TREE):
-    """{name: bytes}: the default records of the firmware directory fw's Nvm.records file, read
-    with unsquashfs."""
+def records_file(fw, nvm):
+    """The bytes of the firmware directory fw's Nvm.records file (tvservice), read with unsquashfs."""
     pak, path = nvm.records
     r = subprocess.run(
         ["unsquashfs", "-cat", "-no-wildcards", os.path.join(fw, pak + ".pak"), path.lstrip("/")],
@@ -145,7 +147,15 @@ def default_records(fw, nvm, tree=paths.TREE):
     )
     if r.returncode:
         raise Error(f"{pak}.pak:{path}: {r.stderr.decode(errors='replace').strip() or 'not read'}")
-    data = r.stdout
+    return r.stdout
+
+
+def default_records(fw, nvm, tree=paths.TREE, data=None):
+    """{name: bytes}: the default records of the firmware directory fw's Nvm.records file (data:
+    its bytes where they are already read, else read with unsquashfs)."""
+    pak, path = nvm.records
+    if data is None:
+        data = records_file(fw, nvm)
     try:
         return elf_objects(
             data,
@@ -418,13 +428,53 @@ def sync_debug_status(image, nvm, mode, say=print):
     DEBUG_MODES: the VM's debug_mode, else the board's debugMode=), so that tvservice
     (OSA_MD_GetDebugStatus, the luna property debugLevel that faultmanager reads) always agrees with
     the kernel's word; a blank chip's 0xFF would read as RELEASE. Whether the image changed. A
-    release without the plain byte (webOS 4.x) keeps the kernel's word only."""
+    release without the plain byte (W18R) has nothing here; its block is sync_debug_block's."""
     at = nvm.debug_status_offset
-    if at is None or image[at] == mode:
+    value = nvm.debug_status_values[mode - DEBUG_MODES["debug"]]
+    if at is None or image[at] == value:
         return False
-    image[at] = mode
-    say(f"EEPROM debug status set: {mode}")
+    image[at] = value
+    say(f"EEPROM debug status set: {value}")
     return True
+
+
+def sync_debug_block(image, nvm, mode, say=print, rand=os.urandom):
+    """The debug status block of the bytearray image (Nvm.debug_block_offset, webOS 4.x) set to
+    the clear block of mode (DEBUG_MODES' number, which is tvservice's 3/4/5 too) in the firmware's
+    encoding (beanjar/nvmdebug.py), which the soc layer's identity cipher hands tvservice as it is.
+    A block that already reads as mode is left alone (its random bytes are not made again at every
+    start). Whether the image changed. A release without the block: nothing."""
+    from . import nvmdebug
+
+    at = nvm.debug_block_offset
+    if at is None:
+        return False
+    if nvmdebug.decode(image[at : at + nvmdebug.SIZE]) == mode:
+        return False
+    image[at : at + nvmdebug.SIZE] = nvmdebug.encode(mode, rand)
+    say(f"EEPROM debug status block set: {mode}")
+    return True
+
+
+def check_debug_block(data, nvm):
+    """Error unless the tvservice of bytes data reads its debug status where the release says: the
+    block at Nvm.debug_block_offset and, where it reads one, the plain copy at debug_status_offset
+    (beanjar/nvmdebug.py decodes its DIL_NVM_Load_DebugStatus)."""
+    from . import nvmdebug
+
+    try:
+        f = nvmdebug.fields(data)
+    except nvmdebug.Error as e:
+        raise Error(f"the debug status block: {e}") from None
+    if (f["offset"], f["plain"]) != (nvm.debug_block_offset, nvm.debug_status_offset):
+
+        def where(block, plain):
+            return f"0x{block:x}" + (f" and a plain copy at 0x{plain:x}" if plain else "")
+
+        raise Error(
+            f"the debug status block: its tvservice reads {where(f['offset'], f['plain'])},"
+            f" not the release's {where(nvm.debug_block_offset, nvm.debug_status_offset)}"
+        )
 
 
 # A VM's new chip, worked out ahead (prepare.py, at create and when the firmware, the board or the
@@ -474,12 +524,27 @@ def new_chip(
         except (lls.Error, OSError, subprocess.SubprocessError) as e:
             raise Error(f"EEPROM initialization failed: {e}") from e
         return Chip(image, records, None, lls.panel_rate(cdir))
+    if nvm.records is None and nvm.factory:
+        mode = (
+            debug_mode
+            if debug_mode is not None
+            else int(board_params(target, tree, broadcast)["debugMode"])
+        )
+        return Chip(factory_chip(fw, nvm, mode), None, None)
     if nvm.records is None:
         return Chip(None, None, None)
     board = board_params(target, tree, broadcast)
+    block = nvm.debug_block_offset is not None
+    try:
+        data = records_file(fw, nvm) if block else None
+        records = default_records(fw, nvm, tree, data)
+    except Error as e:
+        return Chip(None, None, str(e))
+    if block:
+        check_debug_block(data, nvm)  # a build that reads it elsewhere is refused
     try:
         new = program(
-            default_records(fw, nvm, tree),
+            records,
             nvm,
             board,
             serial or board.get("serialNum", ""),
@@ -490,9 +555,9 @@ def new_chip(
     except Error as e:
         return Chip(None, None, str(e))
     new = bytearray(new)
-    sync_debug_status(
-        new, nvm, debug_mode if debug_mode is not None else int(board["debugMode"]), say
-    )
+    mode = debug_mode if debug_mode is not None else int(board["debugMode"])
+    sync_debug_status(new, nvm, mode, say)
+    sync_debug_block(new, nvm, mode, say)
     return Chip(bytes(new), None, None)
 
 
@@ -506,12 +571,14 @@ def prepare(
     serialNum=). A release whose chip lowlevelstorage owns (Nvm.lls, webOS 5 on) gets prepare_lls.
     debug_mode: the number of the VM's debug_mode setting (DEBUG_MODES), else the board's own
     debugMode=: a chip whose release keeps the status as a plain byte (Nvm.debug_status_offset)
-    always has it brought to the effective mode, sync_debug_status."""
+    or a block (Nvm.debug_block_offset, webOS 4.x) always has it brought to the effective mode,
+    sync_debug_status and sync_debug_block."""
     nvm = targets.release(target).nvm
     if nvm.lls:
         prepare_lls(img, target, chip, tree, say, broadcast=broadcast, debug_mode=debug_mode)
         return
     if nvm.records is None:
+        _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast)
         return
     board = board_params(target, tree, broadcast)
     serial = serial or board.get("serialNum", "")
@@ -530,13 +597,72 @@ def prepare(
         changed = sync_tool_options(image, nvm, board, say, targets.soc(target).inputs)
         changed = sync_model(image, nvm, board.get("modelName", ""), say) or changed
         changed = sync_serial(image, nvm, serial, say) or changed
-        changed = (
-            sync_debug_status(
-                image, nvm, debug_mode if debug_mode is not None else int(board["debugMode"]), say
-            )
-            or changed
-        )
+        mode = debug_mode if debug_mode is not None else int(board["debugMode"])
+        changed = sync_debug_status(image, nvm, mode, say) or changed
+        changed = sync_debug_block(image, nvm, mode, say) or changed
         if changed:
+            f.seek(0)
+            f.write(image)
+
+
+def factory_chip(fw, nvm, mode):
+    """The new chip of a release without records whose factory fields its own code says
+    (Nvm.factory: beanjar/nvmfactory.py) with the debug status of mode (DEBUG_MODES' number). The
+    debug status's place and values it finds must be the release's (Nvm.debug_status_offset and
+    debug_status_values), or Error."""
+    from . import nvmfactory
+
+    pak, path = nvm.factory
+    r = subprocess.run(
+        ["unsquashfs", "-cat", "-no-wildcards", os.path.join(fw, pak + ".pak"), path.lstrip("/")],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if r.returncode:
+        raise Error(f"{pak}.pak:{path}: {r.stderr.decode(errors='replace').strip() or 'not read'}")
+    try:
+        offset, release = nvmfactory.fields(r.stdout)["debug"]
+        if (offset, release) != (nvm.debug_status_offset, nvm.debug_status_values[2]):
+            raise nvmfactory.Error(
+                f"its debug status is at 0x{offset:x} up to {release}, not the release's"
+                f" 0x{nvm.debug_status_offset or 0:x} up to {nvm.debug_status_values[2]}"
+            )
+        return nvmfactory.image(
+            r.stdout, SIZE, nvm.debug_status_values[mode - DEBUG_MODES["debug"]]
+        )
+    except (nvmfactory.Error, struct.error, ValueError) as e:
+        raise Error(f"EEPROM factory fields from {pak}.pak:{path}: {e}") from None
+
+
+def _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast):
+    """prepare for a release whose EEPROM the emulator does not program with records (NetCast 4.5,
+    SimpleSmart). A blank image (the launcher's new sparse file) becomes a new chip as it leaves
+    the factory: chip.image (the factory fields, factory_chip), else every byte 0xFF, and the
+    firmware writes its own defaults at its first boot. A programmed one has its debug status
+    synced where the release keeps one (sync_debug_status)."""
+    with open(img, "r+b") as f:
+        image = bytearray(f.read(SIZE))
+        if len(image) != SIZE:
+            raise Error(f"{img}: not {SIZE} bytes")
+        if not any(image):
+            f.seek(0)
+            if chip.image is not None:
+                f.write(chip.image)
+                say("EEPROM blank: a new chip (0xFF) with the fields the firmware's factory leaves")
+            else:
+                f.write(b"\xff" * SIZE)
+                say(
+                    "EEPROM blank: a new chip (0xFF), not programmed: the firmware writes its own defaults"
+                )
+            return
+        if nvm.debug_status_offset is None:
+            return
+        mode = (
+            debug_mode
+            if debug_mode is not None
+            else int(board_params(target, tree, broadcast)["debugMode"])
+        )
+        if sync_debug_status(image, nvm, mode, say):
             f.seek(0)
             f.write(image)
 

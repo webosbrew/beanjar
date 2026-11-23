@@ -153,7 +153,7 @@ function card(vm) {
     content.append(tags);
   }
   if (vm.reason && state !== "Off") {
-    // why it runs (beanjar reason): stop asks before it overrides it
+    // why it runs (beanjar status): stop asks before it overrides it
     const reason = el("div", "reason");
     reason.innerHTML = icon("pin-angle");
     reason.append(vm.reason.text);

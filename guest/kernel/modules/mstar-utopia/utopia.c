@@ -97,6 +97,92 @@ static void adv_fn009_decode(u32 parg)
         lgemu_snd_osd_level(level & 0xffff);
 }
 
+/* AUDIO's DSP memory, where MStar's kernel-mode AUDIO answers from what it was given (W15U's
+ * kdrv_lm15u.ko): MApi_AUDIO_SetDspBaseAddr (command 2: {u8 dsp, u32 0 at +4, u32 PA at +8}; KADP's
+ * MAdp_MAD_InitializeModule passes DSP 2 and mmapger record 11's PA) sets HAL_AUDIO's base, and
+ * MApi_AUDIO_GetCommAudioInfo (command 101: {u64 result, u32 info type at +8}) answers some info
+ * types from it: HAL_MAD_GetCommInfo's 62, the DSP's common buffer, is the 16-byte aligned base +
+ * 0x900000 (GetDspMadBaseAddr) + 0x160000, and 63, its size, the constant 0x20000. AU_BufInit
+ * passes both to MAdp_MPool_PA2KSEG1, which asserts on an address outside every mapped record.
+ * audio_info: "module:setbase:dsp:getinfo:" then the info types, comma-separated, each
+ * "type+offset" (the base plus offset) or "type=value"; the others answer 0 as before. */
+static char *audio_info;
+module_param(audio_info, charp, 0444);
+MODULE_PARM_DESC(audio_info, "AUDIO's DSP base and common info, module:setbase:dsp:getinfo:"
+                             "type+offset,type=value,... (W15U 45:2:2:101:62+0xa60000,63=0x20000)");
+#define AUDIO_INFO_MAX 8
+static u32 ai_module = ~0u, ai_setbase, ai_dsp, ai_getinfo, ai_count;
+static struct {
+    u32 type, value;
+    bool relative;
+} ai_types[AUDIO_INFO_MAX];
+static u32 ai_base;
+static bool ai_base_set;
+
+int audio_info_parse(void)
+{
+    char *s, *p, *tok;
+    int n;
+
+    if (!audio_info)
+        return 0;
+    if (sscanf(audio_info, "%u:%u:%u:%u:%n", &ai_module, &ai_setbase, &ai_dsp, &ai_getinfo, &n) !=
+        4)
+        return -EINVAL;
+    s = kstrdup(audio_info + n, GFP_KERNEL);
+    if (!s)
+        return -ENOMEM;
+    p = s;
+    while ((tok = strsep(&p, ",")) && *tok) {
+        char *op = strpbrk(tok, "+=");
+
+        if (!op || ai_count == AUDIO_INFO_MAX)
+            goto bad;
+        ai_types[ai_count].relative = *op == '+';
+        *op = 0;
+        if (kstrtou32(tok, 0, &ai_types[ai_count].type) ||
+            kstrtou32(op + 1, 0, &ai_types[ai_count].value))
+            goto bad;
+        ai_count++;
+    }
+    kfree(s);
+    return 0;
+bad:
+    kfree(s);
+    return -EINVAL;
+}
+
+static long audio_info_ioctl(u32 cmd, u32 uarg)
+{
+    u8 st[12];
+
+    if (cmd == ai_setbase) {
+        if (copy_from_user(st, compat_ptr(uarg), sizeof(st)))
+            return -EFAULT;
+        if (st[0] == ai_dsp) {
+            ai_base = get_unaligned_le32(st + 8) & ~0xfu;
+            ai_base_set = true;
+        }
+    } else if (cmd == ai_getinfo) {
+        u32 type;
+
+        if (get_user(type, (u32 __user *)compat_ptr(uarg + 8)))
+            return -EFAULT;
+        for (u32 i = 0; i < ai_count; i++) {
+            u64 v = ai_types[i].value;
+
+            if (ai_types[i].type != type)
+                continue;
+            if (ai_types[i].relative)
+                v += ai_base_set ? ai_base : 0;
+            if (copy_to_user(compat_ptr(uarg), &v, sizeof(v)))
+                return -EFAULT;
+            break;
+        }
+    }
+    return UTOPIA_STATUS_SUCCESS;
+}
+
 static unsigned int xc_disp_ctrl;
 module_param(xc_disp_ctrl, uint, 0444);
 MODULE_PARM_DESC(xc_disp_ctrl, "XC's MApi_XC_S_Disp_Ctrl command (0: none)");
@@ -105,6 +191,7 @@ module_param(xc_hdr_control, uint, 0444);
 MODULE_PARM_DESC(xc_hdr_control, "XC's MApi_XC_HDR_Control command (0: none)");
 
 #define UTOPIA_MODULE_XC           8
+#define UTOPIA_MODULE_GPIO         42 /* gpio.c */
 #define XC_HDR_CTRL_CFD_CONTROL    9
 #define XC_DISP_CTRL_GET_DE_WINDOW 0x21
 #define XC_PANEL_WIDTH             1920 /* the m2 and m3 boards' FHD panels */
@@ -549,6 +636,10 @@ static long utopia_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             return pnl_ioctl(w[0], w[1]);
         if (module == adv_module && w[0] == adv_cmd)
             adv_fn009_decode(w[1]);
+        if (module == UTOPIA_MODULE_GPIO && gpio_enabled())
+            return gpio_ioctl(w[0], w[1]);
+        if (module == ai_module)
+            return audio_info_ioctl(w[0], w[1]);
         return UTOPIA_STATUS_SUCCESS;
     case UTOPIA_IOCTL_CloseMODULE:
         return UTOPIA_STATUS_SUCCESS;

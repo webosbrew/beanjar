@@ -5,7 +5,7 @@
 
   run-scan.py NAME [--timeout S]
 
-Takes the VM's channel map (beanjar io tuner NAME) and the lineup's services on it as what the scan
+Takes the VM's channel map (beanjar io tuner list NAME) and the lineup's services on it as what the scan
 must find, waits for legacy-broadcast to run, runs tests/regress/tuner/scan.sh in the guest as root
 (beanjar ares-shell --root: the VM needs the rootssh layer), and checks its answers: every mapped
 virtual channel in iepg/getChannelList, no other, and a current event for each in
@@ -76,7 +76,7 @@ def main():
     a = ap.parse_args()
     st = json.loads(
         subprocess.run(
-            [BEANJAR, "io", "tuner", a.name, "--json"],
+            [BEANJAR, "io", "tuner", "list", a.name, "--json"],
             capture_output=True,
             text=True,
             check=True,
@@ -85,7 +85,7 @@ def main():
     )
     mapped = [c["channel"] for c in st["channels"] if c["mapped"]]
     if not mapped:
-        print("FAIL: no channel mapped (beanjar io tuner NAME map RF...)")
+        print("FAIL: no channel mapped (beanjar io tuner map NAME RF...)")
         return 1
     for _ in range(90):  # legacy-broadcast runs a while after boot
         if "up" in shell(a.name, "pidof legacy-broadcast-atsc >/dev/null && echo up", 60):

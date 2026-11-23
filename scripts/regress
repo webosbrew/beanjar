@@ -84,8 +84,8 @@ boot checks, in either mode, with NET_LINK=nat NET_MODE=direct (another network 
              nyx-cmd OSInfo and DeviceInfo, read-only; tvsuite.judge_luna checks each answer's
              documented fields and its value against the target's board (board.cmdline's model,
              serial, MAC, chip, RAM), firmware (name: version, OTA id; release) and broadcast standard
-  network    tests/regress/http-token.py serves a random token on the VM host's 127.0.0.1 (slirp's
-             10.0.2.2) for the step; guest.sh network: eth0's lease and routes, the connection
+  network    tests/regress/http-token.py serves a random token for the step in the VM's own network
+             namespace (vm-launcher netns-exec), at 10.0.2.254 there; guest.sh network: eth0's lease and routes, the connection
              manager's status, a name through the guest's resolver, the token fetched with wget;
              tvsuite.judge_network: dhcp-lease, connman-wired, dns (against the VM host's own
              answer), http (the token, and the server's log of the request), online (connman's
@@ -127,7 +127,7 @@ boot checks, in either mode, with NET_LINK=nat NET_MODE=direct (another network 
              pts, end of stream, captures with a changing picture at the window, filling the page's
              video rect whole, the audio's level.
              Headless: SKIP. Then dev/remove of the test app
-  smp        graphics: the SMP check app (tests/regress/smp/pack.sh here, with build/tests/smp/smpcheck and an
+  smp        graphics: the SMP check app (tests/regress/smp/pack.sh here, with build/tests/regress/smp/smpcheck and an
              8 s H.264 clip) installed with dev/install, launched by sam (guest.sh smp): a
              StarfishMediaAPIs client as ss4s's player, which feeds the clip and logs every
              callback; the viewer decodes what the sink sends; tvsuite.judge_smp: FRAMEREADY
@@ -145,6 +145,9 @@ A graphics run (LAYERS with gl) skips a target whose build makes no gl layer, as
 decides from the chip's table: a guest/layers/soc/<chip>/meson.build with neither gl_vendor_stubs nor
 gl_vendor_gl (no GPU vendor stand-ins). It neither builds nor boots it; its row says SKIP. A target
 that should have one and has none after the build (or with --no-build) fails the run.
+A guest restart ends the step that waits on it and fails the target, except the one restart of a
+target whose firmware restarts the set on the first boot of a fresh state (its file's
+first_boot_restart): follow_restart waits for the unit's new QEMU and runs the steps again from the boot.
 Each step has TIMEOUT seconds (default 300). Under TCG (--local on x86, or ACCEL=tcg) every deadline
 of the run's own (TIMEOUT, check-m1's boot-done wait, the standby's waits) is stretched by the
 launcher's TCG factor, qemu.TIME_SCALE, as the guest's bootd timers are; under KVM it is 1. Results, on the VM host and copied back here:
@@ -252,7 +255,7 @@ TV_IPK = (
 TV_NET = {
     "NET_LINK": "nat",
     "NET_MODE": "direct",
-}  # the network step's server is the VM host's 127.0.0.1, slirp's 10.0.2.2
+}  # the suite's server runs in the VM's namespace (netns-exec), its network judged as direct's
 STANDBY_CPU = 10.0  # QEMU's CPU in standby, % of one host CPU, at most
 RESUME_SETTLE = 12  # s from the resume to HOME for its screenshot
 STANDBY_SETTLE = 2  # s from the standby port to the CPU measure: the micom's
@@ -627,7 +630,7 @@ def parse(argv, found=None, env=None):
     if a.tv:
         if any(env.get(k, v) != v for k, v in TV_NET.items()):
             raise Usage(
-                "--tv needs NET_LINK=nat NET_MODE=direct: the network step's server is the VM host, slirp's 10.0.2.2"
+                "--tv needs NET_LINK=nat NET_MODE=direct: its server runs in the VM's network namespace, and its network checks are direct's"
             )
         a.vm_env.update(TV_NET)
         if not a.headless and not env.get("LAYERS"):
@@ -780,6 +783,9 @@ class Result:
         self.instance = None  # its INSTANCE (every target runs in one of its own)
         self.identity = {}  # the started VM's MAC, SERIAL and IDENTITY (vm_identity)
         self.device_census = None  # evidence status only; never a hardware coverage verdict
+        # guest restarts followed (follow_restart: a firmware's first-boot restart)
+        self.restarts = 0
+        self.restart = ""  # a guest restart that failed the target, said
 
     @property
     def ok(self):
@@ -788,6 +794,7 @@ class Result:
             bool(self.skipped)
             or all(v in ("PASS", "WARN", "SKIP", "dry", "not run") for v in self.steps.values())
             and not self.orphans
+            and not self.restart
         )
 
     def row(self):
@@ -898,9 +905,46 @@ def now():
     return time.strftime("%H:%M:%S", time.gmtime())
 
 
+class GuestRestarted(Exception):
+    """The guest restarted itself while a step waited (the unit's count of guest restarts,
+    RUN_DIR/restarts, moved past r.restarts, or one is under way, RUN_DIR/restarting: unit.run), or
+    powered off (off: QEMU is gone, its pidfile with it): the step's process is gone with the old
+    boot, and so is the host share it was put into."""
+
+    def __init__(self, step, off=False):
+        super().__init__(step)
+        self.step, self.off = step, off
+
+
+# seconds a failed step looks for a guest restart that killed it (KVM: the reset follows the
+# guest's shutdown within a few seconds)
+RESTART_SETTLE = 15
+# the step wait's status for a guest restart (lifecycle's RUN_DIR/restarting and RUN_DIR/restarts)
+# and for a VM that is off (no RUN_DIR/qemu.pid, which QEMU removes as it exits)
+RESTARTED, OFF = 3, 4
+
+
+def restart_check(n):
+    """Shell: exit RESTARTED if the guest has restarted more than n times, or a restart is under way;
+    OFF if QEMU has exited for good."""
+    return (
+        f'[ -e "$RUN_DIR/restarting" ] && exit {RESTARTED}; '
+        f'n=$(cat "$RUN_DIR/restarts" 2>/dev/null); [ "${{n:-0}}" = {n} ] || exit {RESTARTED}; '
+        f'[ -e "$RUN_DIR/qemu.pid" ] || exit {OFF}; '
+    )
+
+
+def check_restart(h, step, rc):
+    """Raise GuestRestarted for a restart_check status."""
+    if rc in (RESTARTED, OFF):
+        raise GuestRestarted(step, off=rc == OFF)
+
+
 def guest_step(h, a, r, step, arg, out):
     """Type tests/regress/guest.sh STEP on the console (in the background), wait for its .rc, copy
-    its output into the target's directory; the step's exit status (124: timed out)."""
+    its output into the target's directory; the step's exit status (124: timed out). Raises
+    GuestRestarted if the guest restarts or powers off while the step waits (r.restarts: the
+    restarts already followed)."""
     gout, rel = h.inst.guest_out, f"regress/{step}"  # rel: in the out share
     line = f"TIME_SCALE={a.scale} sh /host/tests/regress/guest.sh {step} {arg} </dev/null >/dev/null 2>&1 &".replace(
         "  ", " "
@@ -910,13 +954,20 @@ def guest_step(h, a, r, step, arg, out):
         f"{RM_OUT} {rel}.rc && host/scripts/vm-launcher console {shlex.quote(line)} 1 >/dev/null",
         60,
     )
+    seen = getattr(r, "restarts", 0)
     if rc:
+        # no console: the VM may be between two QEMUs, or off
+        check_restart(h, step, h.run(f"sh -c '{restart_check(seen)}true'", 30)[0])
         return rc
     f = f"{gout}/{step}.rc"
     wait = a.timeout + 20 * a.scale  # the boot step's own limit is TIMEOUT
-    rc, _ = h.run(f"timeout {wait} sh -c 'until [ -f {f} ]; do sleep 2; done'", wait + 30)
+    rc, _ = h.run(
+        f"timeout {wait} sh -c '{restart_check(seen)}until [ -f {f} ]; do sleep 2; {restart_check(seen)}done'",
+        wait + 30,
+    )
     if rc:
         h.run(f"{GET_OUT} {rel}.txt {out}/{step}.txt 2>/dev/null; true", 30)
+        check_restart(h, step, rc)
         return 124
     r.text = ""
     # the copies are read, not the share's files (only stat'ed above)
@@ -930,9 +981,17 @@ def guest_step(h, a, r, step, arg, out):
     lines = text.splitlines()
     try:
         status = int(lines[0])
+        r.text = "\n".join(lines[1:])
     except (IndexError, ValueError):
-        return rc or 1
-    r.text = "\n".join(lines[1:])
+        status = rc or 1
+    if status > 128:
+        # a step the guest's shutdown killed (SIGTERM, SIGKILL) writes its .rc before the restart
+        # shows on the host
+        settle = int(RESTART_SETTLE * a.scale)
+        rc, _ = h.run(
+            f"timeout {settle} sh -c 'while :; do {restart_check(seen)}sleep 2; done'", settle + 30
+        )
+        check_restart(h, step, rc)
     return status
 
 
@@ -1184,16 +1243,27 @@ def tv_luna(h, a, r, out, target, ctx):
         r.steps["luna-info"] = tvsuite.verdict(r.items["luna-info"])
 
 
+def test_server(portfile, token, life):
+    """The command of the suite's test server (tests/regress/http-token.py) for life s in the VM's
+    own network namespace (vm-launcher netns-exec), at tvsuite.TEST_SERVER there: only this VM's
+    guest reaches it, and it sees the guest's own address."""
+    return (
+        f"timeout {life} host/scripts/vm-launcher netns-exec python3 tests/regress/http-token.py "
+        f"{tvsuite.TEST_SERVER} {portfile} {token} {life}"
+    )
+
+
 def tv_network(h, a, r, out, target, ctx):
     say(f"{target}: network")
-    # the server on the VM host's loopback, slirp's 10.0.2.2, for the step only (its own timeout
-    # ends it in any case); the host's own view of the name and of connman's online check
+    # the server in the VM's own network namespace, at tvsuite.TEST_SERVER there, for the step only
+    # (its own timeout ends it in any case); the host's own view of the name and of connman's
+    # online check
     token = os.urandom(8).hex()
     life = int(a.timeout + 60 * a.scale)
     portfile, pidfile = f"{out}/http-port", f"{out}/http-server.pid"
     rc, port = h.run(
-        f"rm -f {portfile} && {{ setsid timeout {life} python3 tests/regress/http-token.py {portfile} "
-        f"{token} {life} > {out}/http-server.txt 2>&1 < /dev/null & echo $! > {pidfile}; }} && "
+        f"rm -f {portfile} && {{ setsid {test_server(portfile, token, life)} "
+        f"> {out}/http-server.txt 2>&1 < /dev/null & echo $! > {pidfile}; }} && "
         f"for i in $(seq 100); do [ -s {portfile} ] && break; sleep 0.1; done; cat {portfile}",
         60,
     )
@@ -1211,10 +1281,10 @@ def tv_network(h, a, r, out, target, ctx):
     if not a.dry_run and (rc or not port.isdigit()):
         r.steps["network"] = "FAIL"
         r.items["network"] = [
-            ("http-server", "FAIL", f"the host's server did not start: {port or rc}")
+            ("http-server", "FAIL", f"the server in the VM's namespace did not start: {port or rc}")
         ]
     else:
-        url = f"http://{tvsuite.SLIRP_HOST}:{port or 0}/{token}"
+        url = f"http://{tvsuite.TEST_SERVER}:{port or 0}/{token}"
         rc = guest_step(h, a, r, "network", f"{url} {tvsuite.DNS_NAME}", out)
         _, served = h.run(f"cat {out}/http-server.txt", 30)
         if a.dry_run or rc == 124:
@@ -1591,7 +1661,7 @@ def tv_decode(h, a, r, out, target, ctx, state):
         f"{h.inst.run_dir}/{CAPTURE_CTL}",
     )
     helper_log = f"{h.inst.run_dir}/media-helper.log"
-    # the page's beacons (its log lines as GETs) to a server on the VM host, slirp's 10.0.2.2: not
+    # the page's beacons (its log lines as GETs) to the test server in the VM's own namespace: not
     # every firmware's WebAppMgr puts the app's console in PmLog
     token = os.urandom(8).hex()
     life = int(len(run) * 120 * a.scale + 60)
@@ -1603,8 +1673,8 @@ def tv_decode(h, a, r, out, target, ctx, state):
     port = ""
     if run:
         _, port = h.run(
-            f"mkdir -p {out}/decode && rm -f {portfile} && {{ setsid timeout {life} python3 "
-            f"tests/regress/http-token.py {portfile} {token} {life} > {served} 2>&1 < /dev/null & "
+            f"mkdir -p {out}/decode && rm -f {portfile} && {{ setsid {test_server(portfile, token, life)} "
+            f"> {served} 2>&1 < /dev/null & "
             f"echo $! > {pidfile}; }} && for i in $(seq 100); do [ -s {portfile} ] && break; sleep 0.1; done; "
             f"cat {portfile}",
             60,
@@ -1629,7 +1699,7 @@ def tv_decode(h, a, r, out, target, ctx, state):
                 "mode": "decode",
                 "case": case,
                 "seconds": tvsuite.DECODE_PAGE,
-                "log": f"http://{tvsuite.SLIRP_HOST}:{port or 0}/{token}/",
+                "log": f"http://{tvsuite.TEST_SERVER}:{port or 0}/{token}/",
             },
             separators=(",", ":"),
         )
@@ -1800,6 +1870,152 @@ def vm_identity(h, a):
     }
 
 
+def boot_and_check(h, a, r, out, rel, target, fw):
+    """A started VM's steps, from the guest's scripts put into its share and the boot step to the
+    standby (--tv: the suite); each step's verdict in r.steps. Raises GuestRestarted from the step
+    that a guest restart interrupted."""
+    verdict = {0: "dry" if a.dry_run else "PASS", 124: "TIMEOUT"}
+    net_off = a.vm_env.get("NET_LINK", "nat") == "off"
+    put = (
+        "tests/regress/tv.sh build/tests/regress/tee"
+        if a.tv
+        else "tests/regress/tvservice/app-calls.sh"
+    )
+    rc, _ = h.run(f"host/scripts/vm-launcher put tests/regress/guest.sh {put} >/dev/null", 60)
+    if rc:
+        r.steps["boot"] = "FAIL"
+        return
+    boot, mark = ("ready", "READY ") if a.headless else ("boot", "BOOTDONE ")
+    say(
+        f"{target}: waiting for {'core-boot-done from tv-ready' if a.headless else 'boot-done'} "
+        f"(up to {a.timeout} s)"
+    )
+    rc = guest_step(h, a, r, boot, a.timeout, out)
+    r.steps[boot] = verdict.get(rc, "FAIL")
+    # the mark's line, wherever it is: a guest shell's job notice ("Terminated", a luna-send its
+    # 10 s timeout ended on a loaded TCG host) may come before it
+    line = next((x for x in r.text.splitlines() if x.startswith(mark)), None)
+    if a.dry_run:
+        r.boot_done = "dry"
+    elif rc == 0 and line:
+        meminfo(h, out, "ready")
+        r.boot_done = f"{float(line.split()[1]):.1f} s"
+        r.tvservice = " ".join(line.split()[3:4])
+    else:
+        r.boot_done = r.steps[boot] = "TIMEOUT" if rc == 124 else "FAIL"
+        return
+    if a.tv:
+        tv_suite(h, a, r, out, target, fw)
+        return
+    checks = [
+        (
+            "check-m1",
+            f"regress-{a.run}-{target}-check-m1 {M1_WAIT[a.mode] * a.scale}",
+            "M1 PASS",
+        ),
+        ("app-calls", fw, "APP-CALLS PASS"),
+    ]
+    if a.headless:
+        checks.append(("tvservice", r.tvservice or "none", "TVSERVICE PASS"))
+    for step, arg, mark in checks:
+        say(f"{target}: {step}")
+        rc = guest_step(h, a, r, step, arg, out)
+        if rc == 0 and not a.dry_run and mark not in r.text:
+            rc = 1
+        r.steps[step] = verdict.get(rc, "FAIL")
+    say(f"{target}: checklist")
+    lastinput, broadcast = checklist_args(target, fw)
+    rc = guest_step(h, a, r, "checklist", lastinput, out)
+    if a.dry_run or rc == 124:
+        r.steps["checklist"] = verdict.get(rc, "FAIL")
+    else:
+        r.checklist = checklist.judge(r.text, broadcast)
+        r.steps["checklist"] = checklist.verdict(r.checklist)
+        for item, s, why in r.checklist:
+            say(f"{target}:   {s} {item}: {why}")
+    # root SSH (tests/regress/rootssh/check-ssh.sh, on the VM host): only with the rootssh
+    # layer, which the default LAYERS leave out, and a network (NET_LINK=off forwards no host
+    # port); otherwise the step SKIPs. Each instance's port is on its own address (its slot).
+    say(f"{target}: ssh")
+    skip = (
+        "LAYERS has no rootssh"
+        if "rootssh" not in a.vm_env["LAYERS"].split(",")
+        else "NET_LINK=off forwards no host port"
+        if net_off
+        else None
+    )
+    if skip:
+        r.steps["ssh"] = "SKIP" if not a.dry_run else "dry"
+        if not a.dry_run:
+            say(f"{target}: ssh SKIP ({skip})")
+    else:
+        rc, _ = h.run(
+            "IDENT=$(host/scripts/vm-launcher config IDENTITY) && "
+            "HOST=$(host/scripts/vm-launcher config ADDRESS) && "
+            'HOST=$HOST tests/regress/rootssh/check-ssh.sh "$IDENT"',
+            300,
+        )
+        r.steps["ssh"] = "dry" if a.dry_run else verdict.get(rc, "FAIL")
+    if a.headless:
+        standby(h, a, r, out, rel, target)
+        return
+    say(f"{target}: HOME, screenshot")
+    png = f"{rel}/{target}.png"
+    rc = home_shot(h, a, r, out, png, "shot")
+    r.steps["shot"] = verdict.get(rc, "FAIL")
+    if rc == 0:
+        r.shot = png
+    standby(h, a, r, out, rel, target)
+    return
+
+
+def follow_restart(h, a, r, target, e):
+    """The guest restarted itself while the step e.step ran (GuestRestarted). A target whose firmware
+    restarts the set once on the first boot of a fresh state (targets.first_boot_restart: a set of it
+    does the same at its first setup) has that one restart followed: wait for the unit's new QEMU
+    (unit.run starts the VM again, keeping the run's state), then the steps start over from the boot
+    step; True. Any other restart (a target without it, a second one) and a VM that powered off
+    (e.off) fail the target (r.restart); False."""
+    step = e.step
+    if e.off:
+        r.restart = f"the VM powered off during {step}" + (
+            f" after {r.restarts} followed restart" if r.restarts else ""
+        )
+        say(f"{target}: {r.restart}: FAIL")
+        return False
+    if r.restarts or not targets.first_boot_restart(target_of(target)):
+        r.restart = f"the guest restarted during {step}" + (
+            f" after {r.restarts} followed restart" if r.restarts else ""
+        )
+        say(f"{target}: {r.restart}: FAIL")
+        return False
+    n = r.restarts + 1
+    say(
+        f"{target}: the guest restarted during {step}, its firmware's first-boot restart: "
+        "waiting for the VM's second boot"
+    )
+    wait = int(120 * a.scale)
+    rc, _ = h.run(
+        f'timeout {wait} sh -c \'until n=$(cat "$RUN_DIR/restarts" 2>/dev/null); '
+        f'[ "${{n:-0}}" = {n} ] && [ ! -e "$RUN_DIR/restarting" ]; do sleep 2; done\'',
+        wait + 30,
+    )
+    if rc:
+        r.restart = (
+            f"the guest restarted during {step} and the VM did not run again within {wait} s"
+        )
+        say(f"{target}: {r.restart}: FAIL")
+        return False
+    r.restarts = n
+    # the first boot's verdicts are not this target's: everything after the start runs again
+    for s in r.steps:
+        if s != "start" and r.steps[s] != "SKIP":
+            r.steps[s] = "-"
+    r.items, r.checklist = {}, []
+    r.boot_done, r.tvservice, r.shot, r.standby = "-", "", "-", "-"
+    return True
+
+
 def run_target(h, a, target, fw):
     r = Result(target, fw, a.mode, a.tv)
     r.window = (now(), "")
@@ -1839,96 +2055,17 @@ def run_target(h, a, target, fw):
         r.identity = vm_identity(h, a)
         if a.viewer:
             viewer(h, out, True)
-        put = (
-            "tests/regress/tv.sh build/tests/tee"
-            if a.tv
-            else "tests/regress/tvservice/app-calls.sh"
-        )
-        rc, _ = h.run(f"host/scripts/vm-launcher put tests/regress/guest.sh {put} >/dev/null", 60)
-        if rc:
-            r.steps["boot"] = "FAIL"
-            return r
-        boot, mark = ("ready", "READY ") if a.headless else ("boot", "BOOTDONE ")
-        say(
-            f"{target}: waiting for {'core-boot-done from tv-ready' if a.headless else 'boot-done'} "
-            f"(up to {a.timeout} s)"
-        )
-        rc = guest_step(h, a, r, boot, a.timeout, out)
-        r.steps[boot] = verdict.get(rc, "FAIL")
-        # the mark's line, wherever it is: a guest shell's job notice ("Terminated", a luna-send its
-        # 10 s timeout ended on a loaded TCG host) may come before it
-        line = next((x for x in r.text.splitlines() if x.startswith(mark)), None)
-        if a.dry_run:
-            r.boot_done = "dry"
-        elif rc == 0 and line:
-            meminfo(h, out, "ready")
-            r.boot_done = f"{float(line.split()[1]):.1f} s"
-            r.tvservice = " ".join(line.split()[3:4])
-        else:
-            r.boot_done = r.steps[boot] = "TIMEOUT" if rc == 124 else "FAIL"
-            return r
-        if a.tv:
-            tv_suite(h, a, r, out, target, fw)
-            return r
-        checks = [
-            (
-                "check-m1",
-                f"regress-{a.run}-{target}-check-m1 {M1_WAIT[a.mode] * a.scale}",
-                "M1 PASS",
-            ),
-            ("app-calls", fw, "APP-CALLS PASS"),
-        ]
-        if a.headless:
-            checks.append(("tvservice", r.tvservice or "none", "TVSERVICE PASS"))
-        for step, arg, mark in checks:
-            say(f"{target}: {step}")
-            rc = guest_step(h, a, r, step, arg, out)
-            if rc == 0 and not a.dry_run and mark not in r.text:
-                rc = 1
-            r.steps[step] = verdict.get(rc, "FAIL")
-        say(f"{target}: checklist")
-        lastinput, broadcast = checklist_args(target, fw)
-        rc = guest_step(h, a, r, "checklist", lastinput, out)
-        if a.dry_run or rc == 124:
-            r.steps["checklist"] = verdict.get(rc, "FAIL")
-        else:
-            r.checklist = checklist.judge(r.text, broadcast)
-            r.steps["checklist"] = checklist.verdict(r.checklist)
-            for item, s, why in r.checklist:
-                say(f"{target}:   {s} {item}: {why}")
-        # root SSH (tests/regress/rootssh/check-ssh.sh, on the VM host): only with the rootssh
-        # layer, which the default LAYERS leave out, and a network (NET_LINK=off forwards no host
-        # port); otherwise the step SKIPs. Each instance's port is on its own address (its slot).
-        say(f"{target}: ssh")
-        skip = (
-            "LAYERS has no rootssh"
-            if "rootssh" not in a.vm_env["LAYERS"].split(",")
-            else "NET_LINK=off forwards no host port"
-            if net_off
-            else None
-        )
-        if skip:
-            r.steps["ssh"] = "SKIP" if not a.dry_run else "dry"
-            if not a.dry_run:
-                say(f"{target}: ssh SKIP ({skip})")
-        else:
-            rc, _ = h.run(
-                "IDENT=$(host/scripts/vm-launcher config IDENTITY) && "
-                "HOST=$(host/scripts/vm-launcher config ADDRESS) && "
-                'HOST=$HOST tests/regress/rootssh/check-ssh.sh "$IDENT"',
-                300,
-            )
-            r.steps["ssh"] = "dry" if a.dry_run else verdict.get(rc, "FAIL")
-        if a.headless:
-            standby(h, a, r, out, rel, target)
-            return r
-        say(f"{target}: HOME, screenshot")
-        png = f"{rel}/{target}.png"
-        rc = home_shot(h, a, r, out, png, "shot")
-        r.steps["shot"] = verdict.get(rc, "FAIL")
-        if rc == 0:
-            r.shot = png
-        standby(h, a, r, out, rel, target)
+        r.restarts = 0
+        while True:
+            try:
+                boot_and_check(h, a, r, out, rel, target, fw)
+                # a restart after the last step's wait (its .rc was there before the reset showed)
+                rc, _ = h.run(f"sh -c '{restart_check(r.restarts)}true'", 30)
+                check_restart(h, "the last step", rc)
+                break
+            except GuestRestarted as e:
+                if not follow_restart(h, a, r, target, e):
+                    break
         return r
     finally:
         say(f"{target}: stop")
@@ -2026,6 +2163,8 @@ def run_target(h, a, target, fw):
         say(
             f"{target}: {'PASS' if r.ok else 'FAIL'} in {r.seconds:.0f} s "
             + " ".join(f"{s}={v}" for s, v in r.steps.items())
+            + (f" restarts={r.restarts}" if r.restarts else "")
+            + (f" ({r.restart})" if r.restart else "")
         )
 
 
@@ -2193,7 +2332,7 @@ def missing_firmware(a, sel):
 
 def pack_smp_app(a):
     """--tv graphics smp: the SMP check app packed here (tests/regress/smp/pack.sh: ares-package, with the
-    guest build's build/tests/smp/smpcheck and its clip) into the run's directory, and copied to
+    guest build's build/tests/regress/smp/smpcheck and its clip) into the run's directory, and copied to
     the VM host's."""
     ipk = SMP_IPK.format(run=a.run)
     tmp = os.path.join(os.path.dirname(ipk), "smp-pkg")
@@ -2409,6 +2548,8 @@ def main(argv=None):
                         standby=r.standby,
                         window=r.window,
                         orphans=r.orphans,
+                        restarts=r.restarts,
+                        restart=r.restart,
                         ok=r.ok,
                         skipped=r.skipped,
                         failed=r.failed,

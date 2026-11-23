@@ -1,0 +1,220 @@
+drm/virtio: an overlay plane on each CRTC when virtio_gpu.overlay_plane=1
+
+LG's O22N2 sets (W24G spacebuns) have one TV connector and one CRTC with a
+primary, an overlay and a cursor plane (lg1kdrm, use_overlay on by default).
+Their Weston frontend writes a second output section (TV-2, the popup window)
+from the configuration, the drm-backend copies the connector into a second
+head for it, and that output takes the CRTC's overlay plane when the primary
+is in use. Without an overlay plane TV-2 is never enabled, LSMW's secondary
+window never gets its controllers, and the compositor faults in
+getFocusedWindowInfo.
+
+With the parameter set, each CRTC gets an overlay plane with the primary's
+formats that may be positioned and clipped. A virtio scanout shows one
+resource and composes nothing, so the overlay is scanned out only while the
+primary plane has no framebuffer (LG's exclusive output path turns TV-1's
+primary off and shows TV-2's buffer): the scanout then shows the overlay's
+visible source rectangle at its own size; its position on the CRTC is not
+kept. With the primary on, the overlay is accepted but not shown. Unset,
+nothing changes.
+
+--- a/drivers/gpu/drm/virtio/virtgpu_drv.h
++++ b/drivers/gpu/drm/virtio/virtgpu_drv.h
+@@ -204,6 +204,9 @@
+ 	int cur_x;
+ 	int cur_y;
+ 	bool needs_modeset;
++	/* virtio_gpu.overlay_plane: the CRTC's overlay plane, and whether the scanout shows it */
++	struct drm_plane *overlay;
++	bool overlay_shown;
+ };
+ #define drm_crtc_to_virtio_gpu_output(x) \
+ 	container_of(x, struct virtio_gpu_output, crtc)
+@@ -469,6 +472,7 @@
+ /* virtgpu_display.c */
+ extern bool virtio_gpu_modifiers;
+ extern bool virtio_gpu_tv_connector;
++extern bool virtio_gpu_overlay_plane;
+ int virtio_gpu_modeset_init(struct virtio_gpu_device *vgdev);
+ void virtio_gpu_modeset_fini(struct virtio_gpu_device *vgdev);
+ 
+--- a/drivers/gpu/drm/virtio/virtgpu_drv.c
++++ b/drivers/gpu/drm/virtio/virtgpu_drv.c
+@@ -61,6 +61,11 @@
+ MODULE_PARM_DESC(tv_connector, "Make the first scanout's connector a TV connector (TV-1)");
+ module_param_named(tv_connector, virtio_gpu_tv_connector, bool, 0400);
+ 
++bool virtio_gpu_overlay_plane;
++
++MODULE_PARM_DESC(overlay_plane, "Give each CRTC an overlay plane, scanned out while its primary plane is off");
++module_param_named(overlay_plane, virtio_gpu_overlay_plane, bool, 0400);
++
+ static int virtio_gpu_pci_quirk(struct drm_device *dev)
+ {
+ 	struct pci_dev *pdev = to_pci_dev(dev->dev);
+--- a/drivers/gpu/drm/virtio/virtgpu_display.c
++++ b/drivers/gpu/drm/virtio/virtgpu_display.c
+@@ -293,6 +293,11 @@
+ 	primary = virtio_gpu_plane_init(vgdev, DRM_PLANE_TYPE_PRIMARY, index);
+ 	if (IS_ERR(primary))
+ 		return PTR_ERR(primary);
++	if (virtio_gpu_overlay_plane) {
++		output->overlay = virtio_gpu_plane_init(vgdev, DRM_PLANE_TYPE_OVERLAY, index);
++		if (IS_ERR(output->overlay))
++			return PTR_ERR(output->overlay);
++	}
+ 	cursor = virtio_gpu_plane_init(vgdev, DRM_PLANE_TYPE_CURSOR, index);
+ 	if (IS_ERR(cursor))
+ 		return PTR_ERR(cursor);
+--- a/drivers/gpu/drm/virtio/virtgpu_plane.c
++++ b/drivers/gpu/drm/virtio/virtgpu_plane.c
+@@ -112,7 +112,7 @@
+ 										 plane);
+ 	struct drm_plane_state *old_plane_state = drm_atomic_get_old_plane_state(state,
+ 										 plane);
+-	bool is_cursor = plane->type == DRM_PLANE_TYPE_CURSOR;
++	bool can_position = plane->type != DRM_PLANE_TYPE_PRIMARY;
+ 	struct drm_crtc_state *crtc_state;
+ 	int ret;
+ 
+@@ -135,7 +135,7 @@
+ 	ret = drm_atomic_helper_check_plane_state(new_plane_state, crtc_state,
+ 						  DRM_PLANE_NO_SCALING,
+ 						  DRM_PLANE_NO_SCALING,
+-						  is_cursor, true);
++						  can_position, true);
+ 	return ret;
+ }
+ 
+@@ -241,6 +241,9 @@
+ 	}
+ }
+ 
++static void virtio_gpu_overlay_show(struct drm_plane *plane,
++				    struct drm_plane_state *old_state);
++
+ static void virtio_gpu_primary_plane_update(struct drm_plane *plane,
+ 					    struct drm_atomic_state *state)
+ {
+@@ -266,6 +269,11 @@
+ 					   plane->state->src_h >> 16,
+ 					   0, 0);
+ 		virtio_gpu_notify(vgdev);
++		output->overlay_shown = false;
++		/* the overlay plane, if it has a framebuffer, is what the CRTC shows now */
++		if (output->overlay && output->crtc.state->active &&
++		    output->overlay->state->fb && output->overlay->state->visible)
++			virtio_gpu_overlay_show(output->overlay, NULL);
+ 		return;
+ 	}
+ 
+@@ -281,8 +289,9 @@
+ 	    plane->state->src_h != old_state->src_h ||
+ 	    plane->state->src_x != old_state->src_x ||
+ 	    plane->state->src_y != old_state->src_y ||
+-	    output->needs_modeset) {
++	    output->needs_modeset || output->overlay_shown) {
+ 		output->needs_modeset = false;
++		output->overlay_shown = false;
+ 		DRM_DEBUG("handle 0x%x, crtc %dx%d+%d+%d, src %dx%d+%d+%d\n",
+ 			  bo->hw_res_handle,
+ 			  plane->state->crtc_w, plane->state->crtc_h,
+@@ -375,7 +384,7 @@
+ 
+ 	drm_gem_plane_helper_prepare_fb(plane, new_state);
+ 
+-	if (!bo || (plane->type == DRM_PLANE_TYPE_PRIMARY && !bo->guest_blob))
++	if (!bo || (plane->type != DRM_PLANE_TYPE_CURSOR && !bo->guest_blob))
+ 		return 0;
+ 
+ 	obj = new_state->fb->obj[0];
+@@ -581,6 +590,79 @@
+ 	.panic_flush		= virtio_panic_flush,
+ };
+ 
++/*
++ * The overlay plane (virtio_gpu.overlay_plane). A virtio scanout shows one resource and composes
++ * nothing, so the overlay is scanned out only while the CRTC's primary plane has no framebuffer:
++ * the scanout then shows the overlay's visible source rectangle (clipped to the CRTC) at that
++ * rectangle's own size; its position on the CRTC is not kept. With the primary on, the overlay
++ * is not shown.
++ */
++static void virtio_gpu_overlay_show(struct drm_plane *plane,
++				    struct drm_plane_state *old_state)
++{
++	struct drm_plane_state *new_state = plane->state;
++	struct virtio_gpu_device *vgdev = plane->dev->dev_private;
++	struct virtio_gpu_output *output =
++		drm_crtc_to_virtio_gpu_output(new_state->crtc);
++	struct virtio_gpu_object *bo = gem_to_virtio_gpu_obj(new_state->fb->obj[0]);
++	struct drm_rect src = new_state->src, rect;
++	bool full = !old_state || !output->overlay_shown;
++
++	if (full || !drm_atomic_helper_damage_merged(old_state, new_state, &rect))
++		drm_rect_init(&rect, 0, 0, new_state->fb->width, new_state->fb->height);
++	if (bo->dumb)
++		virtio_gpu_update_dumb_bo(vgdev, new_state, &rect);
++	if (full || new_state->fb != old_state->fb ||
++	    !drm_rect_equals(&new_state->src, &old_state->src)) {
++		drm_rect_fp_to_int(&src, &src);
++		if (bo->host3d_blob || bo->guest_blob)
++			virtio_gpu_cmd_set_scanout_blob(vgdev, output->index, bo, new_state->fb,
++							drm_rect_width(&src), drm_rect_height(&src),
++							src.x1, src.y1);
++		else
++			virtio_gpu_cmd_set_scanout(vgdev, output->index, bo->hw_res_handle,
++						   drm_rect_width(&src), drm_rect_height(&src),
++						   src.x1, src.y1);
++		output->overlay_shown = true;
++	}
++	virtio_gpu_resource_flush(plane, rect.x1, rect.y1,
++				  drm_rect_width(&rect), drm_rect_height(&rect));
++}
++
++static void virtio_gpu_overlay_plane_update(struct drm_plane *plane,
++					    struct drm_atomic_state *state)
++{
++	struct drm_plane_state *old_state = drm_atomic_get_old_plane_state(state, plane);
++	struct virtio_gpu_device *vgdev = plane->dev->dev_private;
++	struct virtio_gpu_output *output = NULL;
++
++	if (plane->state->crtc)
++		output = drm_crtc_to_virtio_gpu_output(plane->state->crtc);
++	if (old_state->crtc)
++		output = drm_crtc_to_virtio_gpu_output(old_state->crtc);
++	if (WARN_ON(!output))
++		return;
++
++	/* the primary plane is updated first (plane order) and owns the scanout while it has a fb */
++	if (output->crtc.primary->state->fb || !output->crtc.state->active)
++		return;
++	if (plane->state->fb && plane->state->visible) {
++		virtio_gpu_overlay_show(plane, old_state);
++	} else if (output->overlay_shown) {
++		/* both planes off: nothing shown, as when the primary alone goes off */
++		virtio_gpu_cmd_set_scanout(vgdev, output->index, 0, 0, 0, 0, 0);
++		virtio_gpu_notify(vgdev);
++		output->overlay_shown = false;
++	}
++}
++
++static const struct drm_plane_helper_funcs virtio_gpu_overlay_helper_funcs = {
++	.prepare_fb		= virtio_gpu_plane_prepare_fb,
++	.cleanup_fb		= virtio_gpu_plane_cleanup_fb,
++	.atomic_check		= virtio_gpu_plane_atomic_check,
++	.atomic_update		= virtio_gpu_overlay_plane_update,
++};
++
+ static const struct drm_plane_helper_funcs virtio_gpu_cursor_helper_funcs = {
+ 	.prepare_fb		= virtio_gpu_plane_prepare_fb,
+ 	.cleanup_fb		= virtio_gpu_plane_cleanup_fb,
+@@ -605,7 +687,8 @@
+ 	} else {
+ 		formats = virtio_gpu_formats;
+ 		nformats = ARRAY_SIZE(virtio_gpu_formats);
+-		funcs = &virtio_gpu_primary_helper_funcs;
++		funcs = type == DRM_PLANE_TYPE_OVERLAY ? &virtio_gpu_overlay_helper_funcs :
++			&virtio_gpu_primary_helper_funcs;
+ 	}
+ 
+ 	plane = drmm_universal_plane_alloc(dev, struct drm_plane, dev,

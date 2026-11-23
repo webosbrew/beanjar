@@ -7,30 +7,22 @@ import json
 import os
 
 from .. import remote
-from ..core import Error, Library
+from ..core import Library
 from .common import Usage, emit, progress, table, warn
 
 
 def tuner_words(a):
-    """tuner's verb and channels: ("list", []), ("map", [RF...]) or ("unmap", [RF...] or None for
-    all)."""
-    words = a.words
-    verb = words[0] if words else "list"
-    if verb not in ("list", "map", "unmap"):
-        raise Error(f"tuner: {verb!r}: list, map RF... or unmap RF...|all")
-    rest = words[1:]
+    """io tuner's verb and channels: ("list", []), ("map", [RF...]) or ("unmap", [RF...] or None
+    for all)."""
+    verb, rest = a.verb, getattr(a, "channels", [])
     if verb == "list":
-        if rest:
-            raise Error("tuner: list takes no channels")
         return verb, []
-    if not rest:
-        raise Error(f"tuner: {verb} needs physical channels")
     if verb == "unmap" and rest == ["all"]:
         return verb, None
     try:
         return verb, [int(w) for w in rest]
     except ValueError:
-        raise Error(f"tuner: {' '.join(rest)}: physical channel numbers") from None
+        raise Usage(f"io tuner {verb}: {' '.join(rest)}: physical channel numbers") from None
 
 
 def tuner_text(name, data):
@@ -82,14 +74,14 @@ def remote_tuner(a, host, name):
     verb, channels = tuner_words(a)
     uri = remote.hosts()[host]
     if verb == "list":
-        data = remote.call_json(host, uri, ["io", "tuner", remote.own(name)])
+        data = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
     else:
         tuner.check_channels(channels or [])
         cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
         if verb == "map":
             tuner.make(cache, channels)  # here, where the feed makes them: its errors now
-        words = [verb, *(map(str, channels) if channels is not None else ["all"]), "--fed"]
-        data = remote.call_json(host, uri, ["io", "tuner", remote.own(name), *words])
+        words = [*(map(str, channels) if channels is not None else ["all"]), "--fed"]
+        data = remote.call_json(host, uri, ["io", "tuner", verb, remote.own(name), *words])
         if not isinstance(data, dict) or "feed_socket" not in data:
             raise remote.HostError(host, "its beanjar io tuner has no feeds: update it")
         if not any(c["mapped"] for c in data["channels"]):
@@ -105,12 +97,18 @@ def remote_tuner(a, host, name):
 
 
 def usb_attach_usage(a, remote_host=None):
-    """usb attach's argument checks, here or before it goes to remote_host."""
+    """io usb attach's argument checks, here or before it goes to remote_host."""
+    if sum(map(bool, (a.image, a.device, a.camera))) > 1:
+        raise Usage("io usb attach: one of --image, --device or --camera")
     if a.readonly and not a.image:
-        raise Usage("usb attach: --readonly goes with --image")
+        raise Usage("io usb attach: --readonly goes with --image")
+    if a.sudo and not a.device:
+        raise Usage("io usb attach: --sudo goes with --device")
+    if a.pattern and not a.camera:
+        raise Usage("io usb attach: --pattern goes with --camera")
     if remote_host and a.image and not os.path.isabs(a.image):
         raise Usage(
-            f"usb attach {remote_host}/...: --image is a path on {remote_host}, the image is not "
+            f"io usb attach {remote_host}/...: --image is a path on {remote_host}, the image is not "
             f"copied; give it absolute ({a.image!r})"
         )
 
@@ -119,6 +117,8 @@ def cmd_usb_attach(lib, a):
     from .. import usb
 
     usb_attach_usage(a)
+    if a.device or a.camera:
+        return plug_usb(lib, a)
     if a.image:
         data = usb.attach_image(lib.vm(a.name), a.image, a.readonly, a.id)
         ro = " (read-only)" if data["readonly"] else ""
@@ -132,7 +132,7 @@ def cmd_usb_mkimage(lib, a):
     from .. import usb
 
     size = usb.parse_size(a.size)
-    data = usb.make_image(a.file, a.fs, size, a.label, a.force)
+    data = usb.make_image(a.file, a.fs, size, a.label, a.overwrite)
     text = f"{data['image']}: {a.fs}, {size // usb.MIB} MiB, label {data['label']}"
     return emit(a, data, text)
 
@@ -176,16 +176,12 @@ def cmd_usb_list(lib, a):
     return emit(a, {"name": a.name, **st}, text)
 
 
-def cmd_usb_plug(lib, a, host=None):
-    """usb plug: lib's VM a.name, or with host, that host's VM a.name."""
+def plug_usb(lib, a, host=None):
+    """io usb attach --device or --camera: a device of this machine, or the virtual camera, fed
+    into lib's VM a.name, or with host, that host's VM a.name, until this command ends."""
     from .. import usb
 
-    if bool(a.device) == bool(a.camera):
-        raise Usage("usb plug: --device VENDOR:PRODUCT|BUS-DEVICE or --camera")
-    if a.camera and a.sudo:
-        raise Usage("usb plug: --sudo goes with --device")
-    if a.pattern and not a.camera:
-        raise Usage("usb plug: --pattern goes with --camera")
+    usb_attach_usage(a)
     if a.camera:
         client = usb.Camera(a.pattern or "smpte")
     else:
@@ -217,21 +213,38 @@ def register(cli):
         dest="area",
         metavar="DEVICE",
     )
-    s = command(
-        io,
+    tuner = group(
         "tuner",
         "the antenna of a set with our tuner (W21P's US board): list the lineup's physical "
         "channels and what the set is tuned to, map RF... to put a signal on them (their "
         "transport streams, ATSC with the channel tables and guide, are made with TSDuck and "
         "ffmpeg; for HOST/NAME on this machine, fed to the host over ssh while the VM runs), or "
         "unmap RF... or all; kept for the VM's next starts",
+        under=io,
+        dest="verb",
+    )
+    s = command(
+        tuner,
+        "list",
+        "the lineup's physical channels, which are mapped, and what the set is tuned to",
         cmd_tuner,
-        usage="beanjar io tuner NAME [list | map RF... | unmap RF...|all] [--json]",
     )
     vm_name(s, "tuner")
-    s.add_argument("words", nargs="*", metavar="list|map|unmap RF")
-    # from another machine's map and unmap (remote_tuner): its feed makes the streams
-    s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
+    for verb, text, metavar in (
+        ("map", "put a signal on physical channels RF...", "RF"),
+        ("unmap", "take the signal off physical channels RF..., or all", "RF|all"),
+    ):
+        s = command(
+            tuner,
+            verb,
+            text,
+            cmd_tuner,
+            usage=f"beanjar io tuner {verb} NAME {metavar}... [--json]",
+        )
+        vm_name(s, "tuner")
+        s.add_argument("channels", nargs="+", metavar=metavar)
+        # from another machine's map and unmap (remote_tuner): its feed makes the streams
+        s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
 
     g = group(
         "usb",
@@ -242,12 +255,17 @@ def register(cli):
     s = command(
         g,
         "attach",
-        "add a usb-redir device to the running VM, its unix socket in the VM's run directory "
-        "(run/usb-ID.sock); prints the socket. The guest sees the USB device once a usbredir "
-        "client (usbredirect, through a TCP relay or an ssh -L forward to the socket) connects. "
-        "With --image, plug a raw disk image in as a USB stick instead (usb-storage)",
+        "attach a USB device to the running VM. Without a source: a usb-redir device, its unix "
+        "socket in the VM's run directory (run/usb-ID.sock), printed; the guest sees the device "
+        "once a usbredir client (usbredirect, through a TCP relay or an ssh -L forward to the "
+        "socket) connects. With --image: a raw disk image as a USB stick (usb-storage). With "
+        "--device or --camera: a USB device of this machine, or the virtual camera, fed to it "
+        "from here (HOST/NAME: over the host's ssh connection) until Ctrl-C, SIGTERM or SIGHUP, "
+        "or until the device is unplugged, then detached; it prints one line (with --json a "
+        "JSON object) once the guest has the device",
         cmd_usb_attach,
-        usage="beanjar io usb attach NAME [--image FILE [--readonly]] [--id ID] [--json]",
+        usage="beanjar io usb attach NAME [--image FILE [--readonly] | --device "
+        "VENDOR:PRODUCT|BUS-DEVICE [--sudo] | --camera [--pattern NAME]] [--id ID] [--json]",
     )
     vm_name(s, "usb-attach")
     s.add_argument("--id", metavar="ID", help="its id (default the lowest free number, 1, 2, ...)")
@@ -258,6 +276,31 @@ def register(cli):
         "path there: it is not copied); the guest writes to it unless --readonly",
     )
     s.add_argument("--readonly", action="store_true", help="with --image: open the image read-only")
+    s.add_argument(
+        "--device",
+        metavar="VENDOR:PRODUCT|BUS-DEVICE",
+        help="a device of this machine, as lsusb shows it: 046d:082d (hex), or 1-4 (bus and "
+        "device number), fed through usbredirect",
+    )
+    s.add_argument(
+        "--sudo",
+        action="store_true",
+        help="with --device: run usbredirect through sudo, for a device node that is not "
+        "writable for you",
+    )
+    s.add_argument(
+        "--camera",
+        action="store_true",
+        help="a virtual webcam: a Logitech C920 (046d:082d), as LG's camera service accepts, "
+        "showing GStreamer's test pattern; made on this machine (beanjar-virtcam, "
+        "gst-launch-1.0), so a remote VM's host needs nothing of it",
+    )
+    s.add_argument(
+        "--pattern",
+        metavar="NAME",
+        help="with --camera: the test pattern, a videotestsrc pattern (default smpte; ball, "
+        "snow, colors, ...)",
+    )
     s = command(
         g,
         "detach",
@@ -277,52 +320,16 @@ def register(cli):
     vm_name(s)
     s = command(
         g,
-        "plug",
-        "plug a USB device of this machine, or the virtual camera, into the VM (HOST/NAME: over "
-        "the host's ssh connection) until Ctrl-C, SIGTERM or SIGHUP, or until the device is "
-        "unplugged: usb attach, usbredirect (or beanjar-virtcam) to its socket, and usb detach "
-        "at the end. Prints one line (with --json a JSON object) once the guest has the device",
-        cmd_usb_plug,
-        usage="beanjar io usb plug NAME --device VENDOR:PRODUCT|BUS-DEVICE [--sudo] | --camera "
-        "[--pattern NAME] [--id ID] [--json]",
-    )
-    vm_name(s, "usb-plug")
-    s.add_argument(
-        "--device",
-        metavar="VENDOR:PRODUCT|BUS-DEVICE",
-        help="the device, as lsusb shows it: 046d:082d (hex), or 1-4 (bus and device number)",
-    )
-    s.add_argument(
-        "--camera",
-        action="store_true",
-        help="a virtual webcam instead: a Logitech C920 (046d:082d), as LG's camera service "
-        "accepts, showing GStreamer's test pattern; made on this machine (beanjar-virtcam, "
-        "gst-launch-1.0), so a remote VM's host needs nothing of it",
-    )
-    s.add_argument(
-        "--pattern",
-        metavar="NAME",
-        help="with --camera: the test pattern, a videotestsrc pattern (default smpte; ball, "
-        "snow, colors, ...)",
-    )
-    s.add_argument("--id", metavar="ID", help="its id in the VM (usb attach --id)")
-    s.add_argument(
-        "--sudo",
-        action="store_true",
-        help="run usbredirect through sudo, for a device node that is not writable for you",
-    )
-    s = command(
-        g,
         "mkimage",
-        "make a disk image for usb attach --image on this machine: an MBR with one partition "
+        "make a disk image for io usb attach --image on this machine: an MBR with one partition "
         "from 1 MiB to the end, a FAT32, exFAT or NTFS filesystem in it (sfdisk, mkfs.vfat, "
         "mkfs.exfat, mkfs.ntfs)",
         cmd_usb_mkimage,
         usage="beanjar io usb mkimage FILE --fs fat32|exfat|ntfs [--size 64M] [--label LABEL] "
-        "[--force] [--json]",
+        "[--overwrite] [--json]",
     )
     s.add_argument("file", metavar="FILE")
     s.add_argument("--fs", required=True, choices=["fat32", "exfat", "ntfs"])
     s.add_argument("--size", default="64M", help="the disk's size, whole MiB (default 64M)")
     s.add_argument("--label", default="BEANJAR", help="the filesystem's label (default BEANJAR)")
-    s.add_argument("--force", action="store_true", help="replace FILE if it exists")
+    s.add_argument("--overwrite", action="store_true", help="replace FILE if it exists")

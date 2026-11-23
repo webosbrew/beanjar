@@ -204,18 +204,14 @@ class running_lock:
 
 def unit_vm(props):
     """The library VM a unit (vm_units' props) runs: its RUN_DIR is <library>/vms/<name>/run of a
-    library (its config.toml); else None (a regress target's runtime directory, say)."""
+    library (a vms/ folder, which config.toml need not exist for); else None (a regress target's runtime directory, say)."""
     run_dir = vmunits.unit_run_dir(props)
     if not run_dir or os.path.basename(run_dir) != "run":
         return None
     vm_dir = os.path.dirname(run_dir)
     vms_dir = os.path.dirname(vm_dir)
     root = os.path.dirname(vms_dir)
-    if (
-        os.path.basename(vms_dir) != "vms"
-        or not os.path.isfile(os.path.join(vm_dir, "vm.toml"))
-        or not os.path.isfile(os.path.join(root, "config.toml"))
-    ):
+    if os.path.basename(vms_dir) != "vms" or not os.path.isfile(os.path.join(vm_dir, "vm.toml")):
         return None
     try:
         return Library(root).vm(os.path.basename(vm_dir))
@@ -336,6 +332,12 @@ class VM:
             cached = self._config = (sig, vmconfig.read(self.config_path, {}))
         return copy.deepcopy(cached[1])
 
+    @property
+    def config_unchecked(self):
+        """vm.toml's settings as config reads them, but without the check of broadcast against the
+        firmware: for the commands that fix a bad value (configure, settings show). Not cached."""
+        return vmconfig.read(self.config_path, {}, check_broadcast=False)
+
     def save_config(self, cfg):
         vmconfig.write(self.config_path, cfg, tomlfile.VM_HEADER)
 
@@ -419,7 +421,7 @@ class VM:
             return False
 
     def portrait(self):
-        """Whether its model turns to portrait (targets.Soc.portrait of its target: beanjar sensor rotate,
+        """Whether its model turns to portrait (targets.Soc.portrait of its target: beanjar sensor set rotate,
         the viewers' turned picture); False if its firmware is not one this tree boots."""
         try:
             return targets.soc(self.target()).portrait
@@ -718,19 +720,10 @@ class Library:
         self.vms_dir = os.path.join(self.root, base.VMS_DIR)
         os.makedirs(self.vms_dir, exist_ok=True)
         self.config_path = os.path.join(self.root, "config.toml")
-        cfg = read_toml(self.config_path, {})
-        if repo:
-            cfg["repo"] = os.path.abspath(repo)
-        if not cfg.get("repo"):
-            cfg["repo"] = default_repo()
-        if cfg != read_toml(self.config_path, {}):
-            tomlfile.write_toml(
-                self.config_path, cfg, tomlfile.CONFIG_HEADER, vmsettings.CONFIG_KEYS
-            )
-        self.config = cfg
-        # Packaged runs use package-owned tools even for an existing checkout library.
-        # Preserve the saved development path, but do not execute it implicitly.
-        self.repo = paths.TREE.top if paths.TREE.installed and repo is None else cfg["repo"]
+        self.config = read_toml(self.config_path, {})
+        # --repo names the checkout for this run only; the stored one changes through
+        # `beanjar library config set repo=DIR` (set_option), never as a side effect
+        self.override = os.path.abspath(repo) if repo else None
         # VMs made before slots get theirs once (a vm.toml that does not read is left to its own errors)
         for name in self.names():
             try:
@@ -741,6 +734,28 @@ class Library:
                     vmidentity.ensure_slot(os.path.join(self.vms_dir, name))
             except Error:
                 pass
+
+    @property
+    def known_repo(self):
+        """The checkout this run uses, or None: --repo, else the package's own files when
+        installed, else the one stored in config.toml, else the running tree (never written)."""
+        if self.override:
+            return self.override
+        if paths.TREE.installed:
+            # Packaged runs use package-owned tools even for an existing checkout library.
+            return paths.TREE.top
+        # first use from a checkout: the tree the running code comes from, in memory only
+        return self.config.get("repo") or default_repo() or None
+
+    @property
+    def repo(self):
+        found = self.known_repo
+        if not found:
+            raise Error(
+                "no Beanjar checkout is known for this library: run "
+                "`beanjar library config set repo=DIR`, or pass --repo DIR for one command"
+            )
+        return found
 
     @property
     def addresses(self):
@@ -971,15 +986,13 @@ class Library:
         vmsettings.validate(cfg)
         return cfg
 
-    def tag(self, name, add=(), remove=()):
-        """Add and remove tags of VM name (as_tags; removing one it lacks is no error), whether it
-        runs or not: they are labels, not settings its launch reads. Its tags."""
+    def set_tags(self, name, tags):
+        """Make tags (as_tags; none: no tags) the tags of VM name, whether it runs or not: they are
+        labels, not settings its launch reads. Its tags."""
         vm = self.vm(name)
-        add, remove = vmsettings.as_tags(add), vmsettings.as_tags(remove)
-        with vmidentity.slot_lock(self.root):  # two tag changes at once: each sees the other's
+        tags = vmsettings.as_tags(tags)
+        with vmidentity.slot_lock(self.root):  # with another change of vm.toml at once
             cfg = vm.config
-            tags = [t for t in cfg.get("tags", []) if t not in remove]
-            tags += [t for t in add if t not in tags]
             if tags != cfg.get("tags", []):
                 if tags:
                     cfg["tags"] = tags
@@ -1011,7 +1024,7 @@ class Library:
         vm = self.vm(name)
         if vm.alive():
             raise Error(f"VM {name} is not off; settings change only while it is off")
-        cfg = vm.config
+        cfg = vm.config_unchecked  # a bad broadcast is checked below, so it can be changed here
         for k, v in values.items():
             if v is None:
                 continue
@@ -1062,6 +1075,12 @@ class Library:
             elif k == "updatable" and v == "off":
                 cfg.pop(k, None)  # off is the default, not written out
                 continue
+            elif k == "lan_access" and v in ("", "off"):
+                cfg.pop(k, None)  # off is the default, not written out
+                continue
+            elif k == "lg_services" and v in ("", vmsettings.DEFAULT_LG_SERVICES):
+                cfg.pop(k, None)  # mock is the default, not written out
+                continue
             elif k == "gpu" and v in ("", "auto"):
                 cfg.pop(k, None)  # auto is the default, not written out
                 continue
@@ -1099,6 +1118,8 @@ class Library:
         d, _cache = vm_firmware(vm.dir, cfg.get("fw"))
         if not paths.root_pak(d):
             raise Error(f"firmware {d}: no rootfs.pak or root.pak", "fw")
+        if cfg.get("broadcast"):
+            vmconfig.check_firmware_broadcast(d, cfg["broadcast"])  # before anything is saved
         if values.get("fw") is not None:
             # the platform is the firmware's (its target's)
             try:
@@ -1234,7 +1255,7 @@ class Library:
         if reason and not force:
             raise Error(
                 f"VM {name} runs for a reason: {vmunits.reason_line(reason)}; stop it anyway with --force, "
-                f"or clear the reason first (beanjar reason {name} '')"
+                f"or clear the reason first (beanjar status unset {name} reason)"
             )
         if reason:
             say(f"{name}: stopping it although it runs for a reason: {vmunits.reason_line(reason)}")

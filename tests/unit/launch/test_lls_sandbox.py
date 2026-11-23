@@ -93,6 +93,20 @@ def test_no_nyx_cmd_without_answers(work):
     assert sorted(os.listdir(work / "bin")) == ["initctl"]
 
 
+def test_private_dev(work):
+    # the reported hang in a chroot: syslog() blocked on a /dev/log socket nothing reads
+    name = "beanjar-test-" + work.name
+    run, _ = sandbox(
+        work,
+        "for f in /dev/shm/* /dev/shm/.[!.]*; do test -e $f && echo $f; done\n"
+        "test -e /dev/log || test -L /dev/log; echo log=$?\n"
+        f"test -c /dev/null && test -c /dev/urandom && : > /dev/shm/{name}; echo dev=$?\n",
+    )
+    rc, out, _ = run()
+    assert (rc, out.split()) == (0, ["log=1", "dev=0"])
+    assert not os.path.exists("/dev/shm/" + name)
+
+
 def test_children_die_with_it(work):
     # the reported hang: a helper leaves a child holding the output pipes
     run, marker = sandbox(work, "CHILD 300 &\nCHILD 301 </dev/null >/dev/null 2>&1 &\nexit 3\n")

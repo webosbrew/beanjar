@@ -130,7 +130,7 @@ def main():
         cli("stop", "a")
         yield lambda: phase("a") == core.OFF
         check(True, "the CLI's stop shows: Off")
-        cli("settings", "a", "set", "smp=2")
+        cli("config", "set", "a", "smp=2")
         yield lambda: "2 CPUs" in rows()["a"].specs
         check(True, f"the CLI's set shows ({rows()['a'].specs})")
 

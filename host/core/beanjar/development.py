@@ -157,6 +157,13 @@ def configured_environment(env, tree=paths.TREE):
     )
 
 
+def _checkout(library, tree):
+    """A development library keeps the checkout it belongs to (its own library, not the shared one)."""
+    lib = core.Library(library)
+    if lib.config.get("repo") != tree.top:
+        lib.set_option("repo", tree.top)
+
+
 def prepare(env, tree=paths.TREE):
     """Create/read a standard VM config; never replace a legacy identity implicitly."""
     local, _, _ = legacy(env, tree)
@@ -172,7 +179,7 @@ def prepare(env, tree=paths.TREE):
                 "legacy local/ identity exists; run host/scripts/vm-launcher migrate-local first"
             )
         cfg = _config(env, tree)
-        core.Library(library, repo=tree.top)
+        _checkout(library, tree)
         with open(Path(library) / ".development.lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if not config.exists():
@@ -235,7 +242,7 @@ def migrate(env, tree=paths.TREE):
     if source_ca.exists() and ca.exists() and not same_ca():
         raise Error("development library CA already exists; migration will not overwrite it")
     cfg = _config(env, tree, preserve_identity=True)
-    core.Library(library, repo=tree.top)
+    _checkout(library, tree)
     # Serialize competing preparations and migrations with the library's existing lock.
     with open(Path(library) / ".development.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)

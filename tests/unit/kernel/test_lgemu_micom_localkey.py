@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Compile the micom's IR receiver and local key (i2c.c) on the host with a controlled clock and
-check the 0xC0 poll replies for remote and local key edges; and its front LED latches."""
+check the 0xC0 poll replies for remote and local key edges, the keys left at a suspend; and its
+front LED latches."""
 
 from pathlib import Path
 import subprocess
@@ -83,6 +84,94 @@ int main(void)
     local_edge(false, WEBOS_LOCAL_PRESS); poll_is(0x10, 0xea);
     ir_edge(false, 0x08); poll_is(0x0a, 0x08); poll_is(0, 0);
     puts("local key tap, hold, joystick repeat, release on loss and remote independence passed");
+    return 0;
+}
+"""
+    )
+    subprocess.run(
+        [
+            "cc",
+            "-std=c11",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-unused-function",
+            "-I" + str(INCLUDE),
+            str(runner),
+            "-o",
+            str(root / "runner"),
+        ],
+        check=True,
+        timeout=20,
+    )
+    subprocess.run([str(root / "runner")], check=True, timeout=5)
+
+
+def test_keys_suspend(tmp_path):
+    """Key events left in the queue when the SoC suspends: dropped, as one read after the wake would
+    act again; a local key or the remote's POWER among them latches the wake, the remote's other
+    keys do not."""
+    source = (MODULE / "i2c.c").read_text()
+    start = source.index("/* ---- the micom's IR receiver ---- */")
+    section = source[start : source.index("/* Direct MStar IR controllers", start)]
+    fstart = source.index("/* The SoC suspends (PM_SUSPEND_PREPARE)")
+    function = source[fstart : source.index("static ssize_t ir_write", fstart)]
+    root = tmp_path
+    runner = root / "runner.c"
+    runner.write_text(
+        r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "webos-ir.h"
+typedef uint8_t u8;
+typedef uint64_t u64;
+#define NSEC_PER_MSEC 1000000ULL
+static u64 clock_ns;
+static u64 ktime_get_ns(void) { return clock_ns; }
+#define DEFINE_SPINLOCK(name) int name
+#define spin_lock(l) ((void)(l))
+#define spin_unlock(l) ((void)(l))
+#define module_param(name, type, mode)
+#define MODULE_PARM_DESC(name, text)
+#define pr_info(...) ((void)0)
+#define pr_info_ratelimited(...) ((void)0)
+#define WRITE_ONCE(x, v) ((x) = (v))
+static bool wake_latched;
+"""
+        + section
+        + function
+        + r"""
+static void poll_is(u8 event, u8 code)
+{
+    u8 buf[5];
+    ir_poll(buf, sizeof(buf));
+    if (!event) { assert(!buf[0]); return; }
+    assert(buf[0] == event && buf[1] == code);
+}
+int main(void)
+{
+    /* the remote's other keys: dropped, no wake */
+    ir_edge(true, 0x7c); ir_edge(false, 0x7c);
+    keys_suspend(); poll_is(0, 0); assert(!wake_latched);
+    /* the remote's POWER unread: dropped, and it wakes the SoC */
+    ir_edge(true, 0x08); ir_edge(false, 0x08);
+    keys_suspend(); poll_is(0, 0); assert(wake_latched);
+    wake_latched = false;
+    /* POWER read, its release still queued: no second wake */
+    ir_edge(true, 0x08); poll_is(0x02, 0x08); ir_edge(false, 0x08);
+    keys_suspend(); poll_is(0, 0); assert(!wake_latched);
+    /* POWER held: it wakes, and its release later queues nothing */
+    ir_edge(true, 0x08); poll_is(0x02, 0x08);
+    keys_suspend(); assert(wake_latched); ir_edge(false, 0x08); poll_is(0, 0);
+    wake_latched = false;
+    /* a local key unread wakes, as before */
+    local_edge(true, WEBOS_LOCAL_PRESS); local_edge(false, WEBOS_LOCAL_PRESS);
+    keys_suspend(); poll_is(0, 0); assert(wake_latched);
+    puts("keys left at the suspend: dropped, POWER and the local key wake");
     return 0;
 }
 """

@@ -1,6 +1,18 @@
 # Current O22N2 kernel has O22-family code paths; native candidate decodes
 # OLED/1080p/120Hz. A0 and 2.5G are VM choices, not retail measurements.
 # Its frontend consumer requires 2.1.x through property 0x68.
+# The tuners, as on a set with no antenna (as O22's, targets/o22-ponytail.toml, and K8LPN's):
+# - atv=2: the analog tuner's /dev/video2 (LG's wfm V4L2 device). W24G's legacy-broadcast-atsc
+#   FE_ATV_Initialize reaches libdil_tu_plugin's _TU_InitializeATV, which opens it (v4l2_open
+#   O_RDWR, then VIDIOC_G_TUNER, unchecked) and fails the whole front end when the open fails.
+# - the lock's commands: those the same plugin issues after a tune (DIL_TU_TunePostJob 0x80 and
+#   0x5d, DIL_TU_CheckLockState 0x81, DIL_TU_SetSpecialData/CheckSpecialData 0x56/0x55,
+#   DIL_TU_Monitor 0x71, DIL_TU_CheckSignalState 0x60/0x61); without the post job's answer the
+#   tune ends and FE_CTRL never sends its lock message.
+# - dtv_soc: the demuxes and the video decoder, /dev/video20. legacy-broadcast-atsc's video
+#   signal state is its VDEC layer's ("Bad Video" after API_VDEC_Start until pictures arrive), not
+#   the front end's lock: without /dev/video20 API_VDEC_Open fails, the state stays "good" and Live
+#   TV never shows its No Signal view. No channel carries a signal unless the host feeds one.
 
 base = "o22n"
 
@@ -26,4 +38,27 @@ params = [
     "delsys=3+16+1,5+6",
     "version=2.1.0",
     "version_cmd=0x68",
+    "answers=0x80:6401",
+    "freq_cmd=0x5d",
+    "status_cmd=0x81",
+    "monitor_cmd=0x71",
+    "specstore_cmd=0x56",
+    "speccheck_cmd=0x55",
+    "strength_cmd=0x60",
+    "quality_cmd=0x61",
+    "atv=2",
 ]
+
+# the frontends' signal, the demuxes and the video decoder, fed from the host's tuner (beanjar io
+# tuner, host/core/beanjar/tuner.py)
+[[modules]]
+name = "dtv_soc"
+
+# The US board (W24G's default): the firmware writes tuner_nr 1 and frontend_type
+# tuner=NTSC_SI2178B#0 demod=ATSC_DTV_SOC#0, one tuner and one digital demodulator, whose systems
+# are those of the release's own atsc_dtv_soc.ko (.data+0x168: 0b 13 02, SYS_ATSC, SYS_ATSC3,
+# SYS_DVBC_ANNEX_B, as W21P's; soc/k7lp.toml). Live TV's tune first sets the frontend to SYS_ATSC
+# (DIL_TU_ChangeTransMedia, MEDIA_D_TERRESTRIAL), which fails on a DVB frontend. The global (DVB)
+# board keeps the two frontends above.
+[broadcast_params.atsc]
+webos_tv = ["frontends=1", "delsys=11+19+2"]

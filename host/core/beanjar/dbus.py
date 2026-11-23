@@ -147,9 +147,9 @@ def screenshot(path, ppm, width, height, timeout):
     return True
 
 
-def set_ui_info(address, timeout, *, physical_size=(200, 500)):
+def set_ui_info(address, timeout):
     """SetUIInfo on QEMU's console 1 (the stock secondary display) at the D-Bus address, within
-    timeout seconds: its physical size and 768x2160. Errors are Gio's own (GLib.Error), and
+    timeout seconds: 200x500 mm and 768x2160. Errors are Gio's own (GLib.Error), and
     ImportError without python3-gi (display_setup.prepare words both)."""
     import threading
 
@@ -171,7 +171,7 @@ def set_ui_info(address, timeout, *, physical_size=(200, 500)):
             "/org/qemu/Display1/Console_1",
             "org.qemu.Display1.Console",
             "SetUIInfo",
-            GLib.Variant("(qqiiuu)", (*physical_size, 0, 0, 768, 2160)),
+            GLib.Variant("(qqiiuu)", (200, 500, 0, 0, 768, 2160)),
             None,
             Gio.DBusCallFlags.NONE,
             max(1, int(timeout * 1000)),

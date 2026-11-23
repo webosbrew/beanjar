@@ -29,6 +29,8 @@ CHECKS = {
     "check-vnc-damage": ("check-damage.py", [], 60),
     # the planes hidden by beanjar-web's beanjar:planes= marker
     "check-vnc-planes": ("check-planes.py", [], 60),
+    # QEMU's Disable: a stray one before a scanout keeps the picture, a real one blanks it
+    "check-vnc-disable": ("check-disable.py", [], 60),
     # the manager's vnc pipe, remote pipe and remote layout (host/core/beanjar/pipe.py)
     "check-vnc-pipe": ("check-pipe.py", [], 60),
 }

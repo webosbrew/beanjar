@@ -14,9 +14,10 @@ it. There is no WARN: a check that fails needs treatment.
              its answer's documented fields checked, the values against the board and firmware the
              target runs (VALUE checks: model name, firmware version, SDK version, board type, region);
              tvservice's own identity keys; nyx-cmd OSInfo and DeviceInfo, every key
-  network    eth0's DHCP lease (slirp's 10.0.2.15, router .2) and the connection manager's word on
+  network    eth0's DHCP lease (10.0.2.15, router .2, DNS .254) and the connection manager's word on
              it, DNS through the guest's resolver against the VM host's own answer, an HTTP fetch
-             from a server on the VM host (tests/regress/http-token.py at 10.0.2.2), and the
+             from a server in the VM's own network namespace (tests/regress/http-token.py at
+             10.0.2.254, the guest's request seen from 10.0.2.15), and the
              connection manager's online state against what the VM host itself reaches of the
              firmware's online check (connman's Ipv4StatusUrl)
   apps       each stock app of the target's table (APP_ROLES) launched, in front, the remote's keys,
@@ -56,8 +57,13 @@ REGRESS = os.path.dirname(HERE)  # tests/regress: the suite's data, the app, the
 TOP = os.path.dirname(os.path.dirname(REGRESS))
 EXPECT_DIR = os.path.join(REGRESS, "tv-expect")  # the expected table: a <target>.toml each
 STEPS = ("luna-info", "network", "apps", "tee", "draw", "audio", "decode", "smp")
-SLIRP_HOST = "10.0.2.2"  # mode=direct: QEMU's slirp, the VM host's 127.0.0.1
-SLIRP_GUEST, SLIRP_DNS = "10.0.2.15", "10.0.2.3"
+# The guest's network, link=nat's namespace (host/core/beanjar/netns.py, which a unit test holds these
+# to): the lease (GUEST), slirp4netns's router (ROUTER), the name server DHCP hands out (NET_DNS:
+# lg_mock.py at the TAP's own address, MOCK_DNS, with LG's services mocked, the default), and the
+# suite's test server (TEST_SERVER: tests/regress/http-token.py in the VM's own namespace at the
+# TAP's address, DHCP_SERVER, the way the guest reaches the mock; never the host's loopback)
+NET_GUEST, NET_ROUTER, NET_DNS = "10.0.2.15", "10.0.2.2", "10.0.2.254"
+TEST_SERVER = "10.0.2.254"
 DNS_NAME = "example.com"
 # what the VM host itself resolves and fetches: the reference for the guest's DNS and online state
 HOST_PROBE = (
@@ -733,13 +739,13 @@ def judge_network(text, ctx, token="", served="", host=""):
     ip = m.group(1) if m else None
     routes = re.findall(r"eth0\s+([0-9A-F]{8})\s+([0-9A-F]{8})\s+\d+", facts.get("route", ""))
     gw = next((_hex_ip(g) for d, g in routes if d == "00000000"), None)
-    ok = ip == SLIRP_GUEST and gw == SLIRP_HOST
+    ok = ip == NET_GUEST and gw == NET_ROUTER
     out.append(
         (
             "dhcp-lease",
             "PASS" if ok else "FAIL",
             f"eth0 {ip or 'has no IPv4 address'}, default route via {gw}"
-            + ("" if ok else f" (slirp leases {SLIRP_GUEST}, router {SLIRP_HOST})"),
+            + ("" if ok else f" (the namespace leases {NET_GUEST}, router {NET_ROUTER})"),
         )
     )
     # the connection manager under the name the firmware has (webOS 1 and 2: com.palm's getstatus)
@@ -758,8 +764,8 @@ def judge_network(text, ctx, token="", served="", host=""):
             "interfaceName": "eth0",
             "ipAddress": ip,
             "method": "dhcp",
-            "gateway": SLIRP_HOST,
-            "dns1": SLIRP_DNS,
+            "gateway": NET_ROUTER,
+            "dns1": NET_DNS,
         }
         bad = [f"{k} {wired.get(k)!r}" for k, v in want.items() if wired.get(k) != v]
         out.append(
@@ -770,7 +776,7 @@ def judge_network(text, ctx, token="", served="", host=""):
                 + (
                     "; ".join(bad) + f" (expected {want})"
                     if bad
-                    else f"wired connected on eth0 {ip} by DHCP, gateway {SLIRP_HOST}, DNS {SLIRP_DNS}"
+                    else f"wired connected on eth0 {ip} by DHCP, gateway {NET_ROUTER}, DNS {NET_DNS}"
                 ),
             )
         )
@@ -790,16 +796,18 @@ def judge_network(text, ctx, token="", served="", host=""):
                 f"{DNS_NAME}: guest {sorted(got) or dns[:120]}, VM host {sorted(host_ips)}",
             )
         )
-    # HTTP from the VM host's server, through slirp
+    # HTTP from the server in the VM's namespace, which sees the guest's own address
     http = facts.get("http", "")
-    seen = re.search(rf"REQUEST 127\.0\.0\.1 \"GET /{token} HTTP/1\.[01]\" 200", served or "")
+    seen = re.search(
+        rf"REQUEST {re.escape(NET_GUEST)} \"GET /{token} HTTP/1\.[01]\" 200", served or ""
+    )
     ok = bool(token) and http.split(" ", 1)[-1].strip() == token and bool(seen)
     out.append(
         (
             "http",
             "PASS" if ok else "FAIL",
-            f"GET http://{SLIRP_HOST}:<port>/<token>: {http[:120]!r}"
-            + ("" if seen else "; the server saw no such request"),
+            f"GET http://{TEST_SERVER}:<port>/<token>: {http[:120]!r}"
+            + ("" if seen else f"; the server saw no such request from {NET_GUEST}"),
         )
     )
     # online: what connman's own check (the firmware's Ipv4StatusUrl; TakeDnsIpResolutionAsOnline:
@@ -960,13 +968,16 @@ def crash_sig(facts, cid):
     return v[1], v[2:]
 
 
-# LG's own crashes of a stock app, each confirmed on the target and matched narrowly: the target, the
+# LG's own crashes of a stock app, each confirmed on the target and matched narrowly: the targets, the
 # role, the lane, the signal and frames of the report (each of "frames" among its crashing
 # thread's, as symbol+offset; "top" its first).
 # Any other crash report of the app's process fails as before.
 EXPECTED_CRASHES = (
     dict(
-        target="k6lp-jhericurl",
+        # Confirmed on k6hp-jhericurl: its browser (the same libcbe frames, Rockhopper 5.6.2-21)
+        # aborted at the close with the first-use dialog open, as in the suite's run; with both
+        # first-use dialogs answered (the error-report consent, Block Ads) the close left no report.
+        targets=("k6lp-jhericurl", "k6hp-jhericurl"),
         role="browser",
         lane="graphics",
         signal="6",
@@ -980,7 +991,7 @@ EXPECTED_CRASHES = (
         "(Browser::CloseBrowser -> OnFirstUseErrorReportDialogClosed; LG's, not on K5 or K7)",
     ),
     dict(
-        target="k5lp-goldilocks2",
+        targets=("k5lp-goldilocks2",),
         role="browser",
         lane="headless",
         signal="11",
@@ -990,17 +1001,17 @@ EXPECTED_CRASHES = (
         "release build, which copies a display that is not there",
     ),
     dict(
-        target="k6lp-jhericurl",
+        targets=("k6lp-jhericurl", "k6hp-jhericurl"),
         role="browser",
         lane="headless",
         signal="11",
-        top="_ZNSt6vectorISt4targetIN2ui7DomCodeEjESaIS3_EE13_M_insert_auxIS3_EEvN9__gnu_cxx17"
+        top="_ZNSt6vectorISt4pairIN2ui7DomCodeEjESaIS3_EE13_M_insert_auxIS3_EEvN9__gnu_cxx17"
         "__normal_iteratorIPS3_S5_EEOT_+0x11a4d",
         why='no compositor: Ozone\'s FATAL "failed to initialize display hardware" does not end the '
         "release build, which copies a display that is not there (libcbe+0x1f876b6, from NULL)",
     ),
     dict(
-        target="k7lp-kisscurl",
+        targets=("k7lp-kisscurl",),
         role="browser",
         lane="headless",
         signal="11",
@@ -1018,7 +1029,9 @@ def expected_crash(target, role, lane, sig):
         return None
     signal, frames = sig
     for e in EXPECTED_CRASHES:
-        if (e["target"], e["role"], e["lane"], e["signal"]) != (target, role, lane, signal):
+        if target not in e["targets"]:
+            continue
+        if (e["role"], e["lane"], e["signal"]) != (role, lane, signal):
             continue
         if "top" in e and (not frames or frames[0] != e["top"]):
             continue
@@ -1842,6 +1855,8 @@ def judge_tee(text, row, huk=None):
             )
         ]
     f = parse(text, r"[A-Za-z0-9_.-]+")  # open.UUID
+    if tee.get("node") is False:
+        return judge_tee_no_node(f, text, tee)
     items = []
 
     def check(name, ok, why_ok, why_bad):
@@ -2029,6 +2044,51 @@ def judge_tee(text, row, huk=None):
         f.get("sstore.fails") == "0" and f.get("probe_sstore_rc") == "0",
         "tee-probe's round trips all held",
         f"tee-probe: fails {f.get('sstore.fails')}, exit {f.get('probe_sstore_rc')}",
+    )
+    crashed = f.get("tee_crashes", "").split()
+    check(
+        "crashes",
+        "tee_crashes" in f and not crashed,
+        "no crash report of a TEE client (TEEC_*, sstore) since the boot",
+        f"crash reports of TEE clients: {' '.join(crashed) or 'not looked at'}",
+    )
+    return items
+
+
+def judge_tee_no_node(f, text, tee):
+    """The tee step where the VM is expected to have no TEE node (the expected table's tee.node is
+    false: the chip has no module with the TEE, as MStar's): the firmware's TEE client has nothing to
+    open, and must fail cleanly. PASS when /dev/tee0 is absent, the client's init answers
+    TEEC_ERROR_ITEM_NOT_FOUND (what libkadaptor's MstarCustomerTEEInit logs) and no crash report names a
+    TEE client; the secure-store TA's answers are Realtek's stand-in's and are not judged."""
+    items = []
+
+    def check(name, ok, why_ok, why_bad):
+        items.append((f"tee.{name}", "PASS" if ok else "FAIL", why_ok if ok else why_bad))
+
+    check(
+        "device",
+        f.get("tee_dev") not in (None, "char"),
+        "no /dev/tee0, as expected: " + tee.get("node_source", "the VM has no TEE"),
+        f"/dev/tee0: {f.get('tee_dev', 'not looked at')} (the expected table says the VM has none: "
+        "regenerate it if a module now makes one)",
+    )
+    if "lib" not in f or not f["lib"].startswith("/"):
+        check(
+            "client",
+            False,
+            "",
+            f"tee-probe could not use the firmware's libteec: {f.get('lib', text.strip()[-200:])}",
+        )
+        return items
+    v = f.get(f"open.{SSTORE_UUID}", "")
+    stage, _, code = v.partition(":")
+    got = _words(code)
+    check(
+        "init",
+        stage == "init" and got[:1] == [ITEM_NOT_FOUND],
+        "the firmware's TEE init finds no device and fails cleanly: TEEC_ERROR_ITEM_NOT_FOUND",
+        f"the firmware's TEE init: {v or 'no answer'} (wanted init:{ITEM_NOT_FOUND:#x})",
     )
     crashed = f.get("tee_crashes", "").split()
     check(

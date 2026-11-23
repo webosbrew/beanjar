@@ -416,11 +416,12 @@ class FeedProcessTest(unittest.TestCase):
 
 
 class RemoteCliTest(unittest.TestCase):
-    """beanjar io tuner HOST/NAME map and unmap: the host keeps the map (--fed), a feed here."""
+    """beanjar io tuner map and unmap HOST/NAME: the host keeps the map (--fed), a feed here."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
+        self.checkout = tmp.name
         env = {
             "XDG_CONFIG_HOME": os.path.join(tmp.name, "config"),
             "BEANJAR_LIBRARY": os.path.join(tmp.name, "lib"),
@@ -445,7 +446,7 @@ class RemoteCliTest(unittest.TestCase):
     def transport(self, argv, stdin=None, on_stderr=None, timeout=None):
         words = argv[argv.index("--") + 2].split()[1:]
         self.calls.append(words)
-        verb = words[3] if len(words) > 3 and not words[3].startswith("-") else "list"
+        verb = words[2]  # io tuner VERB local/NAME [RF...]
         rest = [w for w in words[4:] if not w.startswith("-")]
         if verb == "map":
             self.mapped = sorted(set(self.mapped + [int(w) for w in rest]))
@@ -471,16 +472,16 @@ class RemoteCliTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(list(argv))
+                rc = cli.main(["--repo", self.checkout, *argv])
             except SystemExit as e:
                 rc = e.code
         return rc, out.getvalue(), err.getvalue()
 
     def test_map_makes_here_and_starts_the_feed(self):
-        rc, out, err = self.beanjar("io", "tuner", "pi/tv", "map", "7", "14")
+        rc, out, err = self.beanjar("io", "tuner", "map", "pi/tv", "7", "14")
         self.assertEqual(rc, 0, err)
         self.assertEqual(
-            self.calls[-1], ["io", "tuner", "local/tv", "map", "7", "14", "--fed", "--json"]
+            self.calls[-1], ["io", "tuner", "map", "local/tv", "7", "14", "--fed", "--json"]
         )
         self.assertEqual(self.made.call_args.args[1], [7, 14])
         host, uri, name, address, _cache = self.start.call_args.args
@@ -490,27 +491,27 @@ class RemoteCliTest(unittest.TestCase):
 
     def test_map_of_a_stopped_vm_starts_no_feed(self):
         self.connected = False
-        rc, _out, err = self.beanjar("io", "tuner", "pi/tv", "map", "7")
+        rc, _out, err = self.beanjar("io", "tuner", "map", "pi/tv", "7")
         self.assertEqual(rc, 0, err)
         self.start.assert_not_called()
         self.assertIn("not running", err)
 
     def test_unmap_to_nothing_stops_the_feed(self):
         self.mapped = [7, 14]
-        self.assertEqual(self.beanjar("io", "tuner", "pi/tv", "unmap", "7")[0], 0)
+        self.assertEqual(self.beanjar("io", "tuner", "unmap", "pi/tv", "7")[0], 0)
         self.stop.assert_not_called()
-        self.assertEqual(self.beanjar("io", "tuner", "pi/tv", "unmap", "all", "--json")[0], 0)
+        self.assertEqual(self.beanjar("io", "tuner", "unmap", "pi/tv", "all", "--json")[0], 0)
         self.assertEqual(
-            self.calls[-1], ["io", "tuner", "local/tv", "unmap", "all", "--fed", "--json"]
+            self.calls[-1], ["io", "tuner", "unmap", "local/tv", "all", "--fed", "--json"]
         )
         self.stop.assert_called_once_with("pi", "tv")
         self.made.assert_not_called()
 
     def test_list_and_bad_channels(self):
-        self.assertEqual(self.beanjar("io", "tuner", "pi/tv")[0], 0)
-        self.assertEqual(self.calls[-1], ["io", "tuner", "local/tv", "--json"])
+        self.assertEqual(self.beanjar("io", "tuner", "list", "pi/tv")[0], 0)
+        self.assertEqual(self.calls[-1], ["io", "tuner", "list", "local/tv", "--json"])
         self.calls.clear()
-        rc, _o, err = self.beanjar("io", "tuner", "pi/tv", "map", "8")
+        rc, _o, err = self.beanjar("io", "tuner", "map", "pi/tv", "8")
         self.assertEqual(rc, 1)
         self.assertIn("no physical channel 8", err)
         self.assertEqual(self.calls, [])

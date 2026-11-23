@@ -3,7 +3,7 @@
 # StanbyME 27ART10AKPL, a model with a touch screen that turns to portrait.
 # accel: the StanbyME's accelerometer, a BMA422 (lgemu accel.c), where N21D's libdile_i2c puts it
 # (ACCELERATION_SENSOR_BMA422: channel 3, slave 0x32, 7-bit 0x19); msc reads the set's orientation
-# from it and `beanjar sensor rotate` sets its gravity vector (rotation.py).
+# from it and `beanjar sensor set rotate` sets its gravity vector (rotation.py).
 # battery=1: its battery, which tvbatteryd reads from the micom (lgemu i2c.c battery_read): full,
 # on the adapter and charging.
 

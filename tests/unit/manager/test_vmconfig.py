@@ -202,6 +202,44 @@ def test_updatable():
             vmconfig.decode(dict(base, firmware={"directory": "firmware", "updatable": bad}))
 
 
+def test_lan_access():
+    """network.lan_access: off is the default and is not written out; on is NET_LAN_ACCESS=on; a
+    value other than on/off is refused, and so is on with link lan (on the LAN anyway)."""
+    base = {"firmware": {"directory": "firmware"}}
+    assert "lan_access" not in vmconfig.decode(base)
+    assert "NET_LAN_ACCESS" not in vmsettings.launcher_env(vmconfig.decode(base))
+    cfg = vmconfig.decode(dict(base, network={"lan_access": "on"}))
+    assert vmsettings.launcher_env(cfg)["NET_LAN_ACCESS"] == "on"
+    vmsettings.validate(cfg)
+    for bad, why in (("yes", "one of on, off"), (True, "must be a string")):
+        with pytest.raises(core.Error, match=why):
+            vmsettings.validate(vmconfig.decode(dict(base, network={"lan_access": bad})))
+    with pytest.raises(core.Error, match="lan_access is for link=nat"):
+        vmsettings.validate(
+            vmconfig.decode(dict(base, network={"link": "lan", "lan_access": "on"}))
+        )
+    vmsettings.validate(vmconfig.decode(dict(base, network={"link": "off", "lan_access": "on"})))
+
+
+def test_lg_services():
+    """network.lg_services: mock is the default and is not written out (the launcher's own default,
+    qemu.py); real is NET_LG_SERVICES=real; any other value is refused."""
+    base = {"firmware": {"directory": "firmware"}}
+    assert "lg_services" not in vmconfig.decode(base)
+    assert "NET_LG_SERVICES" not in vmsettings.launcher_env(vmconfig.decode(base))
+    assert vmsettings.DEFAULT_LG_SERVICES == "mock"
+    for value in ("mock", "real"):
+        cfg = vmconfig.decode(dict(base, network={"lg_services": value}))
+        assert vmsettings.launcher_env(cfg)["NET_LG_SERVICES"] == value
+        vmsettings.validate(cfg)
+    for bad, why in (("off", "one of mock, real"), (False, "must be a string")):
+        with pytest.raises(core.Error, match=why):
+            vmsettings.validate(vmconfig.decode(dict(base, network={"lg_services": bad})))
+    values, default, what, unset = vmsettings.SETTING_HELP["lg_services"]
+    assert (values, default, unset) == ("mock|real", "mock", "mock")
+    assert "telemetry" in what and "real model key" in what
+
+
 def test_debug_mode():
     """firmware.debug_mode: debug (the default, not written out), event or release; DEBUG_MODE."""
     base = {"firmware": {"directory": "firmware"}}
@@ -243,6 +281,68 @@ def test_broadcast(path, tmp_path):
     with mock.patch.object(paths, "model_id", return_value={"region": "ARIB"}):
         with pytest.raises(core.Error, match="broadcast 'atsc', but the firmware is 'arib'"):
             vmconfig.read(path)
+
+
+@pytest.fixture
+def broken_vm(tmp_path):
+    """A library with a VM `tv` whose in-place firmware (manifest chip lm21u: no broadcast board, and
+    an other chip) is in tmp_path/fw; returns (library, vm.toml path)."""
+    fw = tmp_path / "fw"
+    fw.mkdir()
+    (fw / "rootfs.pak").touch()
+    (fw / "manifest.toml").write_text('name = "x"\nchip = "lm21u"\nrelease = "kisscurl"\n')
+    other = tmp_path / "fw2"
+    other.mkdir()
+    (other / "rootfs.pak").touch()
+    (other / "manifest.toml").write_text('name = "x"\nchip = "o22"\nrelease = "queue"\n')
+    lib = core.Library(str(tmp_path / "lib"), repo=str(tmp_path))
+    vm_dir = tmp_path / "lib" / "vms" / "tv"
+    vm_dir.mkdir(parents=True)
+    toml = vm_dir / "vm.toml"
+    toml.write_text(f'[firmware]\ndirectory = "{fw}"\n')
+    return lib, toml
+
+
+def test_configure_refuses_bad_broadcast(broken_vm):
+    """configure checks broadcast against the firmware before it saves: nothing is written."""
+    lib, toml = broken_vm
+    before = toml.read_text()
+    with pytest.raises(core.Error, match="firmware.broadcast: lm21u-kisscurl has no board") as e:
+        lib.configure("tv", prepare=False, broadcast="dvb")
+    assert e.value.key == "broadcast"
+    assert toml.read_text() == before
+
+
+def test_configure_fixes_saved_bad_broadcast(broken_vm):
+    """A vm.toml that already holds a bad broadcast (edited by hand) reads for configure and
+    settings, so unset fixes it; other reads still refuse it."""
+    lib, toml = broken_vm
+    bad = toml.read_text().replace("[firmware]", '[firmware]\nbroadcast = "dvb"')
+    toml.write_text(bad)
+    with pytest.raises(core.Error, match="has no board for broadcast"):
+        lib.vm("tv").config
+    assert lib.vm("tv").config_unchecked["broadcast"] == "dvb"
+    with pytest.raises(core.Error, match="has no board for broadcast"):
+        lib.configure("tv", prepare=False, mem=2048)  # still bad: refused, nothing written
+    assert toml.read_text() == bad
+    lib.configure("tv", prepare=False, broadcast="")
+    assert "broadcast" not in lib.vm("tv").config
+    toml.write_text(bad)
+    other = str(toml.parent.parent.parent.parent / "fw2")
+    lib.configure("tv", prepare=False, fw=other, broadcast="atsc")  # a good value replaces it
+    assert lib.vm("tv").config["broadcast"] == "atsc"
+
+
+def test_configure_refuses_fw_that_breaks_broadcast(broken_vm):
+    """Changing fw to a firmware whose chip has no board for the saved broadcast is refused."""
+    lib, toml = broken_vm
+    other = str(toml.parent.parent.parent.parent / "fw2")
+    lib.configure("tv", prepare=False, fw=other, broadcast="dvb")
+    before = toml.read_text()
+    with pytest.raises(core.Error, match="has no board for broadcast 'dvb'") as e:
+        lib.configure("tv", prepare=False, fw=str(toml.parent.parent.parent.parent / "fw"))
+    assert e.value.key == "broadcast"
+    assert toml.read_text() == before
 
 
 def test_mitm_flows():

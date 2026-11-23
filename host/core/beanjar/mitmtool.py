@@ -11,6 +11,9 @@ host/web/beanjar_web/mitm.py) and what mitm_addon.py and `--mode tun` are known 
 Below it, or without mitmweb, a mode=mitm VM still starts and goes out directly (netns.py); the
 reason (problem()) is in the VM's log, RUN_DIR/mitmweb.json, `beanjar mitm show` and the manager.
 
+mitmweb runs only in its sandbox (netns.mitmweb_sandbox: bubblewrap, SANDBOX); without bwrap it is
+not usable either (check() says so), and the VM goes out directly as without mitmweb.
+
 The version comes from the mitmproxy package's metadata beside mitmweb (a venv's, pipx's or a pip
 --user install's: no Python start), else from `mitmweb --version`; either is kept per path and
 mtime (check() runs every few seconds in the manager).
@@ -26,6 +29,10 @@ from dataclasses import dataclass
 ENV = "NETNS_MITMWEB"
 MIN_VERSION = "12.0.1"
 INSTALL = f"Install mitmproxy {MIN_VERSION} or newer: pipx install mitmproxy"
+SANDBOX = "bwrap"
+SANDBOX_PROBLEM = (
+    "bubblewrap (bwrap) not found: mitmweb runs only in its sandbox. Install bubblewrap"
+)
 
 
 def find(env=None):
@@ -35,6 +42,13 @@ def find(env=None):
         return env[ENV]
     path = os.pathsep.join(x for x in (env.get("PATH"), os.path.expanduser("~/.local/bin")) if x)
     return shutil.which("mitmweb", path=path)
+
+
+def sandbox(env=None):
+    """bwrap's path (on PATH, else /usr/bin or /bin), or None."""
+    env = os.environ if env is None else env
+    path = os.pathsep.join(x for x in (env.get("PATH"), "/usr/bin", "/bin") if x)
+    return shutil.which(SANDBOX, path=path)
 
 
 def parse(version):
@@ -130,9 +144,12 @@ class Tool:
 
     def brief(self):
         """The problem in a few words, for a status line ("mitmproxy not installed",
-        "mitmproxy 11.1.3 too old", "mitmweb unusable"), or "" when it can be used."""
+        "mitmproxy 11.1.3 too old", "bubblewrap not installed", "mitmweb unusable"), or "" when
+        it can be used."""
         if not self.problem:
             return ""
+        if self.problem == SANDBOX_PROBLEM:
+            return "bubblewrap not installed"
         if not self.path or not os.path.exists(self.path):
             return "mitmproxy not installed"
         if self.version and parse(self.version) < parse(MIN_VERSION):
@@ -159,4 +176,7 @@ def check(env=None):
     """The mitmweb a mode=mitm VM started with env would run: a Tool."""
     path = find(env) or ""
     found_version = version(path, env) if path and os.access(path, os.X_OK) else ""
-    return Tool(path, found_version, problem(path, found_version))
+    why = problem(path, found_version)
+    if not why and not sandbox(env):
+        why = SANDBOX_PROBLEM
+    return Tool(path, found_version, why)

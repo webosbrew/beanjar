@@ -3,5 +3,5 @@
 # mstar-utopia.ko: subsystem objects retain the existing module identity.
 # HWI2C uses lgemu.ko devices; kbuild.sh supplies its Module.symvers.
 obj-m := mstar-utopia.o
-mstar-utopia-y := main.o memory.o mmio.o semutex.o semutex-new.o mailbox.o gop.o utopia.o hwi2c.o ir.o diagnostics.o
+mstar-utopia-y := main.o memory.o mmio.o semutex.o semutex-new.o mailbox.o gop.o utopia.o hwi2c.o swi2c.o gpio.o ir.o diagnostics.o
 ccflags-y := -I$(src)/../lgemu

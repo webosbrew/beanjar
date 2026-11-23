@@ -80,3 +80,13 @@ def test_python(tmp_path):
     env_shebang = script(tmp_path / "other" / "mitmweb", "#!/usr/bin/env sh\n")
     assert mitmtool.python(str(env_shebang)).endswith("/sh")
     assert mitmtool.python(str(tmp_path / "missing")) is None
+
+
+def test_check_needs_bubblewrap(tmp_path):
+    exe = script(tmp_path / "mitmweb", "#!/bin/sh\necho 'Mitmproxy: 12.3.1'\n")
+    with mock.patch.object(mitmtool, "sandbox", return_value=None):
+        tool = mitmtool.check({"NETNS_MITMWEB": str(exe)})
+    assert not tool.usable and tool.problem == mitmtool.SANDBOX_PROBLEM
+    assert tool.brief() == "bubblewrap not installed"
+    fake = script(tmp_path / "bin" / "bwrap")
+    assert mitmtool.sandbox({"PATH": str(tmp_path / "bin")}) == str(fake)

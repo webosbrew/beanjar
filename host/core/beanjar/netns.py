@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""What runs QEMU for mode=mitm and link=off (qemu.py's NET_LINK and NET_MODE): the launcher calls mitm() or off() with
-QEMU's argv in place of running QEMU itself.
+"""What runs QEMU for link=nat, link=lan and link=off (qemu.py's NET_LINK and NET_MODE): the launcher calls run() or
+off() with QEMU's argv in place of running QEMU itself.
 
-mitm(): a rootless network namespace, no sudo and no persistent host state. It makes a directory for
+run(): a rootless network namespace, no sudo and no persistent host state, for mode=mitm and
+mode=direct alike; direct is the same without mitmweb (no inspector, its relay or password). It makes a directory for
 the port-bridge unix sockets (NETNS_SOCK_DIR, which the VM's unit sets to its RuntimeDirectory, or a
 new webos-netns-* in TMPDIR), bridges the mitmweb inspector and the loopback-forwarded ports
 (NETNS_FWD: layermeta.forwards, e.g. SSAP 3000/3001, root SSH 6622, devmode 9922/9991), all on the VM's own address VM_ADDRESS (127.0.1.<slot>,
@@ -13,8 +14,14 @@ namespace its uplink to the internet with slirp4netns. inner() sets up the TAP, 
 the guest's TCP and UDP into mitmweb and DHCP, then runs QEMU. When QEMU exits the namespace is gone; the
 helpers are killed and the socket dir removed.
 
-  python3 -m beanjar.netns inner QEMU-ARGV...     (what mitm() runs under unshare -rn)
-  python3 -m beanjar.netns lan QEMU-ARGV...       (link=lan: what mitm() runs under unshare -rnm)
+  python3 -m beanjar.netns inner QEMU-ARGV...     (what run() runs under unshare -rn)
+  python3 -m beanjar.netns lan QEMU-ARGV...       (link=lan: what run() runs under unshare -rnm)
+
+What the guest may not reach (the host's loopback, always; without NET_LAN_ACCESS=on the LAN and
+the host's own addresses) is refused by policy rules in the inner namespace (BLOCK_PREF below), the
+host's addresses kept current by HostWatch outside and HostRules inside. With NET_LG_SERVICES=mock
+(the default) the guest's name server is lg_mock.py in the inner namespace (MOCK_DNS below), and
+LG's literal addresses and other resolvers are refused at BLOCK_PREF too.
 
 The namespace is a router with no NAT and no netfilter. slirp4netns runs on the guest's own
 network, 10.0.2.0/24, as QEMU's slirp does for mode=direct, and the namespace sits between the two
@@ -35,7 +42,7 @@ The inspector's host side listens on NETSTUB_WEB_HOST (default VM_ADDRESS;
 0.0.0.0 opens it to the LAN), behind a password wherever it listens (PASSWORD_FILE below).
 
 link = "lan" (NET_LINK=lan, mode mitm): the same inner namespace and guest, one level further in.
-mitm() runs lan() under `unshare -rnm` (the LAN namespace, a user, network and mount namespace of
+run() runs lan() under `unshare -rnm` (the LAN namespace, a user, network and mount namespace of
 its own) and has the CAP_NET_ADMIN helper (NET_LAN_HELPER, host/helpers/network/lan-helper.c) make
 a macvlan, lan0, on NET_LAN_PARENT with the VM's MAC (NET_LAN_MAC) straight into it. lan()
 configures lan0 from a DHCP lease (busybox udhcpc, with host/helpers/network/lan_dhcp.py as its
@@ -107,6 +114,237 @@ DHCP_SERVER = "10.0.2.254"
 TUN_DEV = "mitm0"
 TUN_TABLE = "101"
 MITM_INFO_FILE = "mitmweb.json"
+
+
+# What the guest may not reach (docs/dev/architecture/network.md, "What the guest reaches"): policy
+# rules in the inner namespace, before the interception (BLOCK_PREF < INTERCEPT_PREF) and without an
+# iif, so they hold for the guest's forwarded packets and for mitmweb's own upstream connections
+# alike, in mode=mitm and mode=direct. "prohibit": the guest's connection fails at once (ICMP
+# administratively prohibited), a local connect with EACCES. The namespace's own addresses (the
+# TAP's, up0's, its loopback: the relays, mitmweb's web port) are the local table's (pref 0), before
+# these. The guest's own network (CIDR: the guest, slirp's router and DNS) is never in them.
+#   LOOPBACK_NETS  always, whatever NET_LAN_ACCESS says (slirp4netns's --disable-host-loopback
+#                  already refuses the router's 10.0.2.2; these refuse the rest, defence in depth)
+#   LAN_NETS       unless NET_LAN_ACCESS=on (link=lan always has it): the private ranges, shared
+#                  address space (CGNAT, VPNs such as Tailscale), link-local and multicast
+#   the host's own addresses (HOST_FILE), likewise: slirp4netns opens its sockets in the host's
+#                  namespace, where they are local. Those inside LAN_NETS are covered already;
+#                  the rest (a public address on the host) get a rule each (HOST_PREF), kept
+#                  current while the VM runs (HostWatch), never a snapshot from the start only.
+#                  An address on the host's loopback interface outside 127.0.0.0/8 (WSL's DNS
+#                  10.255.255.254 on lo) is the host's loopback: refused even with LAN access.
+# IPv6 needs nothing: slirp4netns runs without --enable-ipv6 and the namespace forwards no IPv6, so
+# the guest has link-local IPv6 on the TAP at most.
+BLOCK_PREF = "90"
+HOST_PREF = "91"
+LOOPBACK_NETS = ("127.0.0.0/8", "0.0.0.0/8")
+LAN_NETS = (
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "100.64.0.0/10",
+    "169.254.0.0/16",
+    "224.0.0.0/4",
+)
+HOST_FILE = "host-addresses"  # in NETNS_RUNDIR: the host's addresses the rules refuse, one a line
+HOST_POLL = 30  # s between HostWatch's reads when no address event arrived
+HOST_POLL_BLIND = 2  # s between them once its monitor is gone
+
+
+def lan_access(env):
+    """Whether the guest may reach the LAN and the host's own non-loopback addresses: NET_LAN_ACCESS
+    on (qemu.py: vm.toml's network.lan_access; always with link=lan)."""
+    return env.get("NET_LAN_ACCESS") == "on"
+
+
+# LG's online services (vm.toml's network.lg_services, NET_LG_SERVICES; docs/dev/architecture/
+# network.md, "LG services"). With mock (the default; anything but "real") the guest's names are
+# resolved by lg_mock.py in this namespace, at MOCK_DNS (the TAP's own address, which DHCP then
+# hands out as the name server): it answers NXDOMAIN for the refused classes of lg_hosts.py, resolves
+# LG's online check and the answered classes (SDP and LG's web hosts) to itself and answers them on
+# ports 80 and 443 (lg_sdp.py, its certificates from the proxy's CA), and forwards the rest to
+# slirp4netns's resolver (DNS). Policy rules at BLOCK_PREF, beside the loopback and LAN ones, refuse what would get
+# around it: the classes' literal addresses (no iif: mitmweb's upstream too), and the guest's own
+# DNS to any other server (DNS_BYPASS: plain DNS and DNS over TLS). In mode=mitm the resolver's
+# upstream queries are routed into mitmweb (intercept_rules), so the inspector still shows them.
+# None of it needs mitmweb: it holds in mode=direct and when mitmweb is missing or fails.
+MOCK_DNS = DHCP_SERVER
+LG_CERTS = "lgmock-certs"  # in the socket directory: lg_mock.py's minted certificates and key
+DNS_BYPASS = (("udp", "53"), ("tcp", "53"), ("tcp", "853"))
+
+
+def lg_mock(env):
+    """Whether LG's services are mocked: NET_LG_SERVICES anything but real (qemu.py sets it from
+    vm.toml's network.lg_services, default mock)."""
+    return env.get("NET_LG_SERVICES") != "real"
+
+
+def guest_dns(env):
+    """The name server the namespace's DHCP hands the guest: MOCK_DNS with LG's services mocked,
+    else slirp4netns's resolver (DNS)."""
+    return MOCK_DNS if lg_mock(env) else DNS
+
+
+def _lg_hosts(tree=paths.TREE):
+    """host/helpers/network/lg_hosts.py, the table of LG's host classes, as a module."""
+    import importlib.util
+
+    path = tree.src("host", "helpers", "network", "lg_hosts.py")
+    spec = importlib.util.spec_from_file_location("beanjar_lg_hosts", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def lg_rules(tap, addresses, action="add"):
+    """The ip commands of mock mode's refusals at BLOCK_PREF: each of addresses (lg_hosts'
+    refused_addresses), and the guest's DNS (arriving on tap) to any server but MOCK_DNS, which is
+    the local table's, before them."""
+    out = [["rule", action, "pref", BLOCK_PREF, "to", f"{a}/32", "prohibit"] for a in addresses]
+    out += [
+        ["rule", action, "pref", BLOCK_PREF, "iif", tap, "ipproto", p, "dport", port, "prohibit"]
+        for p, port in DNS_BYPASS
+    ]
+    return out
+
+
+def block_nets(lan):
+    """The destinations BLOCK_PREF's rules refuse, LAN access (lan) or not: CIDR strings, the
+    guest's network (CIDR) cut out of the range that holds it."""
+    own = ipaddress.ip_network(CIDR)
+    out = []
+    for n in LOOPBACK_NETS + (() if lan else LAN_NETS):
+        n = ipaddress.ip_network(n)
+        if own.subnet_of(n):
+            out += sorted(n.address_exclude(own))
+        else:
+            out.append(n)
+    return [str(n) for n in out]
+
+
+def block_rules(lan, action="add"):
+    """The ip commands of block_nets(lan): one prohibit rule each at BLOCK_PREF."""
+    return [["rule", action, "pref", BLOCK_PREF, "to", n, "prohibit"] for n in block_nets(lan)]
+
+
+def host_blocks(entries, lan):
+    """Of the host's addresses (entries: (address, on a loopback interface)), those HOST_PREF's
+    rules must refuse, LAN access (lan) or not: IPv4, outside block_nets(lan) (which covers them)
+    and the guest's network (slirp's there, not the host's); the loopback interface's always, the
+    others without LAN access only. Sorted strings."""
+    own = ipaddress.ip_network(CIDR)
+    covered = [ipaddress.ip_network(n) for n in LOOPBACK_NETS + (() if lan else LAN_NETS)]
+    out = set()
+    for a, loopback in entries:
+        try:
+            a = ipaddress.IPv4Address(a)
+        except ValueError:
+            continue
+        if a in own or any(a in n for n in covered) or (lan and not loopback):
+            continue
+        out.add(a)
+    return [str(a) for a in sorted(out)]
+
+
+def host_rules(addresses, action):
+    """The ip commands that refuse each of addresses (host_blocks' strings) at HOST_PREF."""
+    return [["rule", action, "pref", HOST_PREF, "to", f"{a}/32", "prohibit"] for a in addresses]
+
+
+def parse_addresses(text):
+    """The IPv4 addresses of `ip -j -4 addr show`'s output: [(address, on a loopback interface)]."""
+    try:
+        links = json.loads(text or "[]")
+    except ValueError:
+        return []
+    out = []
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        loopback = "LOOPBACK" in (link.get("flags") or ()) or link.get("ifname") == "lo"
+        for i in link.get("addr_info", ()):
+            if isinstance(i, dict) and i.get("family") == "inet" and i.get("local"):
+                out.append((i["local"], loopback))
+    return out
+
+
+def host_addresses(env):
+    """This namespace's IPv4 addresses (the host's), or None if `ip` could not list them."""
+    r = subprocess.run(
+        ["ip", "-j", "-4", "addr", "show"],
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    return parse_addresses(r.stdout) if r.returncode == 0 else None
+
+
+def write_host_file(path, entries):
+    """HOST_FILE: one address a line, "ADDRESS" or "ADDRESS lo" (on a loopback interface),
+    replaced at once (inner() reads it while it is written)."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        f.write("".join(a + (" lo" if lo else "") + "\n" for a, lo in entries))
+    os.replace(tmp, path)
+
+
+def read_host_file(path, lan):
+    """What HOST_PREF's rules refuse of HOST_FILE's addresses (host_blocks; a missing file: none)."""
+    try:
+        with open(path) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return []
+    return host_blocks(
+        [(w[0], w[1:] == ["lo"]) for w in (line.split() for line in lines) if w], lan
+    )
+
+
+class HostWatch:
+    """The host's own addresses for the inner namespace's HOST_PREF rules (link=nat): HOST_FILE
+    written now and again whenever they change. `ip -o monitor address` says when (step reads it again at once),
+    and every HOST_POLL s they are read again anyway, should the monitor be gone."""
+
+    def __init__(self, env, path):
+        self.env, self.path, self.written = env, path, None
+        self.refresh()
+        self.monitor = subprocess.Popen(
+            ["ip", "-o", "monitor", "address"],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            preexec_fn=_die_with_parent,
+        )
+        self.last = time.monotonic()
+
+    def refresh(self):
+        found = host_addresses(self.env)
+        if found is None:
+            if self.written is None:
+                raise Error("netns: could not list the host's addresses (ip -j -4 addr show)")
+            return  # keep the last list rather than none
+        entries = sorted(set(found))
+        if entries != self.written:
+            write_host_file(self.path, entries)
+            self.written = entries
+        self.last = time.monotonic()
+
+    def step(self, timeout):
+        """Wait up to timeout s for an address event; read the addresses again after one, or once
+        HOST_POLL s have passed without."""
+        out = self.monitor.stdout if self.monitor and self.monitor.poll() is None else None
+        if out is not None and select.select([out], [], [], timeout)[0]:
+            if not os.read(out.fileno(), 65536):
+                self.monitor.wait()  # EOF: the monitor is gone; HOST_POLL from now on
+            self.refresh()
+            return
+        if out is None:
+            time.sleep(timeout)
+        if time.monotonic() - self.last >= (HOST_POLL if out is not None else HOST_POLL_BLIND):
+            self.refresh()
 
 
 def mitm_info(run_dir):
@@ -239,11 +477,21 @@ def _relay(tree, pairs, env, log_path, who):
     return p
 
 
+def inspected(env):
+    """Whether the namespace runs the inspector: NET_MODE mitm (the default), not direct."""
+    return env.get("NET_MODE") != "direct"
+
+
 def relay_pairs(env, rundir):
     """The host side's relay (LISTEN=CONNECT, beanjar-relay): the inspector on NETSTUB_WEB_HOST and
-    NETSTUB_WEB_PORT, the layers' forwards (NETNS_FWD) on LISTEN_ADDRESS, else VM_ADDRESS (qemu.py)."""
+    NETSTUB_WEB_PORT (mode=mitm only), the layers' forwards (NETNS_FWD) on LISTEN_ADDRESS, else
+    VM_ADDRESS (qemu.py)."""
     listen = env.get("LISTEN_ADDRESS") or env["VM_ADDRESS"]
-    pairs = [f"tcp:{env['NETSTUB_WEB_HOST']}:{env['NETSTUB_WEB_PORT']}=unix:{rundir}/mitmweb.sock"]
+    pairs = []
+    if inspected(env):
+        pairs.append(
+            f"tcp:{env['NETSTUB_WEB_HOST']}:{env['NETSTUB_WEB_PORT']}=unix:{rundir}/mitmweb.sock"
+        )
     return pairs + [
         f"tcp:{listen}:{hp}=unix:{rundir}/fwd-{hp}.sock"
         for hp in (f.split(":", 1)[0] for f in env.get("NETNS_FWD", "").split())
@@ -308,15 +556,15 @@ def _uplink(child, env, logdir):
         )
 
 
-def mitm(argv, env, tree=paths.TREE):
-    """Run QEMU (argv) in the mode=mitm namespace; QEMU's exit status."""
+def run(argv, env, tree=paths.TREE):
+    """Run QEMU (argv) in the namespace of link=nat (mode mitm or direct) or link=lan; QEMU's exit
+    status."""
     env = _sbin_path(dict(env))
     lan = env.get("NET_LINK") == "lan"
+    mitm = inspected(env)
     for tool in ("unshare", "ip", "slirp4netns") + (("busybox",) if lan else ()):
         if not shutil.which(tool, path=env["PATH"]):
-            raise Error(
-                f"netns: {tool} not found (needed for mode=mitm; mode=direct needs none of them)"
-            )
+            raise Error(f"netns: {tool} not found (every link=nat and link=lan VM needs it)")
     if lan:
         for k in ("NET_LAN_PARENT", "NET_LAN_MAC", "NET_LAN_HELPER"):
             if not env.get(k):
@@ -327,7 +575,8 @@ def mitm(argv, env, tree=paths.TREE):
         != 0
     ):
         raise Error(
-            "netns: rootless 'unshare -rn' unavailable on this host (need unprivileged userns); use mode=direct"
+            "netns: rootless 'unshare -rn' unavailable on this host (every link=nat and link=lan VM"
+            " needs unprivileged user namespaces; link=off needs none)"
         )
     if env.get("NETNS_SOCK_DIR"):
         rundir = env["NETNS_SOCK_DIR"]
@@ -346,11 +595,20 @@ def mitm(argv, env, tree=paths.TREE):
     # the inspector's password: the launcher's file (launch.py, from BEANJAR_MITM_PASSWORD), else
     # BEANJAR_MITM_PASSWORD, else a new random one; only the file's path goes on to the namespace
     given = env.pop(PASSWORD_ENV, "")
-    password = env.get("NETSTUB_WEB_PASSWORD_FILE")
-    if given or not password or not os.path.isfile(password):
-        password = write_password(os.path.join(env.get("RUN_DIR") or rundir, PASSWORD_FILE), given)
-    env["NETSTUB_WEB_PASSWORD_FILE"] = password
-    helpers, ns = [], None
+    password = None
+    if mitm:
+        password = env.get("NETSTUB_WEB_PASSWORD_FILE")
+        if given or not password or not os.path.isfile(password):
+            password = write_password(
+                os.path.join(env.get("RUN_DIR") or rundir, PASSWORD_FILE), given
+            )
+        env["NETSTUB_WEB_PASSWORD_FILE"] = password
+    else:
+        env.pop("NETSTUB_WEB_PASSWORD_FILE", None)
+    # link=lan is on the LAN by definition; link=nat reaches it only with NET_LAN_ACCESS=on
+    if lan:
+        env["NET_LAN_ACCESS"] = "on"
+    helpers, ns, watch = [], None, None
     _raise_on(signal.SIGTERM, signal.SIGINT)
     try:
         # The inspector lives inside the namespace; only its web port is exposed on the host. The
@@ -360,18 +618,30 @@ def mitm(argv, env, tree=paths.TREE):
             env,
             PYTHONPATH=os.pathsep.join(x for x in (tree.pkg_parent, env.get("PYTHONPATH")) if x),
         )
-        helpers.append(
-            _relay(
-                tree,
-                relay_pairs(env, rundir),
-                penv,
-                os.path.join(logdir, "netns-relay.log"),
-                "netns",
+        pairs = relay_pairs(env, rundir)
+        if pairs:
+            helpers.append(
+                _relay(tree, pairs, penv, os.path.join(logdir, "netns-relay.log"), "netns")
             )
-        )
-        _announce_inspector(
-            env,
-            f"traffic inspector (mitmweb): http://{web_host}:{web_port} (password in {password})",
+        if mitm:
+            _announce_inspector(
+                env,
+                f"traffic inspector (mitmweb): http://{web_host}:{web_port} (password in {password})",
+            )
+        if not lan:
+            # the host's own addresses, for inner()'s HOST_PREF rules: written before it starts,
+            # kept current while it runs (link=lan's namespace has none of the host's)
+            watch = HostWatch(env, os.path.join(rundir, HOST_FILE))
+            helpers.append(watch.monitor)
+        print(
+            "network: the host's loopback unreachable; "
+            + (
+                "the LAN and the host's other addresses reachable (LAN access)"
+                if lan_access(env)
+                else "the LAN and the host's addresses unreachable (no LAN access)"
+            ),
+            file=sys.stderr,
+            flush=True,
         )
         ns = subprocess.Popen(
             [
@@ -411,7 +681,12 @@ def mitm(argv, env, tree=paths.TREE):
                 raise Error(f"netns: no macvlan on {env['NET_LAN_PARENT']}: {made.stdout.strip()}")
             return _status(ns.wait())
         helpers.append(_uplink(ns, env, logdir))
-        return _status(ns.wait())
+        while ns.poll() is None:
+            if watch is None:
+                ns.wait()
+            else:
+                watch.step(1.0)
+        return _status(ns.returncode)
     except _Stop as e:
         return 128 + e.sig
     finally:
@@ -426,14 +701,66 @@ def mitm(argv, env, tree=paths.TREE):
                 ns.wait()
         _kill(helpers)
         shutil.rmtree(rundir, ignore_errors=True)
-        try:
-            os.unlink(password)
-        except OSError:
-            pass
+        if password:
+            try:
+                os.unlink(password)
+            except OSError:
+                pass
 
 
 def _ip(env, *args):
     subprocess.run(["ip", *args], env=env, check=True)
+
+
+def _ip_batch(env, commands, force=False):
+    """Run commands (ip's argument lists) in one `ip -batch`; Error if one fails (force: run the
+    rest anyway, and only say so)."""
+    if not commands:
+        return
+    r = subprocess.run(
+        ["ip", *(["-force"] if force else []), "-batch", "-"],
+        env=env,
+        input="".join(" ".join(c) + "\n" for c in commands),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if r.returncode != 0:
+        if not force:
+            raise Error(f"netns inner: ip -batch failed: {r.stdout.strip()}")
+        print(f"netns inner: ip -batch: {r.stdout.strip()}", file=sys.stderr, flush=True)
+
+
+class HostRules:
+    """inner()'s HOST_PREF rules, kept to what HOST_FILE (HostWatch, outside) says: sync() reads it
+    again when it changed and adds and deletes the difference."""
+
+    def __init__(self, env, path, lan):
+        self.env, self.path, self.lan, self.stamp, self.current = env, path, lan, None, []
+
+    def sync(self):
+        try:
+            st = os.stat(self.path)
+            stamp = (st.st_mtime_ns, st.st_size, st.st_ino)
+        except OSError:
+            stamp = None
+        if stamp == self.stamp:
+            return
+        self.stamp = stamp
+        wanted = read_host_file(self.path, self.lan)
+        gone = [a for a in self.current if a not in wanted]
+        new = [a for a in wanted if a not in self.current]
+        if self.current or new:
+            # the new ones first: an address never goes unblocked between the two
+            _ip_batch(self.env, host_rules(new, "add"), force=bool(self.current))
+            _ip_batch(self.env, host_rules(gone, "del"), force=True)
+            if new or gone:
+                print(
+                    f"netns inner: host addresses refused: {', '.join(wanted) or 'none'}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+        self.current = wanted
 
 
 def _sysctl(key, value):
@@ -524,6 +851,125 @@ def mitmweb_argv(mitmweb, tree, env, confdir, web_port):
     ]
 
 
+# mitmweb's sandbox (mitmweb_sandbox): a bubblewrap mount namespace, so that what reaches its API
+# (the password, or a script on its origin) cannot have it load or touch the user's files. It sees
+# the system (/usr, /etc, read-only), its own installation and interpreter (the pipx venv,
+# read-only), mitm_addon.py and the password file (read-only), and writes only its confdir (the
+# library's CA, where it keeps its certificates), MITM_STATE_DIR and NETSTUB_LOG. /proc (its own pid
+# namespace), /dev (with /dev/net/tun for its TUN device) and /tmp are private. Not $HOME, not the
+# VM's shares, not the run or socket directories. It keeps CAP_NET_ADMIN of the namespace's
+# capabilities, which `--mode tun` needs to make and configure TUN_DEV; the network namespace is the
+# one it starts in, so tun mode works as before. No user namespace of its own (bwrap runs as the
+# namespace's root): capabilities in a nested one would not reach this network namespace. The
+# environment is cleared but for SANDBOX_ENV. mitm_addon.py's Freeze adds the other half: the
+# options that load code or files, open listeners or change the password are frozen once it runs.
+MITM_STATE_DIR = "mitmweb.d"  # in NETNS_RUNDIR: mitmweb's ready file (NETNS_MITM_READY)
+SANDBOX_ENV = (
+    "NETSTUB_LOG",
+    "NETSTUB_STREAM_LARGE",
+    "NETSTUB_WEB_PASSWORD_FILE",
+    "NETNS_MITM_READY",
+    "NET_LG_SERVICES",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+)
+SANDBOX_ROOT_DIRS = ("bin", "sbin", "lib", "lib32", "lib64", "libx32")  # links into /usr if merged
+
+
+def _prefix(executable):
+    """An executable's installation: the directory above its bin/ (a venv, pipx's, a pip --user
+    install's ~/.local, /usr), symlinks resolved."""
+    return os.path.dirname(os.path.dirname(os.path.realpath(executable)))
+
+
+def _under(path, top):
+    return path == top or path.startswith(top.rstrip("/") + "/")
+
+
+def mitmweb_sandbox(bwrap, mitmweb, env, confdir, addon, state):
+    """bwrap's command line up to mitmweb's own (mitmweb_argv, with mitmweb's real path): mitmweb
+    in the sandbox described above, writing confdir, state (MITM_STATE_DIR) and NETSTUB_LOG.
+    Raises Error if mitmweb's installation is the home directory itself, which would bind all of it."""
+    home = os.path.realpath(os.path.expanduser("~"))
+    tops = []
+    for exe in (mitmweb, mitmtool.python(mitmweb)):
+        top = _prefix(exe) if exe else None
+        if not top or top == "/" or _under(top, "/usr") or top in tops:
+            continue  # the system's, bound below
+        if home != "/" and _under(home, top):
+            raise Error(f"netns inner: {exe} is installed in {top}, which holds the home directory")
+        tops.append(top)
+    cmd = [
+        bwrap,
+        # its own pid namespace (for /proc) and IPC; it dies with its parent
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--die-with-parent",
+        "--new-session",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "CAP_NET_ADMIN",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+    ]
+    for name in SANDBOX_ROOT_DIRS:
+        path = "/" + name
+        if os.path.islink(path):
+            cmd += ["--symlink", os.readlink(path), path]
+        elif os.path.isdir(path):
+            cmd += ["--ro-bind", path, path]
+    cmd += ["--ro-bind", "/etc", "/etc"]
+    resolv = os.path.realpath("/etc/resolv.conf")
+    if not _under(resolv, "/etc") and not _under(resolv, "/usr"):
+        cmd += ["--ro-bind-try", resolv, resolv]  # WSL's /mnt/wsl, systemd-resolved's /run
+    cmd += [
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--dev-bind",
+        "/dev/net/tun",
+        "/dev/net/tun",
+        "--tmpfs",
+        "/tmp",  # first: what is bound below may be in the host's /tmp
+    ]
+    for top in tops:
+        cmd += ["--ro-bind", top, top]
+    # the addon and the table it reads (lg_hosts.py, beside it)
+    ro = [addon, os.path.join(os.path.dirname(addon), "lg_hosts.py")]
+    ro += [env.get("NETSTUB_WEB_PASSWORD_FILE")]
+    rw = [confdir, state, env.get("NETSTUB_LOG")]
+    for option, paths_ in (("--ro-bind", ro), ("--bind", rw)):
+        for path in filter(None, paths_):
+            # at the path mitmweb is given (a library reached through a link included)
+            cmd += [option, os.path.realpath(path), os.path.abspath(path)]
+    cmd += [
+        "--chdir",
+        "/",
+        "--clearenv",
+        "--setenv",
+        "PATH",
+        "/usr/bin:/bin",
+        "--setenv",
+        "HOME",
+        "/tmp",
+    ]
+    # its log written as it goes: a stop kills it (bwrap does not pass SIGTERM on), so nothing
+    # buffered would reach the log
+    cmd += ["--setenv", "PYTHONUNBUFFERED", "1"]
+    for key in SANDBOX_ENV:
+        if env.get(key):
+            cmd += ["--setenv", key, env[key]]
+    prefix = _prefix(mitmweb)
+    if prefix in tops and not os.path.exists(os.path.join(prefix, "pyvenv.cfg")):
+        cmd += ["--setenv", "PYTHONUSERBASE", prefix]  # a pip --user install: HOME is not its home
+    return cmd
+
+
 def _write_info(env, rundir, info):
     """RUN_DIR/MITM_INFO_FILE: what this start's mitmweb is (mitm_info reads it)."""
     base = env.get("RUN_DIR") or rundir
@@ -577,15 +1023,23 @@ def _start_proxy(env, tree, rundir, logdir, web_port):
         ).stdout.strip()
         env["NETSTUB_LOG"] = env.get("NETSTUB_LOG") or tree.build("netstub.log")
         mitm_log = os.path.join(logdir, "netstub-mitm.log")
-        env["NETNS_MITM_READY"] = ready_file = os.path.join(rundir, "mitmweb.ready")
+        state = os.path.join(rundir, MITM_STATE_DIR)
+        os.makedirs(state, mode=0o700, exist_ok=True)
+        env["NETNS_MITM_READY"] = ready_file = os.path.join(state, "ready")
         if os.path.exists(ready_file):
             os.unlink(ready_file)
         for f in (mitm_log, env["NETSTUB_LOG"]):
             open(f, "a").close()
             os.chmod(f, 0o600)
+        bwrap = mitmtool.sandbox(env)
+        if not bwrap:
+            raise OSError(mitmtool.SANDBOX_PROBLEM)
+        confdir, mitmweb = os.path.dirname(ca), os.path.realpath(tool.path)
+        addon = tree.src("host", "helpers", "network", "mitm_addon.py")
         with open(mitm_log, "w") as log:
             proxy = subprocess.Popen(
-                mitmweb_argv(tool.path, tree, env, os.path.dirname(ca), web_port),
+                mitmweb_sandbox(bwrap, mitmweb, env, confdir, addon, state)
+                + mitmweb_argv(mitmweb, tree, env, confdir, web_port),
                 env=env,
                 stdin=subprocess.DEVNULL,
                 stdout=log,
@@ -593,7 +1047,7 @@ def _start_proxy(env, tree, rundir, logdir, web_port):
                 preexec_fn=_die_with_parent,
             )
         return Proxy(proxy, ready_file, web_port, mitm_log, info)
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except (OSError, subprocess.CalledProcessError, Error) as exc:
         if proxy is not None:
             _kill([proxy])
         print(f"netns inner: mitmweb unavailable: {exc}; forwarding directly", file=sys.stderr)
@@ -607,14 +1061,23 @@ def _start_proxy(env, tree, rundir, logdir, web_port):
 TUN_PROTOCOLS = ("tcp", "udp")
 
 
-def intercept_rules(tap, action):
+def intercept_rules(tap, action, dns_from=None):
     """The ip commands of _intercept: one policy rule per protocol (TUN_PROTOCOLS), for packets
     arriving on tap only, to TUN_TABLE. Packets to the namespace's own addresses (DHCP, the
-    relays' replies) meet the local table first (pref 0)."""
-    return [
+    relays' replies, mock mode's resolver) meet the local table first (pref 0). dns_from (mock
+    mode's MOCK_DNS): that resolver's own upstream queries, from that address to port 53, go to
+    TUN_TABLE too, so mitmweb sees the guest's lookups as before."""
+    out = [
         ["rule", action, "pref", INTERCEPT_PREF, "iif", tap, "ipproto", p, "lookup", TUN_TABLE]
         for p in TUN_PROTOCOLS
     ]
+    if dns_from:
+        out += [
+            ["rule", action, "pref", INTERCEPT_PREF, "from", f"{dns_from}/32", "ipproto", p]
+            + ["dport", "53", "lookup", TUN_TABLE]
+            for p in TUN_PROTOCOLS
+        ]
+    return out
 
 
 def hold_rules(tap, action):
@@ -636,7 +1099,7 @@ def _intercept(env, tap, action):
     """Only the ingress policy rules divert traffic; the private table is inert without them."""
     if action == "add":
         _ip(env, *tun_route("replace"))
-    for rule in intercept_rules(tap, action):
+    for rule in intercept_rules(tap, action, MOCK_DNS if lg_mock(env) else None):
         _ip(env, *rule)
 
 
@@ -651,11 +1114,14 @@ def _hold(env, tap, action):
         _ip(env, *rule)
 
 
-def _wait_guest(qemu, proxy, env, tap):
+def _wait_guest(qemu, proxy, env, tap, hosts=None):
     """Keep the guest alive: start intercepting once its proxy (a Proxy) is ready, and withdraw
-    the hold, or only the hold if it never gets ready; withdraw interception as soon as it exits."""
+    the hold, or only the hold if it never gets ready; withdraw interception as soon as it exits;
+    keep the host's addresses refused (hosts, a HostRules)."""
     pending = proxy
     while True:
+        if hosts is not None:
+            hosts.sync()
         if pending is not None:
             ready = pending.poll()
             if ready:
@@ -719,8 +1185,58 @@ def _discovery(env, mode, logdir):
     return helper
 
 
+def _lg_mock(env, tree, logdir, rundir):
+    """Mock mode's resolver, online check and SDP responder (host/helpers/network/lg_mock.py) on
+    MOCK_DNS, its upstream slirp4netns's resolver (DNS), its HTTPS certificates issued by the proxy's
+    CA (NETSTUB_CA, which qemu.py sets in both modes when LG's services are mocked) and kept in the
+    socket directory, started and ready (its "ready" line), else Error: a guest whose names it
+    cannot resolve would only go without DNS, but one without it is no mock."""
+    log_path = os.path.join(logdir, "netns-lgmock.log")
+    tls = []
+    if env.get("NETSTUB_CA"):
+        # the CA made if it is missing, as for mitmweb (_start_proxy; tlsca.py locks it)
+        subprocess.run(
+            [tree.src("host", "helpers", "network", "tlsca.py")],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            check=True,
+        )
+        tls = ["--ca", env["NETSTUB_CA"], "--certs", os.path.join(rundir, LG_CERTS)]
+    with open(log_path, "w") as log:
+        helper = subprocess.Popen(
+            [
+                sys.executable,
+                tree.src("host", "helpers", "network", "lg_mock.py"),
+                "--listen",
+                MOCK_DNS,
+                "--upstream",
+                DNS,
+            ]
+            + tls,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            preexec_fn=_die_with_parent,
+        )
+    with helper.stdout:
+        ready = (
+            select.select([helper.stdout], [], [], 10)[0] and helper.stdout.readline() == b"ready\n"
+        )
+    if not ready or helper.poll() is not None:
+        _kill([helper])
+        raise Error(f"netns inner: LG services mock failed (see {log_path})")
+    print(
+        "netns inner: LG services mocked: telemetry and cloud hosts refused, online check, SDP and "
+        f"LG's web hosts answered by {MOCK_DNS}" + ("" if tls else " (no HTTPS: no NETSTUB_CA)"),
+        file=sys.stderr,
+        flush=True,
+    )
+    return helper
+
+
 def inner(argv, tree=paths.TREE):
-    """Inside the namespace (mitm() runs this under unshare -rn and attaches the uplink, up0): the
+    """Inside the namespace (run() runs this under unshare -rn and attaches the uplink, up0): the
     TAP, proxy ARP between it and the uplink, the routing of TCP and UDP into mitmweb, DHCP, the
     port bridges into the guest, then QEMU in the foreground. The helpers are killed when QEMU
     exits."""
@@ -746,7 +1262,7 @@ def inner(argv, tree=paths.TREE):
                 ["ip", "route", "show", "default"], env=env, stdout=subprocess.PIPE, text=True
             ).stdout.strip()
 
-        # the uplink (mitm() attaches it once this namespace exists)
+        # the uplink (run() attaches it once this namespace exists)
         for _ in range(100):
             if default_route():
                 break
@@ -759,6 +1275,18 @@ def inner(argv, tree=paths.TREE):
         # routing: the guest's packets are forwarded to slirp unchanged, and slirp's back to the
         # guest, each side's ARP for the other's addresses answered here (proxy ARP). Its TCP and
         # UDP go to mitmweb's TUN device instead once it is ready (_intercept, _wait_guest).
+        # what the guest may not reach (BLOCK_PREF, HOST_PREF), before it can send anything
+        lan = lan_access(env)
+        _ip_batch(env, block_rules(lan))
+        mock = lg_mock(env)
+        env["NET_LG_SERVICES"] = "mock" if mock else "real"  # for mitm_addon.py too
+        if mock:
+            _ip_batch(env, lg_rules(tap, _lg_hosts(tree).refused_addresses()))
+        hosts = HostRules(env, os.path.join(rundir, HOST_FILE), lan)
+        hosts.sync()
+        # every refused connection told at once: without this the kernel's ICMP rate limit (one a
+        # second) leaves a guest's second refused SYN in a second unanswered, to time out instead
+        _sysctl("icmp_ratelimit", "0")
         _sysctl("ip_forward", "1")
         for dev in (tap, "up0"):
             _sysctl(f"conf/{dev}/proxy_arp", "1")
@@ -778,7 +1306,7 @@ def inner(argv, tree=paths.TREE):
                         "--router",
                         ROUTER,
                         "--dns",
-                        DNS,
+                        guest_dns(env),
                     ],
                     env=env,
                     stdin=subprocess.DEVNULL,
@@ -788,26 +1316,32 @@ def inner(argv, tree=paths.TREE):
                 )
             )
 
+        # mock mode's resolver and online check (lg_mock.py), before the guest can ask
+        if mock:
+            helpers.append(_lg_mock(env, tree, logdir, rundir))
         # Runtime files stay private even when the optional inspector is absent.
         os.umask(0o077)
         # mitmweb starts beside QEMU: the guest's TCP and UDP are held until it listens (_hold,
         # _wait_guest), long before the guest's network is up on any board measured
-        proxy = _start_proxy(env, tree, rundir, logdir, web_port)
+        proxy = _start_proxy(env, tree, rundir, logdir, web_port) if inspected(env) else None
         if proxy is not None:
             helpers.append(proxy.process)
             _hold(env, tap, "add")
         # the inspector's socket for the host-side relay, and the loopback-forwarded ports into the
-        # guest. The unix sockets live on the shared filesystem, so the host-side relay (mitm(),
+        # guest. The unix sockets live on the shared filesystem, so the host-side relay (run(),
         # outside the namespace) reaches them; this side connects on to the guest. Replaces slirp
         # hostfwd, which a TAP netdev does not provide.
-        pairs = [f"unix:{rundir}/mitmweb.sock=tcp:127.0.0.1:{web_port}"]
+        pairs = [f"unix:{rundir}/mitmweb.sock=tcp:127.0.0.1:{web_port}"] if inspected(env) else []
         pairs += [
             f"unix:{rundir}/fwd-{hp}.sock=tcp:{GUEST}:{gp}"
             for hp, gp in (f.split(":", 1) for f in env.get("NETNS_FWD", "").split())
         ]
-        helpers.append(
-            _relay(tree, pairs, env, os.path.join(logdir, "netns-relay-inner.log"), "netns inner")
-        )
+        if pairs:
+            helpers.append(
+                _relay(
+                    tree, pairs, env, os.path.join(logdir, "netns-relay-inner.log"), "netns inner"
+                )
+            )
         if env.get("NETNS_LAN_ADDRESS"):
             helpers.append(_discovery(env, "inner", logdir))
         # QEMU in the foreground, with the memfd of its swap disk if it has one (hostswap.py)
@@ -816,7 +1350,7 @@ def inner(argv, tree=paths.TREE):
             qemu = subprocess.Popen(argv, env=env, preexec_fn=_die_with_parent, pass_fds=fds)
         finally:
             hostswap.close_fds(fds)
-        return _wait_guest(qemu, proxy, env, tap)
+        return _wait_guest(qemu, proxy, env, tap, hosts)
     except _Stop as e:
         return 128 + e.sig
     finally:
@@ -829,6 +1363,24 @@ def inner(argv, tree=paths.TREE):
             except subprocess.TimeoutExpired:
                 qemu.kill()
         _kill(helpers)
+
+
+def enter_argv(pid, argv):
+    """argv run in the network namespace of a running VM's QEMU (pid: inner()'s namespace, and
+    its user namespace, which owns it), as `nsenter` does it; else Error (QEMU is in this
+    namespace: link=off). What runs there is the guest's neighbour on the TAP and reaches what the
+    namespace does, nothing of the host's but what it has open already; the guest reaches it at
+    DHCP_SERVER, the TAP's address (the way it reaches lg_mock.py), on a port it listens on
+    there. scripts/regress --tv's test server runs so (tests/regress/http-token.py)."""
+    try:
+        theirs = os.readlink(f"/proc/{pid}/ns/net")
+    except OSError as e:
+        raise Error(f"netns: no process {pid}: {e.strerror}") from None
+    if theirs == os.readlink("/proc/self/ns/net"):
+        raise Error(f"netns: process {pid} is in this network namespace (the VM has link=off)")
+    if not shutil.which("nsenter"):
+        raise Error("netns: nsenter not found (util-linux)")
+    return ["nsenter", "-t", str(pid), "-U", "-n", "--preserve-credentials", "--", *argv]
 
 
 def _lan_static(env, address):
@@ -857,7 +1409,7 @@ def dhcp_argv(env, script):
 
 
 def lan(argv, tree=paths.TREE):
-    """The LAN namespace (link=lan; mitm() runs this under `unshare -rnm` and has lan0 made in it):
+    """The LAN namespace (link=lan; run() runs this under `unshare -rnm` and has lan0 made in it):
     lan0's address (a DHCP lease or NET_ADDRESS), DNS, RUN_DIR/lan.json, inner() with its uplink
     and a relay of the TV-service ports and the inspector on the LAN address; all of it undone
     when QEMU exits."""
@@ -884,7 +1436,7 @@ def lan(argv, tree=paths.TREE):
                 == 0
             )
 
-        for _ in range(100):  # mitm() has the helper make it once this namespace exists
+        for _ in range(100):  # run() has the helper make it once this namespace exists
             if has_lan():
                 break
             time.sleep(0.1)
@@ -970,6 +1522,7 @@ def lan(argv, tree=paths.TREE):
             flush=True,
         )
         env["NETNS_LAN_ADDRESS"] = lease["address"]
+        env["NET_LAN_ACCESS"] = "on"  # on the LAN by definition; the loopback rules stay
         child = subprocess.Popen(
             ["unshare", "-rn", sys.executable, "-m", "beanjar.netns", "inner", *argv],
             env=env,

@@ -159,6 +159,9 @@ fi
 [ -z "$NVM_EEPROM" ] || MODULE_PARAMS_lgemu="${MODULE_PARAMS_lgemu:-} nvm_disk=$(disk "$NVM_EEPROM")"
 [ -z "$PARTINFO_DISK" ] || [ -z "$(disk "$PARTINFO_DISK")" ] ||
 	MODULE_PARAMS_lgemu="${MODULE_PARAMS_lgemu:-} partinfo_disk=$(disk "$PARTINFO_DISK")"
+# the micom's power-off timeout stretched as bootd's timers are (webos.time_scale, below)
+[ "$(arg webos.time_scale 1)" = 1 ] ||
+	MODULE_PARAMS_lgemu="${MODULE_PARAMS_lgemu:-} time_scale=$(arg webos.time_scale 1)"
 for m in lgemu media-pool $SOC_MODULES; do
 	eval "params=\${MODULE_PARAMS_$(echo "$m" | tr - _):-}"
 	# and the cmdline's <module>.<param>=<value> words (- as _), as modprobe passes them
@@ -256,8 +259,9 @@ for name in $LAYERS; do
 done
 
 # --- trust in the mode=mitm proxy's CA ---
-# With mode=mitm the per-VM layer has the proxy CA's certificate (its library's, shared by its VMs;
-# the checkout VM's own), etc/emulator/netstub-ca.pem, and its OpenSSL subject hash
+# With mode=mitm, and in mode=direct with LG's services mocked (lg_services=mock, whose SDP answers
+# carry certificates of this CA), the per-VM layer has the proxy CA's certificate (its library's,
+# shared by its VMs; the checkout VM's own), etc/emulator/netstub-ca.pem, and its OpenSSL subject hash
 # (netstub-ca.hash, computed on the host). It is added, in the per-VM layer's
 # tmpfs copy (the other layers are read-only images), to the firmware's own trust stores, each copied from the stock rootfs with the CA appended: boot.conf's TRUST_BUNDLES
 # (the system bundle, and a second one that some clients load instead) and, in TRUST_HASH_DIR
@@ -397,14 +401,24 @@ if [ -n "${EMMC_OVERLAY:-}" ]; then
 fi
 # The stock systemd EFS scripts skip mapping creation when the block node exists.
 # Prepare an upstream dm-linear mapping, then let their own mkswap/swapon run.
-# Only firmwares with an attached EFS backing disk get this integration.
+# Only firmwares with an attached EFS backing disk get this integration. The mapping is made once
+# per boot by its own oneshot unit, started early beside sysinit (blocking nothing else) and
+# required by the stock tasks: memchute starts swap-on (and swap-on efs-on) synchronously inside
+# its 40 s main-loop watchdog, so none of our work may happen in there
+# (docs/research/memchute-heartbeat-abort.md).
 if [ "$INIT_SYSTEM" = systemd ] && [ -n "$(disk efs)" ]; then
 	cp /bin/beanjar-eswap /webos/usr/sbin/beanjar-eswap
+	printf '%s\n' '[Unit]' 'Description=Beanjar: ordinary swap mapping for the stock EFS tasks' \
+		'DefaultDependencies=no' 'After=mount-readwrite.service' \
+		'[Service]' 'Type=oneshot' 'RemainAfterExit=yes' 'ExecStart=/usr/sbin/beanjar-eswap' \
+		> /webos/etc/systemd/system/beanjar-eswap.service
+	mkdir -p /webos/etc/systemd/system/sysinit.target.wants
+	ln -sf ../beanjar-eswap.service /webos/etc/systemd/system/sysinit.target.wants/beanjar-eswap.service
 	for service in efs-on f2io-on swap-on; do
 		[ -f "/webos/etc/systemd/system/$service.service" ] || continue
 		mkdir -p "/webos/etc/systemd/system/$service.service.d"
-		printf '%s\n' '[Unit]' 'After=mount-readwrite.service' '[Service]' \
-			'Environment=USE_EFS_SWAP=YES' 'ExecStartPre=/usr/sbin/beanjar-eswap' \
+		printf '%s\n' '[Unit]' 'Requires=beanjar-eswap.service' 'After=beanjar-eswap.service' \
+			'[Service]' 'Environment=USE_EFS_SWAP=YES' \
 			> "/webos/etc/systemd/system/$service.service.d/beanjar-eswap.conf"
 	done
 	log "EFS: stock tasks will activate ordinary disk-backed swap"
@@ -547,6 +561,19 @@ if [ "$scale" != 1 ] && [ "$INIT_SYSTEM" = upstart ]; then
 		"	export LD_PRELOAD=/usr/lib/libbootd-scale.so BOOTD_TIMEOUT_SCALE=$scale" \
 		'	exec /usr/sbin/bootd' 'end script' >> /webos/etc/init/bootd.override
 	log "bootd: timeouts x$scale"
+fi
+# The same factor for memchute's libfm heartbeat (startHeartBeat, 40 s), which its swap-on start
+# outlasts under TCG and faultmanager then kills it (docs/research/memchute-heartbeat-abort.md):
+# N > 1 LD_PRELOADs the webos layer's libmemchute-scale.so (guest/layers/webos/src/memchute-scale)
+# into memchute.service by a drop-in. Only systemd releases' memchute has the heartbeat; their
+# stock unit sets no LD_PRELOAD of its own.
+if [ "$scale" != 1 ] && [ "$INIT_SYSTEM" = systemd ] && { [ -f /webos/lib/systemd/system/memchute.service ] ||
+	[ -f /webos/etc/systemd/system/memchute.service ]; }; then
+	mkdir -p /webos/etc/systemd/system/memchute.service.d
+	printf '%s\n' "# initramfs (webos.time_scale=$scale): memchute's heartbeat x$scale" '[Service]' \
+		"Environment=LD_PRELOAD=/usr/lib/libmemchute-scale.so MEMCHUTE_HEARTBEAT_SCALE=$scale" \
+		> /webos/etc/systemd/system/memchute.service.d/beanjar-scale.conf
+	log "memchute: heartbeat x$scale"
 fi
 
 # --- systemd (INIT_SYSTEM=systemd): /run and the BSP marker ---

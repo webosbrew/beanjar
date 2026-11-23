@@ -72,7 +72,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import nvm, targets, paths
+from . import nvm, targets, paths, superpak
 
 VERSION = 12
 SIZE = 0x8000
@@ -130,28 +130,41 @@ class Error(Exception):
 # ---------------------------------------------------------------------------- the firmware's root
 class Root:
     """The firmware's root as the VM stacks it: the release's pak lowers (targets.PakLower: the pak's
-    subdirectory) above the rootfs pak, read-only."""
+    subdirectory) above the rootfs pak, read-only. A pak is its file, or on a super.pak firmware
+    (W24 ombre on) the logical image of that name in super.pak (beanjar.superpak), which
+    unsquashfs reads at the image's offset."""
 
     def __init__(self, fw, target, tree=paths.TREE):
         rel = targets.release(target, fw)
+        try:
+            logical = superpak.images(fw)
+        except ValueError as e:
+            raise Error(f"{fw}: {e}") from None
+
+        def source(name):
+            # (file, byte offset) of the pak's squashfs
+            image = logical.get(name)
+            return (image.path, image.offset) if image else (os.path.join(fw, name + ".pak"), 0)
+
         files = {p.serial: p.file for p in rel.paks}
         root = [p for p in rel.paks if p.mount == "/"][0]
-        self.layers = []  # (pak path, prefix), highest first
+        self.layers = []  # ((pak file, offset), prefix), highest first
         for low in reversed(rel.pak_lowers):
-            self.layers.append((os.path.join(fw, files[low.serial] + ".pak"), "/" + low.subdir))
-        self.layers.append((os.path.join(fw, root.file + ".pak"), ""))
-        # the paks mounted elsewhere ({mount point: pak path}), for the root's bind mounts
-        self.mounts = {
-            p.mount: os.path.join(fw, p.file + ".pak")
-            for p in rel.paks
-            if p.mount and p.mount != "/"
-        }
+            self.layers.append((source(files[low.serial]), "/" + low.subdir))
+        self.layers.append((source(root.file), ""))
+        # the paks mounted elsewhere ({mount point: (pak file, offset)}), for the root's bind mounts
+        self.mounts = {p.mount: source(p.file) for p in rel.paks if p.mount and p.mount != "/"}
         self._binds = None
+
+    @staticmethod
+    def _squashfs(pak):
+        """unsquashfs's arguments for a pak, (file, offset): the offset, then the file."""
+        return ["-o", str(pak[1]), pak[0]]
 
     @staticmethod
     def _cat(pak, path):
         r = subprocess.run(
-            ["unsquashfs", "-cat", "-no-wildcards", pak, path.lstrip("/")],
+            ["unsquashfs", "-cat", "-no-wildcards", *Root._squashfs(pak), path.lstrip("/")],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
@@ -164,7 +177,8 @@ class Root:
             self._binds = []
             for pak, prefix in self.layers:
                 r = subprocess.run(
-                    ["unsquashfs", "-l", "-no-wildcards", pak, (prefix + BIND_FSTABS).lstrip("/")],
+                    ["unsquashfs", "-l", "-no-wildcards", *self._squashfs(pak)]
+                    + [(prefix + BIND_FSTABS).lstrip("/")],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     text=True,
@@ -183,14 +197,14 @@ class Root:
         return self._binds
 
     def entry(self, path):
-        """(pak, prefix, type) of path in the first layer that has it, type its listing's first
+        """((pak file, offset), prefix, type) of path in the first layer that has it, type its listing's first
         letter ("l" a link, "-" a file, "d" a directory); None if no layer has it. The path's
         directories are not followed (unsquashfs's listing)."""
         for pak, prefix in self.layers:
             name = (prefix + path).strip("/")
             r = subprocess.run(
                 ["unsquashfs", "-lls", "-no-wildcards", "-max-depth", str(name.count("/") + 1)]
-                + [pak, name],
+                + [*self._squashfs(pak), name],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 text=True,
@@ -319,7 +333,7 @@ def _shell(root, dest):
         with tempfile.TemporaryDirectory(prefix="shell-", dir=os.path.dirname(dest)) as tmp:
             out = os.path.join(tmp, "root")
             subprocess.run(
-                ["unsquashfs", "-q", "-n", "-no-wildcards", "-d", out, pak]
+                ["unsquashfs", "-q", "-n", "-no-wildcards", "-d", out, *Root._squashfs(pak)]
                 + [(prefix + path).lstrip("/")],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -593,8 +607,9 @@ def _run(sysroot, cmdline, tmp, argv, tree=paths.TREE, extra_env=None, bindir=No
         "--bind",
         "/",
         "/",
-        "--dev-bind",
-        "/dev",
+        # a private /dev (null, zero, urandom, tty, empty shm): the programs syslog() to /dev/log,
+        # which blocks for good on a host socket nothing drains (a chroot's), and use /dev/shm
+        "--dev",
         "/dev",
         "--proc",
         "/proc",

@@ -19,6 +19,10 @@ ROOTFS = TOP / "guest/layers/gl/rootfs"
 NATIVE_ROOTFS = TOP / "guest/layers/gl/native-rootfs"
 NATIVE_CURSOR_ROOTFS = TOP / "guest/layers/gl/native-cursor-rootfs"
 NATIVE_CURSOR_TARGET = "o22n2-spacebuns"
+# Spacebuns' kernel words: one TV connector whose CRTC has an overlay plane, as a set's
+NATIVE_TV_ROOTFS = TOP / "guest/layers/gl/native-tv-rootfs"
+NATIVE_TV_TARGET = "o22n2-spacebuns"
+KERNEL_CMDLINE = "usr/share/beanjar/kernel.cmdline"
 NATIVE_CURSOR = (
     "usr/libexec/beanjar/native-cursor-launch",
     "etc/systemd/system/surface-manager-daemon.service.d/emulator-native-cursor.conf",
@@ -83,6 +87,15 @@ def check(layer, integration, build=None, target=None):
             for relative in NATIVE_CURSOR + (CURSOR_LIBRARY,):
                 if (layer / relative).exists():
                     raise ValueError(f"other native target acquired cursor bridge: {relative}")
+        words = layer / KERNEL_CMDLINE
+        if configured_target == NATIVE_TV_TARGET:
+            if (
+                not words.is_file()
+                or words.read_bytes() != (NATIVE_TV_ROOTFS / KERNEL_CMDLINE).read_bytes()
+            ):
+                raise ValueError("changed native TV head kernel words")
+        elif words.exists():
+            raise ValueError("other native target acquired TV head kernel words")
         for name in ADAPTERS + (
             "usr/lib/libkms-native-input-qt.so",
             "etc/default/egl-kms",

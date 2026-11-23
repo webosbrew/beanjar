@@ -14,7 +14,7 @@
  * with the parameters (guest/targets/soc/<chip>.toml, thermal):
  *   thermalinfo  1: /proc/thermalinfo/soc_temperature
  *   iddq         "core,scpu": iddq_core and iddq_scpu too, those values (mA)
- *   soc_temp     the temperature, °C (writable at runtime: `beanjar sensor temperature` sets it)
+ *   soc_temp     the temperature, °C (set at runtime: `beanjar sensor set temperature`)
  * Each file reads as the number and a newline. Writes are refused, as on a file without a write
  * handler. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": thermal: " fmt

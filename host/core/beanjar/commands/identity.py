@@ -1,15 +1,16 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""A VM's identity as a TV: identity renew, clone, and its secure-store keys (key)."""
+"""A VM's identity as a TV: identity reset and authorized-keys, clone, and its secure-store keys
+(key)."""
 
 import os
 
 from .. import remote
 from ..core import Error
-from .common import Usage, emit, progress, warn
+from .common import emit, progress, warn
 
 
-def cmd_identity_renew(lib, a):
+def cmd_identity_reset(lib, a):
     vm, mac, serial = lib.renew_identity(a.name, out=progress)
     has = vm.has_model_key()
     return emit(
@@ -23,7 +24,7 @@ def cmd_identity_renew(lib, a):
 def cmd_clone(lib, a):
     from .. import clone
 
-    r = clone.clone(lib, a.source, a.dest, out=progress, warn=warn)
+    r = clone.clone(lib, a.source, a.dest, out=progress, warn=warn, pinned=a.library is not None)
     return emit(
         a,
         r,
@@ -40,13 +41,13 @@ def cmd_authorized_keys(lib, a):
 
     vm = lib.vm(a.name)
     d = vm.identity_dir
-    verb = a.verb or "show"
+    verb = a.verb
     path = os.path.join(d, keys.AUTHORIZED)
     try:
         if verb == "reset":
             old = keys.reset_authorized(d)
             note = f"{vm.name}: {path} reset: {len(old)} key(s) removed"
-        elif verb == "add-mine":
+        elif verb == "add":
             added = keys.add_mine(d)
             note = f"{vm.name}: {len(added)} of your keys (~/.ssh/*.pub) added to {path}"
         else:
@@ -69,15 +70,11 @@ def cmd_authorized_keys(lib, a):
 
 
 def cmd_key_model(lib, a):
-    """A VM's model key: whether it has one (show), install it from FILE, or clear it."""
-    verb = a.verb or "show"
-    if verb == "install":
-        if not a.file:
-            raise Usage(f"beanjar key model {a.name} install FILE")
+    """A VM's model key: whether it has one (show), set it from FILE, or unset it."""
+    verb = a.verb
+    if verb == "set":
         vm = lib.set_model_key(a.name, a.file)
-    elif a.file is not None:
-        raise Usage(f"only beanjar key model {a.name} install takes a FILE")
-    elif verb == "clear":
+    elif verb == "unset":
         vm = lib.set_model_key(a.name, None)
     else:
         vm = lib.vm(a.name)
@@ -128,14 +125,14 @@ def cmd_key_list(lib, a):
 
 def register(cli):
     sub, command, group, vm_name = cli.sub, cli.command, cli.group, cli.vm_name
-    g = group("identity", "a VM's identity as a TV")
+    identity = group("identity", "a VM's identity as a TV")
     s = command(
-        g,
-        "renew",
+        identity,
+        "reset",
         "make a VM that is off another TV: its state disks wiped, a new MAC and "
         "serial, new SSH and developer keys, a new VNC password (the model key and the library's "
         "CA kept)",
-        cmd_identity_renew,
+        cmd_identity_reset,
     )
     vm_name(s)
 
@@ -144,7 +141,7 @@ def register(cli):
         "clone",
         "make DEST a copy of the VM SRC, which is off, as another TV: SRC's settings, state disks "
         "and secure-store keys (the model key) kept, a new MAC, serial, SSH and developer keys and "
-        "VNC password as identity renew makes them, the state not wiped. Either may be on a host "
+        "VNC password as identity reset makes them, the state not wiped. Either may be on a host "
         "(HOST/NAME; DEST without one is this machine's), this machine relaying the copy; DEST's "
         "host needs SRC's firmware at the same path",
         cmd_clone,
@@ -157,48 +154,61 @@ def register(cli):
         "dest", metavar="DEST", help="the new VM: NAME (this machine), local/NAME or HOST/NAME"
     )
 
-    s = command(
-        g,
+    g = group(
         "authorized-keys",
         "the public keys that may log in to the VM as root over SSH (rootssh, hbchannel) and so "
         "go into the guest, from identity/authorized_keys and the VM's own client key, each with "
-        "its fingerprint and whose it is (vm, mine: one of your ~/.ssh/*.pub, other); reset: "
-        "remove every key but the VM's own (what a new VM has); add-mine: add your own "
-        "~/.ssh/*.pub, without their comments (the guest can read every key it gets, and your "
-        "keys identify you). A change reaches the guest at its next start",
-        cmd_authorized_keys,
-        usage="beanjar identity authorized-keys NAME [show | reset | add-mine] [--json]",
+        "its fingerprint and whose it is (vm, mine: one of your ~/.ssh/*.pub, other). A change "
+        "reaches the guest at its next start",
+        under=identity,
+        dest="verb",
     )
-    vm_name(s, "authkeys")
-    s.add_argument(
-        "verb",
-        nargs="?",
-        choices=("show", "reset", "add-mine"),
-        metavar="VERB",
-        help="show (the default), reset or add-mine",
+    s = command(g, "show", "list the keys", cmd_authorized_keys)
+    vm_name(s)
+    s = command(
+        g, "reset", "remove every key but the VM's own (what a new VM has)", cmd_authorized_keys
     )
-
-    g = group("key", "a VM's secure-store keys (identity/sestore.toml)")
+    vm_name(s)
     s = command(
         g,
-        "model",
-        "a VM's SDP model key: show whether it has one, install one from FILE (44 characters "
-        "of base64 for 32 bytes) as the item its firmware reads (from kisscurl on the board's "
-        "regional 1D492999_a, _d or _r, else 1D492999), or clear it (then follow the missing "
-        "policy); the value is never printed; install and clear while it is off",
-        cmd_key_model,
-        usage="beanjar key model NAME [show | install FILE | clear] [--json]",
+        "add",
+        "add keys: with --mine your own ~/.ssh/*.pub, without their comments (the guest can read "
+        "every key it gets, and your keys identify you)",
+        cmd_authorized_keys,
+        usage="beanjar identity authorized-keys add NAME --mine [--json]",
     )
-    vm_name(s, "keymodel")
+    vm_name(s, "authkeys-add")
     s.add_argument(
-        "verb",
-        nargs="?",
-        choices=("show", "install", "clear"),
-        metavar="VERB",
-        help="show (the default), install or clear",
+        "--mine", action="store_true", required=True, help="your own ~/.ssh/*.pub (required)"
     )
-    s.add_argument("file", nargs="?", metavar="FILE")
+
+    key = group("key", "a VM's secure-store keys (identity/sestore.toml)")
+    g = group(
+        "model",
+        "a VM's SDP model key, the item its firmware reads (from kisscurl on the board's regional "
+        "1D492999_a, _d or _r, else 1D492999); its value is never printed",
+        under=key,
+        dest="verb",
+    )
+    s = command(g, "show", "whether the VM has a model key, and its items", cmd_key_model)
+    vm_name(s)
     s = command(
-        g, "list", "the item names in the VM's sestore.toml, never their values", cmd_key_list
+        g,
+        "set",
+        "set the VM's model key from FILE (44 characters of base64 for 32 bytes) while it is off",
+        cmd_key_model,
+        usage="beanjar key model set NAME FILE [--json]",
+    )
+    vm_name(s, "keymodel-set")
+    s.add_argument("file", metavar="FILE")
+    s = command(
+        g,
+        "unset",
+        "remove the VM's model key while it is off (then it follows the missing policy)",
+        cmd_key_model,
+    )
+    vm_name(s)
+    s = command(
+        key, "list", "the item names in the VM's sestore.toml, never their values", cmd_key_list
     )
     vm_name(s)

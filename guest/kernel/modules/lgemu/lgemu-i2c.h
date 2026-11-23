@@ -22,6 +22,7 @@ enum lgemu_i2c_device {
     LGEMU_I2C_LIGHT1, /* the ambient light sensor, libdile_i2c's LIGHT_SENSOR_1 (light.c) */
     LGEMU_I2C_LIGHT2, /* the ambient light sensor, LIGHT_SENSOR_2 (light.c) */
     LGEMU_I2C_TOF,    /* the ToF motion sensor, a TMF8821: TMF882X_SENSOR_N (tof.c) */
+    LGEMU_I2C_TUNER,  /* a Silicon Labs Si21xx tuner's command interface: idle, always ready */
 };
 
 /* One transfer to dev: num messages (msgs[i].addr is not read: the caller chose dev by it), each
@@ -38,8 +39,8 @@ void lgemu_ir_set_delay(unsigned int first_ms, unsigned int repeat_ms);
 int lgemu_i2c_user_xfer(enum lgemu_i2c_device dev, u16 addr, const u8 *sub, u16 sub_len,
                         void __user *data, u32 size, bool read);
 
-/* A bus module's parameter "device:n1[:n2...]" (device: micom, nvm, amp, accel, light1, light2
- * or tof):
+/* A bus module's parameter "device:n1[:n2...]" (device: micom, nvm, amp, accel, light1, light2,
+ * tof or tuner):
  * the device and the count numbers after it (kstrtouint, base 0), or -EINVAL. */
 int lgemu_i2c_parse(const char *spec, enum lgemu_i2c_device *dev, unsigned int *nums, int count);
 

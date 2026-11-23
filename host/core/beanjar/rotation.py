@@ -8,7 +8,7 @@ and turns Home, the running apps and the compositor's views by the orientation i
 it publishes (getOrientationInfo, the compositor's own subscription). webOS's option.screenRotation
 stays off.
 
-`beanjar sensor rotate NAME ANGLE` turns the set itself: it sets the sensor's gravity vector (gravity())
+`beanjar sensor set rotate NAME ANGLE` turns the set itself: it sets the sensor's gravity vector (gravity())
 over the console and keeps the angle beside the VM's state disks (SAVED), which the next start
 gives the sensor again (launch_params()). What webOS makes of it is the firmware's: N21D's webOS 24
 (ombre) msc refuses reversed_landscape and keeps the orientation it had at 180, its webOS 6

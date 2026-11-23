@@ -44,22 +44,34 @@ static AVBufferRef *hw_device(struct decoder *m, enum AVHWDeviceType type)
     return ref;
 }
 
+void drop_replay(struct stream *s)
+{
+    for (unsigned i = 0; i < s->nreplay; i++)
+        av_packet_free(&s->replay[i]);
+    s->nreplay = 0;
+    s->replay_bytes = 0;
+}
+
 void close_codec(struct stream *s)
 {
     if (s->parser)
         av_parser_close(s->parser);
     s->parser = NULL;
     avcodec_free_context(&s->ctx);
+    drop_replay(s);
     swr_free(&s->swr);
     av_channel_layout_uninit(&s->swr_layout);
     s->decode_only_n = 0;
     s->next_apts = NONE;
+    s->hw_gave = 0;
+    s->hw_last_pts = s->replay_until = NONE;
 }
 
-void open_codec(struct stream *s, const char *caps, int allow_hw)
+/* The codec context for caps into s->ctx (none when it cannot open); its buffers need parsing
+ * into frames (the caps' alignment) or not. */
+static int open_context(struct stream *s, const char *caps, int allow_hw)
 {
     struct codec_params p;
-    close_codec(s);
     caps_codec(caps, &p);
     const AVCodec *codec = p.id != AV_CODEC_ID_NONE ? avcodec_find_decoder(p.id) : NULL;
     if (!codec) {
@@ -68,7 +80,7 @@ void open_codec(struct stream *s, const char *caps, int allow_hw)
         pthread_mutex_lock(&s->lock);
         snprintf(s->codec_name, sizeof s->codec_name, "none");
         pthread_mutex_unlock(&s->lock);
-        return;
+        return 0;
     }
     AVCodecContext *ctx = avcodec_alloc_context3(codec);
     ctx->opaque = s;
@@ -131,15 +143,9 @@ void open_codec(struct stream *s, const char *caps, int allow_hw)
     if (r < 0) {
         elog(s->index, "media %d: cannot open %s: %s", s->index, codec->name, av_err2str(r));
         avcodec_free_context(&ctx);
-        if (hw) {
-            open_codec(s, caps, 0);
-            return;
-        }
-        return;
+        return hw ? open_context(s, caps, 0) : 0;
     }
     s->ctx = ctx;
-    if (p.split && (s->parser = av_parser_init(codec->id)))
-        elog(s->index, "media %d: buffers are not whole frames: parsed into frames", s->index);
     s->hw_errors = 0;
     s->hw_fallback = 0;
     s->queue_max = hw ? HW_QUEUE : FRAME_QUEUE;
@@ -149,4 +155,21 @@ void open_codec(struct stream *s, const char *caps, int allow_hw)
     pthread_mutex_unlock(&s->lock);
     elog(s->index, "media %d: decoder %s (%s)%s", s->index, codec->name,
          hw ? "hardware" : "software", p.extradata_size ? ", with codec data" : "");
+    return p.split;
+}
+
+void open_codec(struct stream *s, const char *caps, int allow_hw)
+{
+    close_codec(s);
+    if (open_context(s, caps, allow_hw) && s->ctx && (s->parser = av_parser_init(s->ctx->codec_id)))
+        elog(s->index, "media %d: buffers are not whole frames: parsed into frames", s->index);
+}
+
+void software_codec(struct stream *s)
+{
+    avcodec_free_context(&s->ctx);
+    s->hw_format = AV_PIX_FMT_NONE;
+    s->hw_fallback = 0;
+    if (s->caps)
+        open_context(s, s->caps, 0);
 }

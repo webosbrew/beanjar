@@ -1,0 +1,64 @@
+# LM15U (MStar Monaco, LGE5331; W15U, webOS 2 beehive): the board is a 65UF850V (European DVB, the
+# only W15U build), its cmdline in the soc layer (guest/layers/soc/lm15u/rootfs/etc/emulator/
+# board.cmdline, every field's source there). docs/research/lm15u-bringup-study.md.
+board_cmdline = "/etc/emulator/board.cmdline"
+# W15U's RELEASE.cfg: nContinentIdx 50 ("DE"), LANG_COUNTRY_EU, HWSETTING_EU (as soc/m2.toml)
+continent = [50, 24, 0]
+
+# mstar-utopia: W15U's kdrv_lm15u.ko and libkadaptor.so.1 (read from this firmware)
+# - utopia32: the older Utopia2K structs with 32-bit fields: SYS_INFO 0xc0485399 (0x48 bytes),
+#   MPOOL_SET 0x80104d04 (16 bytes, the address an offset in its MIU), KERNELDETECT 0xc0104d05 and
+#   the 12-byte flushes 0x800c4d07/0x800c4d09.
+# - miu_*: two MIUs of 1 GB, MIU1 from 0x80000000; miu_interval2 is the bootloader's second
+#   interval (ATAG) MAdp_MPool_Init classifies by. lx_mem_id 1 and lx_mem2_id 67 (+0x40000000)
+#   are the MMAP records it compares with SYS_INFO's LX_MEM ranges (a mismatch loops forever).
+# - mmap_*: 88 records of 0x800000 slots; record 11 (MAD_BASE_BUFFER) is 0x1100000 long, as
+#   AU_BufInit maps it.
+# - reg_init: the CPU clock word (0x3244e2: HAL_CPU_QueryClock's 3623878000/value, 1100 MHz), the
+#   CI slot empty (PCMCIA's card-detect bits of non-PM 0x3449, as soc/m2.toml says), and the chip
+#   revision (PM 0x1e02 high byte 2: the U02 routing of the HWI2C ports and pads below).
+# - reg_autoclear: busy bits the drivers poll to clear: the efuse read triggers 0x2000 and 0x204c,
+#   XC 0x2382 and 0x6c2 bits 8-9, PQ SRAM 0x2dc0 and 0x25f0 bit 3, MLoad 0x1f04 bit 15 and the
+#   panel's gamma table load 0x10e0 bit 3.
+# - i2c: HWI2C SlaveCfg port<<8|slave (U02): the micom on channel 1 (port 0, 0x52), the NVM on
+#   channel 2 (port 3, 0xa0, RELEASE.cfg's NVM:2:0xA0) and the analog tuner, a Si2178B, on channel
+#   5 (port 5, 0xc0), which Si2178B_Init needs answering (it dereferences its context before
+#   checking the probe).
+# - utopia_gpio, gpio_i2c, gpio_pad_level: channel 4 is a software I2C bus on pads 47/48 (the
+#   amplifier at 0x54, the kernel-mode GPIO commands of gpio.c); the pads listed read high
+#   released (the other buses' pull-ups and inputs held high), as the amplifier init and tHDMI
+#   expect.
+# - adv_fn009: the OSD volume (AUDIO, module 45, command 90 with LGSEFN009_VARIABLES 186), as on
+#   M2. audio_info: the DSP base address AUDIO command 2 sets (DSP 2) and GetCommAudioInfo
+#   (command 101) types 62 and 63 from it, the buffers AU_BufInit maps.
+# - xc_window, xc_riu: XC's kernel-mode window commands in W15U's numbering (SetWindow 19,
+#   GenerateBlackVideo 52, ..ForBothWin 50, EnableMainWindow 239, DisableSubWindow 241,
+#   EnableWindow 190), as soc/m2.toml describes them.
+[[modules]]
+name = "mstar-utopia"
+params = [
+    "utopia32=1",
+    "miu_interval=0x80000000",
+    "miu_interval2=0xc0000000",
+    "miu_len=0x40000000",
+    "miu0_bus=0x20000000",
+    "miu1_bus=0xa0000000",
+    "mmap_ids=88",
+    "mmap_slot=0x800000",
+    "mmap_len=11:0x1100000",
+    "lx_mem_id=1",
+    "lx_mem2_id=67",
+    "lx_mem2_bias=0x40000000",
+    "reg_init=0x1f200000:0x10cc0:0x44e2,0x1f200000:0x10cc2:0x32,0x1f200000:0x3448:0xc00,0x1f000000:0x1e02:0x200",
+    """reg_autoclear=0x1f000000:0x2000:0x1,0x1f000000:0x204c:0x1,0x1f000000:0x132382:0x300,\
+        0x1f000000:0x1306c2:0x300,0x1f000000:0x132dc0:0x8,0x1f000000:0x1325f0:0x8,\
+        0x1f000000:0x131f04:0x8000,0x1f000000:0x1310e0:0x8""",
+    "i2c=micom:0x0052,nvm:0x03a0,tuner:0x05c0",
+    "utopia_gpio=1",
+    "gpio_i2c=amp:47:48:0x54",
+    "gpio_pad_level=77:1,78:1,43:1,44:1,45:1,46:1,49:1,50:1",
+    "adv_fn009=45:90:186",
+    "audio_info=45:2:2:101:62+0xa60000,63=0x20000",
+    "xc_window=19,52,50,239,241,190",
+    "xc_riu=0x1f000000:0x130000",
+]

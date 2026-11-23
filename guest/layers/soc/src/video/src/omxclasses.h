@@ -5,9 +5,21 @@
  * pad templates and, where given, klass as the stock plugin registers them (gst_caps_to_string of
  * the stock factories' templates, read with the firmware's own GStreamer under qemu-user, the
  * bsppart's libraries on its path). omx.c registers a factory for each section of the firmware's
- * gstomx.conf whose type-name is here. MSTAR_REL (16, 18, 21, 22, 23) selects the release's. */
+ * gstomx.conf whose type-name is here. MSTAR_REL (15, 16, 18, 21, 22, 23) selects the release's. */
 #if MSTAR_REL < 18
-/* W16R: gst-inspect-1.0 of the stock libgstomx.so, per type-name of its gstomx.conf */
+/* W16R: gst-inspect-1.0 of the stock libgstomx.so, per type-name of its gstomx.conf. W15U's
+ * (MSTAR_REL 15) are the same but for the PCM its audio decoders give and omxaudiosink takes: AAC,
+ * AC-3 and DTS give S32LE, the others S16LE, all of them one or two channels, and the sink takes
+ * one or two (gst-inspect-1.0 of W15U 04.06.25's stock plugin under qemu-arm). */
+#if MSTAR_REL < 16
+#define W16R_PCM12         "format=(string)S32LE, channels=(int)[ 1, 2 ]"
+#define W16R_PCM10         "format=(string)S16LE, channels=(int)[ 1, 2 ]"
+#define W16R_SINK_CHANNELS "[ 1, 2 ]"
+#else
+#define W16R_PCM12         "format=(string)S16LE, channels=(int)[ 1, 12 ]"
+#define W16R_PCM10         "format=(string)S16LE, channels=(int)[ 1, 10 ]"
+#define W16R_SINK_CHANNELS "[ 1, 12 ]"
+#endif
 {"GstOMXMPEG2VideoDec",
  OMX_VIDEO_DEC,
  "OpenMAX MPEG2 Video Decoder",
@@ -32,7 +44,7 @@
      "audio/x-raw, format=(string){ S8, U8, S16LE, S16BE, U16LE, U16BE, S24_32LE, S24_32BE, "
      "U24_32LE, U24_32BE, S32LE, S32BE, U32LE, U32BE, S24LE, S24BE, U24LE, U24BE, S20LE, S20BE, "
      "U20LE, U20BE, S18LE, S18BE, U18LE, U18BE, F32LE, F32BE, F64LE, F64BE }, "
-     "layout=(string)interleaved, rate=(int)[ 8000, 96000 ], channels=(int)[ 1, 12 ]",
+     "layout=(string)interleaved, rate=(int)[ 8000, 96000 ], channels=(int)" W16R_SINK_CHANNELS,
      NULL},
     {"GstOMXMP2Dec",
      OMX_AUDIO_DEC,
@@ -41,7 +53,7 @@
      "MStar Semiconductor Inc",
      "audio/mpeg, mpegversion=(int)1, layer=(int)2, mpegaudioversion=(int)[ 1, 3 ], rate=(int)[ "
      "8000, 96000 ], channels=(int)[ 1, 2 ], parsed=(boolean)true",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM10},
     {"GstOMXMP3Dec",
      OMX_AUDIO_DEC,
      "OpenMAX MP3 Audio Decoder",
@@ -49,7 +61,7 @@
      "MStar Semiconductor Inc",
      "audio/mpeg, mpegversion=(int)1, layer=(int)3, mpegaudioversion=(int)[ 1, 3 ], rate=(int)[ "
      "8000, 48000 ], channels=(int)[ 1, 2 ], parsed=(boolean)true",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM10},
     {"GstOMXAC3Dec",
      OMX_AUDIO_DEC,
      "OpenMAX AC3 Audio Decoder",
@@ -57,7 +69,7 @@
      "MStar Semiconductor Inc",
      "audio/x-ac3; audio/x-eac3; audio/ac3; audio/x-private1-ac3, framed=(boolean)true, "
      "rate=(int)[ 32000, 48000 ], channels=(int)[ 1, 6 ], alignment=(string)frame",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 12 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM12},
     {"GstOMXWMADec",
      OMX_AUDIO_DEC,
      "OpenMAX WMA Audio Decoder",
@@ -71,35 +83,35 @@
      "Decode AAC audio streams",
      "MStar Semiconductor Inc",
      "audio/mpeg, mpegversion=(int)[ 2, 4 ], rate=(int)[ 8000, 96000 ], channels=(int)[ 0, 8 ]",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 12 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM12},
     {"GstOMXVORBISDec",
      OMX_AUDIO_DEC,
      "OpenMAX VORBIS Audio Decoder",
      "Decode VORBIS audio streams",
      "MStar Semiconductor Inc",
      "audio/x-vorbis, rate=(int)[ 8000, 48000 ], channels=(int)[ 1, 2 ]",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM10},
     {"GstOMXRADec",
      OMX_AUDIO_DEC,
      "OpenMAX RA Audio Decoder",
      "Decode RA audio streams",
      "MStar Semiconductor Inc",
      "audio/x-pn-realaudio, raversion=(int)8, rate=(int)[ 8000, 48000 ], channels=(int)[ 1, 2 ]",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM10},
     {"GstOMXDTSDec",
      OMX_AUDIO_DEC,
      "OpenMAX DTS Audio Decoder",
      "Decode DTS audio streams",
      "MStar Semiconductor Inc",
      "audio/x-dts; audio/x-dtsh; audio/x-dtsl; audio/x-dtse",
-     "audio/x-raw, rate=(int)[ 8000, 96000 ], format=(string)S16LE, channels=(int)[ 1, 12 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 96000 ], " W16R_PCM12},
     {"GstOMXADPCMDec",
      OMX_AUDIO_DEC,
      "OpenMAX ADPCM Audio Decoder",
      "Decode ADPCM audio streams",
      "MStar Semiconductor Inc",
      "audio/x-adpcm; audio/x-mulaw; audio/x-alaw, rate=(int)[ 1, 48000 ], channels=(int)[ 1, 2 ]",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM10},
     {"GstOMXLPCMDec",
      OMX_AUDIO_DEC,
      "OpenMAX LPCM Audio Decoder",
@@ -113,14 +125,14 @@
      "Decode AMR audio streams",
      "MStar Semiconductor Inc",
      "audio/AMR; audio/AMR-WB, rate=(int)[ 8000, 16000 ], channels=(int)[ 1, 2 ]",
-     "audio/x-raw, rate=(int)[ 8000, 48000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 48000 ], " W16R_PCM10},
     {"GstOMXFLACDec",
      OMX_AUDIO_DEC,
      "OpenMAX FLAC Audio Decoder",
      "Decode FLAC audio streams",
      "MStar Semiconductor Inc",
      "audio/x-flac, rate=(int)[ 8000, 96000 ], channels=(int)[ 1, 2 ]",
-     "audio/x-raw, rate=(int)[ 8000, 96000 ], format=(string)S16LE, channels=(int)[ 1, 10 ]"},
+     "audio/x-raw, rate=(int)[ 8000, 96000 ], " W16R_PCM10},
     {"GstOMXH263Dec",
      OMX_VIDEO_DEC,
      "OpenMAX H.263 Video Decoder",

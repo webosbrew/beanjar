@@ -119,11 +119,11 @@ class ViewerPane(Gtk.Box):
         self.said = []  # every message, the last one last
         # a set that turns to portrait (vm-info.toml's portrait): the guest's rotation setting as
         # it reports it (run/rotation, beanjar/rotation.py), the picture turned to match; rotate()
-        # turns the set through `beanjar sensor rotate` where the VM is a library's (vm_name)
+        # turns the set through `beanjar sensor set rotate` where the VM is a library's (vm_name)
         self.run_dir = stats_dir if portrait else None
         self.vm_name = vm_name
         self.rotation = 0
-        self.rotating = None  # the beanjar sensor rotate in progress
+        self.rotating = None  # the beanjar sensor set rotate in progress
         self.on_turned = None  # the window's: the picture turned to portrait (True) or back
         self.on_rotation = None  # the window's: the guest's rotation angle, at each change
         if self.run_dir:
@@ -242,7 +242,7 @@ class ViewerPane(Gtk.Box):
 
     def rotate(self):
         """Switches the set between landscape (0) and portrait (270; any other angle goes to
-        landscape): `beanjar sensor rotate NAME ANGLE`; the picture follows when the guest reports it."""
+        landscape): `beanjar sensor set rotate NAME ANGLE`; the picture follows when the guest reports it."""
         if not self.can_rotate() or self.rotating:
             return
         from beanjar import rotation
@@ -263,6 +263,7 @@ class ViewerPane(Gtk.Box):
             "--library",
             library,
             "sensor",
+            "set",
             "rotate",
             self.vm_name,
         ]

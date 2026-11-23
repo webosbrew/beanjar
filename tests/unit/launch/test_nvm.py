@@ -474,8 +474,8 @@ class LlsTest(unittest.TestCase):
 
     def test_sync_debug_status(self):
         """webOS 1 to 3.9 keep the debug status as a plain byte (0x1A1): every start brings it to the
-        effective mode (the VM's debug_mode, else the board's 3); webOS 4.x has no plain byte and
-        keeps only the kernel's word."""
+        effective mode (the VM's debug_mode, else the board's 3); W18R has no plain byte (its
+        block is sync_debug_block's: test_nvmdebug.py)."""
         n = targets.release(("h13", "afro")).nvm
         at = n.debug_status_offset
         self.assertEqual(at, 0x1A1)

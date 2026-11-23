@@ -597,8 +597,10 @@ void media_port_state(struct media_port *p, GstElement *element, gboolean playin
 
 void media_port_decode(struct media_port *p, GstElement *element, guint32 format)
 {
-    struct webos_media_decode d = {.format = format,
-                                   .flags = p->shared ? WEBOS_MEDIA_DECODE_SHARED : 0};
+    /* samples come inline (include/webos-media.h) */
+    struct webos_media_decode d = {
+        .format = format,
+        .flags = p->shared && format != WEBOS_MEDIA_S16LE ? WEBOS_MEDIA_DECODE_SHARED : 0};
     char junk[4096];
     g_mutex_lock(&p->lock);
     /* answers to an earlier session of this port, which nobody read */

@@ -22,6 +22,22 @@ check_media_leases = executable('check-media-leases',
   build_rpath: vendor['ffmpeg'] / 'lib',       # the private FFmpeg, unpacked in build/vendor
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-leases', check_media_leases, suite: ['unit', 'media'], timeout: 10)
+# a hardware decoder's fallback to software keeps the stream (host/media/decode/frame.c)
+check_media_fallback = executable('check-media-fallback',
+  ['media/check-fallback.c', '../../host/media/ipc.c'] + lease_engine_sources,
+  dependencies: ffmpeg_deps + [dependency('threads')],
+  build_rpath: vendor['ffmpeg'] / 'lib',
+  override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
+test('check-media-fallback', check_media_fallback, suite: ['unit', 'media'], timeout: 10,
+  protocol: 'tap')
+# a stream that grows while the guest holds a picture lays its slots out again at once
+check_media_relayout = executable('check-media-relayout',
+  ['media/check-relayout.c', '../../host/media/ipc.c'] + lease_engine_sources,
+  dependencies: ffmpeg_deps + [dependency('threads')],
+  build_rpath: vendor['ffmpeg'] / 'lib',
+  override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
+test('check-media-relayout', check_media_relayout, suite: ['unit', 'media'], timeout: 20,
+  protocol: 'tap')
 check_media_unavailable = executable('check-media-unavailable', 'media/check-unavailable.c',
   '../../host/media/ipc.c',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
@@ -54,6 +70,11 @@ endif
 check_pace = executable('check-pace', 'viewer/check-pace.c',
   override_options: ['c_std=c11', 'warning_level=2', 'werror=true'])
 test('check-pace', check_pace, suite: ['unit', 'viewer'], timeout: 10)
+# QEMU's display Disable taken as provisional (host/viewer/core/disable.h): a stray one before a
+# scanout leaves the picture, a real one blanks it after the wait
+check_disable = executable('check-disable', 'viewer/check-disable.c',
+  override_options: ['c_std=c11', 'warning_level=2', 'werror=true'])
+test('check-disable', check_disable, suite: ['unit', 'viewer'], timeout: 10)
 
 # host/viewer/core: the virtual AMP (master gain and mute on the final media mix, the real mixer
 # driven with synthetic chunks), the capture port's availability (reaching a guest that opens after

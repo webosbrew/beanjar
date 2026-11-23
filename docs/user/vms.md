@@ -22,7 +22,7 @@ The Summary, the first page, starts with four tiles: the VM's state (with QEMU's
 paused or standby, and "Viewer open"), then, while it runs, its uptime, CPU use and QEMU's memory
 on the host (with the GPU's use where the host reports it), the figures its list row shows each
 second; while it is off, when it last ran (the last write to its console log), and its CPUs and
-memory as set. Beside them is a picture of the TV (`beanjar screenshot NAME - --size 384x216`),
+memory as set. Beside them is a picture of the TV (`beanjar screenshot NAME - --frame 384x216`),
 taken at most every 5 seconds while the VM runs, the Summary is shown, the window is active and no
 viewer is open; a portrait model's picture is turned as its viewer turns it. Off, it is the last
 picture kept, dimmed, or a TV outline before there is one. Clicking it connects the viewer (or
@@ -71,25 +71,26 @@ beanjar stop tv1
 - `start` returns at the guest's initramfs shell, and the TV boots on to Home in the background.
   Several VMs run at once as far as the host's memory allows (`beanjar host config set
   max_running=N` caps them).
-- `list --local` shows this machine's VMs and their state; `info NAME` one VM's settings, address,
+- `list --local` shows this machine's VMs and their state; `show NAME` one VM's settings, address,
   ports and SSH command.
 - `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
   synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
 - `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the
   `normal` layer skips it); `delete NAME` removes the VM.
-- `identity renew NAME` makes the VM another TV (new MAC, serial and keys, state wiped);
+- `identity reset NAME` makes the VM another TV (new MAC, serial and keys, state wiped);
   `clone SRC DEST` copies a VM as another TV with its state kept.
 
 Every command takes `--json` for scripts.
 
 ## Settings
 
-`beanjar settings NAME` shows a VM's settings, and `settings NAME set KEY=VALUE` or `unset KEY`
-changes them while it is off (`beanjar settings --help` lists every key):
+`beanjar config show NAME` shows a VM's settings and tags, and `config set NAME KEY=VALUE` or
+`config unset NAME KEY` changes them, settings while it is off (`beanjar config set --help` lists
+every key):
 
 ```sh
-beanjar settings tv1 set mem=1536 layers=normal,gl,devmode
-beanjar settings tv1 unset broadcast
+beanjar config set tv1 mem=1536 layers=normal,gl,devmode
+beanjar config unset tv1 broadcast
 ```
 
 The layers add to the stock firmware; the first listed wins where two have the same file:
@@ -124,7 +125,7 @@ Each program under qemu-arm carries qemu-arm's own memory as well, so a start th
 userland under qemu-user, for whatever reason, gives the guest half as much RAM again as `mem`,
 and a swap disk in the host's RAM as large again: `mem` stays the TV's own memory, the start logs
 `memory: 2048 MB for the TV + 1024 MB RAM and 1024 MB host-RAM swap for qemu-user's overhead`,
-`beanjar list` shows MEM as `2048+1024`, `beanjar info` shows `tv_ram`, `guest_ram` and
+`beanjar list` shows MEM as `2048+1024`, `beanjar show` shows `tv_ram`, `guest_ram` and
 `host_swap`, and the host must have the larger RAM free to start it. The swap is not taken up
 front: it costs the host memory only once the guest swaps to it, and it goes away with the VM.
 webOS is still told the TV's own memory (the model's board parameters); only the guest kernel sees
@@ -141,23 +142,44 @@ qemu-arm. Without it the setting is refused, naming the package.
 
 ```sh
 sudo apt install ./beanjar-guest-x86-64_*.deb
-beanjar settings tv1 set guest_kernel=x86-64
+beanjar config set tv1 guest_kernel=x86-64
 ```
 
 ## Network
 
-Two settings decide a VM's network ([guest networking](../dev/architecture/network.md)):
+These settings decide a VM's network ([guest networking](../dev/architecture/network.md)):
 
 - `link`: `nat` (the default, behind this host), `lan` (on the host's wired LAN with its own MAC
   and DHCP lease, after `beanjar library config set lan_parent=eth0`) or `off`.
 - `mode`: `mitm` (the default), which records the guest's TCP and UDP traffic, DNS included, in a
   traffic inspector (your own mitmproxy 12.0.1 or newer, `pipx install mitmproxy`), or `direct`. See [Inspect emulator traffic](inspect-emulator-traffic.md).
+- `lan_access`: `off` (the default) or `on`, with `link=nat`. The guest runs untrusted code, so by
+  default it reaches the internet only: not the LAN (private, shared and link-local addresses,
+  multicast) and not this host's own addresses. `config set NAME lan_access=on` lets it reach
+  them, for a media server, another TV or a development server on the LAN; it applies at the next
+  start. A `link=lan` VM is on the LAN anyway.
+- `lg_services`: `mock` (the default) or `real`. With `mock` the guest does not reach LG's
+  telemetry and cloud services: crash and analytics uploads, viewing beacons, ads, ACR (Live
+  Plus), ThinQ and IoT, UEI QuickSet, firmware update checks, remote diagnostics and the voice
+  cloud are refused, by name and by address, in `mitm` and `direct` alike; LG's online check and
+  LG's SDP server are answered by Beanjar, so the TV is online and its LG account side works
+  (signed in, clock set) with every logging and upload switch off; the store, Home content and
+  LG Account hosts get empty answers; and the inspector never passes an LG host through unread.
+  Nothing reaches LG, whatever model key the VM has. The guest trusts the library's CA for these
+  answers in `direct` too. `config set NAME
+  lg_services=real` lets the VM talk to all of LG's services as a TV does, for a VM with a real
+  model key; nothing is refused or answered then. See [LG services](../dev/architecture/network.md#lg-services).
+
+The guest never reaches this host's loopback (`127.0.0.1` and the rest of `127.0.0.0/8`), whatever
+the settings: a service that listens only there (a development server, Docker's API, a local mail
+server) is out of its reach. Every `nat` and `lan` VM needs `unshare`, `ip` and `slirp4netns` and
+unprivileged user namespaces, `mode=direct` too (`sudo apt install slirp4netns`).
 
 Each VM has its own loopback address, `127.0.1.N`, and its services are on the TV's own port
 numbers there: SSAP 3000 and 3001, root SSH 6622, Developer Mode 9922 and its key server 9991, the
-traffic inspector 18083 and VNC 5900. `beanjar info NAME` prints them. To reach them from another
-machine, `settings NAME set listen=0.0.0.0` (with `link=nat`), or use `link=lan`.
-`settings NAME set forward=8080` relays an app's own guest port as well.
+traffic inspector 18083 and VNC 5900. `beanjar show NAME` prints them. To reach them from another
+machine, `config set NAME listen=0.0.0.0` (with `link=nat`), or use `link=lan`.
+`config set NAME forward=8080` relays an app's own guest port as well.
 
 ## Identity
 
@@ -166,7 +188,7 @@ it has a synthetic one, which LG's servers do not accept. If you have the model 
 TV, install it while the VM is off:
 
 ```sh
-beanjar key model tv1 install /path/to/model-key
+beanjar key model set tv1 /path/to/model-key
 ```
 
 Secure-store items beyond the model key go in the VM's `identity/sestore.toml`; see

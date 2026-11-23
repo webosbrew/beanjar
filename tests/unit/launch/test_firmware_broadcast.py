@@ -121,3 +121,53 @@ def test_unknown_region_refused(tmp_path):
     with pytest.raises(targets.Error, match="region 'ISDB'"):
         targets.firmware_broadcast(fw)
     assert targets.firmware_broadcast(plain_firmware(tmp_path, "none", {"otaid": "x"})) is None
+
+
+@pytest.mark.parametrize(
+    "model, broadcast", [("ATSC-M2", "atsc"), ("DVB-M2", "dvb"), ("DVB-LM14", "dvb"), (None, None)]
+)
+def test_release_cfg_model(tmp_path, model, broadcast):
+    """A NetCast-line firmware (no rootfs.pak, no model_id.json) states its standard as its mode.pak
+    RELEASE.cfg's modelName, the standard before the platform."""
+    src = tmp_path / "mode-src"
+    src.mkdir()
+    cfg = "szOtaid,HE_LCD_SS1A_AFAAABAA\n" + (f"modelName,{model}\n" if model else "")
+    (src / "RELEASE.cfg").write_text(cfg)
+    fw = tmp_path / "fw"
+    fw.mkdir()
+    subprocess.run(
+        ["mksquashfs", str(src), str(fw / "mode.pak"), "-quiet", "-noappend", "-no-progress"],
+        check=True, stdout=subprocess.DEVNULL,
+    )  # fmt: skip
+    assert targets.firmware_broadcast(str(fw)) == broadcast
+    ss = ("m2", "simplesmart")
+    want = (
+        "/etc/emulator/board-dvb.cmdline" if broadcast == "dvb" else "/etc/emulator/board.cmdline"
+    )
+    assert targets.board_cmdline(ss, targets.board_broadcast(ss, str(fw))) == want
+
+
+def test_release_cfg_unknown_standard(tmp_path):
+    src = tmp_path / "mode-src"
+    src.mkdir()
+    (src / "RELEASE.cfg").write_text("modelName,XYZ-M2\n")
+    fw = tmp_path / "fw"
+    fw.mkdir()
+    subprocess.run(
+        ["mksquashfs", str(src), str(fw / "mode.pak"), "-quiet", "-noappend", "-no-progress"],
+        check=True, stdout=subprocess.DEVNULL,
+    )  # fmt: skip
+    with pytest.raises(targets.Error):
+        targets.firmware_broadcast(str(fw))
+
+
+def test_optional_pak(tmp_path):
+    """An optional pak (Pak.optional: tpli.pak, which only the European NetCast-line builds ship)
+    is attached where the firmware has it and needed nowhere else."""
+    fw = tmp_path / "fw"
+    fw.mkdir()
+    ss = ("m2", "simplesmart")
+    assert "tpli" not in targets.pak_files(ss, str(fw))
+    (fw / "tpli.pak").write_bytes(b"")
+    assert "tpli" in targets.pak_files(ss, str(fw))
+    assert "tpli" in [p.file for p in targets.paks(ss, str(fw))]

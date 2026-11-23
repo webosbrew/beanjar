@@ -3,8 +3,8 @@
 """The antenna of a VM whose board has our tuner (targets: the dtv_soc module): which physical
 channels carry a signal, and the transport stream of the one the set is tuned to.
 
-`beanjar io tuner NAME` lists the lineup's physical channels (tuner_stream.LINEUP), which of them are
-mapped and what the set is tuned to; `beanjar io tuner NAME map RF...` and `unmap RF...|all` change
+`beanjar io tuner list NAME` lists the lineup's physical channels (tuner_stream.LINEUP), which of them
+are mapped and what the set is tuned to; `beanjar io tuner map NAME RF...` and `unmap NAME RF...|all` change
 the map, which is kept in the VM's state (tuner.json) for its next starts. A mapped channel's
 stream is made (tuner_stream.make, into the cache's tuner/) when it is mapped.
 
@@ -23,7 +23,7 @@ Two halves, which may run on two machines:
   frames on to the guest, whole: it needs neither TSDuck nor ffmpeg. Without a feed it runs the
   generator itself, on this host's tools and cache.
 
-A VM on another host (`beanjar io tuner HOST/NAME map RF...`) is fed from this machine: the host's
+A VM on another host (`beanjar io tuner map HOST/NAME RF...`) is fed from this machine: the host's
 beanjar keeps the map without making streams (--fed), and a feed process here (`python -m
 beanjar.tuner feed HOST URI NAME SOCKET CACHE`, started detached by start_feed) reaches its
 tuner-feed.sock through a forward of the host's shared ssh connection (ares.Forward), so only the
@@ -266,7 +266,7 @@ def change(vm, tree, add=(), remove=(), clear=False, fed=False):
         make(
             cache_dir(tree),
             add,
-            "; or map them from a machine that has the tools: beanjar io tuner HOST/NAME map RF...",
+            "; or map them from a machine that has the tools: beanjar io tuner map HOST/NAME RF...",
         )
     channels = [] if clear else mapped(vm.state_dir)
     channels = [c for c in channels if c not in remove] + list(add)

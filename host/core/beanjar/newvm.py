@@ -275,7 +275,7 @@ def cap_memory(lib, tree, target, fw_dir, cfg, out):
         out(
             f"warning: the firmware's model has {default} MiB of RAM, more than this host can give: "
             f"the VM gets {cap} MiB (what the host has free, less {capacity.memory_headroom_mib()} MiB headroom; "
-            "beanjar settings mem= changes it)"
+            "beanjar config set NAME mem= changes it)"
         )
 
 

@@ -344,9 +344,9 @@ def list_rows(name, uri, show_all=False):
 
 
 def has_vm(name, uri, vm):
-    """Whether host name has a VM called vm, of its own (read with `settings local/VM show`, which
+    """Whether host name has a VM called vm, of its own (read with `config show local/VM`, which
     changes nothing)."""
-    rc, _out, err = call(name, uri, ["settings", own(vm), "show", "--json"], timeout=LIST_TIMEOUT)
+    rc, _out, err = call(name, uri, ["config", "show", own(vm), "--json"], timeout=LIST_TIMEOUT)
     if rc == 0:
         return True
     reason = remote_error(err)
@@ -355,14 +355,16 @@ def has_vm(name, uri, vm):
     raise HostError(name, reason or f"beanjar exited with status {rc}")
 
 
-def locate(spec, local_has, warn):
+def locate(spec, local_has, warn, pinned=False):
     """Where the VM called spec (NAME or HOST/NAME) is: (host, name), host None for this machine.
 
     local/NAME and HOST/NAME say where. A bare NAME is looked for on this machine and on every
     configured host, so that a duplicate is never hidden: found in one place, it is there; in
     several, an error naming the HOST/NAME forms; nowhere, the usual "no VM named". A host that
     cannot be asked is warned about (warn(text)) and left out. local_has(name) is whether this
-    machine's library has the VM. With no hosts configured nothing is asked."""
+    machine's library has the VM. With no hosts configured nothing is asked. pinned is for a command
+    line that names its library (--library): a bare NAME is then that library's VM and nobody is
+    asked, as for local/NAME."""
     host, name = split_spec(spec)
     if host is not None:
         if not core.NAME_RE.fullmatch(name):
@@ -372,7 +374,7 @@ def locate(spec, local_has, warn):
         if host not in hosts():
             raise Error(f"no host named {host} (beanjar host list)")
         return host, name
-    configured = hosts()
+    configured = {} if pinned else hosts()
     if not configured or not core.NAME_RE.fullmatch(name):
         return None, name  # a name the library refuses says so itself
     from concurrent.futures import ThreadPoolExecutor

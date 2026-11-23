@@ -4,9 +4,9 @@
  * checked against the pixels in /dev/gfx, and the
  * OSD plane as the display engine reports it to egl-kms (include/webos-gfx.h). Runs next to the
  * live gm and leaves nothing behind:
- *   webos-enter /mnt/host/build/tests/gm/gal-check     (after `host/scripts/vm-launcher put
- * build/tests/gm` on the host) Loads libdile_gal.so.1 at run time, so it is built without the
- * layer. */
+ *   webos-enter /mnt/host/build/tests/regress/gm/gal-check     (after `host/scripts/vm-launcher put
+ * build/tests/regress/gm` on the host) Loads libdile_gal.so.1 at run time, so it is built without
+ * the layer. */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <fcntl.h>

@@ -98,7 +98,7 @@ needed (`version` is the newest release on the releases page):
 
 ```sh
 mkdir beanjar-debs && cd beanjar-debs
-version=0.6.0
+version=0.7.0
 arch=$(dpkg --print-architecture)
 url=https://github.com/webosbrew/beanjar/releases/download/v$version
 wget $url/beanjar_${version}_$arch.deb $url/beanjar-qemu_${version}_$arch.deb $url/beanjar-ui_${version}_all.deb $url/beanjar-guest_${version}_all.deb
@@ -140,7 +140,7 @@ switch a VM to it ([Settings](vms.md#settings) says what it can boot so far):
 ```sh
 wget $url/beanjar-guest-x86-64_${version}_amd64.deb
 sudo apt-get install ./beanjar-guest-x86-64_${version}_amd64.deb
-beanjar settings tv1 set guest_kernel=x86-64
+beanjar config set tv1 guest_kernel=x86-64
 ```
 
 ### Groups
@@ -180,7 +180,8 @@ pipx ensurepath
 ```
 
 Without it the VM still starts, uninspected, and says so. A VM with `mode=direct` (see
-[network](vms.md#network)) does not need it.
+[network](vms.md#network)) does not need it. Every networked VM needs `slirp4netns`
+(`sudo apt install slirp4netns`).
 
 ### Check the install
 
@@ -190,7 +191,7 @@ lines of a good result):
 ```sh
 beanjar --help        # usage: beanjar [-h] [--library LIBRARY] [--repo REPO] COMMAND ...
 beanjar list          # no VMs in /home/<you>/.local/share/beanjar
-beanjar host config   # max_running: (not set: no limit)
+beanjar host config show   # max_running: (not set: no limit)
 /usr/libexec/beanjar/qemu-system-aarch64 --version   # QEMU emulator version 10.0.2
 epk2extract           # LG Electronics digital TV firmware package (EPK) extractor version 4.8 ...
 mitmproxy --version   # Mitmproxy: 12.3.1 (12.0.1 or newer)
@@ -235,5 +236,5 @@ To make Debian packages of the checkout instead, see the
 VMs live in the library, `~/.local/share/beanjar` by default (`--library DIR` or
 `BEANJAR_LIBRARY` for another): one directory per VM under `vms/`, with its settings (`vm.toml`),
 its state disks, its identity and its logs. This machine's own settings are in
-`~/.config/beanjar/config.toml` (`beanjar host config`). The [manager guide](../../host/core/README.md#library)
+`~/.config/beanjar/config.toml` (`beanjar host config show`). The [manager guide](../../host/core/README.md#library)
 lists every file.

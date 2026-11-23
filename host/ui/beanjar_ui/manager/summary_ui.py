@@ -472,5 +472,5 @@ class Summary(Gtk.Box):
             self.reason_text.set_text(reason["text"])
             self.reason_set.set_text(reason_note(reason))
             self.reason.set_tooltip_text(
-                "Why it runs (beanjar reason): Shut Down asks before overriding it"
+                "Why it runs (beanjar status): Shut Down asks before overriding it"
             )

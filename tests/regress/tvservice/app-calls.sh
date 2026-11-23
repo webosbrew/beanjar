@@ -5,7 +5,7 @@
 # on this emulator, and what the soc layer's HAL and DILE shims let it do: master volume, AV on
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip=
-# (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W16R on M2, W17H
+# (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W16R on M2, W17H
 # on M16P, W18R on M3 and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
@@ -26,8 +26,12 @@ H13*)   model=WT1H ota=AFAAABAA fw=05.06.10 platform=lg115x sound_bad_type=SOUND
 	capture_no_video=CAPTURE_ERROR_09 inputs=7 reset3d='"returnValue":true'
 	tool_options='"panelInch":"49","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"'
 	max_devices='"validDeviceNumber":7,"deviceList":[{"deviceID":"SCART_1","deviceNumber":1},{"deviceID":"AV_1","deviceNumber":1},{"deviceID":"COMP_1","deviceNumber":1},{"deviceID":"HDMI_1","deviceNumber":1},{"deviceID":"HDMI_2","deviceNumber":1},{"deviceID":"HDMI_3","deviceNumber":1},{"deviceID":"HDMI_4","deviceNumber":1}]' ;;
-# W15M: LG1311 is the M14's name. tv.capture's VIDEO without video is an internal error there,
-# not traced; its DILE_VT is LG's own (the newer interface, no shim on M14: guest/layers/soc/m14).
+# W15M: LG1311 is the M14's name. Its DILE_VT is LG's own (the newer interface, no shim on M14:
+# guest/layers/soc/m14), over lg115x.ko's de0 VTM. tv.capture's VIDEO without video answers
+# CAPTURE_ERROR_09 ("no signal state"), as on a set: _CAPTURE_VT_Capture asks
+# CAPTURE_Pipeline_IsVideoOnScreen once _CAPTURE_VT_Start has its DILE_VT handle and frame
+# buffers, and that is false without a video sync (API_VIDEO_GetVideoSyncStatus, V_SYNC_BAD). A
+# capture backend that fails DILE_VT_Create answers CAPTURE_ERROR_01 before the check is made.
 # Its getMaximumExternalDeviceNumber is not called: LG's interface_externaldevice_getMaximum...
 # mallocs 18 bytes per device of externaldevice_makeList's count (6), which leaves out input types
 # 7 and 8, then writes a "_1" entry for each of them too (OSA_MD_GetMaxInputNumber: 1 for both). The
@@ -38,14 +42,27 @@ H13*)   model=WT1H ota=AFAAABAA fw=05.06.10 platform=lg115x sound_bad_type=SOUND
 # overruns by at least 36 bytes too.
 # The board is a 42LF652V: FHD table row 2, SCART, AV, component, HDMI x3.
 M14*)   model=W15M ota=AFAAABAA fw=04.06.75 platform=lg1311 sound_bad_type=SOUND_ERROR_013
-	capture_no_video=CAPTURE_ERROR_01 max_devices= inputs=6 reset3d='"returnValue":true'
+	capture_no_video=CAPTURE_ERROR_09 max_devices= inputs=6 reset3d='"returnValue":true'
 	tool_options='"panelInch":"42","backlightType":"directM","cameraReady":"ready","headphone":"true"' ;;
+# W15U (lm15u is its own platform name; MBoot's chip=LM15UB0), webOS 2 on MStar: a 65UF850V, UHD
+# DVB table row 4 (ToolOpt2's video input index): HDMI x3, component, SCART, AV; edge LED, a
+# camera-ready set with a headphone output (ToolOpt3, ToolOpt5). tv.capture's VIDEO without video
+# answers CAPTURE_ERROR_01: a capture step before tvservice's no-signal check fails here (not
+# traced; W15M and W16R answer 09 once theirs work). tvservice answers SOUND_ERROR_013 as
+# W16R and as W15M on 3D. Its
+# getMaximumExternalDeviceNumber is not called, as W15M's.
+LM15U*) model=W15U ota=AFADABAA fw=04.06.25 platform=lm15u sound_bad_type=SOUND_ERROR_013
+	capture_no_video=CAPTURE_ERROR_01 max_devices= inputs=6 reset3d='"returnValue":true'
+	tool_options='"panelInch":"65","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"' ;;
 # W16R (msd93f2g is M2's name): tvservice reads the board's EEPROM over MStar's HWI2C
 # (mstar-utopia.ko). The board is a 43LH604V: non-UHD table row 7, AV, component, HDMI x3, no
 # SCART; no camera, no 3D, a headphone output (W16R's RELEASE.cfg, the LH60's ToolOpt3). Its
-# getMaximumExternalDeviceNumber is not called either, as W15M's.
+# getMaximumExternalDeviceNumber is not called either, as W15M's. tv.capture's VIDEO gets its
+# frame through the libkadaptor shim's XC status and DIP; without video it answers
+# CAPTURE_ERROR_09 ("no signal state"), as W15M and a set do (the same IsVideoOnScreen check,
+# here on the AV-block branch after the sync status).
 M2*)    model=W16R ota=AFAAABAA fw=05.70.50 platform=msd93f2g sound_bad_type=SOUND_ERROR_013
-	capture_no_video=CAPTURE_ERROR_01 max_devices= inputs=5
+	capture_no_video=CAPTURE_ERROR_09 max_devices= inputs=5
 	tool_options='"panelInch":"43","backlightType":"directM","cameraReady":"off","headphone":"true"'
 	reset3d='"errorCode":"DISPLAY_ERROR_1002"' ;;
 # W17H (lg1313 is M16P's name), the AFADABAA build: a 55UJ750V, row 1 of the one input table, AV,

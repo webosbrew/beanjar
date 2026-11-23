@@ -257,6 +257,17 @@ def model_id(fw_dir):
     return _model_ids[key]
 
 
+def release_cfg_model(fw_dir):
+    """The modelName of a NetCast-line firmware's mode.pak RELEASE.cfg (SimpleSmart's ATSC-M2 or
+    DVB-M2, NetCast 4.5's ATSC-LM14 or DVB-LM14: the broadcast standard, then the platform), read
+    with unsquashfs; None without one (every webOS firmware)."""
+    mode = os.path.join(fw_dir, "mode.pak") if fw_dir else None
+    if not mode or not os.path.isfile(mode):
+        return None
+    m = re.search(r"^modelName,(\S+)", _squashfs_cat(mode, "RELEASE.cfg") or "", re.M)
+    return m.group(1) if m else None
+
+
 def firmware_release(fw_dir):
     """(the release family, where it was read) of the firmware in fw_dir, read with
     unsquashfs; (None, why) without one. webOS: the codename of

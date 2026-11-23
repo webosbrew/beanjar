@@ -9,7 +9,7 @@ option('firmware', type: 'string', value: '',
   description: 'The host build\'s firmware directory, whose paks the firmware cache converts; default: host/scripts/vm-launcher config FW. The guest build reads no firmware (guest/targets/facts)')
 
 # guest
-option('soc', type: 'combo', choices: ['', 'h13', 'm14', 'm2', 'm16p', 'm3', 'k5lp', 'k6lp', 'k6hp', 'k7lp', 'k8lp', 'k8ap', 'k8hp', 'k8hpp', 'k8lpn', 'k8lpn2', 'lm14', 'lm21a', 'lm21an', 'lm21ann', 'lm21u', 'o22', 'o22n', 'o22n2', 'o22n3', 'o24', 'o24n', 'k25lp', 'k24', 'k24n', 'virt'], value: '',
+option('soc', type: 'combo', choices: ['', 'h13', 'm14', 'm2', 'm16p', 'm3', 'k5lp', 'k6lp', 'k6hp', 'k7lp', 'k8lp', 'k8ap', 'k8hp', 'k8hpp', 'k8lpn', 'k8lpn2', 'lm14', 'lm15u', 'lm21a', 'lm21an', 'lm21ann', 'lm21u', 'o22', 'o22n', 'o22n2', 'o22n3', 'o24', 'o24n', 'k25lp', 'k24', 'k24n', 'virt'], value: '',
   description: 'The SoC of the firmware target (guest/layers/soc/<soc>; lm14: LG\'s NetCast LM14, guest/layers/netcast45; virt: the test guest\'s, guest/testguest); the guest build needs it')
 option('webos', type: 'combo', choices: ['', 'afro', 'beehive', 'dreadlocks', 'dreadlocks2', 'goldilocks', 'goldilocks2', 'jhericurl', 'kisscurl', 'mullet', 'number1', 'ombre', 'ponytail', 'queue', 'spacebuns', 'simplesmart', 'netcast45', 'testguest'], value: '',
   description: 'The release family of the firmware target: a webOS codename (guest/layers/webos/<webos>), or simplesmart (LG\'s SimpleSmart line, guest/layers/simplesmart) or netcast45 (LG\'s NetCast 4.5, guest/layers/netcast45), or testguest (the open test guest: its layer guest/testguest, the kernel and the initramfs); the guest build needs it')
@@ -24,7 +24,7 @@ option('uapi_headers', type: 'string', value: '/usr/arm-linux-gnueabi/include',
 option('firmware_cache', type: 'feature', value: 'auto',
   description: 'Uncompressed firmware paks for ROOTFS=uncompressed (build/firmware-cache); auto: when the firmware and squashfs-tools are present')
 option('virtcam', type: 'feature', value: 'auto',
-  description: 'The virtual USB camera (host/helpers/virtcam, beanjar io usb plug --camera): usbipdcpp built from source (cmake, libspdlog-dev, libasio-dev), libusbredirparser; auto: where they are found, required in the arm64 cross build')
+  description: 'The virtual USB camera (host/helpers/virtcam, beanjar io usb attach --camera): usbipdcpp built from source (cmake, libspdlog-dev, libasio-dev), libusbredirparser; auto: where they are found, required in the arm64 cross build')
 option('kernel_debug', type: 'boolean', value: false,
   description: 'the guest kernel with guest/kernel/configs/debug.config over the defconfig (KASAN, lockdep, kmemleak, KUnit): for a build directory of its own with its own publish_dir, never the published Image')
 option('x86_64_kernel', type: 'feature', value: 'auto',

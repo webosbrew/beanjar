@@ -18,6 +18,7 @@ base = "dreadlocks2"
 version = "4"
 pmlog_mode = "preload-env"
 peripherals = [
+    "sit",
     "usbhid", "uhid", "joydev", "hid-dr", "hid-logitech", "hid-sony", "hid-zpff", "xpad",
     "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
     "nls_utf8", "nls_iso8859-1", "nls_cp949", "snd-usb-audio", "cdc-acm", "input-leds",
@@ -54,6 +55,9 @@ lastinput_offset = 0x1BC8
 inputs_field = [48, 26]
 factory_offset = 0x294
 local_key = { word = 3, offset = 18, width = 2, names = ["joystick", "onekey", "ninekey"] }
+# W18R's debug status: 32 bytes at 0x1C6 (tvservice's DIL_NVM_Load_DebugStatus), clear on the
+# emulator (the soc layer's identity cipher), written at every start (nvm.sync_debug_block).
+debug_block_offset = 0x1C6
 
 [partitions]
 partinfo = "partinfo"

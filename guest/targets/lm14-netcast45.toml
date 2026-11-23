@@ -1,20 +1,30 @@
-# LG's NetCast 4.5: "..._LCD_NC5U_..." (HE_LCD_NC5U_AAADAIAA), RELEASE.cfg's ATSC-LM14, its
-# vendor pak's liblm14: LG's LM14 platform, MStar Napoli (docs/dev/architecture/netcast45.md)
-models = ["NC5U"]
+# LG's NetCast 4.5: "..._LCD_NC5U_..." (HE_LCD_NC5U_AAADAIAA), RELEASE.cfg's ATSC-LM14 (DVB-LM14
+# in the EU builds), its vendor pak's liblm14: LG's LM14 platform, MStar Napoli
+# (docs/dev/architecture/netcast45.md); NC5B, the 2015 ("Y15", "nc45co") EU build of the same chip
+models = ["NC5U", "NC5B"]
 # NetCast 4.5 lacks the webOS checks regress makes; its stock GUI is measured instead
-bring_up = ["NC5U"]
+bring_up = ["NC5U", "NC5B"]
 
 # NetCast 4.5 on LG's LM14 (MStar Napoli):
 # mstar-utopia's LM14 dialect (lm14=1: its ioctls, the 72-byte SYS_INFO, MPOOL_SET's MIU1
-# address), the board's two 1 GiB MIUs, the 77 mmapger records of the firmware's own
+# address), the board's two 1 GiB MIUs, the mmapger records of the firmware's own
 # MAdp_SYS_GetMMAP (derived "mstar-mmap": host/helpers/mstar/mmap-table.py reads them out of its vendor
-# pak's libmadp at each start; LX_MEM id 0, LX_MEM2 id 76 with the 0x40000000 bias), the virtual
+# pak's libmadp at each start, 77 in 04.11.18, 78 in 04.11.22; and with them the records' IDs
+# mmap_ids, lx_mem_id, lx_mem2_id and gop_fb out of libmadp's code: LX_MEM and LX_MEM2, the two
+# MAdp_MPool_Init checks, 0 and 76 in 04.11.18, LX_MEM2 with the 0x40000000 bias), the virtual
 # CVBS trim, blank OTP and inactive HDCP status, the PQ coefficient RAMs, TSP's download and
 # mailbox, Napoli's 1100 MHz CPU PLL. Its user-mode HWI2C master (lm14_hwi2c) with the micom of
-# RELEASE.cfg's "[i2c]MICOM:1:0x52" on HWI2C port 1 (MAdp_IIC channel 0), port index 0; the NVM
-# EEPROM (channel 1) is software I2C, not modelled. GOP_FRAMEBUFFER is record 60 (libmadp's
-# gfx_Init makes its GOP pool there), the pool of the GOP node our libgal (guest/layers/netcast45)
-# allocates from.
+# RELEASE.cfg's "[i2c]MICOM:1:0x52" on HWI2C port 1 (MAdp_IIC channel 0), port index 0. The NVM
+# EEPROM ("[i2c]NVM:2:0xA0", MAdp_IIC channel 1) is on a software I2C bus (swi2c): libmadp's
+# sSWI2CCfg bus 0, SDA pad 52 and SCL pad 53, which libdrvGPIO's pad table puts in the bytes
+# 0x102b86 and 0x102b87 of the PM-based RIU mapping, bit 0 OUT, 1 OEN, 2 IN (the same in 04.10.31,
+# 04.11.18, 04.11.22 and 03.01.38); behind it lgemu.ko's 32 KiB NVM EEPROM on the VM's eeprom disk
+# (RELEASE's EEPROM NVM, 0x8000 bytes, 32-byte pages, 2-byte addresses, the ACK poll at 0xFFFF).
+# The bank's other pads are lines on pull-ups: bus 1 (pads 63 and 64, 0x102b09/0x102b0a) is
+# RELEASE.cfg's R9531 HDCP repeater, absent, whose addresses then go unacknowledged at once (slow
+# failures let tHDCP22Task's 5 s wait run out and fault on the unset context). GOP_FRAMEBUFFER (gop_fb, derived: the record
+# libmadp's gfx_Init makes its GOP pool in, 60 in 04.11.18) is the pool of the GOP node our libgal
+# (guest/layers/netcast45) allocates from.
 [soc]
 board_cmdline = "/etc/emulator/board.cmdline"
 board_src = "guest/layers/netcast45/rootfs"
@@ -30,14 +40,11 @@ params = [
     "miu_len=0x40000000",
     "miu0_bus=0x20000000",
     "miu1_bus=0xa0000000",
-    "mmap_ids=77",
-    "lx_mem_id=0",
-    "lx_mem2_id=76",
     "lx_mem2_bias=0x40000000",
     "tsp_riu=0x1f200000:0x1500",
     "reg_init=0x1f200000:0x10cc0:0xb070,0x1f200000:0x10cc2:0x25",
     "lm14_hwi2c=1",
     "i2c=micom:0x0052",
-    "gop_fb=60",
+    "swi2c=nvm:0xa0:0x102b86:0x102b87",
 ]
 derived = "mstar-mmap"

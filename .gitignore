@@ -3,7 +3,8 @@
 /build/
 scratch/
 node_modules/
-.claude/
+.claude/*
+!.claude/skills/
 local/
 __pycache__/
 *.py[cod]

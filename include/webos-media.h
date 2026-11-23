@@ -46,6 +46,12 @@
  * running times, and a PICTURE's pts is the decoded picture's; STATE is not sent. Additions to
  * WSM2: a host without them refuses the session as an invalid message.
  *
+ * An audio decoder whose samples go to a sink of the firmware's (W24G spacebuns' playbin3 picks
+ * PulseAudio's pulsesink over LG's audiosink, and LG's decoders always push PCM) asks the same
+ * with WEBOS_MEDIA_S16LE: each PICTURE then carries interleaved signed 16-bit stereo samples at
+ * WEBOS_MEDIA_S16LE_RATE, `width` the frames that follow (4 bytes each), `height` 2, `stride[0]`
+ * 4, its pts the first frame's. Audio answers always come inline (no pool).
+ *
  * The pool. A picture's bytes would cost the port one interrupt round trip per 4 KiB,
  * so a VM run as a systemd unit has a shared memory pool for them: QEMU's stock ivshmem-doorbell
  * (PCI 1af4:1110, one MSI-X vector) whose memory is a WEBOS_MEDIA_POOL_SIZE file in the unit's
@@ -150,11 +156,13 @@ struct webos_media_state {
 /* The pictures' formats, laid out as GstVideoInfo lays them out by default, which the PICTURE
  * repeats: NV12 with the stride the width rounded up to 4 and the CbCr plane after RU2(height)
  * rows; YUY2 (Y0 U Y1 V) in one plane, the stride twice the width rounded up to 4. */
-#define WEBOS_MEDIA_NV12 0x3231564eu    /* fourcc "NV12" */
-#define WEBOS_MEDIA_YUY2 0x32595559u    /* fourcc "YUY2" */
+#define WEBOS_MEDIA_NV12       0x3231564eu /* fourcc "NV12" */
+#define WEBOS_MEDIA_YUY2       0x32595559u /* fourcc "YUY2" */
+#define WEBOS_MEDIA_S16LE      0x454c3631u /* "16LE": an audio session's samples (above) */
+#define WEBOS_MEDIA_S16LE_RATE 48000
 enum { WEBOS_MEDIA_DECODE_SHARED = 1 }; /* webos_media_decode.flags */
 struct webos_media_decode {
-    uint32_t format; /* WEBOS_MEDIA_NV12 or WEBOS_MEDIA_YUY2 */
+    uint32_t format; /* WEBOS_MEDIA_NV12 or WEBOS_MEDIA_YUY2; audio: WEBOS_MEDIA_S16LE */
     uint32_t flags;  /* WEBOS_MEDIA_DECODE_SHARED: the guest takes shared pictures */
 };
 enum { /* webos_media_picture.flags */

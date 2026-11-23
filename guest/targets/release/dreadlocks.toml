@@ -15,6 +15,7 @@ pmlog_mode = "devlog"
 # W16R, W18R (modules.builtin, snd-usb-audio a module): uhid and joydev, the HID drivers
 # DragonRise, Logitech, Sony, Zeroplus; W18R also input-leds
 peripherals = [
+    "sit",
     "usbhid", "uhid", "joydev", "hid-dr", "hid-logitech", "hid-sony", "hid-zpff", "xpad",
     "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
     "nls_utf8", "nls_iso8859-1", "nls_cp949", "snd-usb-audio", "cdc-acm", "ipw", "pl2303",

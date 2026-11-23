@@ -88,17 +88,32 @@ def table(rows, columns):
     )
 
 
+def version_info():
+    """{"name", "version"} of this beanjar: the installed package's version, or the checkout's
+    packaging/VERSION marked "(checkout)"."""
+    from .. import compat, paths
+
+    version = compat.host_version()
+    if not paths.TREE.installed and version != "unknown":
+        version += " (checkout)"
+    return {"name": "beanjar", "version": version}
+
+
+def print_version(as_json):
+    """--version: "beanjar VERSION" on stdout, or with --json the {"name", "version"} object."""
+    info = version_info()
+    print(json.dumps(info) if as_json else f"{info['name']} {info['version']}")
+
+
 def late_options(a, args, prog, add=None):
-    """The manager's own options among a front end's words after NAME (--json, and add's)."""
+    """The manager's own options among a front end's words after NAME (add's; the global options
+    are taken out of the whole line before: parser.split_globals)."""
     import argparse
 
     after = argparse.ArgumentParser(prog=prog, add_help=False)
-    after.add_argument("--json", action="store_true")
     if add:
         add(after)
-    late, rest = after.parse_known_args(args)
-    a.json = a.json or late.json
-    return late, rest
+    return after.parse_known_args(args)
 
 
 def warn(text):
@@ -146,8 +161,24 @@ def parse_size(text):
     try:
         w, h = (int(x) for x in text.split("x"))
     except ValueError:
-        raise Usage(f"invalid size {text!r}: WIDTHxHEIGHT, e.g. 1280x720") from None
+        raise Usage(f"invalid frame {text!r}: WIDTHxHEIGHT, e.g. 1280x720") from None
     return w, h
+
+
+DURATION_UNITS = {"ms": 0.001, "s": 1.0, "m": 60.0}
+DURATION_HELP = "a number and its unit: ms, s or m (200ms, 1.5s, 2m)"
+
+
+def duration(text):
+    """A duration option's value in seconds: a number (whole or with a fraction) and its unit, ms,
+    s or m (200ms, 1.5s, 2m). A number alone is refused: its unit would be a guess."""
+    import argparse
+    import re
+
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)(ms|s|m)", text.strip())
+    if not m:
+        raise argparse.ArgumentTypeError(f"invalid duration {text!r}: {DURATION_HELP}")
+    return float(m.group(1)) * DURATION_UNITS[m.group(2)]
 
 
 def fail(e, as_json, code):

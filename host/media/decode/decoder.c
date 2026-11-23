@@ -64,7 +64,7 @@ struct decoder *decoder_create(unsigned ports, const char *hwdec)
         s->index = i;
         s->viewer = -1;
         s->generation = 1;
-        s->ctrl_e = s->pic_e = -1;
+        s->ctrl_e = s->pic_e = s->old_e = -1;
         snprintf(s->preference, sizeof s->preference, "%s", m->hwdec);
         /* monotonic: the decoder thread waits for queue space until a picture is due */
         pthread_condattr_t ca;

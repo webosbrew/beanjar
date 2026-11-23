@@ -30,6 +30,10 @@
 # libdile_vdec_direct and libdile_audio_direct, which NDL DirectMedia's first API (W19P's only one)
 # opens. Stock, they feed the video CPU's decoder by RPC (a black picture here) and the audio
 # DSP, whose open crashes; the shims send both streams to the host (src/libhal_direct).
+# dile_crypto_dbgdata: W19P's tvservice keeps its debug status as 32 bytes at EEPROM 0x1C6 that
+# DILE_CRYPTO_DecryptDbgData decrypts through bsppart's HAL and an OP-TEE TA (guest/kernel/modules/rtk/tee-ta.c has none for it);
+# the shim's cipher is the identity and beanjar programs the clear block (src/libdile_crypto/dbg-data.c).
+dile_crypto_dbgdata = true
 hal_stock = {
   'libdile_gal': ['libdile_gal.so.1', 'libdile_gal.so.1.0.2', []],
   'libdile_crypto': ['libdile_crypto.so.0', 'libdile_crypto.so.0.1.1', []],

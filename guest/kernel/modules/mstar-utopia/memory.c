@@ -46,6 +46,24 @@ static unsigned int lx_mem2_bias;
 module_param(lx_mem2_bias, uint, 0444);
 MODULE_PARM_DESC(lx_mem2_bias, "what KADP adds to SYS_INFO's LX_MEM2_ADDR before its check");
 
+/* The older Utopia user side of an MStar webOS build (W15U, Monaco): the system and memory pool
+ * drivers' structures with 32-bit fields where W16R's (CONFIG_MP_NEW_UTOPIA_32BIT) have u64 ones:
+ * SYS_INFO's IO_Sys_Info_t (0x48 bytes, 0xc0485399), MPOOL_SET's DrvMPool_Info_t (16 bytes,
+ * 0x80104d04, the address an offset in the MIU it names), KERNELDETECT's DrvMPool_Kernel_Info_t
+ * (16 bytes, 0xc0104d05) and the flushes' DrvMPool_Flush_Info_t (12 bytes, 0x800c4d07 and
+ * 0x800c4d09), as W15U's libkadaptor.so.1 issues them (MDrv_SYS_Info, MsOS_MPool_*). LM14's
+ * NetCast KADP has the same SYS_INFO and MPOOL_SET sizes, its MPOOL_SET address a PA (lm14). */
+static bool utopia32;
+module_param(utopia32, bool, 0444);
+MODULE_PARM_DESC(utopia32, "32-bit-field SYS_INFO and memory pool structures (W15U)");
+
+/* MIU_INTERVAL2 of /proc/mmapger/info.bin, where a third MIU would start: W15U's MAdp_MPool_Init
+ * maps a record at or above it as MIU 2, so on a two-MIU chip it is above every record; 0 (the
+ * default) where the KADP has no MIU 2 branch. */
+static unsigned int miu_interval2;
+module_param(miu_interval2, uint, 0444);
+MODULE_PARM_DESC(miu_interval2, "MIU_INTERVAL2 in mmapger's info.bin (0: none)");
+
 /* The mmapger record of SECURE_SHM, the memory MStar's TEE client shares with the secure world.
  * Set on a chip whose KADP starts that client at init (M3: W18R's MAdp_SYS_Init runs a "TEE INIT"
  * task): it brings LG's /proc/mmapger/mmap.ini, MStar's mailbox /dev/msmailbox and the secure
@@ -272,6 +290,7 @@ int mmapger_layout(void)
             .len0 = miu_len,
             .len1 = miu_len,
             .interval = miu_interval,
+            .interval2 = miu_interval2,
         };
         return export_mmapger_layout();
     }
@@ -326,6 +345,7 @@ int mmapger_layout(void)
         .len0 = miu_len,
         .len1 = miu_len,
         .interval = miu_interval,
+        .interval2 = miu_interval2,
     };
     return export_mmapger_layout();
 }
@@ -358,16 +378,16 @@ struct sys_info {
 };
 static_assert(sizeof(struct sys_info) == 0x90);
 
-/* LM14's observed 0xc0485399 is the older IO_Sys_Info_t: the same eighteen
- * fields as SYS_INFO, but 32-bit addresses and lengths rather than u64. */
-struct sys_info_lm14 {
+/* The older IO_Sys_Info_t (0xc0485399: LM14, and W15U with utopia32): the same eighteen fields
+ * as SYS_INFO, but 32-bit addresses and lengths rather than u64. */
+struct sys_info32 {
     u32 lx_mem_addr, lx_mem_length, lx_mem2_addr, lx_mem2_length;
     u32 emac_addr, emac_length, dram_addr, dram_length, bb_addr, bb_length;
     u32 mpool_mem_addr, mpool_mem_length, g3d_mem0_addr, g3d_mem0_length;
     u32 g3d_mem1_addr, g3d_mem1_length, g3d_cmdq_addr, g3d_cmdq_length;
 };
-static_assert(sizeof(struct sys_info_lm14) == 0x48);
-#define IOCTL_SYS_INFO_LM14 _IOWR('S', 0x99, struct sys_info_lm14)
+static_assert(sizeof(struct sys_info32) == 0x48);
+#define IOCTL_SYS_INFO32 _IOWR('S', 0x99, struct sys_info32)
 
 static long system_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -377,7 +397,7 @@ static long system_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
      * emulated memory is coherent. */
     if (cmd == IOCTL_SYS_FLUSH_MEMORY || cmd == IOCTL_SYS_READ_MEMORY)
         return 0;
-    if (cmd == IOCTL_SYS_INFO || (lm14 && cmd == IOCTL_SYS_INFO_LM14)) {
+    if (cmd == IOCTL_SYS_INFO || ((lm14 || utopia32) && cmd == IOCTL_SYS_INFO32)) {
         struct sys_info info = {
             .lx_mem_addr = record_bus(lx_mem_id),
             .lx_mem_length = records[lx_mem_id].len,
@@ -386,8 +406,8 @@ static long system_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             .dram_addr = miu0_bus,
             .dram_length = miu_info.dram_len,
         };
-        if (cmd == IOCTL_SYS_INFO_LM14) {
-            struct sys_info_lm14 legacy = {
+        if (cmd == IOCTL_SYS_INFO32) {
+            struct sys_info32 legacy = {
                 .lx_mem_addr = info.lx_mem_addr,
                 .lx_mem_length = info.lx_mem_length,
                 .lx_mem2_addr = info.lx_mem2_addr,
@@ -417,13 +437,6 @@ struct mpool_info { /* DrvMPool_Info_t, u64 fields: the same in compat */
     u64 addr, size, interval;
     u8 miu_sel;
 };
-struct mpool_info_lm14 {
-    u32 addr, size, interval;
-    u8 miu_sel;
-    u8 pad[3];
-};
-static_assert(sizeof(struct mpool_info_lm14) == 16);
-#define MALLOC_IOC_MPOOL_SET_LM14 _IOR('M', 0x04, struct mpool_info_lm14)
 struct mpool_kernel_info { /* DrvMPool_Kernel_Info_t */
     u64 lx_addr, lx_size, lx2_addr, lx2_size;
 };
@@ -431,6 +444,23 @@ struct mpool_flush_info32 { /* DrvMPool_Flush_Info_t from a 32-bit process */
     u32 virt;
     u64 phys, size;
 };
+/* the older structures, 32-bit fields (LM14; W15U with utopia32) */
+struct mpool_info_u32 {
+    u32 addr, size, interval;
+    u8 miu_sel;
+    u8 pad[3];
+};
+static_assert(sizeof(struct mpool_info_u32) == 16);
+struct mpool_kernel_info_u32 {
+    u32 lx_addr, lx_size, lx2_addr, lx2_size;
+};
+struct mpool_flush_info_u32 {
+    u32 virt, phys, size;
+};
+#define MALLOC_IOC_MPOOL_SET_U32          _IOR('M', 0x04, struct mpool_info_u32)
+#define MALLOC_IOC_MPOOL_KERNELDETECT_U32 _IOWR('M', 0x05, struct mpool_kernel_info_u32)
+#define MALLOC_IOC_FLUSHDCACHE_PAVA_U32   _IOR('M', 0x07, struct mpool_flush_info_u32)
+#define MALLOC_IOC_FLUSHDCACHE_ALL_U32    _IOR('M', 0x09, struct mpool_flush_info_u32)
 
 struct mpool_file {
     struct mutex lock;
@@ -468,11 +498,23 @@ static long mpool_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         return copy_to_user(uarg, &i, sizeof(i)) ? -EFAULT : 0;
     }
     case MALLOC_IOC_MPOOL_SET:
-    case MALLOC_IOC_MPOOL_SET_LM14: { /* the next mmap: MIU miu_sel, offset addr */
+    case MALLOC_IOC_MPOOL_SET_U32: { /* the next mmap: MIU miu_sel, offset addr */
         struct mpool_info i;
 
-        if (cmd == MALLOC_IOC_MPOOL_SET_LM14) {
-            struct mpool_info_lm14 legacy;
+        if (cmd == MALLOC_IOC_MPOOL_SET_U32 && utopia32 && !lm14) {
+            struct mpool_info_u32 legacy;
+
+            /* W15U's MsOS_MPool_Mapping passes the offset in the MIU, as W16R's */
+            if (copy_from_user(&legacy, uarg, sizeof(legacy)))
+                return -EFAULT;
+            i = (struct mpool_info){
+                .addr = legacy.addr,
+                .size = legacy.size,
+                .interval = legacy.interval,
+                .miu_sel = legacy.miu_sel,
+            };
+        } else if (cmd == MALLOC_IOC_MPOOL_SET_U32) {
+            struct mpool_info_u32 legacy;
 
             if (!lm14)
                 return unhandled("malloc", cmd, 0);
@@ -511,6 +553,23 @@ static long mpool_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         };
         return copy_to_user(uarg, &i, sizeof(i)) ? -EFAULT : 0;
     }
+    case MALLOC_IOC_MPOOL_KERNELDETECT_U32: {
+        struct mpool_kernel_info_u32 i = {
+            .lx_addr = record_pa(lx_mem_id),
+            .lx_size = records[lx_mem_id].len,
+            .lx2_addr = record_pa(lx_mem2_id),
+            .lx2_size = records[lx_mem2_id].len,
+        };
+
+        if (!utopia32)
+            break;
+        return copy_to_user(uarg, &i, sizeof(i)) ? -EFAULT : 0;
+    }
+    case MALLOC_IOC_FLUSHDCACHE_PAVA_U32:
+    case MALLOC_IOC_FLUSHDCACHE_ALL_U32:
+        if (!utopia32)
+            break;
+        return 0;
     case MALLOC_IOC_MPOOL_CACHE: /* cached or not: all of it is plain RAM here */
     case MALLOC_IOC_FLUSHDCACHE:
     case MALLOC_IOC_FLUSHDCACHE_PAVA:

@@ -1,6 +1,7 @@
 # Board parameters SimpleSmart SS1A's MBoot (LG's build for M2) puts on the kernel command line,
-# for its rc scripts, lginit, procmgr, RELEASE and libdile_boardinfo. The initramfs appends these to
-# the real cmdline and bind-mounts the result over /proc/cmdline in the firmware's namespace.
+# for its rc scripts, lginit, procmgr, RELEASE and libdile_boardinfo, on a US (ATSC) build; the
+# DVB builds boot board-dvb.cmdline (targets.py's broadcast_boards). The launcher puts these on the
+# kernel's command line, first (Release.board_in_kernel).
 # Keys and formats: SS1A's boot.pak (scratch/ss-board-identity.md, docs/dev/architecture/simplesmart.md,
 # "Board"); the values describe the set its RELEASE.cfg is (ATSC-M2, US, 49", TOOL_LH57: the
 # LH5700 series of its US spec table). Nothing here is W16R's. Where SS1A's firmware does not fix

@@ -31,9 +31,11 @@
  03
  *                                or the power key's wake). The first one marks "firmware ready" for
  *                                the host (struct webos_micom_status), as webOS's power stack
- *                                reads it as it starts. MICOM_Task hands a key to the UI only in
- *                                state 3 (_MICOM_ProcessSingleKey); in warm standby the IR receiver
- *                                reports none.
+ *                                reads it as it starts. The IR receiver reports keys in either
+ *                                state: the firmware filters them by it. In state 2 tvservice's
+ *                                _MICOM_ProcessSingleKey (W19P) hands POWER to the UI ("1.Power
+ *                                Key has been pushed") and a few other keys, and drops the rest;
+ *                                micomservice's single-key tail (W22O) passes POWER to uinput.
  *     read 0x80 (RTC)            seven binary YMDHMS bytes from rtc0, independent of guest
  *                                system time; RTC failures are not answered with a fake date.
  *     write 0x24 (RTC)           unsupported: the ninth payload byte is not verified.
@@ -42,8 +44,9 @@
  *     write 44 <delay> <reason>  restart (DIL_MICOM_SetAutoPowerOffOn from
  *                                API_DDM_POWER_micomRebootSystem, tv.power/reboot), 200 ms later.
  *     write 27                   the power-off timeout (DIL_MICOM_SetPowerOffTimeOut, from
- *                                tv.power/setPowerOffTimeout): the power goes in 8 s (tvpowerd's
- *                                "Setting Try Micom PowerOff timer 8sec") unless ...
+ *                                tv.power/setPowerOffTimeout): the power goes in 8 s, times
+ *                                time_scale (tvpowerd's "Setting Try Micom PowerOff timer
+ *                                8sec") unless ...
  *     write 52                   ... cancels it (DIL_MICOM_CancelPowerOff).
  *     write 26 07 <a> <b>, 25 02 warm standby (Quick Start+, below); 25 03 active.
  *     other writes               acknowledged (23 host ready, CEC, ...).
@@ -74,7 +77,14 @@
  *   The speaker amplifier. tvservice writes its registers at start-up, on every volume change
  *   and around turnOffAv/turnOnAv, and fails the Luna call when a write is not acknowledged.
  *   Writes are acknowledged and not kept: the volume the recording follows is the sound
- *   engine's (snd.c, the playback gain). A read is not acknowledged. */
+ *   engine's (snd.c, the playback gain). A read is not acknowledged.
+ *
+ *   The tuner, a Silicon Labs Si21xx (W15U's Si2178B, the RF tuner its analog front end has on
+ *   every board: TU_PAL_SI2178B_PLLInitialize initialises it unconditionally, and with no chip
+ *   answering the probe it dereferences a context the probe never set up). Its command interface:
+ *   a write is a command and its arguments, a read the reply, whose first byte is the status.
+ *   Every write is acknowledged, every reply is CTS (0x80: clear to send, no error) and zeros: a
+ *   chip that has done what it was told and has nothing to report (no signal). */
 #define pr_fmt(fmt) KBUILD_MODNAME ": i2c: " fmt
 #include <linux/bitops.h>
 #include <linux/fs.h>
@@ -113,6 +123,13 @@ MODULE_PARM_DESC(nvm_disk, "i2c: the block device behind the NVM EEPROM (none: i
 
 #define POWER_ACTION_MS     200 /* the write is acknowledged first, as by the micom */
 #define POWER_OFF_TIMEOUT_S 8
+/* The guest's slowdown against a set (webos.time_scale=N, the launcher's TCG factor; 1 under KVM),
+ * which init passes on. The power-off timeout is the micom's own clock, a backstop for a shutdown
+ * that a set finishes well within it; a guest N times slower gets N times as long. Without it a TCG
+ * guest's restart (tvpowerd arms the timeout, then reboots) ends as a power-off. */
+static unsigned int time_scale = 1;
+module_param(time_scale, uint, 0444);
+MODULE_PARM_DESC(time_scale, "the guest's slowdown: the power-off timeout times N");
 #define POWER_ON_REMOTE_KEY 0x20
 #define POWER_STATE_ON      3 /* read 0xB1: DIL_MICOM_GetPowerState's "active" */
 #define POWER_STATE_WARM    2
@@ -219,9 +236,10 @@ static void arm_timer(void)
     mutex_lock(&power_lock);
     power_target_put(&timer_target);
     if (power_target_get(&timer_target)) {
-        pr_info("micom: power-off timeout armed, the power goes in %d s unless cancelled\n",
-                POWER_OFF_TIMEOUT_S);
-        mod_delayed_work(system_wq, &timer_work, POWER_OFF_TIMEOUT_S * HZ);
+        unsigned int s = POWER_OFF_TIMEOUT_S * max(time_scale, 1U);
+
+        pr_info("micom: power-off timeout armed, the power goes in %u s unless cancelled\n", s);
+        mod_delayed_work(system_wq, &timer_work, s * HZ);
     } else {
         pr_warn("micom: power-off timeout: not from webOS's namespace, ignored\n");
     }
@@ -278,7 +296,7 @@ static unsigned int status_changed(void)
 }
 
 static void set_power_state(u8 state, const char *why);
-static void local_suspend(void);
+static void keys_suspend(void);
 
 static int pm_notify(struct notifier_block *nb, unsigned long action, void *data)
 {
@@ -286,7 +304,7 @@ static int pm_notify(struct notifier_block *nb, unsigned long action, void *data
 
     switch (action) {
     case PM_SUSPEND_PREPARE:
-        local_suspend();
+        keys_suspend();
         WRITE_ONCE(soc_suspended, true);
         seq = status_changed();
         if (READ_ONCE(status_reader) &&
@@ -422,6 +440,7 @@ static unsigned int ir_repeat_ms = IR_REPEAT_MS;
 #define EV_REMOTE_KEY     0x02
 #define EV_REMOTE_REPEAT  0x03
 #define EV_REMOTE_RELEASE 0x0A
+#define IR_CODE_POWER     0x08 /* LG's POWER, KEY_POWER (116) to the firmware */
 
 static DEFINE_SPINLOCK(ir_lock);
 static u8 ir_queue[IR_EVENTS][2]; /* event, data code */
@@ -474,7 +493,7 @@ static void ir_edge(bool down, u8 code)
  * (WEBOS_LOCAL_PRESS, the onekey or a joystick's centre) is the micom's to time: released before
  * local_long_ms it is a tap, 10 EA; held that long, 04 EB once, and 0E EB at its release
  * (micomservice turns EA into IR_FRONT_ONEKEY_SHORT and EB into IR_FRONT_ONEKEY_LONG on a onekey
- * set). A joystick's direction is 04 <code> down, 05 repeats as the remote's, 0E up. Unlike the
+ * set). A joystick's direction is 04 <code> down, 05 repeats as the remote's, 0E up. As the
  * remote's keys they are reported in warm standby too (local_record). */
 #define EV_LOCAL_KEY     0x04
 #define EV_LOCAL_REPEAT  0x05
@@ -688,10 +707,10 @@ static int ir_release(struct inode *inode, struct file *file)
     return 0;
 }
 
-/* A local key edge from the host. The micom reports the set's own key in warm standby too (unlike
- * the remote's keys, above): micomservice takes a local key in the micom's power state 2 (its
- * Active Standby, the SoC running with the screen off) and turns the set on. One the firmware has
- * not read when the SoC suspends wakes it instead (local_suspend). */
+/* A local key edge from the host. The micom reports the set's own key in warm standby too, as the
+ * remote's: micomservice takes a local key in the micom's power state 2 (its Active Standby, the
+ * SoC running with the screen off) and turns the set on. One the firmware has not read when the
+ * SoC suspends wakes it instead (keys_suspend). */
 static void local_record(bool down, u8 code)
 {
     pr_info("micom: local key 0x%02x %s%s\n", code, down ? "down" : "up",
@@ -701,18 +720,25 @@ static void local_record(bool down, u8 code)
     spin_unlock(&ir_lock);
 }
 
-/* The SoC suspends (PM_SUSPEND_PREPARE): local key events still queued are dropped, and the press
- * they were wakes the SoC as it goes down, as the micom wakes it on its local key. */
-static void local_suspend(void)
+/* The SoC suspends (PM_SUSPEND_PREPARE): key events still queued are dropped, as a key read after
+ * the wake would act a second time. A local key or the remote's POWER among them wakes the SoC as
+ * it goes down, as the micom wakes it on those keys (the host's relay does the same once the
+ * standby shows); the remote's other keys are lost, as the micom ignores them while the SoC is
+ * suspended. */
+static void keys_suspend(void)
 {
-    unsigned int i, kept = 0, dropped = 0;
+    unsigned int i, kept = 0, wakes = 0, dropped = 0;
 
     spin_lock(&ir_lock);
     for (i = 0; i < ir_len; i++) {
         u8 *e = ir_queue[(ir_head + i) % IR_EVENTS];
 
         if (e[0] == EV_LOCAL_KEY || e[0] == EV_LOCAL_REPEAT || e[0] == EV_LOCAL_RELEASE ||
-            e[0] == EV_LOCAL_TAP) {
+            e[0] == EV_LOCAL_TAP || (e[0] == EV_REMOTE_KEY && e[1] == IR_CODE_POWER)) {
+            wakes++;
+            continue;
+        }
+        if (e[0] == EV_REMOTE_KEY || e[0] == EV_REMOTE_REPEAT || e[0] == EV_REMOTE_RELEASE) {
             dropped++;
             continue;
         }
@@ -720,14 +746,17 @@ static void local_suspend(void)
         kept++;
     }
     ir_len = kept;
-    if (local_held >= 0)
-        dropped++;
+    if (local_held >= 0 || ir_held == IR_CODE_POWER)
+        wakes++;
     local_held = -1;
+    ir_held = -1;
     spin_unlock(&ir_lock);
-    if (dropped) {
+    if (dropped)
+        pr_info("micom: the SoC suspends with %u remote key events unread: dropped\n", dropped);
+    if (wakes) {
         WRITE_ONCE(wake_latched, true);
-        pr_info(
-            "micom: the SoC suspends with a local key unread: it wakes the SoC as it suspends\n");
+        pr_info("micom: the SoC suspends with a power or local key unread: it wakes the SoC as it "
+                "suspends\n");
     }
 }
 
@@ -756,11 +785,6 @@ static ssize_t ir_write(struct file *file, const char __user *ubuf, size_t n, lo
             else if (r->custom != WEBOS_IR_CUSTOM_LG)
                 pr_info_ratelimited("micom: IR custom code 0x%02x ignored (LG's is 0x%02x)\n",
                                     r->custom, WEBOS_IR_CUSTOM_LG);
-            else if (r->down && READ_ONCE(power_state) == POWER_STATE_WARM)
-                /* MICOM_Task hands keys on only when active, and a queued one would come after
-                 * the activation: in warm standby the micom reports none, its power key wakes
-                 * the SoC on the wake line */
-                pr_info_ratelimited("micom: warm standby: IR key 0x%02x not reported\n", r->code);
             else
                 ir_edge(r->down != 0, r->code);
         }
@@ -1181,6 +1205,16 @@ static int amp_xfer(struct i2c_msg *msgs, int num)
     return 0;
 }
 
+static int tuner_xfer(struct i2c_msg *msgs, int num)
+{
+    for (int i = 0; i < num; i++)
+        if (is_read(&msgs[i]) && msgs[i].len) {
+            memset(msgs[i].buf, 0, msgs[i].len);
+            msgs[i].buf[0] = 0x80; /* CTS */
+        }
+    return 0;
+}
+
 int lgemu_i2c_xfer(enum lgemu_i2c_device dev, struct i2c_msg *msgs, int num)
 {
     int ret;
@@ -1206,6 +1240,9 @@ int lgemu_i2c_xfer(enum lgemu_i2c_device dev, struct i2c_msg *msgs, int num)
         break;
     case LGEMU_I2C_TOF:
         ret = lgemu_tof_xfer(msgs, num);
+        break;
+    case LGEMU_I2C_TUNER:
+        ret = tuner_xfer(msgs, num);
         break;
     default:
         return -EINVAL;
@@ -1248,7 +1285,7 @@ int lgemu_i2c_parse(const char *spec, enum lgemu_i2c_device *dev, unsigned int *
     static const char *const names[] = {
         [LGEMU_I2C_MICOM] = "micom", [LGEMU_I2C_NVM] = "nvm",       [LGEMU_I2C_AMP] = "amp",
         [LGEMU_I2C_ACCEL] = "accel", [LGEMU_I2C_LIGHT1] = "light1", [LGEMU_I2C_LIGHT2] = "light2",
-        [LGEMU_I2C_TOF] = "tof",
+        [LGEMU_I2C_TOF] = "tof",     [LGEMU_I2C_TUNER] = "tuner",
     };
     char name[8];
     int i;

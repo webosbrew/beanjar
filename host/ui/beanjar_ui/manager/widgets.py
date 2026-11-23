@@ -546,7 +546,7 @@ class VMForm(_Submit, Adw.Dialog):
         self._model_key_row()
 
     def pick_model_key(self, path):
-        """Save installs the key in path (checked then, as `beanjar key model install` does)."""
+        """Save installs the key in path (checked then, as `beanjar key model set` does)."""
         self.model_key_change = ("install", path)
         self._model_key_row()
         self.touched("network")

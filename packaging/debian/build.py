@@ -47,7 +47,7 @@ PRIVATE_LIBRARY_PACKAGES = re.compile(
     r"(libavcodec|libavdevice|libavfilter|libavformat|libavutil|libpostproc|libswresample"
     r"|libswscale|libneatvnc|libaml)[0-9]"
 )
-# The camera (beanjar io usb plug --camera) runs GStreamer as a child: gst-launch-1.0 with
+# The camera (beanjar io usb attach --camera) runs GStreamer as a child: gst-launch-1.0 with
 # videotestsrc and videoconvert (plugins-base), timeoverlay (pango, in gstreamer1.0-x) and jpegenc
 # (plugins-good).
 CAMERA_DEPENDS = (
@@ -146,8 +146,14 @@ def copy(src, dst):
     dst.parent.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
         for link in src.rglob("*"):
-            if link.is_symlink() and (
-                os.path.isabs(os.readlink(link)) or not link.resolve().is_relative_to(src.resolve())
+            # A link to /dev/null is systemd's way to mask a unit (guest layers ship such masks).
+            if (
+                link.is_symlink()
+                and os.readlink(link) != "/dev/null"
+                and (
+                    os.path.isabs(os.readlink(link))
+                    or not link.resolve().is_relative_to(src.resolve())
+                )
             ):
                 raise SystemExit(f"external symlink in input: {link}")
         shutil.copytree(src, dst, ignore=IGNORE, symlinks=True)
@@ -514,6 +520,23 @@ def rebuild_targets(gp):
             raise SystemExit(f"cannot package: the build of {target} failed")
 
 
+def unselected_targets(components_dir):
+    """The targets (but the test guest, which scripts/build-packages.sh does not package) that no
+    published release component selects: their guest build never ran, and beanjar start would refuse
+    them on the installed host (NetCast 4.5's build, with the NetCast SDK's cross file, was missing
+    so)."""
+    import json
+
+    selected = set()
+    for selection in (components_dir / "release").glob("*/selections.json"):
+        selected |= set(json.loads(selection.read_text()))
+    return [
+        name
+        for name in map(beanjar_targets.name, beanjar_targets.all_targets())
+        if name != "virt-testguest" and name not in selected
+    ]
+
+
 def load_identity():
     """packaging/identity.py, which reads the published source versions (it never runs git here)."""
     from importlib.util import spec_from_file_location, module_from_spec
@@ -814,6 +837,12 @@ def package_guest(a, identity, work):
     gp = (a.guest_publish or a.publish).resolve()
     if gp == (TOP / "build").resolve() and not a.no_rebuild:
         rebuild_targets(gp)
+    missing = unselected_targets(gp / "components")
+    if missing:
+        raise SystemExit(
+            f"cannot package: no guest build published {', '.join(missing)} "
+            "(scripts/build-packages.sh's guest lane builds every target)"
+        )
     subprocess.run(
         [
             sys.executable,

@@ -1,0 +1,4 @@
+# W15U is LG's 2015 UHD line (UF sets) on the MStar Monaco (LGE5331, the LM15U platform): webOS 2.2
+# beehive-biscayne, W15M's userland over a W16R-like MStar Utopia2K vendor side. Only a European
+# DVB build exists (HE_DTV_W15U_AFADABAA). docs/research/lm15u-bringup-study.md.
+models = ["W15U"]

@@ -9,6 +9,8 @@
 # Its board is the G4: nothing here shows the far-field microphone (mic stays false).
 
 base = "o22n2"
+# O22N2's US frontend override goes with its tuners (soc/o22n2.toml), verified on W24G only.
+broadcast_params = {}
 
 [[modules]]
 name = "lg115x"

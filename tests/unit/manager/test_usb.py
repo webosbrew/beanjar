@@ -744,7 +744,7 @@ class CliTest(unittest.TestCase):
     def transport(self, argv, stdin=None, on_stderr=None, timeout=None):
         words = argv[argv.index("--") + 2].split()[1:]
         self.calls.append(words)
-        if words[0] == "settings":
+        if words[:2] == ["config", "show"]:
             return 0, b"{}", ""
         if words[:3] == ["io", "usb", "attach"]:
             return 0, json.dumps({"name": "tv", "id": "1", "socket": "/l/usb-1.sock"}).encode(), ""
@@ -773,7 +773,7 @@ class CliTest(unittest.TestCase):
         with mock.patch.object(usb, "find_device", return_value=dev) as find, \
              mock.patch.object(usb, "plug", return_value=0) as plug:  # fmt: skip
             rc, _out, err = self.beanjar(
-                "io", "usb", "plug", "pi/tv", "--device", "1d6b:0104", "--id", "k"
+                "io", "usb", "attach", "pi/tv", "--device", "1d6b:0104", "--id", "k"
             )
         self.assertEqual(rc, 0, err)
         find.assert_called_once_with("1d6b:0104")
@@ -832,7 +832,7 @@ class CliTest(unittest.TestCase):
     def test_camera_plug_runs_here_against_the_host(self):
         with mock.patch.object(usb, "plug", return_value=0) as plug:
             rc, _out, err = self.beanjar(
-                "io", "usb", "plug", "pi/tv", "--camera", "--pattern", "ball"
+                "io", "usb", "attach", "pi/tv", "--camera", "--pattern", "ball"
             )
         self.assertEqual(rc, 0, err)
         target, name, client = plug.call_args.args[:3]
@@ -841,13 +841,13 @@ class CliTest(unittest.TestCase):
         self.assertEqual((name, client.pattern), ("pi/tv", "ball"))
 
     def test_usage(self):
-        self.assertEqual(self.beanjar("io", "usb", "plug", "pi/tv")[0], 2)  # --device or --camera
+
         for words in (["--camera", "--device", "1-2"], ["--camera", "--sudo"],
                       ["--device", "1-2", "--pattern", "ball"]):  # fmt: skip
-            self.assertEqual(self.beanjar("io", "usb", "plug", "pi/tv", *words)[0], 2, words)
+            self.assertEqual(self.beanjar("io", "usb", "attach", "pi/tv", *words)[0], 2, words)
         self.assertEqual(self.beanjar("io", "usb", "detach", "pi/tv")[0], 2)
         with mock.patch.object(usb, "plug") as plug:
-            rc, _o, err = self.beanjar("io", "usb", "plug", "pi/tv", "--device", "nope")
+            rc, _o, err = self.beanjar("io", "usb", "attach", "pi/tv", "--device", "nope")
         self.assertEqual(rc, 1)
         self.assertIn("invalid --device", err)
         plug.assert_not_called()

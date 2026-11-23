@@ -6,12 +6,12 @@ package or the library's). main parses (parser.py: each module's commands and op
 the command here or, for HOST/NAME, on that host (forward.py); ares_main runs an ares-TOOL.
 
   common.py          the parser's class, Usage, and the output helpers (emit, table, ...)
-  vms.py             list, create, start, reason, stop, info, tag, delete, rename, prepare, wipe
-  settings.py        settings, library config, host config, add, remove, list, prune-layer-images
+  vms.py             list, create, start, stop, show, status, delete, rename, prepare, wipe
+  settings.py        config, library config, host config, add, remove, list, prune-layer-images
   display.py         screenshot, elements, viewer, vnc, screensaver
   remote_control.py  remote: pipe, press, pointer and touch, layout
-  identity.py        identity renew, clone, key
-  sensors.py         sensor: light, presence, temperature, rotate
+  identity.py        identity reset and authorized-keys, clone, key
+  sensors.py         sensor show|set: light, presence, temperature, rotate
   devices.py         io: tuner, usb
   mitm.py            mitm
   shell.py           shell
@@ -20,6 +20,8 @@ the command here or, for HOST/NAME, on that host (forward.py); ares_main runs an
 What a command needs beyond the library is imported where it is used (the parser and the command
 modules themselves, the GPU, element and screensaver modules, the thread pool, ares), so that the light commands start quickly: an
 ares-TOOL run (on a board, every module imported costs tens of milliseconds)."""
+
+import sys
 
 from .. import remote
 from ..cli import command_index, global_options
@@ -32,11 +34,24 @@ def main(argv):
     i = command_index(argv)
     if i < len(argv) and argv[i].startswith("ares-"):
         return ares_main(argv, i)
+    if "--version" in argv[:i]:
+        from .common import print_version
+
+        print_version("--json" in argv)
+        return 0
     from . import parser
     from .forward import remote_command
 
-    Parser.json_errors = "--json" in argv
-    a = parser.build().parse_args(argv)
+    Parser.json_errors = "--json" in argv  # until the line is read: an error there
+    try:
+        a = parser.parse(argv)
+    except parser.NoVerb as e:
+        if Parser.json_errors:
+            return fail(e, True, 2)
+        e.parser.print_help(sys.stderr)
+        return 2
+    except Usage as e:
+        return fail(e, Parser.json_errors, 2)
     try:
         library = []
 
@@ -46,9 +61,11 @@ def main(argv):
             return library[0]
 
         if getattr(a, "remote", None):
-            host, name = remote.locate(a.name, lambda n: n in local_library().names(), warn)
+            host, name = remote.locate(
+                a.name, lambda n: n in local_library().names(), warn, a.library is not None
+            )
             if host:
-                return remote_command(a, argv, host, name)
+                return remote_command(a, a.words, host, name)
             a.name = name  # local/NAME is NAME here
         lib = local_library() if getattr(a, "library_needed", True) else None
         return a.func(lib, a)
@@ -78,6 +95,8 @@ def ares_main(argv, i):
 
                 parser.build().parse_args([*argv[:i], "ares-TOOL", "--help"])
             raise Usage(f"{tool}: say which VM: beanjar {tool} [--root] -d NAME [ARGS...]")
+        if "--json" in argv[:i]:
+            raise Usage(f"{tool} takes no --json: its output is the tool's")
         opts = global_options(argv[:i])
         if opts is None:
             from . import parser
@@ -91,7 +110,9 @@ def ares_main(argv, i):
                 library.append(Library(opts["library"], opts["repo"]))
             return library[0]
 
-        host, name = remote.locate(spec, lambda n: n in local_library().names(), warn)
+        host, name = remote.locate(
+            spec, lambda n: n in local_library().names(), warn, opts["library"] is not None
+        )
         if host:
             return ares.run_remote(host, name, tool, args, root)
         return ares.run_local(local_library(), name, tool, args, root)

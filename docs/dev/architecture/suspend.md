@@ -100,6 +100,11 @@ restore. Decided instead:
 
 - `25 02` and `25 03` move the micom model into warm standby and back. That state changes what the
   power key does: in warm standby it wakes the SoC instead of cutting power.
+- While the SoC still runs in warm standby (Active Standby), the micom model reports the remote's
+  keys on its 0xC0 poll as when active, and the firmware filters them by the power state it reads
+  (0xB1 = 2): tvservice's `_MICOM_ProcessSingleKey` (W19P) hands POWER to the UI and drops most
+  other keys itself, and W22O's `micomservice` passes POWER to uinput, which turns the set on. Key
+  events still queued when the SoC suspends are dropped; a POWER or local key among them wakes it.
 - A cold power-off (Quick Start+ off) keeps ending the PID namespace, as today.
 - The host shows the standby state: the viewer goes black, and the manager labels the VM "standby".
 

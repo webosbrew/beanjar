@@ -15,7 +15,9 @@
  * own (esdec.c), and omxaudiosink sends what it gets to the host (essink.c); mvsink
  * (mvsink.c) does the same for video. LM21's audio decoders hand the stream on as passthrough
  * (audio/x-raw(mode:passthrough)) to omxaudiopassthroughsink, which sends it the same way.
- * MSTAR_REL is the release (16: W16R, 18: W18R, 21..23: W21A..W23A). */
+ * MSTAR_REL is the release (15: W15U, 16: W16R, 18: W18R, 21..23: W21A..W23A). W15U's are W16R's
+ * without the video decoders' displayed-frames and dropped-frames and omxaudiosink's fade and
+ * fade-volume (gst-inspect-1.0 of W15U 04.06.25's stock plugin). */
 #include <gst/gst.h>
 #include <string.h>
 #include <syslog.h>
@@ -68,8 +70,10 @@ enum {
 #if MSTAR_REL < 18
     V_CLIP_MODE,
 #endif
+#if MSTAR_REL >= 16
     V_DISPLAYED_FRAMES,
     V_DROPPED_FRAMES,
+#endif
 #if MSTAR_REL >= 18
     V_DECODER_QUEUE_LIMIT,
 #endif
@@ -109,8 +113,10 @@ static const struct prop_def vprops[N_VPROPS] = {
 #if MSTAR_REL < 18
     {"clip-mode", "Clip frames which are outside of segment", G_TYPE_BOOLEAN, 0, NULL, W},
 #endif
+#if MSTAR_REL >= 16
     {"displayed-frames", "the accumulated number of rendered frames", G_TYPE_INT, 0, NULL, R},
     {"dropped-frames", "the accumulated number of dropped frames", G_TYPE_INT, 0, NULL, R},
+#endif
 #if MSTAR_REL >= 21
     {"decoder-queue-limit", "Video frame queue limit in decoder. (0 = not used)", G_TYPE_UINT, 0,
      NULL, W},
@@ -277,11 +283,22 @@ static GstCaps *audio_raw_caps(GstElement *element, GstCaps *es)
     gst_caps_set_features(caps, 0, gst_caps_features_new("mode:passthrough", NULL));
     return fixed_src_caps(element, caps);
 #else
-    return fixed_src_caps(element,
-                          gst_caps_new_simple("audio/x-raw", "format", G_TYPE_STRING, "S16LE",
-                                              "layout", G_TYPE_STRING, "interleaved", "rate",
-                                              G_TYPE_INT, rate > 0 ? rate : 48000, "channels",
-                                              G_TYPE_INT, channels > 0 ? channels : 2, NULL));
+    /* The sample format is the src template's (S16LE; W15U's AAC, AC-3 and DTS decoders S32LE),
+     * the stream's channels where the template takes them, else the template's (W15U's take one
+     * or two): the caps keep layout, which omxaudiosink requires and the template does not have. */
+    GstCaps *templ = gst_pad_get_pad_template_caps(((GstOMXDec *)element)->dec.srcpad);
+    GstCaps *want = gst_caps_new_simple("audio/x-raw", "layout", G_TYPE_STRING, "interleaved",
+                                        "rate", G_TYPE_INT, rate > 0 ? rate : 48000, "channels",
+                                        G_TYPE_INT, channels > 0 ? channels : 2, NULL);
+    GstCaps *both = gst_caps_intersect(want, templ);
+    if (gst_caps_is_empty(both)) {
+        gst_caps_unref(want);
+        want = gst_caps_new_simple("audio/x-raw", "layout", G_TYPE_STRING, "interleaved", "rate",
+                                   G_TYPE_INT, rate > 0 ? rate : 48000, NULL);
+    }
+    gst_caps_unref(both);
+    gst_caps_unref(templ);
+    return fixed_src_caps(element, want);
 #endif
 }
 
@@ -478,8 +495,10 @@ enum {
     S_NODELAY_RECOVER,
     S_NODELAY_FAST_FREQ,
     S_DISABLE_LOST_STATE,
+#if MSTAR_REL >= 16
     S_FADE,
     S_FADE_VOLUME,
+#endif
 #if MSTAR_REL >= 21
     S_AUDIO_BE_DELAY,
     S_CLOCK_SOURCE,
@@ -531,10 +550,11 @@ static const struct prop_def sprops[N_SPROPS] = {
     {"nodelay-recover", "set buffering Threshold of Normal State", G_TYPE_UINT, 0},
     {"nodelay-fast-freq", "set frequency of Fast State (unit : Hz)", G_TYPE_UINT, 0},
     {"disable-lost-state", "Disable seek event if TRUE", G_TYPE_BOOLEAN, 0},
-    {"fade", "set fade structure", PROP_STRUCTURE, 0},
 #if MSTAR_REL >= 18
+    {"fade", "set fade structure", PROP_STRUCTURE, 0},
     {"fade-volume", "get the fade volume", G_TYPE_INT, 100},
-#else
+#elif MSTAR_REL >= 16
+    {"fade", "set fade structure", PROP_STRUCTURE, 0},
     {"fade-volume", "get the fade volume", G_TYPE_INT, 132120},
 #endif
 #if MSTAR_REL >= 21

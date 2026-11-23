@@ -86,7 +86,7 @@ wget \$url/beanjar-guest-x86-64_\${version}_amd64.deb && sudo apt-get install ./
 - \`beanjar-vnc\` (optional): a VM's TV picture over VNC.
 - \`beanjar-web\` (optional): VMs in a web browser.
 - \`beanjar-guest\`: the guest side, the same for every host: the guest kernel and what runs beside the TV's programs.
-- \`beanjar-guest-x86-64\` (amd64, optional): the experimental x86-64 guest kernel. It does nothing until a VM is switched to it with \`beanjar settings <vm> set guest_kernel=x86-64\`.
+- \`beanjar-guest-x86-64\` (amd64, optional): the experimental x86-64 guest kernel. It does nothing until a VM is switched to it with \`beanjar config set <vm> guest_kernel=x86-64\`.
 
 \`SHA256SUMS\` lists the SHA-256 of every package. The release gets the host and the guest packages from two workflows; until both have finished it is incomplete and not marked Latest.
 EOF

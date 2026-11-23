@@ -6,6 +6,13 @@
 set -eu
 test "$(systemctl --no-pager show swap-on.service -p Result --value)" = success
 test "$(systemctl --no-pager show swap-on.service -p ActiveState --value)" = active
+# The mapping is made once, by its own unit; the stock tasks run nothing of ours themselves.
+test "$(systemctl --no-pager show beanjar-eswap.service -p Result --value)" = success
+test "$(systemctl --no-pager show beanjar-eswap.service -p ActiveState --value)" = active
+for unit in efs-on swap-on f2io-on; do
+    [ -f "/etc/systemd/system/$unit.service" ] || continue
+    ! systemctl --no-pager show "$unit.service" -p ExecStartPre --value | grep -q beanjar-eswap
+done
 if [ -f /etc/systemd/system/f2io-on.service ]; then
     test "$(systemctl --no-pager show f2io-on.service -p Result --value)" = success
     test -b /dev/f2io-0

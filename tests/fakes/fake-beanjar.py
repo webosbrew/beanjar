@@ -135,17 +135,17 @@ try:
         sys.exit(pipe.audio_pipe(VM()))
     elif words == ["vnc", "video-pipe", "local/tv"]:
         sys.exit(pipe.video_pipe(VM()))
-    elif words[:3] == ["sensor", "rotate", "local/tv"] and len(words) == 4:
+    elif words[:4] == ["sensor", "set", "rotate", "local/tv"] and len(words) == 5:
         # as the guest reports a new setting (rotation.rotate waits for that line)
         with open(os.path.join(D, "rotation"), "a") as f:
-            f.write(f"rotation={words[3]}\n")
+            f.write(f"rotation={words[4]}\n")
         print(
-            json.dumps({"name": "tv", "rotation": int(words[3]), "previous": None, "changed": True})
+            json.dumps({"name": "tv", "rotation": int(words[4]), "previous": None, "changed": True})
         )
-    elif words == ["sensor", "rotate", "local/k8hp-ombre"]:
+    elif words == ["sensor", "show", "rotate", "local/k8hp-ombre"]:
         # off: no report, the angle it was left at
         print(json.dumps({"name": "k8hp-ombre", "portrait": True, "rotation": None, "saved": 90}))
-    elif words == ["sensor", "rotate", "local/tv"]:
+    elif words == ["sensor", "show", "rotate", "local/tv"]:
         # the status: the guest's last report (rotation.status), 0 before the first
         lines = open(os.path.join(D, "rotation")).read().split() if VM().portrait() else []
         angle = int(lines[-1].partition("=")[2]) if lines else 0
@@ -162,7 +162,7 @@ try:
     elif words[:3] == ["screenshot", "local/tv", "-"]:
         width, height = (1280, 720)
         if words[3:]:
-            if words[3:] != ["--size", "384x216"]:
+            if words[3:] != ["--frame", "384x216"]:
                 fail(f"unexpected screenshot size: {words[3:]}")
             width, height = 384, 216
         if width == 384:

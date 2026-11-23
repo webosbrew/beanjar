@@ -339,6 +339,7 @@ class ArgvTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="beanjar-launch-")
         self.top, self.fw, self.state = fake_tree(self.tmp)
+        self.plans = {}  # qemu_plan's, by id of their argv (forwards)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -356,21 +357,18 @@ class ArgvTest(unittest.TestCase):
 
     def test_two_vms_own_addresses(self):
         """Two VMs (slots 1 and 2) forward the same stock ports, each on its own address, under
-        mode=direct (QEMU's hostfwd) and mode=mitm (the relay's VM_ADDRESS)."""
+        mode=direct and mode=mitm alike (netns.py's relay on VM_ADDRESS)."""
         layers = "normal,gl,rootssh,devmode"
         plans = [
             self.qemu_plan("tcg", **net("direct"), LAYERS=layers, SLOT=slot)[0]
             for slot in ("1", "2")
         ]
-        fwds = [
-            [f for f in argv[argv.index("-netdev") + 1].split(",") if f.startswith("hostfwd=")]
-            for argv in plans
-        ]
+        fwds = [self.forwards(argv) for argv in plans]
         self.assertEqual(
             fwds,
             [
                 [
-                    f"hostfwd=tcp:127.0.1.{n}:{p}-:{g}"
+                    f"127.0.1.{n}:{p}-:{g}"
                     for p, g in (
                         ("6622", "22"),
                         ("3000", "3000"),
@@ -404,11 +402,11 @@ class ArgvTest(unittest.TestCase):
         argv, notes = self.qemu_plan(
             "tcg", **net("direct"), LAYERS=layers, SLOT="3", ADDRESS_PREFIX="127.0.2"
         )
-        fwds = [f for f in argv[argv.index("-netdev") + 1].split(",") if f.startswith("hostfwd=")]
+        fwds = self.forwards(argv)
         self.assertEqual(
             fwds,
             [
-                f"hostfwd=tcp:127.0.2.3:{p}-:{g}"
+                f"127.0.2.3:{p}-:{g}"
                 for p, g in (
                     ("6622", "22"),
                     ("3000", "3000"),
@@ -449,8 +447,8 @@ class ArgvTest(unittest.TestCase):
 
     def test_listen_address(self):
         """LISTEN_ADDRESS (vm.toml's listen) moves every TV-service port (layermeta.forwards: SSAP
-        3000/3001 from the webos layer, root SSH, developer mode) and nothing else: mode=direct's
-        hostfwd, mode=mitm's relay (netns.relay_pairs; the inspector stays on NETSTUB_WEB_HOST). The
+        3000/3001 from the webos layer, root SSH, developer mode) and nothing else: the relay of
+        mode=direct and mode=mitm (netns.relay_pairs; the inspector stays on NETSTUB_WEB_HOST). The
         notes give the address this host reaches them at: the one address, or the VM's for 0.0.0.0."""
         layers = "normal,gl,rootssh,devmode"
         ports = (
@@ -464,10 +462,9 @@ class ArgvTest(unittest.TestCase):
             argv, notes = self.qemu_plan(
                 "tcg", **net("direct"), LAYERS=layers, SLOT="3", LISTEN_ADDRESS=listen
             )
-            netdev = argv[argv.index("-netdev") + 1].split(",")
             self.assertEqual(
-                [f for f in netdev if f.startswith("hostfwd=")],
-                [f"hostfwd=tcp:{listen.strip()}:{p}-:{g}" for p, g in ports],
+                self.forwards(argv),
+                [f"{listen.strip()}:{p}-:{g}" for p, g in ports],
             )
             self.assertTrue(
                 any(
@@ -516,8 +513,8 @@ class ArgvTest(unittest.TestCase):
         # unset: the VM's address, as before
         argv, _ = self.qemu_plan("tcg", **net("direct"), LAYERS="normal", SLOT="4")
         self.assertEqual(
-            [f for f in argv[argv.index("-netdev") + 1].split(",") if f.startswith("hostfwd=")],
-            ["hostfwd=tcp:127.0.1.4:3000-:3000", "hostfwd=tcp:127.0.1.4:3001-:3001"],
+            self.forwards(argv),
+            ["127.0.1.4:3000-:3000", "127.0.1.4:3001-:3001"],
         )
         for bad in ("lan", "::", "1.2.3", "300.0.0.1"):
             with self.assertRaisesRegex(qemu.Error, "LISTEN_ADDRESS: listen"):
@@ -525,19 +522,19 @@ class ArgvTest(unittest.TestCase):
 
     def test_forward(self):
         """FORWARD (vm.toml's forward): the VM's own ports join the layers' forwards on the
-        same path: mode=direct's hostfwd on LISTEN_ADDRESS, mode=mitm's NETNS_FWD and so the
+        same path: NETNS_FWD on LISTEN_ADDRESS in mode=direct and mode=mitm, and so the
         host-side relay and link=lan's relay in the LAN namespace, HOST:GUEST as given; a note
         names them. A host port a layer has, or beanjar's own, is refused."""
         argv, notes = self.qemu_plan(
             "tcg", **net("direct"), LAYERS="normal", SLOT="4", FORWARD="8080,8081:80"
         )
         self.assertEqual(
-            [f for f in argv[argv.index("-netdev") + 1].split(",") if f.startswith("hostfwd=")],
+            self.forwards(argv),
             [
-                "hostfwd=tcp:127.0.1.4:3000-:3000",
-                "hostfwd=tcp:127.0.1.4:3001-:3001",
-                "hostfwd=tcp:127.0.1.4:8080-:8080",
-                "hostfwd=tcp:127.0.1.4:8081-:80",
+                "127.0.1.4:3000-:3000",
+                "127.0.1.4:3001-:3001",
+                "127.0.1.4:8080-:8080",
+                "127.0.1.4:8081-:80",
             ],
         )
         self.assertIn("forward: 127.0.1.4:8080, 127.0.1.4:8081 (guest 80)", notes)
@@ -549,7 +546,7 @@ class ArgvTest(unittest.TestCase):
             FORWARD="8080",
             LISTEN_ADDRESS="0.0.0.0",
         )
-        self.assertIn("hostfwd=tcp:0.0.0.0:8080-:8080", argv[argv.index("-netdev") + 1])
+        self.assertIn("0.0.0.0:8080-:8080", self.forwards(argv))
         with mock.patch.object(qemu, "first_rendernode", return_value=None):
             p = qemu.plan(
                 dict(
@@ -597,11 +594,10 @@ class ArgvTest(unittest.TestCase):
             argv, notes = self.qemu_plan(
                 "tcg", **net("direct"), LAYERS="normal,hbchannel,devmode", SLOT=slot
             )
-            netdev = argv[argv.index("-netdev") + 1]
             self.assertEqual(
-                [f for f in netdev.split(",") if f.startswith("hostfwd=")],
+                self.forwards(argv),
                 [
-                    f"hostfwd=tcp:127.0.1.{slot}:{p}-:{g}"
+                    f"127.0.1.{slot}:{p}-:{g}"
                     for p, g in (
                         ("6622", "22"),
                         ("3000", "3000"),
@@ -611,7 +607,7 @@ class ArgvTest(unittest.TestCase):
                     )
                 ],
             )
-            self.assertNotIn(":23", netdev)
+            self.assertNotIn(":23", " ".join(self.forwards(argv)))
             self.assertTrue(
                 any(
                     n.startswith("root ssh (Homebrew Channel): ssh -p 6622 ")
@@ -623,7 +619,7 @@ class ArgvTest(unittest.TestCase):
         argv, _ = self.qemu_plan(
             "tcg", **net("direct"), LAYERS="hbchannel,devmode", SSH_PORT="7722"
         )
-        self.assertIn("hostfwd=tcp:127.0.1.1:7722-:22", argv[argv.index("-netdev") + 1].split(","))
+        self.assertIn("127.0.1.1:7722-:22", self.forwards(argv))
         with mock.patch.object(qemu, "first_rendernode", return_value=None):
             p = qemu.plan(
                 dict(FW=self.fw, STATE="none", **net("mitm"), LAYERS="devmode,hbchannel", SLOT="2"),
@@ -661,7 +657,7 @@ class ArgvTest(unittest.TestCase):
 
     def test_capture_port(self):
         """webos.capture, the port the vendor module's video60 reads the viewer through, is on every
-        target whose file sets v4l2_capture (the O22 family's, mullet to queue, not spacebuns;
+        target whose file sets v4l2_capture (the O22 family's, mullet to spacebuns;
         Realtek's from K6LP; LM21's), and on W15M's and W16R's for de0's VT frames (viewer_capture), on no
         other."""
         for target in (
@@ -693,7 +689,7 @@ class ArgvTest(unittest.TestCase):
                     say=lambda _: None,
                     dry=True,
                 )
-                want = target[1] not in ("spacebuns", "goldilocks2", "dreadlocks2", "beehive")
+                want = target[1] not in ("goldilocks2", "dreadlocks2", "beehive")
                 self.assertEqual(targets.v4l2_capture(target), want)
                 port = want or target in (("m14", "beehive"), ("m16p", "dreadlocks2"))
                 self.assertEqual(targets.viewer_capture(target), port)
@@ -742,7 +738,7 @@ class ArgvTest(unittest.TestCase):
         """Two outputs in the GPU's own process: auto no longer leaves them out, and the
         backend's device keeps max_outputs=2 and the second output's setup."""
         with (
-            mock.patch.object(paths, "firmware_target", return_value=("o22n2", "spacebuns")),
+            mock.patch.object(paths, "firmware_target", return_value=("o22", "queue")),
             mock.patch.object(nvm, "board_ram", return_value=2048),
             mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
             mock.patch.object(share, "resolve_layers", return_value=([], [])),
@@ -777,7 +773,8 @@ class ArgvTest(unittest.TestCase):
             (("k8hp", "ponytail"), "normal,gl", "dbus", False),
             (("o22", "queue"), "normal,gl", "dbus", True),
             (("o22", "ponytail"), "normal,gl", "dbus", False),
-            (("o22n2", "spacebuns"), "normal,gl", "dbus", True),
+            # spacebuns has one output, as a set (its TV-2 takes the CRTC's overlay plane)
+            (("o22n2", "spacebuns"), "normal,gl", "dbus", False),
             (("o22n2", "spacebuns"), "headless", "dbus", False),
             (("o22n2", "spacebuns"), "normal,gl", "none", False),
             (("o22n2", "spacebuns"), "normal,gl", "egl-headless", False),
@@ -824,12 +821,7 @@ class ArgvTest(unittest.TestCase):
                 if enabled:
                     self.assertEqual(
                         p.display_setup,
-                        (f"unix:path={p.run_dir}/dbus.sock", f"{p.run_dir}/qmp.sock")
-                        + (
-                            ("--physical-size", "0", "0")
-                            if target == ("o22n2", "spacebuns")
-                            else ()
-                        ),
+                        (f"unix:path={p.run_dir}/dbus.sock", f"{p.run_dir}/qmp.sock"),
                     )
                     paused = qemu.plan(
                         dict(
@@ -855,7 +847,18 @@ class ArgvTest(unittest.TestCase):
             p = qemu.plan(
                 env, [], accel=accel, tree=tree or paths.Tree(self.top), say=notes.append, dry=True
             )
+        self.plans[id(p.argv)] = p
         return p.argv, notes
+
+    def forwards(self, argv):
+        """The host ports of the plan qemu_plan gave argv, as LISTEN:HOST-:GUEST: netns.py's
+        relay (NETNS_FWD on LISTEN_ADDRESS); QEMU's own -netdev has none (no hostfwd)."""
+        p = self.plans[id(argv)]
+        self.assertNotIn("hostfwd", " ".join(argv))
+        return [
+            f"{p.env['LISTEN_ADDRESS']}:{h}-:{g}"
+            for h, g in (f.split(":", 1) for f in p.env["NETNS_FWD"].split())
+        ]
 
     def test_userland(self):
         """USERLAND=qemu-user changes -m, where the guest gets half the TV's RAM again for
@@ -1158,7 +1161,9 @@ class ArgvTest(unittest.TestCase):
 
     def test_network_link_and_mode(self):
         """NET_LINK=off ignores NET_MODE; lan with mode direct is refused until it exists; lan with
-        mode mitm is the mitm plan with the LAN's settings for netns.lan; other values are errors."""
+        mode mitm is the mitm plan with the LAN's settings for netns.lan, LAN access always on;
+        nat with mode direct is the same namespace without the inspector; NET_LAN_ACCESS is on or
+        off (default); other values are errors."""
         self.assertEqual(
             self.qemu_plan("tcg", NET_LINK="off", NET_MODE="direct")[0],
             self.qemu_plan("tcg", NET_LINK="off")[0],
@@ -1220,7 +1225,7 @@ class ArgvTest(unittest.TestCase):
                     lan.env["NETNS_FWD"],
                 ),
                 (
-                    "mitm",
+                    "netns",
                     "lan",
                     "eth0",
                     address or "dhcp",
@@ -1230,6 +1235,45 @@ class ArgvTest(unittest.TestCase):
                 ),
             )
             self.assertTrue(lan.env["NET_LAN_HELPER"].endswith("network/beanjar-lan-helper"))
+            self.assertEqual(lan.env["NET_LAN_ACCESS"], "on")  # on the LAN by definition
+        # mode=direct: the same namespace, the same guest NIC and forwards, without the inspector
+        direct = plan(**net("direct"), NET_LG_SERVICES="real")
+        self.assertEqual(
+            (direct.wrap, direct.env["NET_MODE"], direct.env["NETNS_FWD"], direct.ca),
+            ("netns", "direct", nat.env["NETNS_FWD"], None),
+        )
+        self.assertEqual(
+            direct.argv[direct.argv.index("-netdev") + 1], nat.argv[nat.argv.index("-netdev") + 1]
+        )
+        self.assertNotIn("MITM_FLOWS", direct.env)
+        # LAN access: off unless NET_LAN_ACCESS=on, for both modes; a bad value is refused
+        for mode in ("mitm", "direct"):
+            self.assertEqual(plan(**net(mode)).env["NET_LAN_ACCESS"], "off")
+            self.assertEqual(plan(**net(mode), NET_LAN_ACCESS="on").env["NET_LAN_ACCESS"], "on")
+        with self.assertRaisesRegex(qemu.Error, "NET_LAN_ACCESS=yes: on or off"):
+            plan(**net("direct"), NET_LAN_ACCESS="yes")
+        # LG services: mock unless NET_LG_SERVICES=real, for both modes; a bad value is refused
+        for mode in ("mitm", "direct"):
+            self.assertEqual(plan(**net(mode)).env["NET_LG_SERVICES"], "mock")
+            real = plan(**net(mode), NET_LG_SERVICES="real")
+            self.assertEqual(real.env["NET_LG_SERVICES"], "real")
+        # the mock's SDP answers carry certificates of the proxy's CA: the guest trusts it in
+        # direct too, unless LG is real there
+        self.assertTrue(plan(**net("direct")).ca.endswith("ca.pem"))
+        self.assertEqual(plan(**net("direct"), NET_LG_SERVICES="real").ca, None)
+        with self.assertRaisesRegex(qemu.Error, "NET_LG_SERVICES=on: mock or real"):
+            plan(**net("mitm"), NET_LG_SERVICES="on")
+        notes = []
+        with mock.patch.object(qemu, "first_rendernode", return_value=None):
+            qemu.plan(
+                dict(FW=self.fw, STATE="none", SLOT="2", NET_LAN_ACCESS="on", **net("direct")),
+                [],
+                accel="tcg",
+                tree=paths.Tree(self.top),
+                say=notes.append,
+                dry=True,
+            )
+        self.assertIn("network: nat, direct, host address 127.0.1.2, LAN access", notes)
         # the guest's side is the mitm plan's: the same command line but its MAC
         mac = plan(NET_LINK="lan", NET_MODE="mitm", NET_LAN_PARENT="eth0")
         self.assertEqual(mac.argv, nat.argv)
@@ -1375,7 +1419,13 @@ class ArgvTest(unittest.TestCase):
         run = os.path.join(self.tmp, "vm", "run")
         os.makedirs(ident, mode=0o700)
         env = dict(
-            FW=self.fw, STATE=self.state, **net("direct"), SLOT="1", IDENTITY_DIR=ident, RUN_DIR=run
+            FW=self.fw,
+            STATE=self.state,
+            **net("direct"),
+            NET_LG_SERVICES="real",  # no CA in the layer (direct with the mock has one)
+            SLOT="1",
+            IDENTITY_DIR=ident,
+            RUN_DIR=run,
         )
         layer = os.path.join(run, "share", "vm")
 
@@ -1423,6 +1473,7 @@ class ArgvTest(unittest.TestCase):
             FW=self.fw,
             STATE=self.state,
             **net("direct"),
+            NET_LG_SERVICES="real",
             SLOT="1",
             IDENTITY_DIR=str(ident),
             RUN_DIR=str(run),
@@ -1489,7 +1540,13 @@ class ArgvTest(unittest.TestCase):
         run = os.path.join(self.tmp, "vm", "run")
         os.makedirs(ident, mode=0o700)
         env = dict(
-            FW=self.fw, STATE=self.state, **net("direct"), SLOT="1", IDENTITY_DIR=ident, RUN_DIR=run
+            FW=self.fw,
+            STATE=self.state,
+            **net("direct"),
+            NET_LG_SERVICES="real",  # no CA in the layer (direct with the mock has one)
+            SLOT="1",
+            IDENTITY_DIR=ident,
+            RUN_DIR=run,
         )
         layer = os.path.join(run, "share", "vm")
 
@@ -1774,6 +1831,49 @@ class ArgvTest(unittest.TestCase):
         )
         qemu.make_disks(p)
         self.assertEqual(os.stat(os.path.join(blank, "db8.img")).st_blocks, 0)
+
+    def test_state_none_in_a_run_reuses_its_fresh_state(self):
+        """STATE=none with the run's FRESH_STATE (unit.run): the disks are that directory's, read-write
+        (no snapshot=on), made at the first launch and used as the guest left them by the next one,
+        a guest restart's; nothing goes to .blank."""
+        fresh = os.path.join(self.top, "build", "state", ".fresh")
+        os.makedirs(fresh)
+        said = []
+
+        def plan():
+            return qemu.plan(
+                dict(
+                    FW=self.fw,
+                    STATE="none",
+                    FRESH_STATE=fresh,
+                    **net("direct"),
+                    SLOT="1",
+                    RUN_DIR=os.path.join(self.top, "build"),
+                ),
+                [],
+                accel="tcg",
+                tree=paths.Tree(self.top),
+                say=said.append,
+                dry=True,
+            )
+
+        p = plan()
+        self.assertEqual(p.state_dir, fresh)
+        drives = [a for a in p.argv if a.startswith("if=none,id=db8,")]
+        self.assertEqual(len(drives), 1)
+        self.assertIn(f"file={fresh}/db8.img,", drives[0])
+        self.assertNotIn("snapshot=on", drives[0])
+        self.assertIn(os.path.join(fresh, "db8.img"), [img for img, _, _ in p.disks])
+        qemu.make_disks(p)
+        with open(os.path.join(fresh, "db8.img"), "r+b") as f:
+            f.write(b"x" * 4096)  # the first boot's writes
+        p = plan()
+        self.assertEqual((p.remove, p.disks), ([], []), "the restart's launch makes nothing")
+        qemu.make_disks(p)
+        with open(os.path.join(fresh, "db8.img"), "rb") as f:
+            self.assertEqual(f.read(4096), b"x" * 4096)
+        self.assertFalse(os.path.exists(os.path.join(self.top, "build", "state", ".blank")))
+        self.assertTrue(any(s.startswith("state: none (this run's fresh state") for s in said))
 
     def test_scripts_vm_argv(self):
         """`host/scripts/vm-launcher argv`: the checkout's command, printed; nothing made."""

@@ -11,6 +11,7 @@ pipeline services. These elements hand compressed media to the common host trans
 | LG115x | `h13-afro`, `m14-beehive` | `vdecsink`, `adecsink` |
 | LG1313 | `m16p-dreadlocks2` | `omx_lxvideodec` / `lxvideodec`, `omx_lxvideosink` / `lxvideosink`, `audio_dec`, `audio_sink` |
 | MStar | `m2-dreadlocks`, `m3-goldilocks` | OMX decoder factories, `mvsink`, `masink`, `omxaudiosink` |
+| MStar | `lm15u-beehive` | OMX decoder factories, `mvsink`, `omxaudiosink` (W16R's set over GLib 2.34, `mstar-lm15u`; no `masink`); for NDL's Esplayer, MStar's OpenMAX IL core itself |
 | Realtek | `k5lp-goldilocks2`, `k6lp-jhericurl`, `k7lp-kisscurl` | OMX decoder factories, `dvovideosink`, `rtkalsasink`; `rvscale` where the firmware has it (K7, K8) |
 
 `libpf`, `lpsink`, `decproxy` and umediaserver stay stock. A stand-in must be discoverable through
@@ -54,7 +55,7 @@ and pushes the pictures it gets back (`include/webos-media.h`, "Decoding for the
   reached. If every one of them is ours (a type whose ancestry is `EsSink-*`, essink.c), the
   passthrough stays. If any other sink is reached (an element flagged as a sink, or one without
   src pads), the decoder decodes on the host. A missing link leaves the passthrough and asks
-  again on the next buffer. Only video decoders do this. Through an element the walk takes the
+  again on the next buffer. Video and audio decoders both do this (audio below). Through an element the walk takes the
   src pads its sink pad links to inside it (the pad's internal links), not all of them: playsink's
   `streamsynchronizer` carries video, audio and text side by side, and on W18R an HLS stream with
   WebVTT subtitles reached LG's text sink (`tsinkbin`, an appsink) through its text pad, so the
@@ -76,6 +77,11 @@ and pushes the pictures it gets back (`include/webos-media.h`, "Decoding for the
   on the port. A `memory:DMABuf` caps feature is accepted, but the memory under it is ordinary
   mapped memory: the camera player only maps buffers (`gst_buffer_map`; no
   `gst_dmabuf_memory_get_fd`, no EGL import).
+- **Audio.** An audio decoder whose consumer is not ours asks for `WEBOS_MEDIA_S16LE` and pushes
+  `audio/x-raw` S16LE, interleaved, stereo at 48000 Hz, the samples coming back inline on its
+  port (no pool). W24G spacebuns' playbin picks `pulsesink` (rank 266) over LG's audio sink
+  (rank 128), so a web app's AAC reached a sink that needs PCM and the pipeline failed until the
+  decoder decoded on the host. LG's own audio decoders push PCM whatever follows them.
 
 **`rvscale` (K7, K8).** W22H's camera player builds its PTZ pipeline
 `... omxmjpegdec ! capsfilter NV12 ! videoconvert ! videocrop ! rvscale ! capsfilter
@@ -117,6 +123,28 @@ host on the same media ports as the sinks', through `mediaport.c` built without 
 `resolution`, 1920x1080 by default), which NDL scales by the board's graphic resolution over that,
 and tvservice by the panel over the graphic resolution: on a UHD K5LP set (graphic plane
 1920x1080) panel pixels come out twice as large.
+
+## The OpenMAX IL core (W15U)
+
+On W15U (`lm15u`) NDL's Esplayer (`libndl-directmedia2.so.1`) is neither GStreamer nor the direct
+HALs: it drives MStar's OpenMAX IL core, `/usr/lib/openmax/libOMX.MStar.so.1`, directly, with
+decoders and renderers and no tunnels, and keeps time itself. The stand-in replaces that file
+(`src/omx_core`, `omx_core` in the soc table); gst-omx, its other user, is the soc layer's own and
+loads no core.
+
+- **Components.** The roles the client asks for (`video_decoder.avc`, `.hevc`, `.mpeg2`,
+  `audio_decoder.aac`, `.mp3`, `.ac3`, `iv_renderer.yuv.overlay`, `audio_renderer.local`) under the
+  stock component names. A decoder copies each access unit into an output buffer unchanged; the
+  client hands it to the renderer by index, which sends it to the host: video untimed on the
+  channel of the resource info (`0x7F000003`), audio stamped from its arrival as the direct
+  audio output's.
+- **What the client reads back.** The video renderer sends the vendor event `0x7F000002` (size,
+  frame rate, aspect, scan, from the stream's sequence header) once it knows them: the client
+  passes it to ACB's `setMediaVideoData`, without which tvservice keeps the window muted. A
+  buffer's `nFilledLen` is left as given: the client reads it back after `EmptyThisBuffer` returns
+  and takes 0 for a failed write ("write.b buffer:N, error").
+- **The window above it.** The sample apps clear an SDL 2.0.2 window to transparent; Mali's
+  window buffers on W15U are RGBA only (`gl_vendor_window_rgba`), so the video shows under it.
 
 ## Validation
 

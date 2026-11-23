@@ -18,6 +18,14 @@ repos:
         files: '\.(c|h)$'
         types: [file]
         stages: [pre-commit]
+      # The private-identifier check belongs to the private repository's publishing machinery;
+      # in the public repository scripts/publish/ is absent, so the hook is a no-op there.
+      - id: leak-check
+        name: Private-identifier check
+        language: system
+        entry: bash -c 'if [ -f scripts/publish/leak-check.py ]; then exec python3 scripts/publish/leak-check.py "$@"; fi' --
+        types: [text]
+        stages: [pre-commit]
       - id: ruff-check
         name: Ruff format check
         language: system

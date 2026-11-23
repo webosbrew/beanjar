@@ -1,8 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The VMs' life: list, create, start, reason, stop, info, tag, delete, rename, prepare, wipe."""
+"""The VMs' life: list, create, start, stop, show, status, delete, rename, prepare, wipe."""
 
-import argparse
 import os
 import shlex
 
@@ -243,7 +242,7 @@ def cmd_list(lib, a):
     return emit(a, rows, table(rows, columns))
 
 
-REASON_COLUMN = 32  # list's REASON: the text cut to this; --json and info carry it whole
+REASON_COLUMN = 32  # list's REASON: the text cut to this; --json and show carry it whole
 
 
 def short_reason(reason):
@@ -288,33 +287,35 @@ def cmd_stop(lib, a):
     return emit(a, {"name": a.name, "state": core.OFF.lower()}, f"{a.name}: off")
 
 
-def cmd_tag(lib, a):
-    """A VM's tags: shown, or changed by +TAG (or TAG) and -TAG words."""
-    add, remove = [], []
-    for w in a.changes:
-        if w == "--json":
-            a.json = True
-        elif w.startswith("--"):
-            raise Usage(f"tag NAME [+TAG | -TAG ...]: unknown option {w}")
-        elif w.startswith("-"):
-            remove.append(w[1:])
-        else:
-            add.append(w.removeprefix("+"))
-    tags = lib.tag(a.name, add, remove) if add or remove else lib.vm(a.name).config.get("tags", [])
-    return emit(a, {"name": a.name, "tags": tags}, f"{a.name}: " + (", ".join(tags) or "no tags"))
+STATUS_KEYS = ("reason",)
 
 
-def cmd_reason(lib, a):
-    """Why a running VM runs: show it, set it (TEXT) or clear it ("")."""
+def status_data(vm):
+    """A VM's status: its values while it runs (STATUS_KEYS), none kept when it stops."""
+    return {"name": vm.name, "reason": vm.reason()}
+
+
+def cmd_status(lib, a):
+    """A running VM's status (the reason it runs, vmunits.unit_reason): shown, set or unset."""
+    from .settings import key_values
+
     vm = lib.vm(a.name)
-    if a.text is not None:
-        vm.set_reason(a.text, a.by)
-    reason = vm.reason()
-    return emit(
-        a,
-        {"name": vm.name, "reason": reason},
-        f"{vm.name}: " + (vmunits.reason_line(reason) if reason else "no reason"),
-    )
+    here = f"status {a.verb} {a.name}"
+    if a.verb == "set":
+        values = key_values(a.items, STATUS_KEYS, here)
+        if not values["reason"].strip():
+            raise Usage(f"reason= is empty: beanjar status unset {a.name} reason clears it")
+        vm.set_reason(values["reason"], a.by)
+    elif a.verb == "unset":
+        for k in a.items:
+            if k not in STATUS_KEYS:
+                raise Usage(
+                    f"{k}: KEY one of {' '.join(STATUS_KEYS)} (beanjar status unset --help)"
+                )
+        vm.set_reason("", None)
+    data = status_data(vm)
+    reason = data["reason"]
+    return emit(a, data, f"{vm.name}: " + (vmunits.reason_line(reason) if reason else "no reason"))
 
 
 def cmd_prepare(lib, a):
@@ -347,8 +348,8 @@ def cmd_rename(lib, a):
     return emit(a, {"name": vm.name, "renamed_from": old, "dir": vm.dir, "lan_hostname": lan}, text)
 
 
-def info_data(vm):
-    """One VM as `info` shows it."""
+def show_data(vm):
+    """One VM as `show` shows it."""
     from .. import gpu
 
     state, detail = vm.state(qmp=True)
@@ -372,6 +373,9 @@ def info_data(vm):
         "host_swap": vm.host_swap(),
         "model_key": vm.has_model_key(),
         "identity": vm.identity_dir,
+        # where its VNC password is (beanjar vnc password show prints it), made at the first
+        # vnc start or vnc password show
+        "vnc_password_file": vm.vnc_password_file,
         "ssh": ssh_commands(vm),
         "inspector": inspector_info(vm),
         "gpu": gpu.measure([(pid, vm.config.get("layers"))])[0],
@@ -387,10 +391,10 @@ def mem_cell(row):
     return f"{mem}+{ram - mem}" if ram and ram != mem else str(mem)
 
 
-def cmd_info(lib, a):
+def cmd_show(lib, a):
     from .. import gpu
 
-    data = info_data(lib.vm(a.name))
+    data = show_data(lib.vm(a.name))
     text = dict(data, gpu=gpu.label(data["gpu"]))
     return emit(a, data, "\n".join(kv_lines(text)))
 
@@ -449,7 +453,7 @@ def inspector_info(vm):
 
 def create_arguments(p):
     """create's arguments (the CLI's, and newvm.py's: the GUI's New VM)."""
-    p.add_argument("name")
+    p.add_argument("name", metavar="NAME", help="the new VM's name (local/NAME: the same)")
     p.add_argument(
         "--firmware",
         metavar="NAME|PATH",
@@ -486,20 +490,20 @@ def create_arguments(p):
         "--tag",
         action="append",
         metavar="TAG",
-        help="a tag (letters, digits, dashes; repeatable): kept in vm.toml, copied by clone, "
-        "listed by list --tag (conventions: scratch, keep)",
+        help="a tag (letters, digits, dashes; repeatable): kept in vm.toml (beanjar config set "
+        "NAME tags=...), copied by clone, listed by list --tag (conventions: scratch, keep)",
     )
 
 
 def reason_options(s, text=None):
-    """start's --reason TEXT (text) and --by LABEL, reason's --by."""
+    """start's --reason TEXT (text) and --by LABEL, status set's --by."""
     if text:
         s.add_argument(
             text,
             dest="reason",
             metavar="TEXT",
-            help="why it runs, shown by list, info and the web viewer until the VM's unit ends; "
-            "stop refuses it without --force (beanjar reason changes it)",
+            help="why it runs, shown by list, show and the web viewer until the VM's unit ends; "
+            "stop refuses it without --force (beanjar status set NAME reason=TEXT changes it)",
         )
     s.add_argument(
         "--by",
@@ -546,18 +550,6 @@ def register_lifecycle(cli):
 
     s = command(
         sub,
-        "reason",
-        "why a running VM runs: show it, set it to TEXT, or clear it with an empty TEXT. It lasts "
-        "as long as the VM's systemd unit (gone when the VM stops, crashes or the host reboots); "
-        "stop refuses a VM that has one unless --force",
-        cmd_reason,
-    )
-    vm_name(s)
-    s.add_argument("text", nargs="?", metavar="TEXT", help="the reason; '' clears it")
-    reason_options(s)
-
-    s = command(
-        sub,
         "stop",
         "shut a VM down: its logs saved, then the power-off signal (webOS powers the set off and "
         "QEMU exits); a guest that cannot take it now (still starting, standby), whose webOS "
@@ -582,26 +574,50 @@ def register_lifecycle(cli):
     s.add_argument(
         "--force",
         action="store_true",
-        help="stop it even if it runs for a reason (beanjar reason), which stop otherwise prints "
-        "and refuses",
+        help="stop it even if it runs for a reason (beanjar status show), which stop otherwise "
+        "prints and refuses",
     )
 
 
 def register_vm(cli):
-    sub, command, vm_name = cli.sub, cli.command, cli.vm_name
-    s = command(sub, "info", "one VM: its state, settings, addresses and SSH commands", cmd_info)
-    vm_name(s, "info")
-
+    sub, command, group, vm_name = cli.sub, cli.command, cli.group, cli.vm_name
     s = command(
         sub,
-        "tag",
-        "a VM's tags: show them, add +TAG (or TAG), remove -TAG; kept in its vm.toml, whether it "
-        "runs or not",
-        cmd_tag,
-        usage="beanjar tag NAME [+TAG | -TAG ...] [--json]",
+        "show",
+        "one VM: its state, settings, tags, reason, addresses, SSH commands and where its VNC "
+        "password is",
+        cmd_show,
+    )
+    vm_name(s, "show")
+
+    g = group(
+        "status",
+        "a running VM's status, which lasts as long as its systemd unit (gone when the VM stops, "
+        "crashes or the host reboots): reason, why it runs, which stop refuses without --force",
+        dest="verb",
+    )
+    s = command(g, "show", "the VM's status: its reason", cmd_status)
+    vm_name(s)
+    s.set_defaults(items=[])
+    s = command(
+        g,
+        "set",
+        "set the running VM's status: reason=TEXT",
+        cmd_status,
+        usage="beanjar status set NAME reason=TEXT [--by LABEL] [--json]",
     )
     vm_name(s)
-    s.add_argument("changes", nargs=argparse.REMAINDER, metavar="+TAG|-TAG")
+    s.add_argument("items", nargs="+", metavar="KEY=VALUE")
+    reason_options(s)
+    s = command(
+        g,
+        "unset",
+        "clear the running VM's status: reason",
+        cmd_status,
+        usage="beanjar status unset NAME reason [--json]",
+    )
+    vm_name(s)
+    s.add_argument("items", nargs="+", metavar="KEY")
 
     s = command(sub, "delete", "remove a VM that is off, with its state", cmd_delete)
     vm_name(s)

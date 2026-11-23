@@ -90,6 +90,15 @@ the chrome would be about three times as much code. Rust and C++ would mean rewr
   calls a make-current callback, and Python implements it as `GLArea.make_current()`. This keeps
   GDK's idea of the current context right. The display is connected only after the area is
   realized.
+- **`Disable` is provisional.** Under load QEMU sends a stray `Disable` between two page flips
+  (its dmabuf release, [black flashes](../../research/pi-black-flashes.md)). So `Disable` only
+  arms a deadline, `DISABLE_WAIT_US` (50 ms, `core/disable.h`), and keeps the picture and held
+  input. A `ScanoutDMABUF`, `ScanoutMap` or `Scanout` before the deadline cancels it. The poll
+  (`wv_poll`) applies a `Disable` that is still pending when the deadline passes: the picture
+  goes black and the keys and buttons held through the display are released. A real `Disable`
+  therefore shows black 50 to 54 ms late, and the stray one never reaches the picture.
+  `wv_counter` has `disables` (received) and `disables_dropped` (cancelled by a scanout), and
+  beanjar-vnc's `SIGUSR1` stats line prints them.
 - **Rendering.** GTK binds the area's framebuffer and sets the viewport before `render`.
   `wv_render(w, h)` reads the bound framebuffer (`GL_FRAMEBUFFER_BINDING`), which is not 0 under
   GTK, and draws there. It rebinds that framebuffer after using its own cache framebuffer. Frames
@@ -619,7 +628,7 @@ its `.ui` files, or its `.blp` files compiled at start with blueprint-compiler, 
 
 ## Screenshots from a script
 
-`beanjar screenshot NAME FILE [--size WxH | --last]` saves the TV picture of a running VM as a PNG whatever
+`beanjar screenshot NAME FILE [--frame WxH | --last]` saves the TV picture of a running VM as a PNG whatever
 the viewer window's size or position. It cannot go through QEMU: `screendump` fails on
 `-display dbus,gl=on` ("no surface"), and the video windows and LG's cursor are composited by the
 front end, not by QEMU. A second display client cannot run beside the viewer either (the cursor,
@@ -717,8 +726,8 @@ and the touch screen keep panel pixels, and `wv_picture` gives the picture as sh
 `wv_frame` (beanjar-vnc) and `Display1.Screenshot` stay the panel's unturned pixels. The window
 turns its picture area with the picture unless it is maximized or fullscreen, and the header's
 Portrait check item in the header's More menu (a library VM only; the button's label is Portrait,
-its tooltip the state) is a two-state toggle: it runs `beanjar sensor rotate NAME 270` from landscape and
-`beanjar sensor rotate NAME 0` from any other angle (90 and 180 come only from the CLI); its state follows
+its tooltip the state) is a two-state toggle: it runs `beanjar sensor set rotate NAME 270` from landscape and
+`beanjar sensor set rotate NAME 0` from any other angle (90 and 180 come only from the CLI); its state follows
 the guest's report. The GTK viewer has no preview or thumbnail of a VM's screen (the manager's VM
 list shows none), so there is nothing else to turn.
 `WV_ABI` 15.

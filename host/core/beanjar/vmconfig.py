@@ -29,6 +29,8 @@ FIELDS = {
     "listen": ("network", "listen"),
     "forward": ("network", "forward"),
     "address": ("network", "address"),
+    "lan_access": ("network", "lan_access"),
+    "lg_services": ("network", "lg_services"),
     "slot": ("network", "slot"),
     "mitm_flows": ("network", "mitm_flows"),
     "mitm_flow_bytes": ("network", "mitm_flow_bytes"),
@@ -124,6 +126,8 @@ def decode(doc):
         "listen",
         "forward",
         "address",
+        "lan_access",
+        "lg_services",
         "mitm_flow_bytes",
         "created",
         "broadcast",
@@ -198,13 +202,15 @@ def peek(path, names):
     return out
 
 
-def read(path, default=None):
+def read(path, default=None, check_broadcast=True):
+    """vm.toml's settings. check_broadcast False leaves out the check of firmware.broadcast against
+    the firmware (check_firmware_broadcast), so a VM holding a bad value can still be read and fixed."""
     doc = _load(path)
     if doc is None:
         return default
     try:
         cfg = decode(doc)
-        if cfg.get("broadcast"):
+        if cfg.get("broadcast") and check_broadcast:
             _check_broadcast(path, cfg)
         return cfg
     except Exception as exc:
@@ -216,13 +222,18 @@ def read(path, default=None):
 
 
 def _check_broadcast(path, cfg):
-    """firmware.broadcast against the VM's firmware (targets.board_broadcast): a standard its chip has
-    a board for, and the firmware's own where it names one (its model_id.json). A firmware whose target its manifest does not
-    tell is left to the launcher, which checks the same."""
-    from . import targets, paths
     from .core import vm_firmware
 
     fw = vm_firmware(os.path.dirname(os.path.abspath(path)), cfg.get("fw"))[0]
+    check_firmware_broadcast(fw, cfg["broadcast"])
+
+
+def check_firmware_broadcast(fw, broadcast):
+    """firmware.broadcast against the firmware directory fw (targets.board_broadcast): a standard its
+    chip has a board for, and the firmware's own where it names one (its model_id.json). A firmware
+    whose target its manifest does not tell is left to the launcher, which checks the same."""
+    from . import targets, paths
+
     if not os.path.isfile(os.path.join(fw, paths.MANIFEST)):
         return  # telling the target would read the rootfs: every read of vm.toml must stay cheap
     try:
@@ -230,7 +241,7 @@ def _check_broadcast(path, cfg):
     except (ValueError, OSError):
         return
     try:
-        targets.board_broadcast(target, fw, cfg["broadcast"])
+        targets.board_broadcast(target, fw, broadcast)
     except targets.Error as e:
         _fail(f"firmware.broadcast: {e}", "broadcast")
 

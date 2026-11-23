@@ -2,30 +2,30 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """USB devices plugged into a running VM over usbredir.
 
-On the VM's host, `usb attach` gives the VM's qemu-xhci a `usb-redir` device whose chardev is a
-unix socket in the VM's run directory (`run/usb-ID.sock`), `usb detach` removes it, and `usb list`
+On the VM's host, `io usb attach` gives the VM's qemu-xhci a `usb-redir` device whose chardev is a
+unix socket in the VM's run directory (`run/usb-ID.sock`), `io usb detach` removes it, and `io usb list`
 shows them. The guest sees the USB device only while a usbredir client (usbredirect) is connected
 to the socket and has sent its handshake. A unix socket because QEMU may run in the VM's network
 namespace (mode = "mitm"), where a TCP chardev would not be reachable from the host; the run
 directory is on the shared filesystem.
 
-On the machine with the device, `usb plug` does the lot: attach, a way from 127.0.0.1:PORT to the
+On the machine with the device, `io usb attach --device` does the lot: attach, a way from 127.0.0.1:PORT to the
 socket (a relay in this process for a local VM, a forward of the host's shared ssh connection to
 the socket for a remote one: ares.Forward), `usbredirect --device BUS-DEV --to 127.0.0.1:PORT`,
 and at the end (Ctrl-C, SIGTERM, SIGHUP, the device unplugged, usbredirect gone) the detach.
-`usb plug --camera` runs the virtual camera (host/helpers/virtcam, beanjar-virtcam: a Logitech
+`io usb attach --camera` runs the virtual camera (host/helpers/virtcam, beanjar-virtcam: a Logitech
 C920 showing GStreamer's test pattern) in usbredirect's place, here, where GStreamer is: a remote
 VM's host needs nothing of it.
 
-`usb attach --image FILE` is a USB stick instead: QMP `blockdev-add` of the raw image (read-only
-with --readonly) and `device_add usb-storage` with it on the same bus; `usb detach` removes the
-device and then the block node. `usb mkimage` makes such an image: an MBR with one partition and a
+`io usb attach --image FILE` is a USB stick instead: QMP `blockdev-add` of the raw image (read-only
+with --readonly) and `device_add usb-storage` with it on the same bus; `io usb detach` removes the
+device and then the block node. `io usb mkimage` makes such an image: an MBR with one partition and a
 FAT32, exFAT or NTFS filesystem in it, made with the system's sfdisk and mkfs tools.
 
 Attached devices are the running VM's, not its settings: they are recorded (lifecycle.USB_RECORD,
 in the unit's RuntimeDirectory) and put back on the new QEMU when the guest restarts (a restart ends
 QEMU and the unit starts it again: lifecycle.py), as a stick stays in a TV's port across a reboot;
-`usb plug` starts its client again for the new QEMU. A new start of the VM has none.
+`io usb attach --device` starts its client again for the new QEMU. A new start of the VM has none.
 """
 
 import json

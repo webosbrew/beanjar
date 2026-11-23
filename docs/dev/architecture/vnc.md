@@ -13,13 +13,13 @@ beanjar vnc start tv1 --port 5901   # 5900 is taken (the Pi desktop's wayvnc hol
 beanjar vnc start tv1 --native-cursor  # LG's cursor as the clients' own (1-bit mask), not in the picture
 beanjar vnc start tv1 --listen 0.0.0.0  # link nat: on every address of this host
 beanjar vnc stop tv1
-beanjar vnc password tv1 show       # print the VM's password, to copy it into a client
-beanjar vnc password tv1 set        # choose it: a prompt, or stdin's line (or set FILE)
-beanjar vnc password tv1 reset      # a new random one
+beanjar vnc password show tv1       # print the VM's password, to copy it into a client
+beanjar vnc password set tv1        # choose it: a prompt, or stdin's line (or set FILE)
+beanjar vnc password reset tv1      # a new random one
 ```
 
 `beanjar vnc start` prints where it is (the LAN address with link lan, and this host's) and the file
-with its password, `identity/vnc.password` in the VM folder. `beanjar info NAME` shows the same under
+with its password, `identity/vnc.password` in the VM folder. `beanjar show NAME` shows the same under
 `vnc` while it runs, and the manager window shows a VNC group in the VM's summary, after the
 traffic inspector, with Copy Address and Copy Password. It is started on demand, never with the
 VM, and stopping the VM stops it.
@@ -699,7 +699,7 @@ host's CPU no longer spent on an unwatched beanjar-vnc goes to TCG), so per upda
 ## Thumbnails
 
 beanjar-web's cards ask for a 384x216 picture of each running VM every 5 s while they are on
-screen (`beanjar screenshot NAME - --size 384x216`, [the web viewer](web-viewer.md)), through the
+screen (`beanjar screenshot NAME - --frame 384x216`, [the web viewer](web-viewer.md)), through the
 `Screenshot` call that beanjar-vnc's core serves ([Screenshots from a
 script](viewer.md#screenshots-from-a-script)). beanjar-vnc answers a call smaller than its
 desktop each way itself (`wv_screenshot_hook`, `WV_ABI` 13); other sizes go to the core's own
@@ -790,7 +790,7 @@ clients, and both kinds of screenshot.
 `beanjar vnc start NAME` takes `--listen ADDRESS` (link nat only) and `--port N`, before or after the
 name; the defaults are the VM's `127.0.1.N` and 5900. `--port 0` takes any free port: the manager
 binds port 0 on the address to learn one (`hostprocs.free_port`) and passes it on as an ordinary `--port`,
-so `run/vnc.json`, `info` and the start message report the real number. beanjar-web starts VNC that
+so `run/vnc.json`, `show` and the start message report the real number. beanjar-web starts VNC that
 way, since it uses only the local unix sockets and the TCP listener is for a person's viewer; with
 link lan the LAN address keeps 5900, which is in the LAN namespace and cannot collide with the
 host's. The
@@ -808,7 +808,7 @@ port 5900 is taken: wayvnc (pid 1234) listens on *:5900; choose another with bea
 
 A process of another user is named as such (its file descriptors are not readable). The manager
 then waits for beanjar-vnc's `ready` line, writes where it listens to `run/vnc.json` (what
-`info` and the window read), and prints it. If beanjar-vnc exits first, its last message is the error (for example
+`show` and the window read), and prints it. If beanjar-vnc exits first, its last message is the error (for example
 its own bind error, `Address already in use`, which also suggests `--port`).
 
 ## Authentication and the LAN
@@ -820,14 +820,15 @@ is never in argv or in beanjar-vnc's environment. So there is no passwordless VN
 manager on any address, loopback included; the one way in without the password is the owner-only
 local socket (above), which needs the VM owner's own account.
 
-- **Made once.** The first `beanjar vnc start` or `beanjar vnc password` makes it at random: 20
+- **Made once.** The first `beanjar vnc start` or `beanjar vnc password show` makes it at random: 20
   characters of `23456789abcdefghjkmnpqrstuvwxyz` (about 99 bits), none that reads like another,
   no symbol a keyboard layout moves, so it can be typed off the screen. VNC restarts, VM restarts
   and reboots keep it; a file that is empty or unusable is made anew.
-- **`beanjar vnc password NAME`** says where it is; `show` prints the password alone, for
-  copying; `set` reads a new one from a prompt (twice) when stdin is a terminal, else from
+- **`beanjar show NAME`** says where it is (`vnc_password_file`); `vnc password show NAME`
+  prints the password alone, for copying; `set` reads a new one from a prompt (twice) when stdin is a terminal, else from
   stdin's line, or `set FILE` from a one-line file (`-` is stdin), never from argv; `reset`
-  makes a new random one. Only `show` prints it; `info` and `beanjar vnc start` only name the file.
+  makes a new random one. Only `vnc password show` prints it; `show` and `beanjar vnc start` only
+  name the file.
 - **What a password may be.** 1 to 255 characters of printable ASCII (space to `~`), no space at
   either end. neatvnc's RSA-AES (`src/auth/rsa-aes.c`, 0.9.1 and 1.0.3) reads the password after a
   length byte and copies it into a C string, so 255 bytes at most and no NUL; TigerVNC refuses to
@@ -838,7 +839,7 @@ local socket (above), which needs the VM owner's own account.
 - **A running beanjar-vnc keeps the password it started with.** `set` and `reset` say so and
   name the restart (`beanjar vnc stop NAME; beanjar vnc start NAME`); it is not restarted for you,
   since `beanjar vnc start`'s options of that start are not kept.
-- **Identity.** `beanjar identity renew` makes it anew with the SSH keys (another TV, another
+- **Identity.** `beanjar identity reset` makes it anew with the SSH keys (another TV, another
   password); `beanjar wipe` blanks state disks only and keeps it; `delete` removes it with the VM.
 
 **The user name.** neatvnc's RSA-AES always asks for a user name and a password (subtype 1,

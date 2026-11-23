@@ -10,6 +10,7 @@ base = "afro"
 version = "2"
 ddr_sizes = [768, 1280, 1536, 2048, 3072, 2560, 1024]
 peripherals = [
+    "sit",
     "usbhid", "hid-axff", "hid-dr", "hid-logitech", "hid-pl", "hid-sony", "hid-zpff", "xpad",
     "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
     "nls_utf8", "nls_iso8859-1", "snd-usb-audio", "cdc-acm", "uhid", "hid-playstation",

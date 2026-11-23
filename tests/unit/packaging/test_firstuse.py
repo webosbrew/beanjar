@@ -75,6 +75,15 @@ def test_marker_made_on_an_existing_state(tmp_path):
     assert "Wants=emulator-ran-firstuse.service" in wants
 
 
+def test_marker_job_on_upstart():
+    # upstart releases: a task job that holds bootd and utp back until the marker exists
+    job = (LAYER / "etc/init/emulator-ran-firstuse.conf").read_text()
+    lines = [ln.strip() for ln in job.splitlines() if not ln.startswith("#")]
+    assert "start on starting bootd or starting utp" in lines
+    assert "task" in lines
+    assert "exec /usr/sbin/emulator-ran-firstuse" in lines
+
+
 # W23P's /etc/palm/defaultTimeZone.json (an excerpt) and systemservice's AU zones
 DEFAULTS = {
     "returnValue": True,

@@ -139,7 +139,7 @@ def root_refusal(name, layers):
     return Error(
         f"VM {name} has no root SSH: --root needs a layer that forwards the guest's port 22, "
         f"{' or '.join(choices)}. Stop the VM, add one, e.g. "
-        f"`beanjar settings {name} set layers={wanted}`, and start it again"
+        f"`beanjar config set {name} layers={wanted}`, and start it again"
     )
 
 
@@ -177,7 +177,7 @@ def check(name, layers, running, address, has_key, root=False, port=None):
         wanted = ",".join([*(layers or []), "devmode"])
         raise Error(
             f"VM {name} has no devmode layer: the ares tools reach a TV in developer mode. "
-            f"Stop the VM, add it with `beanjar settings {name} set layers={wanted}`, and start "
+            f"Stop the VM, add it with `beanjar config set {name} layers={wanted}`, and start "
             "it again"
         )
     if not running:

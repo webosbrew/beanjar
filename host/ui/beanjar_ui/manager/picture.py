@@ -8,13 +8,13 @@ dimmed, with a "Last picture" badge: the VM is off) or none (a TV outline, "No p
 fixed-size beside the tiles on a wide window and fills the width, keeping 16:9, on a narrow one. A
 click runs on_click (the Summary's: connect or start).
 
-Pictures takes them with the command the web list uses: `beanjar screenshot NAME - --size 384x216`
+Pictures takes them with the command the web list uses: `beanjar screenshot NAME - --frame 384x216`
 for a running VM (a thumbnail, which the library also keeps for --last), `beanjar screenshot NAME -
 --last` for one that is off (once per state). Each runs in a thread, never on the main loop, at most
 one at a time per VM; the live one at most every REFRESH_S seconds and only when the caller allows it
 (the Summary visible, the window active, no viewer open). A portrait model's picture is turned the
 way its viewers and the web list turn it (rotation.picture_turn of the guest's last rotation report
-while it runs, of the angle its set was left at when it is off; `beanjar sensor rotate --json`
+while it runs, of the angle its set was left at when it is off; `beanjar sensor show rotate NAME --json`
 reports the same)."""
 
 import os
@@ -222,7 +222,7 @@ class Pictures(GObject.Object):
                 self._fetch(name, e, ["--last"])
             return
         if allowed and time.monotonic() - e.checked >= REFRESH_S:
-            self._fetch(name, e, ["--size", SIZE])
+            self._fetch(name, e, ["--frame", SIZE])
         elif not allowed and e.texture is None and not e.loaded:
             self._fetch(name, e, ["--last"], live=True)  # something until it may take one
 
@@ -290,7 +290,7 @@ def beanjar_argv(library, name, words):
         "beanjar",
         "--library",
         library.root,
-        *(["--repo", library.repo] if library.repo else []),
+        *(["--repo", library.known_repo] if library.known_repo else []),
         "screenshot",
         name,
         "-",

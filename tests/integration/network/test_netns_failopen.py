@@ -132,12 +132,14 @@ class OptionalProxy(unittest.TestCase):
             self.assertEqual(netns._wait_guest(guest, proxy, {}, "tap0"), 7)
         steps = [(c.args[2], c.args[4]) for c in ip.call_args_list]
         n = len(netns.TUN_PROTOCOLS)
+        # with LG's services mocked (the default) the resolver's upstream is intercepted too
+        m = len(netns.intercept_rules("tap0", "add", netns.MOCK_DNS))
         self.assertEqual(
             steps,
             [("replace", "dev")]  # the route into the device, first
-            + [("add", netns.INTERCEPT_PREF)] * n
+            + [("add", netns.INTERCEPT_PREF)] * m
             + [("del", netns.HOLD_PREF)] * n
-            + [("del", netns.INTERCEPT_PREF)] * n,
+            + [("del", netns.INTERCEPT_PREF)] * m,
         )
         guest.terminate.assert_not_called()
 
@@ -188,7 +190,8 @@ spec = {'http': {'kind': 'tcp', 'host': '192.0.2.1', 'port': 80, 'send': 'GET / 
 pathlib.Path(directory, 'spec').write_text(json.dumps(spec))
 env.update(NETNS_RUNDIR=directory, NETNS_LOG_DIR=directory, NETNS_TAP='tap0',
            FAKE_GUEST_SPEC=directory+'/spec', FAKE_GUEST_RESULTS=directory+'/results',
-           FAKE_GUEST_STOP=directory+'/stop', FAKE_GUEST_PORT='2222')
+           FAKE_GUEST_STOP=directory+'/stop', FAKE_GUEST_PORT='2222',
+           NET_LG_SERVICES='real')  # the proxy's fail-open alone; test_netns.py has the mock
 proxy = None
 if mode == 'late':
     # mitmweb's stand-in: its TUN device (mitm0), its web port and its ready file only 1.5 s

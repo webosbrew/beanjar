@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-/* "mvsink": MStar's GSTMVSink (libgstmvsink.so, W16R, W18R and LM21's W21A..W23A) for the emulator.
+/* "mvsink": MStar's GSTMVSink (libgstmvsink.so, W15U, W16R, W18R and LM21's W21A..W23A) for the
+ * emulator. W15U's is W16R's with constant-delay 1 by default.
  *
  * The stock sink takes the gst-omx decoders' frame handles (video/x-raw, vendor=mstar: physical
  * luma/chroma addresses, not pixels) and displays them through MSIL on the MVOP and the XC
@@ -27,8 +28,13 @@ GST_DEBUG_CATEGORY_STATIC(mvsink_debug);
 static GstStaticPadTemplate sink_template =
     GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS("video/x-raw"));
 
-/* 3D_Type 11 is "2d" in libplayerAPIs' table. */
+/* 3D_Type's "2d" in libplayerAPIs' table: 11 from W16R on; W15U's numbering has 0 for "2d" (and 11
+ * for frame_squential, which turns tvservice's 3D on), the stock sink's value for a 2D stream. */
+#if MSTAR_REL < 16
+#define VIDEO_2D 0u
+#else
 #define VIDEO_2D 11u
+#endif
 
 /* The stock "input" property's enum */
 static GType mvsink_mode_get_type(void)
@@ -119,7 +125,7 @@ static const struct prop_def props[N_PROPS] = {
     {"seamless-play", "seamless-play", G_TYPE_BOOLEAN, 0},
     {"app-type", "Set app type", G_TYPE_STRING, 0},
     {"low-delay", "Define low-delay", G_TYPE_UINT, 0},
-#if MSTAR_REL >= 21
+#if MSTAR_REL >= 21 || MSTAR_REL < 16
     {"constant-delay", "Define constant-delay", G_TYPE_UINT, 1},
 #else
     {"constant-delay", "Define constant-delay", G_TYPE_UINT, 4},

@@ -5,7 +5,7 @@
 from each supported target's firmware (as scripts/regress picks it: the host's firmware collections, firmware_dirs,
 the default firmware first), read with unsquashfs from its paks:
 
-  tests/regress/tv-expect-gen.py [--target TARGET]... [--fw NAME]... [-o DIR]
+  tests/regress/tv-expect-gen.py [--target TARGET]... [--fw NAME]... [--table decode]... [-o DIR]
 
 For each target: the release (etc/starfish-release), the broadcast standard of its paks, connman's online
 check (etc/connman/main.conf), for every check of luna-info whether the firmware has it, with
@@ -50,7 +50,7 @@ sys.path.insert(0, os.path.join(HERE, "lib"))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 import tvsuite  # noqa: E402
 import checklist  # noqa: E402
-from beanjar import targets  # noqa: E402
+from beanjar import superpak, targets  # noqa: E402
 from beanjar.tomlfile import toml_key, toml_value  # noqa: E402
 
 OBJDUMP = "/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-objdump"
@@ -66,20 +66,30 @@ def regress_module():
 
 
 class Firmware:
-    """A firmware directory's paks, read with unsquashfs (the rootfs first)."""
+    """A firmware directory's paks, read with unsquashfs (the rootfs first). A super.pak firmware
+    keeps its rootfs, otncabi and the like as the logical images of super.pak (beanjar.superpak:
+    dpmeta.pak's linear map); each is a pak here under its own name (rootfs.pak, otncabi.pak, ...),
+    read with unsquashfs -o at the image's offset."""
 
     def __init__(self, d):
         self.dir = d
-        self.paks = ["rootfs.pak"] + sorted(
-            p for p in os.listdir(d) if p.endswith(".pak") and p != "rootfs.pak"
-        )
+        logical = superpak.images(d)
+        self._src = {f"{n}.pak": (i.path, i.offset) for n, i in logical.items()}
+        names = {p for p in os.listdir(d) if p.endswith(".pak") and p != "super.pak"}
+        names |= set(self._src)
+        self.paks = ["rootfs.pak"] + sorted(names - {"rootfs.pak"})
         self._lists, self._cache = {}, {}
+
+    def source(self, pak):
+        """(file, byte offset) of a pak's squashfs: the pak file, or a super.pak image."""
+        return self._src.get(pak) or (os.path.join(self.dir, pak), 0)
 
     def files(self, pak):
         """{path: symlink target or None} of a pak's files ({} when it is not squashfs)."""
         if pak not in self._lists:
+            src, offset = self.source(pak)
             r = subprocess.run(
-                ["unsquashfs", "-lls", os.path.join(self.dir, pak)], capture_output=True, text=True
+                ["unsquashfs", "-lls", "-o", str(offset), src], capture_output=True, text=True
             )
             out = {}
             for line in r.stdout.splitlines():
@@ -113,8 +123,9 @@ class Firmware:
     def read(self, pak, path):
         key = (pak, path)
         if key not in self._cache:
+            src, offset = self.source(pak)
             r = subprocess.run(
-                ["unsquashfs", "-cat", os.path.join(self.dir, pak), path], capture_output=True
+                ["unsquashfs", "-cat", "-o", str(offset), src, path], capture_output=True
             )
             self._cache[key] = r.stdout if r.returncode == 0 else b""
         return self._cache[key]
@@ -692,14 +703,56 @@ def kadp_teardown(fw, pak_order):
 
 
 TEE_DEV = b"/dev/tee"  # OP-TEE's client devices, /dev/tee%zu and /dev/teepriv%zu
-TA_DIR = "usr/lib/optee_armtz"  # tee-supplicant's TAs, <uuid>.ta
+# tee-supplicant's TAs, <uuid>.ta: Realtek's firmware keeps them in usr/lib, MStar's in lib
+TA_DIRS = ("usr/lib/optee_armtz", "lib/optee_armtz")
+TEE_INIT = "optee-init.sh"  # the firmware's own start of its TEE (MStar's: chmod /dev/tee0, tee-supplicant)
 EXEC_DIRS = ("bin/", "sbin/", "lib/", "usr/bin/", "usr/sbin/", "usr/lib/", "usr/libexec/", "bsp/")
 
 
-def tee_of(fw, pak_order):
+def tee_init_of(fw, pak_order):
+    """["<pak>:/<path>"] of the firmware's own TEE start scripts (TEE_INIT) that open /dev/tee0: the
+    firmware expects its kernel to make the node."""
+    import tempfile
+
+    found = []
+    for pak in pak_order:
+        files = [f for f in fw.files(pak) if os.path.basename(f) == TEE_INIT]
+        if not files:
+            continue
+        with tempfile.TemporaryDirectory() as d:
+            lst = os.path.join(d, "list")
+            with open(lst, "w") as f:
+                f.write("".join(x + "\n" for x in files))
+            subprocess.run(
+                [
+                    "unsquashfs",
+                    "-q",
+                    "-n",
+                    "-f",
+                    "-d",
+                    os.path.join(d, "x"),
+                    "-o",
+                    str(fw.source(pak)[1]),
+                    "-ef",
+                    lst,
+                    fw.source(pak)[0],
+                ],
+                capture_output=True,
+            )
+            for f in files:
+                try:
+                    with open(os.path.join(d, "x", f), "rb") as h:
+                        if b"/dev/tee0" in h.read():
+                            found.append(f"{pak}:/{f}")
+                except OSError:
+                    continue
+    return found
+
+
+def tee_of(fw, pak_order, target):
     """The TEE's clients in the firmware (the tee step): every ELF file of the paks in pak_order under
     EXEC_DIRS whose bytes name /dev/tee (libteec's probe of /dev/tee%zu, tee-supplicant's
-    /dev/teepriv%zu), and the TAs tee-supplicant would load (TA_DIR's <uuid>.ta). None found is the
+    /dev/teepriv%zu), and the TAs tee-supplicant would load (TA_DIRS' <uuid>.ta). None found is the
     evidence for the step's SKIP."""
     import tempfile
 
@@ -709,7 +762,7 @@ def tee_of(fw, pak_order):
         tas += [
             os.path.basename(f)[:-3]
             for f in files
-            if f.startswith(TA_DIR + "/") and f.endswith(".ta")
+            if f.startswith(tuple(d + "/" for d in TA_DIRS)) and f.endswith(".ta")
         ]
         if not files:
             continue
@@ -725,9 +778,11 @@ def tee_of(fw, pak_order):
                     "-f",
                     "-d",
                     os.path.join(d, "x"),
+                    "-o",
+                    str(fw.source(pak)[1]),
                     "-ef",
                     lst,
-                    os.path.join(fw.dir, pak),
+                    fw.source(pak)[0],
                 ],
                 capture_output=True,
             )
@@ -749,7 +804,18 @@ def tee_of(fw, pak_order):
         else f"no TEE client: none of the {scanned} ELF files under {', '.join(EXEC_DIRS)} of {where} names "
         f"{TEE_DEV.decode()}"
     )
-    return dict(clients=clients, tas=sorted(set(tas)), source=src)
+    # whether the VM is expected to have the node: the chip's module with tee=1 (rtk.ko's stand-in)
+    module = targets.tee_module(targets.by_name(target))
+    init = tee_init_of(fw, pak_order)
+    if module:
+        node = f"{module}.ko makes /dev/tee0 (tee=1 in the chip's guest/targets/soc row)"
+    else:
+        node = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0"
+    if init:
+        node += f"; the firmware's own {', '.join(init)} opens /dev/tee0"
+    return dict(
+        clients=clients, tas=sorted(set(tas)), source=src, node=bool(module), node_source=node
+    )
 
 
 AUDIO_METHODS = ("getVolume", "setMuted", "volumeUp", "volumeDown")
@@ -1062,43 +1128,172 @@ def codec_claims(fw):
 
 
 # MSE in the web engine (WEB_ENGINES): its JavaScript API (Chromium's and W15M's MediaSource,
-# WT1H's prefixed WebKitMediaSource; addSourceBuffer either way), and for each source buffer the
-# container's MIME type and the codec string the engine's isTypeSupported parses (the engine binary's
-# own strings); the AAC buffers are not looked up (every engine with MSE takes audio/mp4 AAC)
+# WT1H's prefixed WebKitMediaSource; addSourceBuffer either way), and for each source buffer
+# (MSE_BUFFERS: the MIME type and codec string tests/regress/video/make-clips.sh --decode gives the
+# page) whether the engine takes it. Chromium (CBE) decides that in media::StreamParserFactory: its
+# table of SupportedTypeInfo {type, parser factory, CodecInfo list}, each CodecInfo's first member
+# the codec pattern base::MatchPattern compares the codec string with; a type it does not list
+# (webOS 4.5 has no audio/webm) or a codec none of its patterns matches is refused by
+# isTypeSupported and addSourceBuffer (mse_parsers); so is AV1 where the engine has it only for an
+# app that opts in (av1_opt_in). QtWebKit has no such table: there the
+# container's MIME type and the codec's name (MSE_STRINGS) must be strings of the engine, and the
+# AAC buffers are not looked up (every engine with MSE takes audio/mp4 AAC).
 MSE_API = (b"addSourceBuffer",)
-MSE_CODECS = {
-    "mse.h264": ((b"video/mp4", (b"avc1",)),),
-    "mse.hevc": ((b"video/mp4", (b"hvc1", b"hev1")),),
-    "mse.vp9": ((b"video/webm", (b"vp09", b"vp9")),),
-    "mse.vp9-opus": ((b"video/webm", (b"vp09", b"vp9")), (b"audio/webm", (b"opus",))),
-    "mse.av1": ((b"video/webm", (b"av01",)), (b"audio/webm", (b"opus",))),
+MSE_BUFFERS = {
+    "mse.h264": (("video/mp4", "avc1.4d401f"), ("audio/mp4", "mp4a.40.2")),
+    "mse.hevc": (("video/mp4", "hvc1.1.6.L93.B0"), ("audio/mp4", "mp4a.40.2")),
+    "mse.vp9": (("video/webm", "vp9"),),
+    "mse.vp9-opus": (("video/webm", "vp9"), ("audio/webm", "opus")),
+    "mse.av1": (("video/webm", "av01.0.04M.08"), ("audio/webm", "opus")),
+}
+MSE_STRINGS = {
+    "avc1.4d401f": (b"avc1",),
+    "hvc1.1.6.L93.B0": (b"hvc1", b"hev1"),
+    "vp9": (b"vp09", b"vp9"),
+    "opus": (b"opus",),
+    "av01.0.04M.08": (b"av01",),
 }
 
 
+def mse_parsers(data):
+    """{MIME type: [codec pattern (None: the type's implied codec)]} of the audio/ and video/ mp4
+    and webm entries of Chromium's StreamParserFactory table in an engine binary, None where it has
+    none. An entry is a pointer to the type's string, then one into code (the parser factory) and
+    one to a null-terminated list of CodecInfo pointers, each CodecInfo's first word its pattern;
+    from webOS 24 (Chromium 120) the type is a string view (its length after the pointer) and the
+    list a span (its count after the pointer, no null)."""
+    from elftools.elf.elffile import ELFFile
+
+    try:
+        segs = [
+            (g["p_vaddr"], g["p_offset"], g["p_filesz"], g["p_flags"])
+            for g in ELFFile(io.BytesIO(data)).iter_segments()
+            if g["p_type"] == "PT_LOAD"
+        ]
+    except Exception:
+        return None
+    code = Code(data)
+
+    def va_of(off):
+        return next((v + off - o for v, o, n, _ in segs if o <= off < o + n), None)
+
+    def in_code(va):
+        return any(v <= (va & ~1) < v + n for v, _, n, f in segs if f & 1)
+
+    def codecs(at, count=None):
+        out = []
+        for i in range(count or 64):
+            info = code.word(at + 4 * i)
+            if info is None:
+                return None
+            if info == 0 and count is None:
+                return out or None
+            pattern = code.word(info)
+            name = code.cstr(pattern) if pattern else None
+            if pattern is None or (pattern and not re.fullmatch(r"[\w.*?-]+", name or "")):
+                return None
+            out.append(name)
+        return out if count else None
+
+    table = {}
+    for m in re.finditer(rb"(?<=\0)(?:audio|video)/(?:mp4|webm)(?=\0)", data):
+        va = va_of(m.start())
+        if va is None:
+            continue
+        for r in re.finditer(re.escape(va.to_bytes(4, "little")), data):
+            at = va_of(r.start()) if r.start() % 4 == 0 else None
+            if at is None:
+                continue
+            view = code.word(at + 4) == len(m.group())  # {pointer, length}
+            if view:
+                at += 4
+                count = code.word(at + 12)
+                if not count or count > 64:
+                    continue
+            if not in_code(code.word(at + 4) or 0):
+                continue
+            c = codecs(code.word(at + 8) or 0, count if view else None)
+            if c is not None:
+                table.setdefault(m.group().decode(), c)
+    return table or None
+
+
+# AV1 behind LG's MediaExtension (WebAppMgr hands the renderer appinfo.json's "mediaExtension";
+# its parser takes "mse": {"enableAV1": ...}). In webOS 5 (Chromium 68) the switch it sets is a
+# flag in .bss, so 0, that mime_util's av01 parsing and the stream parser's AV1 entry both test
+# first: AV1 is refused (canPlayType "", isTypeSupported false) unless the app opts in. The
+# parser logs it as AV1_OPT_IN. From webOS 6 the switch is MediaPlatformPrefs's
+# is_av1_decoder_enabled_ (logged as AV1_PREF), which its constructor sets: on unless an app
+# turns it off. tests/regress/tvapp (TVAPP_INFO) sets no mediaExtension.
+AV1_OPT_IN = b"mse_enable_av1=%d"
+AV1_PREF = b" : is_av1_decoder_enabled_="
+TVAPP_INFO = os.path.join(HERE, "tvapp", "appinfo.json")
+
+
+def av1_opt_in(data):
+    """None, or why a page of the test app gets no AV1 from the engine (data): the engine has
+    webOS 5's opt-in AV1 switch and the test app does not opt in."""
+    if AV1_OPT_IN not in data or AV1_PREF in data:
+        return None
+    with open(TVAPP_INFO) as f:
+        ext = json.load(f).get("mediaExtension") or {}
+    if (ext.get("mse") or {}).get("enableAV1"):
+        return None
+    return (
+        "AV1 only for an app that opts in (LG MediaExtension mse.enableAV1, logged as "
+        f"{AV1_OPT_IN.decode()}; off by default), and {os.path.relpath(TVAPP_INFO, TOP)} does not"
+    )
+
+
 def mse_of(fw):
-    """{case: (claimed, source)} of the MSE cases: the engine names the MSE API, the container's
-    MIME type and one of the codec's strings."""
+    """{case: (claimed, source)} of the MSE cases: the engine names the MSE API and takes each
+    source buffer's type and codec (Chromium: mse_parsers; QtWebKit: names the type and codec)."""
     engine = next((fw.find(e) for e in WEB_ENGINES if fw.find(e)), None)
     if not engine:
-        return {c: (False, f"no web engine ({', '.join(WEB_ENGINES)})") for c in MSE_CODECS}
+        return {c: (False, f"no web engine ({', '.join(WEB_ENGINES)})") for c in MSE_BUFFERS}
     data = fw.read(*engine)
     who = f"{engine[0]}:/{engine[1]}"
     api = next((x for x in (b"WebKitMediaSource", b"MediaSource") if x in data), None)
+    if not api or not all(x in data for x in MSE_API):
+        why = f"{who} names no MSE API (MediaSource and addSourceBuffer)"
+        return {c: (False, why) for c in MSE_BUFFERS}
+    parsers = None
+    if engine[1] in CBE:
+        parsers = mse_parsers(data)
+        if parsers is None:
+            raise SystemExit(f"{who}: no media::StreamParserFactory table found (mse_parsers)")
+    av1_off = av1_opt_in(data)
     out = {}
-    for case, buffers in MSE_CODECS.items():
-        if not api or not all(x in data for x in MSE_API):
-            out[case] = (False, f"{who} names no MSE API (MediaSource and addSourceBuffer)")
-            continue
+    for case, buffers in MSE_BUFFERS.items():
         found, why = [api.decode()], None
-        for mime, codecs in buffers:
-            hit = next((c for c in codecs if c in data), None)
-            if mime not in data:
-                why = f"{who} names no {mime.decode()}"
-            elif not hit:
-                why = f"{who} names no {' or '.join(c.decode() for c in codecs)} codec string"
+        for mime, codec in buffers:
+            if parsers is not None:
+                patterns = parsers.get(mime)
+                hit = next((p for p in patterns or () if p and fnmatch.fnmatchcase(codec, p)), None)
+                if patterns is None:
+                    why = f"{who}: its MSE stream parsers (StreamParserFactory) take no {mime}"
+                elif not hit:
+                    why = (
+                        f"{who}: its MSE stream parser for {mime} takes no {codec} "
+                        f"(only {', '.join(p for p in patterns if p)})"
+                    )
+                elif codec.startswith("av01") and av1_off:
+                    why = f"{who}: {av1_off}"
+                else:
+                    found.append(f"{mime} {codec} ({hit})")
+            elif mime != "audio/mp4":
+                strings = MSE_STRINGS[codec]
+                hit = next((c for c in strings if c in data), None)
+                if mime.encode() not in data:
+                    why = f"{who} names no {mime}"
+                elif not hit:
+                    why = f"{who} names no {' or '.join(c.decode() for c in strings)} codec string"
+                else:
+                    found += [mime, hit.decode()]
             if why:
                 break
-            found += [mime.decode(), hit.decode()]
+        if parsers is not None:
+            found[0] += " (StreamParserFactory)"
         out[case] = (False, why) if why else (True, f"{who}: {', '.join(found)}")
     return out
 
@@ -1472,7 +1667,7 @@ def target_row(target, fw_name, fw_dir):
         online=online_of(fw),
         checks=checks,
         apps=apps_of(fw, pak_order),
-        tee=tee_of(fw, pak_order),
+        tee=tee_of(fw, pak_order, target),
         audio=audio_of(fw, provs, tvpak),
         decode=decode_of(fw, mse_of(fw)),
         smp=smp_of(fw),
@@ -1581,11 +1776,45 @@ def write_expect(directory, target, row):
     return path
 
 
+# --table: the tables that can be made on their own (their checks cite no [sources] entry)
+TABLE_ROWS = {"decode": lambda fw: decode_of(fw, mse_of(fw))}
+
+
+def replace_tables(directory, target, fw_name, fw, names):
+    """Rewrites only the named tables (TABLE_ROWS) of a target's existing file in directory, made
+    from the firmware the file names."""
+    path = os.path.join(directory, f"{target}.toml")
+    with open(path) as f:
+        text = f.read()
+    named = re.search(r'^firmware = "(.*)"$', text, re.M)
+    if not named or named.group(1) != fw_name:
+        raise SystemExit(f"{path} is of firmware {named and named.group(1)}, not {fw_name}: --fw")
+    for name in names:
+        block = "\n".join(toml_table(name, TABLE_ROWS[name](fw))) + "\n"
+        text, n = re.subn(
+            rf"\n\[{re.escape(name)}\]\n.*?(?=\n\[|\Z)", lambda m: block, text, flags=re.S
+        )
+        if n != 1:
+            raise SystemExit(f"{path}: no [{name}] table to replace")
+    tmp = f"{path}.tmp{os.getpid()}"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+    return path
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--target", action="append", default=[])
     ap.add_argument("--fw", action="append", default=[])
     ap.add_argument("-o", default=tvsuite.EXPECT_DIR, help="the directory of the target files")
+    ap.add_argument(
+        "--table",
+        action="append",
+        choices=sorted(TABLE_ROWS),
+        default=[],
+        help="regenerate only this table of each target's existing file, the rest left as it is",
+    )
     a = ap.parse_args(argv)
     regress = regress_module()
     sel = regress.select(
@@ -1601,7 +1830,10 @@ def main(argv=None):
             if os.path.isdir(os.path.join(d, fw_name))
         )
         print(f"{target}: {fw_name}", file=sys.stderr)
-        write_expect(a.o, target, target_row(target, fw_name, fw_dir))
+        if a.table:
+            replace_tables(a.o, target, fw_name, Firmware(fw_dir), a.table)
+        else:
+            write_expect(a.o, target, target_row(target, fw_name, fw_dir))
     return 0
 
 

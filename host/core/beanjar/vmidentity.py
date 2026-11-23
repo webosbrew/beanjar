@@ -151,7 +151,7 @@ def identities(vms_dir, skip=None):
 def next_identity(prefix, macs, serials, cfg=None):
     """A new identity's (mac, serial): prefix and random octets, a random serial, none of macs and
     serials (the library's other VMs') nor the ones cfg (a vm.toml's settings) has now. Used by
-    identity renew and clone."""
+    identity reset and clone."""
     cfg = cfg or {}
     mac = new_mac(prefix, set(macs) | {str(cfg.get("mac", "")).lower()})
     serial = new_serial(set(serials) | {str(cfg.get("serial", "")).upper()})
@@ -162,7 +162,7 @@ def renew_keys(d, label, address=None):
     """A new identity's files in the identity directory d: every key pair made anew (keys.renew;
     known_hosts rewritten with address) and a new random VNC password. The model key (sestore.toml),
     tee-huk and authorized_keys are left as they are. Returns the names made (keys.renewed()
-    lists every file it may replace). Used by identity renew and clone; raises keys.Error."""
+    lists every file it may replace). Used by identity reset and clone; raises keys.Error."""
     from . import keys
 
     made = keys.renew(d, label=label, address=address)

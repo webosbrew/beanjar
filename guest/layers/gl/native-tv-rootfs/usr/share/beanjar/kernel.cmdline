@@ -1,0 +1,7 @@
+# Words for the guest kernel's command line (share.kernel_args): spacebuns' display as a set's.
+# The set's lg1kdrm has one TV connector and one CRTC with a primary, an overlay and a cursor
+# plane; LG's drm-backend copies the connector into a second head (TV-2) and gives that output
+# the overlay plane (docs/research/graphics/compositors.md, "Spacebuns outputs on a set"). The one
+# virtio scanout's connector becomes a TV connector (guest kernel patch 0020) and its CRTC gets
+# an overlay plane (patch 0028).
+virtio_gpu.tv_connector=1 virtio_gpu.overlay_plane=1

@@ -46,6 +46,7 @@ W15M, W16R = "04.06.75.01-HE_DTV_W15M_AFAAABAA", "05.70.50.01-HE_DTV_W16R_AFAAAB
 W17H, W18R = "06.10.65.01-HE_DTV_W17H_AFADABAA", "05.50.70.01-HE_DTV_W18R_AFAAABAA"
 W19P, W20L = "05.40.97.01-HE_DTV_W19P_AFADABAA", "04.63.25.01-HE_DTV_W20L_AFAAJAAA"
 W21P = "03.70.25.01-HE_DTV_W21P_AFADATAA"
+W15U = "04.06.25.01-HE_DTV_W15U_AFADABAA"
 N21D6, N21D = "04.44.16.01-HE_DTV_N21D_AFAAATAA", "23.22.86.01-HE_DTV_N21D_AFAAATAA"
 
 
@@ -57,6 +58,7 @@ def fws(*names, d="/nonexistent"):
 FOUND = {
     "h13-afro": fws(WT1H_OLD, WT1H),
     "m14-beehive": fws(W15M),
+    "lm15u-beehive": fws(W15U),
     "m2-dreadlocks": fws(W16R),
     "m16p-dreadlocks2": fws(W17H),
     "m3-goldilocks": fws(W18R),
@@ -760,9 +762,9 @@ class DryRunTest(unittest.TestCase):
                 "tests/regress/tv.sh",
                 "guest.sh ready 1200",
                 "guest.sh luna-info",
-                "http-token.py",
+                "host/scripts/vm-launcher netns-exec python3 tests/regress/http-token.py 10.0.2.254 ",
                 "getent ahostsv4 example.com",
-                "guest.sh network http://10.0.2.2:",
+                "guest.sh network http://10.0.2.254:",
                 "kill $(cat build/regress/t6/m3-goldilocks/http-server.pid)",
                 "timeout 1200 host/scripts/vm-launcher stop",
             ],
@@ -1511,6 +1513,82 @@ class ReadyLineTest(unittest.TestCase):
         self.assertEqual((r.steps["ready"], r.boot_done, r.tvservice), ("PASS", "79.9 s", "229"))
 
 
+class FirstBootRestartTest(unittest.TestCase):
+    """A guest restart during the steps: followed once for a target whose firmware restarts on its
+    first boot (targets.first_boot_restart), the steps run again from the boot; any other fails."""
+
+    W24G = "02.68.80.01-HE_DTV_W24G_AFABATAA"
+
+    def run_steps(self, target, fw, restarts, back=0, off=False):
+        """run_target with guest steps that pass, the guest restarting during check-m1 the first
+        `restarts` times; back: the status of the wait for the VM's new QEMU. (Result, steps run)."""
+        ran = []
+
+        class FakeHost:
+            inst = regress.Instance("fake")
+
+            def run(self, cmd, timeout):
+                return (back, "") if "until n=" in cmd else (0, "")
+
+        def step(h, a, r, name, arg, out):
+            ran.append(name)
+            if name == "check-m1" and ran.count("check-m1") <= restarts:
+                raise regress.GuestRestarted(name, off=off)
+            r.text = {
+                "ready": "READY 79.89 68.6 229",
+                "check-m1": "M1 PASS",
+                "app-calls": "APP-CALLS PASS",
+                "tvservice": "TVSERVICE PASS",
+                "standby-prep": "STANDBY SKIP no Quick Start+",
+            }.get(name, "")
+            return 0
+
+        a, _ = regress.parse(["--local", "--headless", "--run", "t8"], found=FOUND, env={})
+        with (
+            mock.patch.object(regress, "guest_step", step),
+            mock.patch.object(regress.checklist, "judge", lambda text, broadcast: []),
+            mock.patch.object(regress.checklist, "verdict", lambda items: "PASS"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            r = regress.run_target(FakeHost(), a, target, fw)
+        return r, ran
+
+    def test_one_first_boot_restart_is_followed(self):
+        self.assertTrue(regress.targets.first_boot_restart(regress.target_of("o22n2-spacebuns")))
+        r, ran = self.run_steps("o22n2-spacebuns", self.W24G, 1)
+        self.assertEqual((r.restarts, r.restart), (1, ""))
+        self.assertEqual(ran[:3], ["ready", "check-m1", "ready"])
+        self.assertEqual(ran[3], "check-m1")
+        self.assertEqual((r.steps["ready"], r.steps["check-m1"]), ("PASS", "PASS"))
+        self.assertEqual(r.boot_done, "79.9 s")
+
+    def test_second_restart_fails(self):
+        r, ran = self.run_steps("o22n2-spacebuns", self.W24G, 2)
+        self.assertEqual(r.restarts, 1)
+        self.assertIn("after 1 followed restart", r.restart)
+        self.assertFalse(r.ok)
+        self.assertEqual(ran.count("ready"), 2)
+
+    def test_vm_not_back_fails(self):
+        r, _ = self.run_steps("o22n2-spacebuns", self.W24G, 1, back=124)
+        self.assertIn("did not run again", r.restart)
+        self.assertFalse(r.ok)
+
+    def test_power_off_fails(self):
+        # a first boot that ends in a power-off is not the firmware's restart
+        r, ran = self.run_steps("o22n2-spacebuns", self.W24G, 1, off=True)
+        self.assertEqual((r.restarts, r.restart), (0, "the VM powered off during check-m1"))
+        self.assertEqual(ran.count("ready"), 1)
+        self.assertFalse(r.ok)
+
+    def test_other_targets_fail_on_a_restart(self):
+        self.assertFalse(regress.targets.first_boot_restart(regress.target_of("k5lp-goldilocks2")))
+        r, ran = self.run_steps("k5lp-goldilocks2", W19P, 1)
+        self.assertEqual((r.restarts, r.restart), (0, "the guest restarted during check-m1"))
+        self.assertEqual(ran.count("ready"), 1)
+        self.assertFalse(r.ok)
+
+
 class GuestStepTest(unittest.TestCase):
     """guest_step on a local VM host, the guest's side planted: STEP.txt and STEP.rc are copied
     out of its out share (RUN_DIR/share/out/regress) as regular files only, never through a link
@@ -1524,6 +1602,8 @@ class GuestStepTest(unittest.TestCase):
         self.run_dir = os.path.join(self.tmp, "run")
         self.gout = os.path.join(self.run_dir, "share", "out", "regress")
         os.makedirs(self.gout)
+        # a running VM: QEMU's pidfile (it removes it as it exits)
+        open(os.path.join(self.run_dir, "qemu.pid"), "w").close()
         self.results = os.path.join(self.tmp, "results")
         os.mkdir(self.results)
         # what the guest must never get the host to read or remove: a user's secret key, a directory
@@ -1561,12 +1641,14 @@ class GuestStepTest(unittest.TestCase):
         a = argparse.Namespace(scale=0.1, timeout=1, dry_run=False)  # waits 3 s for the .rc
         r = argparse.Namespace(text=None)
         done = []
-        t = threading.Thread(
-            target=lambda: done.append(
-                regress.guest_step(H(None, TOP, False, inst), a, r, "boot", "", self.results)
-            ),
-            daemon=True,
-        )
+
+        def call():
+            try:
+                return regress.guest_step(H(None, TOP, False, inst), a, r, "boot", "", self.results)
+            except regress.GuestRestarted as e:
+                return e
+
+        t = threading.Thread(target=lambda: done.append(call()), daemon=True)
         t.start()
         t.join(15)
         if t.is_alive():
@@ -1602,6 +1684,41 @@ class GuestStepTest(unittest.TestCase):
     def assertNoSecret(self, got):
         self.assertIsNotNone(got, "guest_step hung")
         self.assertNotIn("SECRET", repr(got))
+
+    def restart(self, n=1, under_way=False):
+        """The unit's record of a guest restart in RUN_DIR (unit.run's restarts and restarting)."""
+        with open(os.path.join(self.run_dir, "restarts"), "w") as f:
+            f.write(f"{n}\n")
+        if under_way:
+            open(os.path.join(self.run_dir, "restarting"), "w").close()
+
+    def test_guest_restart_ends_the_wait(self):
+        # the step's process went with the old boot: no .rc ever comes
+        got = self.step(lambda: self.restart(1))
+        self.assertIsInstance(got[0], regress.GuestRestarted)
+        self.assertEqual(got[0].step, "boot")
+
+    def test_restart_under_way_ends_the_wait(self):
+        got = self.step(lambda: self.restart(0, under_way=True))
+        self.assertIsInstance(got[0], regress.GuestRestarted)
+
+    def test_power_off_ends_the_wait(self):
+        got = self.step(lambda: os.unlink(os.path.join(self.run_dir, "qemu.pid")))
+        self.assertIsInstance(got[0], regress.GuestRestarted)
+        self.assertTrue(got[0].off)
+
+    def test_restart_after_a_killed_step(self):
+        # the guest's shutdown killed the step, which wrote its .rc before the reset showed
+        def guest():
+            self.plant(self.write("Killed\n"), "137\n")()
+            self.restart(1)
+
+        self.assertIsInstance(self.step(guest)[0], regress.GuestRestarted)
+
+    def test_no_restart_recorded(self):
+        self.restart(0)
+        status, text, _, _ = self.step(self.plant(self.write("hello\n"), "0\n"))
+        self.assertEqual((status, text), (0, "hello"))
 
     def test_regular_files(self):
         status, text, files, _ = self.step(self.plant(self.write("hello\n"), "3\n"))

@@ -232,8 +232,11 @@ static void to_yuy2(const AVFrame *f, uint8_t *out, const struct webos_media_pic
 /* A free slot of the session's picture extent for a picture of bytes, for input: 0 with its pool
  * offset in *offset; -1 when none came free within WEBOS_MEDIA_RELEASE_WAIT_MS (or the session
  * moved on); -2 when the session's answers are inline (no pool session, or no room in the pool
- * for its slots: inline from then on). A bigger picture than the slots hold waits for all of them
- * to be free and lays them out again in a new extent, the old one retiring. */
+ * for its slots: inline from then on). A bigger picture than the slots hold lays them out again
+ * at once in a new extent: a sink keeps its last picture until the next one comes, so waiting for
+ * every slot would never end. The old extent retires when the guest has none of its slots, or
+ * else stays LIVE until it gives the last back (take_releases), so that a picture of it still on
+ * the ring can be mapped; the layout before that retires at once (its pictures were taken). */
 static int take_slot(struct stream *s, size_t bytes, uint32_t input, unsigned gen, uint32_t *offset)
 {
     struct pool *pool = s->m->pool;
@@ -258,8 +261,16 @@ static int take_slot(struct stream *s, size_t bytes, uint32_t input, unsigned ge
         unsigned busy = 0;
         for (unsigned i = 0; i < s->nslots; i++)
             busy += s->slots[i].busy != 0;
-        if (s->slot_size < need && !busy) {
-            if (s->pic_e >= 0)
+        if (s->slot_size < need) {
+            retire_old_layout(s);
+            if (s->pic_e >= 0 && busy) { /* the guest's yet: the layout before */
+                s->old_e = s->pic_e;
+                s->old_off = s->pic_off;
+                s->old_slot_size = s->slot_size;
+                s->old_bytes = s->slot_size * s->nslots;
+                s->old_nslots = s->nslots;
+                memcpy(s->old_slots, s->slots, sizeof s->slots);
+            } else if (s->pic_e >= 0)
                 pool_retire(pool, (unsigned)s->index, s->pic_e);
             s->pic_e = -1;
             s->slot_size = 0;
@@ -269,7 +280,8 @@ static int take_slot(struct stream *s, size_t bytes, uint32_t input, unsigned ge
             int e = -1;
             unsigned n;
             for (n = WEBOS_MEDIA_POOL_SLOTS; n >= 1; n--) {
-                if ((uint64_t)need * n > WEBOS_MEDIA_POOL_SESSION - WEBOS_MEDIA_POOL_GRANULE)
+                if ((uint64_t)need * n + s->old_bytes >
+                    WEBOS_MEDIA_POOL_SESSION - WEBOS_MEDIA_POOL_GRANULE)
                     continue;
                 if ((e = pool_alloc(pool, (unsigned)s->index, need * n, &off, NULL)) >= 0)
                     break;
@@ -518,6 +530,33 @@ static void push_frame(struct stream *s, AVFrame *f, unsigned gen)
     av_frame_free(&out);
 }
 
+/* A DECODE session's samples (n stereo S16 frames from pts) to the guest, inline, as a PICTURE
+ * of WEBOS_MEDIA_S16LE (include/webos-media.h); the input's LAST answer follows as for video. */
+static void return_samples(struct stream *s, const uint8_t *data, int n, int64_t pts,
+                           uint32_t input)
+{
+    struct webos_media_picture p = {.input = input,
+                                    .pts = pts,
+                                    .format = WEBOS_MEDIA_S16LE,
+                                    .width = (uint32_t)n,
+                                    .height = 2,
+                                    .stride = {4, 0}};
+    size_t bytes = (size_t)n * 4, len;
+    int64_t t0 = mono_ns();
+    unsigned char *m = hm_picture(++s->reply_seq, &p, bytes, &len);
+    if (!m) {
+        s->return_errors++;
+        return;
+    }
+    memcpy(m + len - bytes, data, bytes);
+    s->returned++;
+    s->return_ns += mono_ns() - t0;
+    if (s->m->reply)
+        s->m->reply(s->m->reply_ctx, (unsigned)s->index, m, len);
+    else
+        free(m);
+}
+
 static void push_audio(struct stream *s, AVFrame *f, unsigned gen)
 {
     int64_t pts = f->best_effort_timestamp != AV_NOPTS_VALUE ? f->best_effort_timestamp : f->pts;
@@ -527,12 +566,16 @@ static void push_audio(struct stream *s, AVFrame *f, unsigned gen)
         s->next_apts = pts + (int64_t)f->nb_samples * 1000000000 / f->sample_rate;
     if (pts == NONE)
         return;
+    /* a DECODE session: stereo S16 at WEBOS_MEDIA_S16LE_RATE back to the guest */
+    int s16 = s->dec_ret == (int)WEBOS_MEDIA_S16LE;
     if (!s->swr || f->sample_rate != s->swr_rate || f->format != s->swr_format ||
-        av_channel_layout_compare(&f->ch_layout, &s->swr_layout)) {
+        s16 != s->swr_s16 || av_channel_layout_compare(&f->ch_layout, &s->swr_layout)) {
         AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
         swr_free(&s->swr);
-        if (swr_alloc_set_opts2(&s->swr, &stereo, AV_SAMPLE_FMT_FLT, OUT_RATE, &f->ch_layout,
-                                f->format, f->sample_rate, 0, NULL) < 0 ||
+        s->swr_s16 = s16;
+        if (swr_alloc_set_opts2(&s->swr, &stereo, s16 ? AV_SAMPLE_FMT_S16 : AV_SAMPLE_FMT_FLT,
+                                s16 ? WEBOS_MEDIA_S16LE_RATE : OUT_RATE, &f->ch_layout, f->format,
+                                f->sample_rate, 0, NULL) < 0 ||
             swr_init(s->swr) < 0) {
             swr_free(&s->swr);
             s->errors++;
@@ -554,6 +597,12 @@ static void push_audio(struct stream *s, AVFrame *f, unsigned gen)
     uint8_t *out[1] = {(uint8_t *)c->data};
     int n = swr_convert(s->swr, out, max, (const uint8_t **)f->extended_data, f->nb_samples);
     if (n <= 0) {
+        free(c);
+        return;
+    }
+    if (s16) {
+        if (gen == s->generation)
+            return_samples(s, (const uint8_t *)c->data, n, pts, s->dec_input);
         free(c);
         return;
     }
@@ -590,6 +639,19 @@ static void receive(struct stream *s, AVFrame *f, unsigned gen)
             s->hw_errors++;
             return;
         }
+        int64_t pts = f->best_effort_timestamp;
+        if (s->replay_until != NONE && pts != AV_NOPTS_VALUE) {
+            if (pts <= s->replay_until) { /* given by the hardware before the fallback */
+                av_frame_unref(f);
+                continue;
+            }
+            s->replay_until = NONE;
+        }
+        if (s->hw_format != AV_PIX_FMT_NONE) {
+            s->hw_gave = 1;
+            if (pts != AV_NOPTS_VALUE)
+                s->hw_last_pts = pts;
+        }
         pthread_mutex_lock(&s->lock);
         if (gen == s->generation)
             s->decoded++;
@@ -602,7 +664,25 @@ static void receive(struct stream *s, AVFrame *f, unsigned gen)
     }
 }
 
-static void decode_packet(struct stream *s, AVPacket *pkt, AVFrame *f, unsigned gen)
+/* A hardware context that cannot take the stream: software from here on, given again what the
+ * hardware took. A byte-stream without codec data may carry its parameter sets in the first
+ * packet only, and the software decoder needs them, and the pictures since the keyframe, too. */
+static void to_software(struct stream *s, AVPacket *pkt, AVFrame *f, unsigned gen)
+{
+    elog(s->index, "media %d: hardware decoding %s, software instead (%u packets again)", s->index,
+         s->hw_fallback ? "not available for this stream" : "fails", s->nreplay + 1);
+    s->hw_banned = 1;
+    int64_t last = s->hw_last_pts;
+    software_codec(s);
+    s->replay_until = last;
+    for (unsigned i = 0; i < s->nreplay && s->ctx; i++)
+        decode_packet(s, s->replay[i], f, gen);
+    if (s->ctx)
+        decode_packet(s, pkt, f, gen);
+    drop_replay(s);
+}
+
+void decode_packet(struct stream *s, AVPacket *pkt, AVFrame *f, unsigned gen)
 {
     int r = avcodec_send_packet(s->ctx, pkt);
     if (r == AVERROR(EAGAIN)) {
@@ -614,6 +694,24 @@ static void decode_packet(struct stream *s, AVPacket *pkt, AVFrame *f, unsigned 
         s->hw_errors++;
     }
     receive(s, f, gen);
+    if (s->hw_format == AV_PIX_FMT_NONE || !pkt)
+        return;
+    if (s->hw_fallback || (s->hw_errors >= 3 && s->decoded == 0)) {
+        to_software(s, pkt, f, gen);
+        return;
+    }
+    /* kept until the hardware gives a picture: the first REPLAY_PACKETS, which hold the
+     * parameter sets and the keyframe */
+    if (!s->hw_gave && s->nreplay < REPLAY_PACKETS &&
+        s->replay_bytes + (size_t)pkt->size <= REPLAY_BYTES) {
+        AVPacket *copy = av_packet_alloc();
+        if (copy && av_packet_ref(copy, pkt) >= 0) {
+            s->replay[s->nreplay++] = copy;
+            s->replay_bytes += (size_t)pkt->size;
+        } else
+            av_packet_free(&copy);
+    } else if (s->hw_gave && s->nreplay)
+        drop_replay(s);
 }
 
 /* A session's codec (its frame threads and their pictures) and caps go when the session does: at
@@ -665,6 +763,9 @@ void *decoder_thread(void *arg)
         if (gen != s->dec_generation) {
             if (s->ctx)
                 avcodec_flush_buffers(s->ctx);
+            drop_replay(s);
+            s->hw_gave = 0;
+            s->hw_last_pts = s->replay_until = NONE;
             if (s->swr)
                 swr_free(&s->swr);
             s->decode_only_n = 0;
@@ -740,14 +841,6 @@ void *decoder_thread(void *arg)
             } else
                 decode_packet(s, pkt, f, gen);
             s->decode_ns += mono_ns() - t0 - (s->wait_ns - w0);
-            /* hardware that cannot take this stream: software from here on */
-            if (s->hw_format != AV_PIX_FMT_NONE && s->caps &&
-                (s->hw_fallback || (s->hw_errors >= 3 && s->decoded == 0))) {
-                elog(s->index, "media %d: hardware decoding %s, software instead", s->index,
-                     s->hw_fallback ? "not available for this stream" : "fails");
-                s->hw_banned = 1;
-                open_codec(s, s->caps, 0);
-            }
             pkt->data = NULL;
             pkt->size = 0;
         } else if (it->type == WEBOS_MEDIA_EOS && s->ctx) {

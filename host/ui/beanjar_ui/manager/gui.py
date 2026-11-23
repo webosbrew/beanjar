@@ -112,7 +112,7 @@ class Operation:
             module,
             "--library",
             library.root,
-            *(["--repo", library.repo] if library.repo else []),
+            *(["--repo", library.known_repo] if library.known_repo else []),
             *args,
         ]
         self.proc = launcher.spawnv(self.argv)
@@ -1638,7 +1638,7 @@ class Manager:
             "developer mode keys: to apps and LG's servers it is another TV. A key fetched from it "
             "before no longer works. Its model key is kept.",
             "_New Identity",
-            lambda: self.run(name, "new identity", ["identity", "renew", name]),
+            lambda: self.run(name, "new identity", ["identity", "reset", name]),
         )
 
     def rename(self):
@@ -1821,7 +1821,7 @@ class Manager:
         """The RAM of target's model in the library's checkout (nvm.board_ram), None if it cannot say."""
         try:
             return nvm.board_ram(target, paths.Tree(self.lib.repo))
-        except (targets.Error, OSError):
+        except (Error, targets.Error, OSError):  # no checkout known: it cannot say
             return None
 
     @staticmethod
@@ -2171,7 +2171,7 @@ class Manager:
             before = dict(self.lib.vm(name).config)
             self.lib.configure(name, prepare=False, **v)
             if change:
-                self.lib.set_model_key(name, path)  # as `beanjar model-key` (None: --clear)
+                self.lib.set_model_key(name, path)  # as `beanjar key model set` (None: unset)
             self.refresh()
             saved = f"{name}: settings saved" + {
                 "install": ", model key installed",

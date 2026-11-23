@@ -13,7 +13,7 @@ VM is created and again, with a warning, at a start that finds one missing:
                                     code as root, can read every key it is given, and the user's own
                                     keys identify them (a code host publishes its users' public keys;
                                     a key's comment is often user@host). Only an explicit
-                                    `beanjar identity authorized-keys NAME add-mine` (add_mine) or the
+                                    `beanjar identity authorized-keys add NAME --mine` (add_mine) or the
                                     user's own lines put theirs in; guest_authorized strips every
                                     comment
   rootssh_host_key(.pub)            root SSH's host key (ed25519), in Dropbear's format, which
@@ -101,10 +101,10 @@ INSPECTOR_PORT = "18083"
 AUTHORIZED_HEADER = (
     "# Public keys that may log in as root over SSH (guest/layers/rootssh, hbchannel), one per line,\n"
     "# besides the VM's own id_ed25519.pub, which always may and is what Beanjar's ssh commands use\n"
-    "# (beanjar info NAME, beanjar ares-TOOL --root). Read at each start.\n"
+    "# (beanjar show NAME, beanjar ares-TOOL --root). Read at each start.\n"
     "# Every key here goes into the guest, which can read it (without its comment). Your own keys\n"
     "# identify you (a code host publishes its users' public keys), so none is here unless you add\n"
-    "# it: `beanjar identity authorized-keys NAME add-mine` adds your ~/.ssh/*.pub, `reset` empties it.\n"
+    "# it: `beanjar identity authorized-keys add NAME --mine` adds your ~/.ssh/*.pub, `reset` empties it.\n"
 )
 # an authorized_keys line: [options] TYPE BASE64 [comment]; options have no unquoted blank
 _KEY_TYPE = re.compile(r"(?:ssh|ecdsa|sk)-[A-Za-z0-9@._-]+")

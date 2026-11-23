@@ -6,7 +6,7 @@
   run-camera.py NAME|HOST/NAME [--seconds 12] [--format JPEG|YUV] [--width 1280 --height 720]
                 [--fps 30] [--pattern smpte] [--keep]
 
-Plugs the camera in (beanjar io usb plug NAME --camera: the camera runs on this machine, also for a
+Plugs the camera in (beanjar io usb attach NAME --camera: the camera runs on this machine, also for a
 VM on another host), runs tests/regress/virtcam/camera.sh in the guest as root (beanjar ares-shell --root:
 the VM needs the rootssh layer) and checks what it saw: the device in sysfs at high speed with
 uvcvideo bound and V4L2 nodes, PDM listing it as a camera, LG's camera service listing it and
@@ -175,7 +175,7 @@ def main():
 
     errlog = tempfile.TemporaryFile(mode="w+")
     plug = subprocess.Popen(
-        [BEANJAR, "io", "usb", "plug", a.name, "--camera", "--pattern", a.pattern, "--json"],
+        [BEANJAR, "io", "usb", "attach", a.name, "--camera", "--pattern", a.pattern, "--json"],
         stdout=subprocess.PIPE,
         stderr=errlog,
         text=True,
@@ -198,7 +198,7 @@ def main():
         if not got:
             errlog.seek(0)
             print(errlog.read()[-2000:], file=sys.stderr)
-            checks.append(("plugged in", False, "no answer from beanjar io usb plug"))
+            checks.append(("plugged in", False, "no answer from beanjar io usb attach"))
             raise SystemExit
         print(f"plugged in: {got}")
         if a.app:

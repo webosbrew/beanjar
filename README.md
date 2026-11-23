@@ -47,7 +47,7 @@ Each [release](https://github.com/webosbrew/beanjar/releases) has the Debian pac
 
 ```sh
 mkdir beanjar-debs && cd beanjar-debs
-version=0.6.0
+version=0.7.0
 arch=$(dpkg --print-architecture)
 url=https://github.com/webosbrew/beanjar/releases/download/v$version
 wget $url/beanjar_${version}_$arch.deb $url/beanjar-qemu_${version}_$arch.deb $url/beanjar-ui_${version}_all.deb $url/beanjar-guest_${version}_all.deb
@@ -68,7 +68,7 @@ To try the experimental x86-64 guest kernel on an x86_64 PC with KVM, install it
 ```sh
 wget $url/beanjar-guest-x86-64_${version}_amd64.deb
 sudo apt-get install ./beanjar-guest-x86-64_${version}_amd64.deb
-beanjar settings tv1 set guest_kernel=x86-64
+beanjar config set tv1 guest_kernel=x86-64
 ```
 
 KVM (arm64 machines and the x86-64 guest kernel) needs access to `/dev/kvm`, and the GPU's render node `/dev/dri/renderD*` is used for the TV's 3D and video. Add your user to both groups, then log out and in again; `id -nG` should then list `kvm` and `render`. Without a render node, a PC draws on the CPU, slowly, and an arm64 host needs one; see [Groups](docs/user/getting-started.md#groups):

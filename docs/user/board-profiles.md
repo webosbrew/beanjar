@@ -40,7 +40,7 @@ Change the standard only with fresh TV state (`beanjar wipe <vm>`). The EEPROM's
 the country picked in the first-use setup were made for the old board, and they would override
 the new one. This includes a VM made before its chip's default became the US board: it boots the
 US board line over its European EEPROM and settings until it is wiped, or until its `vm.toml` says
-`broadcast = "dvb"`. `beanjar settings <vm> unset broadcast` returns a VM to the default.
+`broadcast = "dvb"`. `beanjar config unset <vm> broadcast` returns a VM to the default.
 
 Measured with W24G spacebuns 02.68.80.01 under TCG on 2026-11-03. A fresh VM on the US board
 reports model OLED55C4PUA, country USA, country group US (`langSelUS`), LG services country US,
@@ -48,8 +48,10 @@ locale en-US, configd RMM group 2 US and broadcast system ATSC, and shows the En
 first booted with `broadcast = "dvb"` and then started on the US board did not run first use again.
 Its command line and nyx said US and ATSC, but the EEPROM's factory model stayed OLED55C44LA, the
 country GBR, the RMM group EU and `boardType` `O22N2_ATSC_EU`. After `beanjar wipe` it came up as the
-fresh US VM. On this firmware the first boot of a fresh state powers the set off once (on either
-board); the next start boots normally. Spacebuns' `getSystemInfo` `boardType` is empty on the US
+fresh US VM. On this firmware the first boot of a fresh state restarts the set once (on either
+board): its google-home-controller switches to LG's QA2 server and eula-service reboots, as on a
+set of this build. The VM starts again by itself, and the second boot keeps the switch and boots
+normally. Spacebuns' `getSystemInfo` `boardType` is empty on the US
 board, where the European board gives `O22N2_DVB_EU`.
 
 ## Boards
@@ -89,6 +91,11 @@ StanbyMEs, no US model, so each keeps one board; each line comes from its own fi
 (27ART10AKPL with `countryType=EU panelResolution=FHD ddrSize=2G
 graphicResolution=1920x1080`), and the two give the same values. W21U, the chip's 2021 OLED and NANO/QNED TV
 line, is not the StanbyME's firmware and has no board here.
+
+LM15U's board (`lm15u-beehive`, W15U 04.06.25) is a 65UF850V as a German set (DVB, the
+nContinentIdx 50 area): W15U's only OTA ID is the European DVB one (AFADABAA), so it has no US
+or ARIB board. Its fields come from that firmware's MBoot and tvservice tables, each named in the
+board file's comments.
 
 The boards are in `guest/layers/soc/<chip>/rootfs/etc/emulator/`. Region digits and ToolOpt words are
 specific to each firmware, so each board comes from its own firmware's data. A US board is the

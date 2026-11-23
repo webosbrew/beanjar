@@ -19,10 +19,18 @@ Files (paths here, read by the viewer core, usb.py and unit.py):
   RUN_DIR/restarts     how many times this unit started QEMU again (0 at the unit's start)
   STATE/usb.json       the USB devices attached (usb.py), put back on every new QEMU: STATE is the
                        unit's RuntimeDirectory, the run directory without one (the setsid fallback)
+  RUN_DIR/state/.fresh  with STATE=none, the run's one temporary state (fresh_state): unit.run makes
+                       it empty at its start and passes it to every launch as FRESH_STATE, so the
+                       disks and the EEPROM a guest restart leaves are the next QEMU's, as a set
+                       keeps what it wrote across a reboot; the run's end removes it (unit.run, and
+                       ExecStopPost's `post` after a SIGKILL). It is on the run directory's disk,
+                       not in the RuntimeDirectory: that is a tmpfs, whose pages the unit's memory
+                       limit would count against the VM
 """
 
 import json
 import os
+import shutil
 import socket
 import threading
 
@@ -32,6 +40,23 @@ USB_RECORD = "usb.json"
 SOCK = "lifecycle.sock"
 # SHUTDOWN reasons that are a reset turned into an exit by -action reboot=shutdown
 RESET_REASONS = ("guest-reset", "host-qmp-system-reset")
+
+
+def fresh_state(env, top):
+    """The run's temporary state directory (RUN_DIR/state/.fresh, RUN_DIR relative to the tree top
+    as qemu.plan takes it) when env's STATE is none, else None."""
+    if env.get("STATE") != "none":
+        return None
+    return os.path.join(top, env.get("RUN_DIR") or "build", "state", ".fresh")
+
+
+def discard_fresh_state(env, top):
+    """Remove the run's temporary state (fresh_state), if it has one; the path removed, else None."""
+    path = fresh_state(env, top)
+    if path is None or not os.path.lexists(path):
+        return None
+    shutil.rmtree(path, ignore_errors=True)
+    return path
 
 
 def state_dir(run_dir, runtime_dir=None):
@@ -99,7 +124,7 @@ def write_usb(state, devices):
 def replay_commands(devices):
     """The QMP commands that put the recorded USB devices on a new QEMU, in their order: a stick's
     block node and usb-storage device, a usb-redir device's listening socket and device (its client,
-    `usb plug`'s, connects again by itself)."""
+    `io usb attach --device`'s, connects again by itself)."""
     from . import usb
 
     cmds = []

@@ -27,9 +27,9 @@ the backend.
 gpu = "virtio-gpu-gl"   # auto (default, not written), vhost-user-gpu or virtio-gpu-gl
 ```
 
-or `beanjar settings NAME set gpu=virtio-gpu-gl`; the launcher's variable is `GPU_DEVICE`.
+or `beanjar config set NAME gpu=virtio-gpu-gl`; the launcher's variable is `GPU_DEVICE`.
 `auto`, the default, is vhost-user-gpu on an aarch64 host whose render node is a GPU's (not
-vgem's) when the QEMU is ours (it brings the backend), guests with two outputs (queue, spacebuns:
+vgem's) when the QEMU is ours (it brings the backend), guests with two outputs (queue:
 `max_outputs=2`) included; else virtio-gpu-gl, with a note for a system QEMU. The PC (x86, WSL)
 is unchanged. `vhost-user-gpu` asks for it anywhere and fails the start when there is no render
 node or no backend (`VHOST_USER_GPU` names another backend binary). `virtio-gpu-gl` is the per-VM way
@@ -38,8 +38,8 @@ back to virgl in QEMU.
 ## The command line
 
 `qemu.plan` swaps `virtio-gpu-gl-pci,...` for `vhost-user-gpu-pci,chardev=vgpu,...` with the same
-properties (`xres`, `yres`, `id` on touch models, `max_outputs=2` for the second output of queue
-and spacebuns), adds `-chardev socket,id=vgpu,path=<RuntimeDirectory>/vhost-user-gpu.sock`, and
+properties (`xres`, `yres`, `id` on touch models, `max_outputs=2` for the second output of
+queue), adds `-chardev socket,id=vgpu,path=<RuntimeDirectory>/vhost-user-gpu.sock`, and
 puts the guest RAM on `-object memory-backend-memfd,id=ram,size=<MEM>M,share=on` with
 `-M virt,memory-backend=ram`: the backend maps the guest's RAM to read its buffers. The display
 (`-display dbus,gl=on` or `egl-headless`) is unchanged; the backend passes 3D scanouts to QEMU
@@ -62,7 +62,7 @@ backend. `beanjar.gpu_backend` accepts that one connection and execs the backend
 - Forced stop: systemd kills the unit's control group, the backend included.
 - The setsid fallback (no user systemd): the launcher's session, the backend included.
 
-The backend is in the VM's unit, so `beanjar info` and the viewer's GPU meter (`gpu.py`, the
+The backend is in the VM's unit, so `beanjar show` and the viewer's GPU meter (`gpu.py`, the
 DRM fdinfo of the unit's processes) count its GPU use.
 
 ## Guest restarts and a full disk
@@ -91,8 +91,8 @@ Every VM, whatever its GPU, runs this way under its unit (`beanjar/lifecycle.py`
   keeps its window and waits for a new `org.qemu` on the bus (up to 180 s) instead of ending, and
   registers its display and audio with it. Without the marker a lost display ends the front end
   2 s later, as when a VM stops. USB devices that were attached (`io usb attach`, `--image` sticks,
-  `io usb plug`'s devices) are recorded in `RuntimeDirectory/usb.json` and put back on the new
-  QEMU before its guest boots, at the same sockets; `io usb plug` starts its client again for them.
+  `io usb attach`'s devices) are recorded in `RuntimeDirectory/usb.json` and put back on the new
+  QEMU before its guest boots, at the same sockets; `io usb attach` starts its client again for them.
 - **A full host disk quits QEMU.** The drives keep QEMU's default `werror=enospc`, which pauses the
   VM when a write hits ENOSPC. The same monitor sees the `BLOCK_IO_ERROR` (`nospace`, action
   `stop`), says `beanjar: the host's disk is full: writing DRIVE failed (...); QEMU quits instead
@@ -150,8 +150,8 @@ old one, and it notices that only when it writes. QEMU's frontend has no reconne
   `backend_blocked` flag), so the updates cannot be sent together either. The backend has no
   option against it. In a guest, only the kernel's fbdev emulation puts one resource on both
   outputs, and only when the last DRM file closes. That happens at shutdown and at a restart,
-  and with the cold restart the next boot has a new backend anyway. See "Two outputs (spacebuns)"
-  below. So `auto` does not leave two-output guests out.
+  and with the cold restart the next boot has a new backend anyway. See "Two outputs (queue, and
+  spacebuns until 2026-11-23)" below. So `auto` does not leave two-output guests out.
 - What pauses or resets a VM in beanjar (audited 2026-11-07): webOS's own restart, above, is a
   normal workflow, and a cold start now; no pause is. The only `stop`
   and `cont` target is the media pool's guest test (`guest/kernel/modules/media-pool/tests/run-tests.py`,
@@ -198,8 +198,11 @@ The display after a guest restart (only without the unit's monitor now, e.g. a f
 
 The shared resource on two outputs:
 
+Measured with W24G spacebuns while it had two outputs (until 2026-11-23); W22O queue is now the
+two-output guest, and the same steps with it are expected to show the same, not measured.
+
 1. Create a VM on W24G spacebuns (02.68.80.01) with layers `normal,gl` and the dbus display, which
-   gives it `max_outputs=2`, and start it with `gpu = "vhost-user-gpu"`.
+   gave it `max_outputs=2`, and start it with `gpu = "vhost-user-gpu"`.
 2. On a fresh state, spacebuns restarts once, about 85 s after the start (it reaches Home on its second boot). During that shutdown the backend exits:
    `gpu-backend.out` ends with `vg_wait_ok: Assertion 'g->wait_in == 0' failed`. Without the
    unit's cold restart (a foreground run), `qemu.out` then has `Failed to set vhost-user-gpu
@@ -209,14 +212,25 @@ The shared resource on two outputs:
    vhost-user-gpu. To trigger the abort in a running guest, stop `surface-manager-daemon` and then
    `webapp-mgr`, the last process with a DRM file open.
 
-### Two outputs (spacebuns)
+### Two outputs (queue, and spacebuns until 2026-11-23)
 
-Measured on rk-1 on 2026-11-07. The backend was a scratch build with log lines in
-`virgl_cmd_set_scanout` and `virgl_cmd_resource_flush`.
+Spacebuns has one output since 2026-11-23, as a set: one scanout whose connector is a TV
+connector with an overlay plane (guest kernel patches 0020 and 0028, the words in the gl layer's
+`native-tv-rootfs`). LG's drm-backend copies that connector into a second head, TV-2, and puts the
+768x2160 popup output on the overlay plane, as it does on a set's lg1kdrm (one CRTC with a
+primary, an overlay and a cursor plane). That output is what gives LSMW's popup window its
+controllers; without it the compositor faulted in `getFocusedWindowInfo`, which is why a second
+scanout was added before (docs/research/graphics/compositors.md, "Spacebuns outputs on a set").
+The fbdev abort below needs two CRTCs, so it no longer happens on spacebuns. Queue still has two
+scanouts.
 
-- Why two outputs: spacebuns' stock Weston configuration (`product.env`, configd) has two
-  displays, the 1920x1080 TV and a 768x2160 popup. With one output its compositor faults on the
-  second window's missing controllers. It needs the second scanout. Queue is the same.
+What follows was measured on rk-1 on 2026-11-07, with spacebuns' two scanouts then. The backend
+was a scratch build with log lines in `virgl_cmd_set_scanout` and `virgl_cmd_resource_flush`.
+
+- Why two outputs then: spacebuns' stock Weston configuration (`product.env`, configd) has two
+  displays, the 1920x1080 TV and a 768x2160 popup. With one output and no overlay plane its
+  compositor faulted on the second window's missing controllers. Queue's setup is the same and
+  keeps its second scanout.
 - What shares the resource: our guest kernel's fbdev emulation (`CONFIG_DRM_FBDEV_EMULATION`,
   guest/kernel/configs/webos_virt_defconfig). At boot, before the compositor runs, it creates
   `fb0` as one 1920x2160 buffer covering both modes (`/sys/class/graphics/fb0/virtual_size`;

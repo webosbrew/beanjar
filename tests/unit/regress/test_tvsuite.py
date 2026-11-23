@@ -9,14 +9,17 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGRESS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "tests", "regress")
+sys.path.insert(0, os.path.join(os.path.dirname(REGRESS), "..", "host", "core"))
 sys.path.insert(0, os.path.join(REGRESS, "lib"))
 import teeref  # noqa: E402
 import tvsuite  # noqa: E402
+from beanjar import targets  # noqa: E402
 
 loader = importlib.machinery.SourceFileLoader(
     "tv_expect_gen", os.path.join(REGRESS, "tv-expect-gen.py")
@@ -372,7 +375,7 @@ class LunaTest(unittest.TestCase):
 class NetworkTest(unittest.TestCase):
     STATUS = (
         '{"returnValue":true,"isInternetConnectionAvailable":true,"wired":{"state":"connected","interfaceName":'
-        '"eth0","ipAddress":"10.0.2.15","method":"dhcp","gateway":"10.0.2.2","dns1":"10.0.2.3","onInternet":"yes"}}'
+        '"eth0","ipAddress":"10.0.2.15","method":"dhcp","gateway":"10.0.2.2","dns1":"10.0.2.254","onInternet":"yes"}}'
     )
     TEXT = "\n".join(
         [
@@ -389,7 +392,7 @@ class NetworkTest(unittest.TestCase):
             "TV FACTS END",
         ]
     )
-    SERVED = 'REQUEST 127.0.0.1 "GET /cafe0123 HTTP/1.1" 200 -\n'
+    SERVED = 'REQUEST 10.0.2.15 "GET /cafe0123 HTTP/1.1" 200 -\n'
     HOST = "dns=104.20.23.154 172.66.147.243 \nonline_dns=1.2.3.4 \nonline_http=200\n"
 
     def test_good(self):
@@ -446,6 +449,42 @@ class NetworkTest(unittest.TestCase):
         )
         self.assertEqual(r["dns"][0], "FAIL")
 
+    def test_network_is_the_namespaces(self):
+        """The expectations are link=nat's namespace (netns.py): its lease, router, the mock's DNS
+        and the TAP's address, where the suite's server runs."""
+        from beanjar import netns
+
+        self.assertEqual(tvsuite.NET_GUEST, netns.GUEST)
+        self.assertEqual(tvsuite.NET_ROUTER, netns.ROUTER)
+        self.assertEqual(tvsuite.NET_DNS, netns.MOCK_DNS)
+        self.assertEqual(tvsuite.TEST_SERVER, netns.DHCP_SERVER)
+
+    def test_http_needs_the_guests_own_address(self):
+        """The server's log must show the request from the guest itself: one from the host's
+        loopback (or anything translated on the way) is not the guest's fetch."""
+        for served in (
+            'REQUEST 127.0.0.1 "GET /cafe0123 HTTP/1.1" 200 -\n',
+            'REQUEST 10.0.2.2 "GET /cafe0123 HTTP/1.1" 200 -\n',
+        ):
+            r = items_of(
+                tvsuite.judge_network(
+                    self.TEXT, ctx(), token="cafe0123", served=served, host=self.HOST
+                )
+            )
+            self.assertEqual(r["http"][0], "FAIL", served)
+            self.assertIn("from 10.0.2.15", r["http"][1])
+        # the old slirp DNS is no longer the namespace's
+        r = items_of(
+            tvsuite.judge_network(
+                self.TEXT.replace('"dns1":"10.0.2.254"', '"dns1":"10.0.2.3"'),
+                ctx(),
+                token="cafe0123",
+                served=self.SERVED,
+                host=self.HOST,
+            )
+        )
+        self.assertEqual(r["connman-wired"][0], "FAIL")
+
 
 class HelpersTest(unittest.TestCase):
     def test_names(self):
@@ -498,6 +537,104 @@ class HelpersTest(unittest.TestCase):
         locs, src = gen.provider(Fw(), {"*": provs["*"]}, "com.webos.service.blegatt", None)
         self.assertIsNone(locs)
         self.assertIn("no role or services.d file provides", src)
+
+    def test_super_pak_firmware(self):
+        """A super.pak firmware's rootfs and otncabi are logical images: the release and the browser's
+        requiredEULA (the eula row) are read from them at their offsets."""
+        import json
+        import shutil
+        import subprocess
+        import tempfile
+
+        if not shutil.which("mksquashfs") or not shutil.which("unsquashfs"):
+            self.skipTest("no squashfs-tools here")
+        with tempfile.TemporaryDirectory() as tmp:
+
+            def image(name, files):
+                src = os.path.join(tmp, "src-" + name)
+                for path, data in files.items():
+                    os.makedirs(os.path.dirname(os.path.join(src, path)), exist_ok=True)
+                    with open(os.path.join(src, path), "w") as f:
+                        f.write(data)
+                out = os.path.join(tmp, name + ".sqfs")
+                subprocess.run(
+                    ["mksquashfs", src, out, "-quiet", "-noappend", "-no-progress"],
+                    check=True,
+                    capture_output=True,
+                )
+                with open(out, "rb") as f:
+                    data = f.read()
+                return data + bytes(-len(data) % 512)
+
+            apps = "usr/palm/applications/"
+            payloads = {
+                "rootfs": image(
+                    "rootfs",
+                    {
+                        "etc/starfish-release": "Rockhopper release 9.2.4-4603 (ombre-okapi)\n",
+                        apps + "com.webos.app.firstuse-overlay/appinfo.json": "{}",
+                    },
+                ),
+                "fonts": b"F" * 512,
+                "otncabi": image(
+                    "otncabi",
+                    {
+                        apps + "com.webos.app.browser/appinfo.json": json.dumps(
+                            {
+                                "id": "com.webos.app.browser",
+                                "type": "native_builtin",
+                                "main": "chrome",
+                                "requiredEULA": "generalTerms",
+                            }
+                        )
+                    },
+                ),
+                "otycabi": b"Y" * 512,
+                "bsppart": b"B" * 512,
+            }
+            table, offset, data = [], 1024, bytes(1024)
+            for index, (name, payload) in enumerate(payloads.items()):
+                table += [
+                    f"{name}-linear,,,ro, 0 {len(payload) // 512} linear /dev/mmcblk0p27 {offset // 512}",
+                    f"{name},,,ro, 0 1 webos-verity /dev/dm-{index * 2}",
+                ]
+                data += payload + bytes(512)
+                offset += len(payload) + 512
+            with open(os.path.join(tmp, "super.pak"), "wb") as f:
+                f.write(data)
+            text = ' dm-mod.waitfor="/dev/mmcblk0p27" dm-mod.create="' + ";".join(table)
+            text += '" root=/dev/dm-1 ro rootfstype=squashfs '
+            with open(os.path.join(tmp, "dpmeta.pak"), "wb") as f:
+                f.write(text.encode() + b"\0")
+
+            fw = gen.Firmware(tmp)
+            self.assertEqual(fw.paks[0], "rootfs.pak")
+            self.assertNotIn("super.pak", fw.paks)
+            self.assertEqual(gen.release_of(fw)["version"], "9.2.4-4603")
+            browser = gen.apps_of(fw, ["rootfs.pak", "otncabi.pak"])["browser"]
+            self.assertTrue(browser["present"])
+            self.assertEqual(browser["eula"]["terms"], "generalTerms")
+            self.assertEqual(browser["eula"]["screen"], tvsuite.TERMS_SCREEN)
+            self.assertIn("otncabi.pak:/", browser["eula"]["source"])
+
+    def test_expected_crash_targets(self):
+        """W20's browser abort at close is expected on both jhericurl targets, and only with its frames."""
+        frames = [
+            "__cxa_pure_virtual+0x12",
+            "_ZN7Browser12CloseBrowserEb+0x1be",
+            "_ZN7Browser33OnFirstUseErrorReportDialogClosedEbRKNSt7__cxx1112basic_stringItN4base18"
+            "string16_internals20string16_char_traitsESaItEEE+0x6e",
+        ]
+        for target in ("k6lp-jhericurl", "k6hp-jhericurl"):
+            self.assertIsNotNone(
+                tvsuite.expected_crash(target, "browser", "graphics", ("6", frames)), target
+            )
+        self.assertIsNone(
+            tvsuite.expected_crash("k7lp-kisscurl", "browser", "graphics", ("6", frames))
+        )
+        self.assertIsNone(
+            tvsuite.expected_crash("k6hp-jhericurl", "browser", "graphics", ("6", frames[:1]))
+        )
 
     def test_ls_registrations(self):
         """W15M's connection manager: getStatus on the public bus only (a firmware where there is one)."""
@@ -1138,6 +1275,46 @@ class TeeTest(unittest.TestCase):
             gone, [("tee.device", "FAIL", "/dev/tee0: ls: /dev/tee0: No such file or directory")]
         )
 
+    def test_no_node_judge(self):
+        """A chip with no TEE module (MStar): absent node, a clean ITEM_NOT_FOUND init, no crash."""
+        row = dict(
+            tee=dict(
+                clients=["bsppart.pak:/bsp/usr/lib/libkadaptor.so"],
+                tas=[],
+                source="test",
+                node=False,
+                node_source="no module has tee=1",
+            )
+        )
+        facts = (
+            "tee_dev=ls: /dev/tee0: No such file or directory\nlib=/usr/lib/libkadaptor.so\n"
+            f"open.{tvsuite.SSTORE_UUID}=init:0xffff0008\nprobe_open_rc=0\n"
+            "sstore.fails=7\nprobe_sstore_rc=1\ntee_crashes=\nTV FACTS END"
+        )
+        items = items_of(tvsuite.judge_tee(facts, row))
+        self.assertEqual(set(items), {"tee.device", "tee.init", "tee.crashes"})
+        self.assertEqual({st for st, _ in items.values()}, {"PASS"}, items)
+        crashed = items_of(tvsuite.judge_tee(facts.replace("tee_crashes=", "tee_crashes=x.1"), row))
+        self.assertEqual(crashed["tee.crashes"][0], "FAIL")
+        other = items_of(
+            tvsuite.judge_tee(facts.replace("init:0xffff0008", "init:0xffff0000"), row)
+        )
+        self.assertEqual(other["tee.init"][0], "FAIL")
+        # a node after all: the table is stale
+        node = items_of(
+            tvsuite.judge_tee(
+                facts.replace("No such file or directory", "x").replace(
+                    "tee_dev=ls: /dev/tee0: x", "tee_dev=char"
+                ),
+                row,
+            )
+        )
+        self.assertEqual(node["tee.device"][0], "FAIL")
+        # Realtek's row (node true) keeps the full checks
+        huk = os.urandom(32)
+        real = dict(tee=dict(TEE_ROW["tee"], node=True))
+        self.assertIn("tee.key.blob", items_of(tvsuite.judge_tee(tee_guest(huk), real, huk.hex())))
+
     def test_skip_without_a_client(self):
         row = dict(
             tee=dict(
@@ -1163,6 +1340,13 @@ class TeeTest(unittest.TestCase):
         for target, row in table.items():
             self.assertTrue(row["tee"]["source"], target)
             plan = tvsuite.tee_plan(row, target)
+            # a row with a client and a chip without rtk.ko's TEE says so: the judge expects no node
+            if row["tee"]["clients"]:
+                self.assertEqual(
+                    row["tee"].get("node", True),
+                    targets.tee_module(targets.by_name(target)) is not None,
+                    target,
+                )
             # every Realtek firmware has a client library (others may: LM21A's)
             if target.startswith("k"):
                 self.assertIsNotNone(plan, target)
@@ -1657,29 +1841,140 @@ class DecodeTest(unittest.TestCase):
         self.assertFalse(c["opus"][0])
         self.assertIn("no [omxopusdec]", c["opus"][1])
 
-    def test_mse_claims(self):
-        """Each source buffer's MIME type and codec string must be the engine's own strings."""
+    class EngineFw:
+        def __init__(self, data, engine):
+            self.data, self.engine = data, engine
 
-        class Fw:
-            def __init__(self, data):
-                self.data = data
+        def find(self, path, paks=None):
+            return ("rootfs.pak", path) if path == self.engine else None
 
-            def find(self, path, paks=None):
-                return ("rootfs.pak", path) if path == gen.WEB_ENGINES[0] else None
+        def read(self, pak, path):
+            return self.data
 
-            def read(self, pak, path):
-                return self.data
-
+    def test_mse_claims_webkit(self):
+        """QtWebKit: each source buffer's MIME type and codec name must be the engine's strings."""
+        qt = gen.WEB_ENGINES[-1]
         both = b"MediaSource addSourceBuffer video/webm vp09 av01 audio/webm opus video/mp4 avc1"
-        c = gen.mse_of(Fw(both))
-        self.assertTrue(c["mse.av1"][0] and c["mse.vp9-opus"][0])
+        c = gen.mse_of(self.EngineFw(both, qt))
+        self.assertTrue(c["mse.av1"][0] and c["mse.vp9-opus"][0] and c["mse.h264"][0])
         self.assertIn("video/webm, av01, audio/webm, opus", c["mse.av1"][1])
-        c = gen.mse_of(Fw(both.replace(b"av01", b"")))
+        c = gen.mse_of(self.EngineFw(both.replace(b"av01", b""), qt))
         self.assertFalse(c["mse.av1"][0])
         self.assertIn("names no av01 codec string", c["mse.av1"][1])
-        c = gen.mse_of(Fw(both.replace(b"audio/webm", b"")))
+        c = gen.mse_of(self.EngineFw(both.replace(b"audio/webm", b""), qt))
         self.assertFalse(c["mse.vp9-opus"][0])
         self.assertTrue(c["mse.vp9"][0])
+
+    def test_mse_claims_chromium(self):
+        """Chromium: each source buffer's type must be in StreamParserFactory's table and one of
+        its codec patterns must match the buffer's codec string."""
+        table = {
+            "video/webm": ["vp8", "vp9", "vp09.*", "vorbis", "opus", "av01.*"],
+            "audio/webm": ["vorbis", "opus"],
+            "video/mp4": ["avc1.*", "hvc1.*"],
+            "audio/mp4": ["mp4a.40.*"],
+        }
+        real = gen.mse_parsers
+        try:
+            gen.mse_parsers = lambda data: table
+            fw = self.EngineFw(b"MediaSource addSourceBuffer", gen.CBE[0])
+            c = gen.mse_of(fw)
+            self.assertTrue(all(ok for ok, _ in c.values()), c)
+            self.assertIn("video/webm av01.0.04M.08 (av01.*)", c["mse.av1"][1])
+            del table["audio/webm"]  # webOS 4.5: video/webm takes opus, audio/webm is no type
+            c = gen.mse_of(fw)
+            self.assertFalse(c["mse.vp9-opus"][0])
+            self.assertIn("take no audio/webm", c["mse.vp9-opus"][1])
+            self.assertTrue(c["mse.vp9"][0])
+            # webOS 5: AV1 only for an app that opts in, which the test app does not
+            c = gen.mse_of(
+                self.EngineFw(b"MediaSource addSourceBuffer mse_enable_av1=%d", gen.CBE[0])
+            )
+            self.assertFalse(c["mse.av1"][0])
+            self.assertIn("mse.enableAV1", c["mse.av1"][1])
+            self.assertTrue(c["mse.vp9"][0])
+            pref = b"MediaSource addSourceBuffer mse_enable_av1=%d : is_av1_decoder_enabled_="
+            c = gen.mse_of(self.EngineFw(pref, gen.CBE[0]))  # no audio/webm here: that reason only
+            self.assertIn("take no audio/webm", c["mse.av1"][1])
+            table["video/webm"].remove("av01.*")
+            self.assertIn("takes no av01.0.04M.08", gen.mse_of(fw)["mse.av1"][1])
+            gen.mse_parsers = lambda data: None
+            with self.assertRaises(SystemExit):
+                gen.mse_of(fw)
+        finally:
+            gen.mse_parsers = real
+
+    def test_mse_buffers_are_the_clips(self):
+        """MSE_BUFFERS are the MIME types make-clips.sh --decode gives the page's source buffers."""
+        with open(os.path.join(REGRESS, "video", "make-clips.sh")) as f:
+            text = f.read()
+        names = dict(re.findall(r"\b(AVC|AAC|HVC|AV01)='([^']+)'", text))
+        mimes, case = {}, None
+        for line in text.replace("\\", "").splitlines():
+            c = re.search(r'"((?:file|mse)\.[\w-]+)":', line)
+            case = c.group(1) if c else case
+            m = re.search(r'"mime": "(\w+/\w+); codecs="([^"]+)"', line)
+            if m and case and case.startswith("mse."):
+                codec = re.sub(r"\$(\w+)", lambda x: names[x.group(1)], m.group(2))
+                mimes.setdefault(case, []).append((m.group(1), codec))
+        self.assertEqual(mimes, {k: list(v) for k, v in gen.MSE_BUFFERS.items()})
+
+    def test_replace_tables(self):
+        """--table decode rewrites the [decode] table of the existing file and nothing else."""
+        import tempfile
+
+        text = 'firmware = "FW"\n\n[audio]\nx = 1\n\n[decode]\n"old" = 1\n\n[smp]\npresent = true\n'
+        real = gen.TABLE_ROWS["decode"]
+        try:
+            gen.TABLE_ROWS["decode"] = lambda fw: {"mse.h264": {"present": False, "source": "s"}}
+            with tempfile.TemporaryDirectory() as d:
+                with open(os.path.join(d, "t.toml"), "w") as f:
+                    f.write(text)
+                gen.replace_tables(d, "t", "FW", None, ["decode"])
+                with open(os.path.join(d, "t.toml")) as f:
+                    self.assertEqual(
+                        f.read(),
+                        text.replace('"old" = 1', '"mse.h264" = { present = false, source = "s" }'),
+                    )
+                with self.assertRaises(SystemExit):
+                    gen.replace_tables(d, "t", "OTHER", None, ["decode"])
+        finally:
+            gen.TABLE_ROWS["decode"] = real
+
+    def test_mse_parsers_firmware(self):
+        """StreamParserFactory tables of webOS 4.5, 6 and 24 engines, where the firmware is here."""
+        sys.path.insert(
+            0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "host", "core")
+        )
+        from beanjar import paths
+
+        fws = {
+            n: paths.find_firmware(n) or ""
+            for n in ("05.40.97.01-HE_DTV_W19P_AFADABAA", "03.70.25.01-HE_DTV_W21P_AFADATAA")
+        }
+        if not all(os.path.isfile(os.path.join(d, "rootfs.pak")) for d in fws.values()):
+            self.skipTest("no W19P or W21P firmware here")
+        w19p = gen.mse_parsers(
+            gen.Firmware(fws["05.40.97.01-HE_DTV_W19P_AFADABAA"]).read(
+                "rootfs.pak", "usr/lib/libcbe.so"
+            )
+        )
+        self.assertNotIn("audio/webm", w19p)
+        self.assertIn("opus", w19p["video/webm"])
+        self.assertIn("mp4a.40.*", w19p["audio/mp4"])
+        w21p = gen.mse_parsers(
+            gen.Firmware(fws["03.70.25.01-HE_DTV_W21P_AFADATAA"]).read(
+                "rootfs.pak", "usr/lib/libcbe.so"
+            )
+        )
+        self.assertIn("opus", w21p["audio/webm"])
+        self.assertIn("av01.*", w21p["video/webm"])
+        w24g = paths.find_firmware("02.68.80.01-HE_DTV_W24G_AFABATAA") or ""
+        if os.path.isfile(os.path.join(w24g, "rootfs.pak")):  # string views and spans
+            cbe = "usr/palm/services/com.palm.webruntime/lib/libcbe.so"
+            w24g = gen.mse_parsers(gen.Firmware(w24g).read("rootfs.pak", cbe))
+            self.assertEqual(w24g["audio/webm"], ["vorbis", "opus", "Opus"])
+            self.assertIn("av01.*", w24g["video/webm"])
 
     def test_slice_prune_sheet(self):
         import tempfile

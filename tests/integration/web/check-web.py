@@ -737,7 +737,7 @@ async def check_thumbnails(session, url, tmp):
     three = await thumbnail()
     if one != two or two != three:
         fail("thumbnail cache returned different pictures within its window")
-    if captures()[len(before) :] != ["screenshot local/tv - --size 384x216"]:
+    if captures()[len(before) :] != ["screenshot local/tv - --frame 384x216"]:
         fail(f"thumbnail requests did not share a single small capture: {captures()}")
     hold = os.path.join(tmp, "thumbnail-hold")
     animate = os.path.join(tmp, "animate")

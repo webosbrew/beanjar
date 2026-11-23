@@ -1,17 +1,61 @@
 #!/bin/sh
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# The measured virtio plane supports XR24; Spacebuns also needs explicit geometry.
+# The virtio primary plane scans out ARGB8888 and ABGR8888 (guest kernel patch 0027), but Mesa's
+# GBM EGL platform folds its ABGR8888 configs into the ARGB8888 ones (EGL_NATIVE_VISUAL_ID is no
+# match criterion; docs/research/graphics/compositors.md), so Weston finds no config for the stock
+# abgr8888. It becomes argb8888, which keeps the OSD's alpha. Spacebuns' outputs are LG's own: its
+# frontend writes TV-1 and TV-2 from the environment (override-output-from-env, which must stay on),
+# and the guest kernel names the one connector TV with an overlay plane for TV-2, as on a set
+# (the gl layer's kernel words).
+#
+# The launcher also turns on LG's gl-renderer "punch-through hole clear". Weston 13's
+# weston_surface_attach_solid empties a solid surface's opaque region, so once LSMW calls
+# WebOSOutput::setBackgroundOpaque(false) (a video window is inserted, or an app goes away) the
+# shell background no longer overwrites the scanout with alpha 0, and nothing in the stock repaint
+# clears what no opaque view covers: the old frame's alpha 255 stays under an app's video hole.
+# LG's gl-renderer clears exactly that (the damage minus the opaque views, to 0,0,0,0) when
+# WESTON_FORCE_RENDERER is non-empty (gl-renderer.so 0x8744); the stock launcher exports it empty,
+# "# For PVR GPU". The drm-backend only asks whether it is set (drm-backend.so 0xcd4a), so it stays
+# renderer-only either way. On the set's Mali (bsppart libmali.so.0.46.0: EGL_KHR_partial_update,
+# no EGL_EXT_buffer_age) Weston declares the damage region and the driver does not load it, so the
+# damage reads as transparent black: inferred from the extension list, not measured on a set.
+# virgl keeps the old contents, as the GPUs the clear is for do (docs/research/graphics/compositors.md).
 # An optional root prefix allows isolated configuration tests without mounts.
 set -eu
 root=${1-}
 source_ini=$root/usr/share/weston/weston.ini
 user_ini=$root/var/luna/preferences/weston.ini
+launcher=$root/usr/bin/surface-manager.sh
 runtime=$root/run/beanjar/native-weston
 profile=$root/usr/share/beanjar/native-weston-target
 spacebuns=0
 if [ -f "$profile" ] && [ "$(cat "$profile")" = o22n2-spacebuns ]; then
 	spacebuns=1
+fi
+trap 'rm -f "$runtime/virtio.ini.tmp" "$runtime/surface-manager.sh.tmp"' 0
+trap 'exit 1' HUP INT TERM
+
+# The stock launcher with only its empty WESTON_FORCE_RENDERER set. A restart in the same boot
+# reuses this helper's binding; any other mount or launcher is refused.
+if mountpoint -q "$launcher"; then
+	if ! [ -f "$runtime/surface-manager.sh" ] || ! cmp -s "$launcher" "$runtime/surface-manager.sh"; then
+		echo "native-weston-format: launcher already mounted by another owner" >&2
+		exit 1
+	fi
+else
+	mkdir -p "$runtime"
+	awk '
+	    $0 == "export WESTON_FORCE_RENDERER=" { count++; $0 = "export WESTON_FORCE_RENDERER=1" }
+	    { print }
+	    END { if (count != 1) exit 1 }
+	' "$launcher" > "$runtime/surface-manager.sh.tmp" || {
+		echo "native-weston-format: unexpected compositor launcher" >&2
+		exit 1
+	}
+	chmod 755 "$runtime/surface-manager.sh.tmp"
+	mv "$runtime/surface-manager.sh.tmp" "$runtime/surface-manager.sh"
+	mount --bind "$runtime/surface-manager.sh" "$launcher"
 fi
 
 # The stock launcher gives this file precedence over its default configuration.
@@ -33,37 +77,22 @@ fi
 
 mkdir -p "$runtime"
 cp "$source_ini" "$runtime/stock.ini"
-# Match the measured firmware key only, and reject an unexpected configuration
+# Check the measured firmware key only, and reject an unexpected configuration
 # instead of silently booting with a format this plane cannot scan out.
-trap 'rm -f "$runtime/virtio.ini.tmp"' 0
-trap 'exit 1' HUP INT TERM
 awk -v spacebuns="$spacebuns" '
-    /^\[/ { core = ($0 == "[core]"); output = ($0 == "[output]") }
+    /^\[/ { core = ($0 == "[core]") }
     core && /^gbm-format=(abgr8888|xrgb8888)$/ {
         count++
-        sub(/=abgr8888$/, "=xrgb8888")
+        sub(/=abgr8888$/, "=argb8888")
     }
     core && /^override-output-from-env=/ {
         overrides++
         if ($0 != "override-output-from-env=true") invalid_override = 1
     }
-    output && /^name=Virtual-[12]$/ { virtual_outputs++ }
     { print }
     END {
         if (count != 1) exit 1
-        if (spacebuns) {
-            if (overrides != 1 || invalid_override || virtual_outputs) exit 1
-            print ""
-            print "[output]"
-            print "name=Virtual-1"
-            print "mode=1920x1080"
-            print "buffer_size=1920x1080"
-            print ""
-            print "[output]"
-            print "name=Virtual-2"
-            print "mode=768x2160"
-            print "buffer_size=768x2160"
-        }
+        if (spacebuns && (overrides != 1 || invalid_override)) exit 1
     }
 ' "$runtime/stock.ini" > "$runtime/virtio.ini.tmp"
 mv "$runtime/virtio.ini.tmp" "$runtime/virtio.ini"

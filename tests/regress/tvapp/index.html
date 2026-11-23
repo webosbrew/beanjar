@@ -82,7 +82,7 @@ function decode(p) {
 	var name = p['case'], c = window.DECODE && DECODE[name], t0 = Date.now(), seen = [], last = -1, top = 0;
 	var bar = document.createElement('div'), v = document.createElement('video'), ended = false;
 	var seq = 0, beacons = [];
-	// each line also as a GET to the step's server on the VM host (p.log: http://10.0.2.2:PORT/TOKEN/),
+	// each line also as a GET to the step's server in the VM's own network namespace (p.log: http://10.0.2.254:PORT/TOKEN/),
 	// an image request, which every engine makes from a packaged app: not every firmware's
 	// WebAppMgr puts the console in PmLog
 	function log(s) {

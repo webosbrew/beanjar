@@ -7,6 +7,7 @@ import contextlib
 import gzip
 import importlib.util
 import io
+import os
 from pathlib import Path
 import sys
 from unittest import mock
@@ -246,3 +247,14 @@ class TestComponentsTest:
         selection.write_text('{"k5lp-goldilocks2":"' + "0" * 64 + '"}')
         with pytest.raises(ValueError, match="missing component"):
             guestlayers.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
+
+
+def test_copy_keeps_systemd_masks_and_refuses_external_links(tmp_path):
+    src = tmp_path / "src"
+    (src / "etc/systemd/system").mkdir(parents=True)
+    (src / "etc/systemd/system/dropbear.service").symlink_to("/dev/null")
+    debian.copy(src, tmp_path / "out")
+    assert os.readlink(tmp_path / "out/etc/systemd/system/dropbear.service") == "/dev/null"
+    (src / "escape").symlink_to("/etc/passwd")
+    with pytest.raises(SystemExit, match="external symlink"):
+        debian.copy(src, tmp_path / "out2")

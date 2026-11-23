@@ -28,6 +28,7 @@ version = "4.5"
 # tfat.ko and tntfs.ko: webOS 1 to 23, SS1A and NC5U (tfat, tntfs), and webOS 24 on, whose PDM
 # mounts NTFS as "ntfs" with LG's nls option, which ntfs3 rejects
 peripherals = [
+    "sit",
     "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",
     "hid-microsoft", "hid-pl", "hid-sony", "hid-playstation", "hid-zpff", "xpad", "uvcvideo",
     "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii", "nls_utf8",
@@ -58,6 +59,11 @@ factory_offset = 0x294
 # the local key type moved to ToolOption4 (W19P's TOOL_OPTION4_T eLocalKeyType:2 at bit 0,
 # TVCO_CFG_ID_TOOLOPT4_LOCAL_KEY_TYPE)
 local_key = { word = 4, offset = 0, width = 2, names = ["joystick", "onekey", "ninekey"] }
+# W19P's debug status: 32 bytes at 0x1C6 as on W18R (nvm.sync_debug_block), and its plain copy
+# at 0x1A8 (U-Boot's nDebugStatus, sysdb+0x194), which tvservice's DIL_NVM_Load_DebugStatus
+# checks the block against by its low nibble (0xFF or RELEASE skip the check).
+debug_block_offset = 0x1C6
+debug_status_offset = 0x1A8
 
 [partitions]
 partinfo = "partinfo"

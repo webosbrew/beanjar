@@ -65,7 +65,7 @@ process enter it.
 userland = "qemu-user"   # auto (default, not written), native or qemu-user
 ```
 
-`beanjar settings NAME set userland=qemu-user`; the launcher's variable is `USERLAND`. `auto` is
+`beanjar config set NAME userland=qemu-user`; the launcher's variable is `USERLAND`. `auto` is
 resolved at each start by `vmsettings.resolve_userland`, and the launcher logs the result and the
 reason in one line (`userland: qemu-user (KVM on a CPU without AArch32 at EL0)`):
 
@@ -103,7 +103,7 @@ gives the guest `vmsettings.QEMU_USER_OVERHEAD_PERCENT` (50 %) of `mem` more (`-
 `vmsettings.guest_ram_mib`) and logs `memory: 2048 MB for the TV + 1024 MB for qemu-user's
 overhead`. `mem` stays the TV's RAM. The host's memory admission and the unit's MemoryHigh
 (`capacity`, `qemu.vm_guest_ram`, `VM.guest_ram`) use the larger size; `beanjar list` shows MEM as
-`2048+1024` and `beanjar info` both (`tv_ram`, `guest_ram`). What webOS is told the set has is the
+`2048+1024` and `beanjar show` both (`tv_ram`, `guest_ram`). What webOS is told the set has is the
 model's board parameters (board.cmdline's `hwopt=`), which do not follow `-m`; the balloon is never
 inflated and the media pool has its own size, so neither changes.
 
@@ -167,7 +167,7 @@ ENOEXEC, and any program that escaped binfmt_misc would fail to start.
 ## Where it is refused
 
 `vmsettings.NATIVE_ONLY`, firmware lines that need native 32-bit execution whatever the host can
-do: an explicit `qemu-user` and `guest_kernel = "x86-64"` are refused by `beanjar settings` and at
+do: an explicit `qemu-user` and `guest_kernel = "x86-64"` are refused by `beanjar config set` and at
 launch, and `auto` fails the start where the host cannot run them natively:
 
 - **NetCast** (LM14, NetCast 4.5): the stock application writes to MMIO windows

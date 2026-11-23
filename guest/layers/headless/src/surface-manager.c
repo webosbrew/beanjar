@@ -15,6 +15,16 @@
  * settings-service) with it. settings-service-recovery.sh calls showSpinner (show false). Those are
  * the only calls of W20L's units and scripts; showSpinner answers returnValue true, any other
  * method gets LS2's own "unknown method" error at once.
+ *  - com.webos.coverUI, where the stock services.d file lists it among the compositor's names
+ *    (W22O number1 does, and the hub's role for /usr/bin/surface-manager allows it there).
+ *    number1's activity com.webos.app.cpcover.stolen calls getStatus, which ls-hubd holds while
+ *    nobody owns the name: configurator-activity never ends, webos-rbd.target never starts.
+ *    LG's compositor serves open, close and getStatus (StarfishExtendedLunaServiceAPI.qml)
+ *    through the WebOSServices Service plugin: getStatus answers {"isRunning": <cover open>,
+ *    "returnValue": true}, with "subscribed" for subscribe:true, and pushes on a change; open
+ *    and close answer {"returnValue": true}. Headless shows no cover: getStatus is always
+ *    false, a subscription is kept and never pushed to, open and close draw nothing. An LS2
+ *    name needs a handle of its own (one LSRegister each).
  *  - READY=1 on $NOTIFY_SOCKET (the unit is Type=notify; this is its main process).
  *  - lsm-ready: `initctl emit lsm-ready`, which W20L's initctl turns into /tmp/lsm-ready
  *    (lsm-ready.path) and a READY=1 for surface-manager, as the Upstart stand-in emits it.
@@ -59,6 +69,8 @@ static bool (*ls_register_category)(LSHandle *, const char *, LSMethod *, void *
                                     LSError *);
 static bool (*ls_gmain_attach)(LSHandle *, void *, LSError *);
 static bool (*ls_message_reply)(LSHandle *, LSMessage *, const char *, LSError *);
+static bool (*ls_message_is_subscription)(LSMessage *);
+static bool (*ls_subscription_add)(LSHandle *, const char *, LSMessage *, LSError *);
 static void *(*g_main_loop_new_)(void *, int);
 static void (*g_main_loop_run_)(void *);
 
@@ -76,20 +88,94 @@ static void *sym(void *lib, const char *name)
     return p;
 }
 
-static bool show_spinner(LSHandle *sh, LSMessage *msg, void *ctx)
+static void reply(LSHandle *sh, LSMessage *msg, const char *payload)
 {
     LSError e;
-    (void)ctx;
     ls_error_init(&e);
-    if (!ls_message_reply(sh, msg, "{\"returnValue\":true}", &e))
+    if (!ls_message_reply(sh, msg, payload, &e))
         ls_error_free(&e);
+}
+
+static bool reply_true(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    (void)ctx;
+    reply(sh, msg, "{\"returnValue\":true}");
     return true;
 }
 
 static LSMethod methods[] = {
-    {"showSpinner", show_spinner, 0},
+    {"showSpinner", reply_true, 0},
     {NULL, NULL, 0},
 };
+
+/* com.webos.coverUI/getStatus: no cover is ever open; a subscriber is kept, and never pushed to */
+static bool cover_get_status(LSHandle *sh, LSMessage *msg, void *ctx)
+{
+    LSError e;
+    bool subscribed;
+    (void)ctx;
+
+    if (!ls_message_is_subscription(msg)) {
+        reply(sh, msg, "{\"isRunning\":false,\"returnValue\":true}");
+        return true;
+    }
+    ls_error_init(&e);
+    subscribed = ls_subscription_add(sh, "getStatus", msg, &e);
+    if (!subscribed)
+        ls_error_free(&e);
+    reply(sh, msg,
+          subscribed ? "{\"isRunning\":false,\"returnValue\":true,\"subscribed\":true}"
+                     : "{\"isRunning\":false,\"returnValue\":true,\"subscribed\":false}");
+    return true;
+}
+
+static LSMethod cover_methods[] = {
+    {"open", reply_true, 0},
+    {"close", reply_true, 0},
+    {"getStatus", cover_get_status, 0},
+    {NULL, NULL, 0},
+};
+
+/* Whether the stock services.d file names `name` among the compositor's (Name=a;b;...) */
+static bool stock_serves(const char *name)
+{
+    FILE *f = fopen("/usr/share/luna-service2/services.d/com.webos.surfacemanager.service", "r");
+    char line[4096];
+    bool found = false;
+
+    if (!f)
+        return false;
+    while (!found && fgets(line, sizeof line, f)) {
+        char *tok, *save;
+        if (strncmp(line, "Name=", 5))
+            continue;
+        for (tok = strtok_r(line + 5, "; \t\r\n", &save); tok && !found;
+             tok = strtok_r(NULL, "; \t\r\n", &save))
+            found = !strcmp(tok, name);
+    }
+    fclose(f);
+    return found;
+}
+
+static void register_cover_ui(void *loop)
+{
+    LSHandle *sh;
+    LSError e;
+
+    if (!stock_serves("com.webos.coverUI"))
+        return;
+    ls_error_init(&e);
+    if (!ls_register("com.webos.coverUI", &sh, &e) ||
+        !ls_register_category(sh, "/", cover_methods, NULL, NULL, &e) ||
+        !ls_gmain_attach(sh, loop, &e)) {
+        /* logged, not fatal: com.webos.surfacemanager and READY=1 still matter more */
+        fprintf(stderr, "surface-manager (emulator, headless): com.webos.coverUI: %s\n",
+                e.message ? e.message : "LS2 registration failed");
+        ls_error_free(&e);
+        return;
+    }
+    fprintf(stderr, "surface-manager (emulator, headless): com.webos.coverUI up\n");
+}
 
 /* sd_notify(0, "READY=1") without libsystemd: one datagram to $NOTIFY_SOCKET ('@': abstract) */
 static void notify_ready(void)
@@ -141,6 +227,8 @@ int main(int argc, char **argv)
     ls_register_category = sym(ls2, "LSRegisterCategory");
     ls_gmain_attach = sym(ls2, "LSGmainAttach");
     ls_message_reply = sym(ls2, "LSMessageReply");
+    ls_message_is_subscription = sym(ls2, "LSMessageIsSubscription");
+    ls_subscription_add = sym(ls2, "LSSubscriptionAdd");
     g_main_loop_new_ = sym(glib, "g_main_loop_new");
     g_main_loop_run_ = sym(glib, "g_main_loop_run");
 
@@ -149,6 +237,7 @@ int main(int argc, char **argv)
     if (!ls_register("com.webos.surfacemanager", &sh, &e) ||
         !ls_register_category(sh, "/", methods, NULL, NULL, &e) || !ls_gmain_attach(sh, loop, &e))
         die(e.message ? e.message : "LS2 registration failed");
+    register_cover_ui(loop);
     notify_ready();
     emit_lsm_ready();
     fprintf(stderr,

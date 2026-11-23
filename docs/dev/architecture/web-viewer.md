@@ -125,10 +125,10 @@ browser ── HTTP + WebSocket ── beanjar-web ── stdio ── beanjar v
   and the keyboard stays noVNC's. More's Portrait check item (`#rotate`, shown for such a VM only) is a two-state toggle:
   landscape is 0, portrait is 270 (what msc reports as portrait on N21D, and what one press gave
   before); checked at any angle but 0, and a press at any angle but 0 (90 or 180, set from the CLI)
-  goes to landscape. It posts the angle to `/vm/HOST/NAME/rotate`, which runs `beanjar sensor rotate`
+  goes to landscape. It posts the angle to `/vm/HOST/NAME/rotate`, which runs `beanjar sensor set rotate`
   ([manager](../../../host/core/README.md#rotation)); the CLI keeps all four angles.
 - **The list's preview of a turned set is turned in the browser.** The thumbnail is the panel's
-  unturned landscape picture. The server asks `beanjar sensor rotate --json HOST/NAME` (the guest's last
+  unturned landscape picture. The server asks `beanjar sensor show rotate --json HOST/NAME` (the guest's last
   report) when it takes a live picture of a `portrait` VM and answers with `X-Beanjar-Rotation`;
   `index.js` puts it on the image as `data-rotation` and `style.css` turns it by (360 - N) % 360
   inside the card's 16:9 box (a quarter turn swaps the box's sides so `object-fit: contain` fits
@@ -195,13 +195,13 @@ Without `--hosts` nothing changes: one `beanjar list --json` of every host, and 
 
 | Path | What |
 |---|---|
-| `/` | VM cards grouped by host (`beanjar list --json`, refreshed every 10 s, every 2 s while an operation is pending); an Off card has a labelled Start button, a Running card opens the viewer and has Open and a Stop button (the Stop dialog), its tags, and the reason it runs if it has one (`beanjar reason`), Starting/Stopping show a pulsing amber dot; the header filters by name, tag or host and puts running VMs first |
+| `/` | VM cards grouped by host (`beanjar list --json`, refreshed every 10 s, every 2 s while an operation is pending); an Off card has a labelled Start button, a Running card opens the viewer and has Open and a Stop button (the Stop dialog), its tags, and the reason it runs if it has one (`beanjar status`), Starting/Stopping show a pulsing amber dot; the header filters by name, tag or host and puts running VMs first |
 | `/api/vms` | the list's rows, only what a row shows: name, host, state and detail, platform, firmware, display, memory, CPUs, uptime, whether a viewer or beanjar-vnc runs, the GPU headline, `mitm` (its network's mode is mitm), `reason` (why it runs: `{"text", "set", "user", "by"}`, or null), `tags` (an array), and `operation` (the latest start/stop result, or null); no VM paths |
 | `/vm/HOST/NAME/` | the viewer page |
 | `POST /vm/HOST/NAME/start` | `beanjar start --json HOST/NAME`, in the background: 202 with the pending operation and a `Location` pointing at its status; a second start or stop while pending is 409 without another CLI invocation |
 | `POST /vm/HOST/NAME/stop` | `beanjar stop --json HOST/NAME`, with the manager's normal power-off and sync/stop fallback; the same asynchronous response as start. The manager refuses a VM that runs for a reason; `?force=1` is `stop --force`, which the page sends only after its Stop dialog has shown the reason; `?unplug=1` is `stop --unplug` (QEMU killed at once, no logs or sync), the dialog's Unplug, with `"unplug": true` in the operation |
 | `/vm/HOST/NAME/operation` | the latest start/stop operation: `{action, status, message}` (and `error` on failure); 202 while pending, 200 on success, 409 with the manager's refusal, 404 before any request or after a web server restart |
-| `POST /vm/HOST/NAME/rotate` | the body an angle (0, 90, 180 or 270): `beanjar sensor rotate --json HOST/NAME ANGLE`, 200 with its JSON once the guest reports the setting, 409 with the manager's refusal (a model that does not turn), 400 for another body |
+| `POST /vm/HOST/NAME/rotate` | the body an angle (0, 90, 180 or 270): `beanjar sensor set rotate --json HOST/NAME ANGLE`, 200 with its JSON once the guest reports the setting, 409 with the manager's refusal (a model that does not turn), 400 for another body |
 | `POST /vm/HOST/NAME/vnc` | `beanjar vnc start --json HOST/NAME --port 0` (any free TCP port, so a host program on 5900 does not stop it; the page uses only the local sockets): 200 when it started or already runs, 409 with the manager's message otherwise (for example `a viewer is already open for tv (pid N)`, as the GTK viewer and beanjar-vnc exclude each other) |
 | `/vm/HOST/NAME/rfb?page=ID` | WebSocket: RFB in binary messages, to and from `beanjar vnc pipe`; no picture while the page `ID`'s `/video` plays ([below](#no-rfb-picture-under-h264)) |
 | `/vm/HOST/NAME/remote` | WebSocket: text messages `down CODE` / `up CODE` (and `touch KIND SLOT X Y WxH` for a touch screen) to `beanjar remote pipe`, its lines back |
@@ -209,7 +209,7 @@ Without `--hosts` nothing changes: one `beanjar list --json` of every host, and 
 | `/vm/HOST/NAME/video?bitrate=N&page=ID` | WebSocket: `h264 bitrate=N` (kbit/s, default 10000) to `beanjar vnc video-pipe`, its stream back in binary messages (a bitrate outside 100 to 50000: 400); `page` pairs it with that page's `/rfb` (8 to 64 letters, digits, `-`, `_`; else 400) |
 | `/vm/HOST/NAME/layout.json` | `beanjar remote layout HOST/NAME --json` |
 | `/vm/HOST/NAME/screenshot.png` | `beanjar screenshot HOST/NAME -` |
-| `/vm/HOST/NAME/screenshot.png?thumbnail=1` | a shared 384×216 card preview (`beanjar screenshot HOST/NAME - --size 384x216`); cached pictures return immediately, refreshing in the background after 5 s; a first picture may wait; eligibility uses the shared VM list, returning 204 unless Running with beanjar-vnc or Off (its kept `--last` thumbnail, fetched once per state, or 204) |
+| `/vm/HOST/NAME/screenshot.png?thumbnail=1` | a shared 384×216 card preview (`beanjar screenshot HOST/NAME - --frame 384x216`); cached pictures return immediately, refreshing in the background after 5 s; a first picture may wait; eligibility uses the shared VM list, returning 204 unless Running with beanjar-vnc or Off (its kept `--last` thumbnail, fetched once per state, or 204) |
 | `/vm/HOST/NAME/inspector.json` | `beanjar mitm show --json HOST/NAME` without the URL and password file: `{mode, status, ready, problem, url}` (problem: why a started VM's inspector is off, no usable mitmweb, with what to install; else null; url: where to open it, on the inspector's own origin with the VM's grant, once it is ready); the manager's failure 502 |
 | `/vm/HOST/NAME/mitm/...` (the inspector origin) | the VM's traffic inspector (mitmweb), every method and its `/updates` WebSocket, on the inspector's own listener only ([below](#the-traffic-inspector)); `/vm/HOST/NAME/mitm` redirects to it with the slash |
 | `/remote.html?vm=HOST/NAME` | the popup remote |
@@ -302,7 +302,7 @@ SSH sharing was already working. The manager specifies `ControlMaster=auto`, `Co
 and `$XDG_RUNTIME_DIR/beanjar-ssh/%C` (a private per-user temporary directory if no runtime
 directory exists). OpenSSH expands `%C` from the connection identity, so list and screenshot
 commands share the same host/user/port connection. An isolated control directory measured
-end-to-end `beanjar screenshot --size 384x216` at 3.8159 s cold and 2.8366 s warm; a repeat
+end-to-end `beanjar screenshot --frame 384x216` at 3.8159 s cold and 2.8366 s warm; a repeat
 measured 3.2749 s cold and 2.4930 s warm. The master was alive immediately after every call.
 The SSH production code did not change; command startup/remote work still costs seconds even
 with a warm transport. The running web service had the same runtime/config environment as the

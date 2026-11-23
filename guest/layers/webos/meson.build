@@ -8,6 +8,9 @@
 # Every release: bootd's timer scaling for TCG (guest/layers/webos/src/bootd-scale), loaded only when
 # guest/initramfs/rootfs/init's override asks for it.
 webos_layer_args += ['--file', bootd_scale, 'usr/lib/libbootd-scale.so', '755']
+# Every release: memchute's heartbeat scaling for TCG (guest/layers/webos/src/memchute-scale), loaded
+# only when guest/initramfs/rootfs/init's drop-in asks for it.
+webos_layer_args += ['--file', memchute_scale, 'usr/lib/libmemchute-scale.so', '755']
 layers += {'webos': custom_target('webos-layer',
   output: 'webos-layer.stamp',
   depfile: 'webos-layer.d',

@@ -115,7 +115,7 @@ def unit_slice(unit):
     return f"beanjar-{tag}.slice" if tag else ROOT_SLICE
 
 
-# Why a VM runs (beanjar start --reason, beanjar reason): REASON_FILE in its unit's RuntimeDirectory
+# Why a VM runs (beanjar start --reason, beanjar status set): REASON_FILE in its unit's RuntimeDirectory
 # (unit.start), which systemd makes when the unit starts and removes when it stops, whether by a
 # stop, a crash or the host's reboot (/run is a tmpfs). So the reason lives exactly as long as the
 # unit, with no code to clear it; a VM without a unit (the setsid fallback) cannot have one.

@@ -1,0 +1,6 @@
+# Emulator: no Mali kernel modules (the rootfs's kds.ko, ump.ko and mali_kbase.ko, Midgard r4p1,
+# built for LG's 3.10 kernel). Kept as a no-op task because surface-manager starts on
+# "stopped gpu-libs".
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: no Mali driver"
+end script

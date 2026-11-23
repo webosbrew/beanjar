@@ -32,7 +32,7 @@
  * 0xE1 after clearing the last one.
  *
  * The host sets it through the module parameter presence (mm, 0 for nobody; writable at runtime:
- * /sys/module/lgemu/parameters/presence); `beanjar sensor presence` writes it
+ * /sys/module/lgemu/parameters/presence); `beanjar sensor set presence` writes it
  * (host/core/beanjar/sensors.py). */
 #define pr_fmt(fmt) KBUILD_MODNAME ": tof: " fmt
 #include <linux/i2c.h>

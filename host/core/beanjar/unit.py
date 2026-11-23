@@ -16,7 +16,9 @@ ends when its main process does, so when QEMU exits (a guest power-off, a crash)
 group goes with it (KillMode=control-group), private bus included; ExecStop and ExecStopPost run on
 every stop; and systemd records MainPID, the exit status and the result. A guest restart also ends
 QEMU (-action reboot=shutdown), but then `run` starts the launcher again in the same unit, with the
-same bus and RuntimeDirectory: a cold start, as a TV's (lifecycle.py). Its resources: CPUWeight
+same bus and RuntimeDirectory: a cold start, as a TV's (lifecycle.py). With STATE=none the run has
+one temporary state that every start of it uses, made empty at the run's start and removed at its
+end (lifecycle.fresh_state), so a guest restart keeps what the guest wrote. Its resources: CPUWeight
 below the host's own processes, and under KVM MemoryHigh at the VM's RAM and the start's headroom,
 what the library's admission counts as the VM's (none under TCG: resources).
 
@@ -50,7 +52,7 @@ import sys
 import threading
 import time
 
-from . import console, paths
+from . import console, lifecycle, paths
 from .base import read_pid
 from .vmunits import linger, systemctl, unit_slice
 
@@ -114,6 +116,8 @@ ENV_NAMES = frozenset(
         "NET_LINK",
         "NET_MODE",
         "NET_ADDRESS",
+        "NET_LAN_ACCESS",
+        "NET_LG_SERVICES",
         "NET_DUMP",
         "MITM_FLOWS",
         "MITM_FLOW_BYTES",
@@ -498,8 +502,6 @@ def run(words, tree=paths.TREE):
     RuntimeDirectory, after the last QEMU's helpers have ended. A SIGTERM (a stop) is held
     until the launcher's output ends, so a stop still records QEMU's last words; then we end by that
     SIGTERM, which systemd counts as a clean stop (an exit status of 143 would read as a failure)."""
-    from . import lifecycle
-
     env = dict(os.environ)
     p = Paths(env, tree)
     bus = start_bus(p.run_dir) if env.get("DISPLAY_BACKEND") == "dbus" else None
@@ -512,6 +514,15 @@ def run(words, tree=paths.TREE):
     lifecycle.write_usb(state, [])  # a new start has nothing plugged (the setsid fallback's run/)
     lifecycle.mark_restarting(p.run_dir, False)
     lifecycle.set_restarts(p.run_dir, 0)
+    # STATE=none: one temporary state for the whole run, kept across guest restarts (a set keeps
+    # what it wrote when it reboots: firmware that reboots once on its first boot, on purpose,
+    # comes up the second time) and removed when the run ends. A leftover of a run that ended
+    # without its cleanup is not this run's: start from empty.
+    fresh = lifecycle.fresh_state(env, tree.top)
+    if fresh:
+        lifecycle.discard_fresh_state(env, tree.top)
+        os.makedirs(fresh)
+        env["FRESH_STATE"] = fresh
     sock = os.path.join(env.get("RUNTIME_DIRECTORY") or p.run_dir, lifecycle.SOCK)
     set_subreaper()
     rc = 1
@@ -610,6 +621,7 @@ def run(words, tree=paths.TREE):
             except subprocess.TimeoutExpired:
                 bus.kill()
         cleanup(p)
+        lifecycle.discard_fresh_state(env, tree.top)
     if stopped:
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
         os.kill(os.getpid(), signal.SIGTERM)
@@ -626,6 +638,8 @@ def main(argv=None):
         return 0
     if cmd == "post":
         cleanup(Paths(os.environ))
+        # a run killed before its own cleanup (SIGKILL) leaves its temporary state
+        lifecycle.discard_fresh_state(os.environ, paths.TREE.top)
         return 0
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2

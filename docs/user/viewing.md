@@ -34,7 +34,7 @@ over VNC on its own address, port 5900, behind the VM's own password:
 
 ```sh
 beanjar vnc start tv1
-beanjar vnc password tv1 show
+beanjar vnc password show tv1
 beanjar vnc stop tv1
 ```
 

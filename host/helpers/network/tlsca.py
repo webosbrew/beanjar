@@ -142,6 +142,74 @@ def init(d=DEFAULT_DIR):
     return pem
 
 
+LEAF_EXTENSIONS = """
+[leaf]
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
+subjectAltName = {san}
+"""
+
+
+def new_key(path):
+    """An RSA 2048 private key at path (0600), for leaf()."""
+    _openssl("genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", path)
+    os.chmod(path, 0o600)
+
+
+def leaf(d, names, key, out):
+    """A server certificate at out for the DNS names (the first its CN, all of them its
+    subjectAltName; "*." wildcards allowed), with the private key file key, issued by the CA in d
+    (made by init: ca.key, ca.pem). Valid over the CA's whole span, as the CA itself, so a guest
+    clock that starts in the past accepts it too; SHA-256, X.509v3, as the guest's OpenSSL 1.0.1h
+    takes it. Used by lg_mock.py to answer LG's SDP names; the CA's key never leaves the host."""
+    if not names:
+        raise ValueError("leaf: no names")
+    for n in names:
+        if not n or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789.-*" for c in n):
+            raise ValueError(f"leaf: not a DNS name: {n!r}")
+    tmp = tempfile.mkdtemp(prefix="tlsleaf.", dir=os.path.dirname(os.path.abspath(out)))
+    try:
+        cfg = os.path.join(tmp, "openssl.cnf")
+        with open(cfg, "w") as f:
+            f.write(CONFIG.format(tmp=tmp))
+            f.write(LEAF_EXTENSIONS.format(san=",".join("DNS:" + n for n in names)))
+        open(os.path.join(tmp, "index.txt"), "w").close()
+        with open(os.path.join(tmp, "serial"), "w") as f:
+            f.write("%032X\n" % (int.from_bytes(os.urandom(16), "big") >> 2 | 1 << 120))
+        csr = os.path.join(tmp, "leaf.csr")
+        _openssl(
+            "req", "-new", "-config", cfg, "-key", key, "-subj", "/CN=" + names[0], "-out", csr
+        )
+        _openssl(
+            "ca",
+            "-batch",
+            "-config",
+            cfg,
+            "-cert",
+            os.path.join(d, "ca.pem"),
+            "-keyfile",
+            os.path.join(d, "ca.key"),
+            "-in",
+            csr,
+            "-out",
+            out + ".tmp",
+            "-notext",
+            "-startdate",
+            START,
+            "-enddate",
+            END,
+            "-extensions",
+            "leaf",
+        )
+        os.replace(out + ".tmp", out)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1].startswith("-")):
         sys.exit(__doc__)

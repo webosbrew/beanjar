@@ -15,7 +15,9 @@ no stub response and no relay. This addon only adds generic behaviours:
   then bypasses interception for subsequent connections to the SNI (else address) and port.
   Anchored, escaped ignore_hosts patterns preserve manual settings; at most 256 automatic
   entries are retained, oldest first. A bypass cannot repair unreachable servers or certificates
-  the guest itself rejects. Each failure and new bypass is logged.
+  the guest itself rejects. Each failure and new bypass is logged. With lg_services = "mock" (the
+  VM's NET_LG_SERVICES, default mock) an SNI of LG's (any class of lg_hosts.py) is never passed
+  through: its connections keep failing (logged as tls-refused) rather than reach LG unread.
 - A password for the inspector (WebPassword): mitmweb's web_password, from the file netns.py
   writes for the VM.
 - Streaming. Bodies larger than NETSTUB_STREAM_LARGE bytes (default 1 MiB), and responses of
@@ -25,6 +27,9 @@ no stub response and no relay. This addon only adds generic behaviours:
   network.mitm_flows, default 5000, 0 for no limit) and, if max_flow_bytes is set (vm.toml's
   network.mitm_flow_bytes, off by default), at most that many bytes of bodies, and drops the oldest
   finished flows beyond either, from memory and from the web view. Without it mitmweb grew by about 200 MB an hour.
+- Frozen options (Freeze): once mitmweb runs, its API may no longer change the options that load
+  code or files, open listeners or set the password (FROZEN), nor run the commands that take a
+  path. netns.py also runs mitmweb in a sandbox that sees none of the user's files.
 - Ready (Ready): the file netns.py waits for (NETNS_MITM_READY) once mitmweb's servers run, after
   mitmproxy's UDP idle timeout is raised (tun_udp_timeout).
 
@@ -42,6 +47,7 @@ import time
 from mitmproxy import ctx, http
 
 sys.dont_write_bytecode = True  # no __pycache__ in the source tree
+import lg_hosts  # noqa: E402  beside this file (mitmproxy loads a script with its directory on the path)
 
 TEXTUAL = ("text/", "json", "xml", "javascript", "x-www-form-urlencoded", "html")
 
@@ -56,6 +62,11 @@ def log(*fields):
         return
     with open(path, "a") as f:
         f.write(time.strftime("%Y-%m-%dT%H:%M:%S ") + " ".join(str(x) for x in fields) + "\n")
+
+
+def lg_mock():
+    """Whether LG's services are mocked (NET_LG_SERVICES anything but real, as netns.py has it)."""
+    return os.environ.get("NET_LG_SERVICES") != "real"
 
 
 def endpoint(context):
@@ -101,6 +112,12 @@ class Capture:
             return
         logging.warning(f"netstub: {why} for {key}")
         log("tls-failed", key, why.replace(" ", "-"))
+        cls = lg_hosts.lookup(context.client.sni) if lg_mock() else None
+        if cls is not None:
+            # lg_services=mock: nothing reaches LG unread; this host's connections keep failing
+            logging.warning(f"netstub: {key} is LG's ({cls['class']}): not passed through")
+            log("tls-refused", key, cls["class"])
+            return
         # NextLayer (mitmproxy 12.2.3 and 12.3.1) matches unbracketed host:port,
         # including IPv6, case-insensitively against address, SNI and Host header.
         pattern = "^" + re.escape(key) + "$"
@@ -147,7 +164,13 @@ class WebPassword:
         import argon2
         from mitmproxy import ctx
 
-        ctx.options.update(web_password=argon2.PasswordHasher().hash(password))
+        hasher = argon2.PasswordHasher()
+        try:
+            if hasher.verify(ctx.options.web_password, password):
+                return  # already set (this addon reloaded): Freeze keeps the hash as it is
+        except (argon2.exceptions.Argon2Error, argon2.exceptions.InvalidHashError):
+            pass
+        ctx.options.update(web_password=hasher.hash(password))
 
 
 def flow_bytes(flow):
@@ -265,6 +288,123 @@ def tun_udp_timeout(server=None):
     return True
 
 
+# What mitmweb's API (`PUT /options`, `POST /commands/...`) may no longer change once mitmweb runs
+# (Freeze). Its API applies any option and runs any command for whoever has the password or runs a
+# script on its origin; these would have mitmweb load code, read or write files by path, open
+# listeners, or change who may log in. netns.py's sandbox already limits the files mitmweb sees;
+# this keeps them from being reconfigured at all.
+FROZEN = frozenset(
+    (
+        # code and files by path
+        "scripts",  # loads Python addons
+        "save_stream_file",  # writes (or appends to) a flow file
+        "hardump",  # writes a HAR file
+        "rfile",  # reads a flow file
+        "client_replay",  # reads flow files
+        "server_replay",
+        "map_local",  # serves local files to the client
+        "web_static_viewer",  # writes a static viewer
+        "protobuf_definitions",  # reads a file
+        "proxyauth",  # "@path": an htpasswd file
+        # the CA and certificates
+        "confdir",
+        "certs",
+        "client_certs",
+        "cert_passphrase",
+        "ssl_verify_upstream_trusted_ca",
+        "ssl_verify_upstream_trusted_confdir",
+        # listeners, the web interface and its password
+        "mode",
+        "listen_host",
+        "listen_port",
+        "server",
+        "web_host",
+        "web_port",
+        "web_password",
+        "web_debug",
+        "web_open_browser",
+    )
+)
+# Every option of mitmweb 12.3.1, with the ones this addon adds, each reviewed for the list above:
+# those not in FROZEN may change as before (intercept, the filters, the view's order and columns,
+# ignore_hosts and the other proxy behaviour the Options menu offers). An option a later mitmproxy
+# adds is frozen too until it is reviewed here, and logged once at the start.
+REVIEWED = FROZEN | frozenset(
+    """
+    add_upstream_certs_to_client_chain allow_hosts anticache anticomp block_global block_list
+    block_private body_size_limit ciphers_client ciphers_server client_replay_concurrency
+    command_history connect_addr connection_strategy console_focus_follow
+    content_view_lines_cutoff dns_name_servers dns_use_hosts_file emudhra emudhra_old
+    export_preserve_original_ip http2 http2_ping_keepalive http3 http_connect_send_host_header
+    ignore_hosts intercept intercept_active keep_alt_svc_header keep_host_header key_size
+    modify_body modify_headers map_remote normalize_outbound_headers onboarding onboarding_host
+    proxy_debug rawtcp readfile_filter request_client_cert save_stream_filter
+    server_replay_extra server_replay_ignore_content server_replay_ignore_host
+    server_replay_ignore_params server_replay_ignore_payload_params server_replay_ignore_port
+    server_replay_kill_extra server_replay_nopop server_replay_refresh server_replay_reuse
+    server_replay_use_headers show_ignored_hosts showhost ssl_insecure stickyauth stickycookie
+    store_streamed_bodies stream_large_bodies strip_ech tcp_hosts tcp_timeout
+    tls_ecdh_curve_client tls_ecdh_curve_server tls_version_client_max tls_version_client_min
+    tls_version_server_max tls_version_server_min udp_hosts upstream_auth upstream_cert
+    validate_inbound_headers view_filter view_order view_order_reversed web_columns web_theme
+    websocket max_flows max_flow_bytes
+    """.split()
+)
+# Commands refused beside those that take a path (mitmproxy.types.Path: script.run, save.file,
+# export.file, options.load, options.save and the like): browser.start runs a host program.
+REFUSED_COMMANDS = frozenset(("browser.start",))
+
+
+class Freeze:
+    """Once mitmweb runs, the options in FROZEN (and any not in REVIEWED) keep their values: an
+    update that changes one fails with an OptionsError and is rolled back whole, and mitmweb's API
+    answers 400. The check subscribes to the options (OptManager.subscribe), whose subscribers are
+    told before any addon's configure hook, so a refused `scripts` is never loaded. A reset
+    (options.reset, which mitmproxy does not roll back) has the frozen values put back. Commands
+    that take a path, or are in REFUSED_COMMANDS, are refused too; the web interface's own
+    commands (export, view.flows.create, the command history) take none."""
+
+    def __init__(self):
+        self.frozen = {}
+
+    def running(self) -> None:
+        from mitmproxy import ctx
+
+        options = ctx.options
+        new = sorted(n for n in options.keys() if n not in REVIEWED)
+        if new:
+            logging.warning(f"netstub: options not reviewed, frozen: {', '.join(new)}")
+        self.frozen = {n: getattr(options, n) for n in options.keys() if n in FROZEN or n in new}
+        options.subscribe(self._check, list(self.frozen))
+        self._refuse_commands(ctx.master.commands)
+
+    def _check(self, options, updated) -> None:
+        from mitmproxy import exceptions
+
+        changed = sorted(
+            n for n in updated if n in self.frozen and getattr(options, n) != self.frozen[n]
+        )
+        if not changed:
+            return
+        for n in changed:  # a rollback restores them as well; a reset has none
+            options._options[n].set(self.frozen[n])
+        logging.warning(f"netstub: refused a change of {', '.join(changed)}")
+        raise exceptions.OptionsError(
+            f"{', '.join(changed)} cannot be changed while this inspector runs"
+        )
+
+    def _refuse_commands(self, manager) -> None:
+        from mitmproxy import exceptions, types
+
+        for name, command in manager.commands.items():
+            if name in REFUSED_COMMANDS or any(p.type is types.Path for p in command.parameters):
+
+                def refused(*_args, _name=name, **_kwargs):
+                    raise exceptions.CommandError(f"{_name} is not available in this inspector")
+
+                command.func = refused
+
+
 class Ready:
     """The ready file netns.py waits for (NETNS_MITM_READY), written once mitmweb's servers run,
     after the UDP timeout is raised when it serves a TUN device (tun_udp_timeout): netns.py routes
@@ -282,4 +422,4 @@ class Ready:
                 f.write(f"{len(modes)}\n")
 
 
-addons = [Capture(), WebPassword(), FlowLimit(), Ready()]
+addons = [Capture(), WebPassword(), FlowLimit(), Freeze(), Ready()]

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The network step's server on the VM host (scripts/regress --tv): HTTP on 127.0.0.1, which QEMU's
-slirp (mode=direct) shows the guest as 10.0.2.2. It answers GET /<token> with the token and 404
-otherwise, logs each request to stdout, and ends after SECONDS (it never outlives the step):
+"""The TV suite's test server (scripts/regress --tv: the network step's token, the decode step's
+page beacons), run in the VM's own network namespace (`host/scripts/vm-launcher netns-exec`,
+netns.enter_argv) on ADDRESS, the namespace's 10.0.2.254, where only that VM's guest reaches it: the
+host's loopback stays out of the guest's reach. It answers GET /<token> with the token and 404
+otherwise, logs each request to stdout with the source address it sees (the guest's own, 10.0.2.15:
+nothing translates on the way), and ends after SECONDS (it never outlives the step):
 
-  tests/regress/http-token.py PORTFILE TOKEN [SECONDS]
+  tests/regress/http-token.py ADDRESS PORTFILE TOKEN [SECONDS]
 
-The port is the kernel's choice (port 0), written to PORTFILE once the socket listens, so targets
-running at once each have their own."""
+The port is the kernel's choice (port 0), written to PORTFILE once the socket listens."""
 
 import http.server
 import os
@@ -17,8 +19,8 @@ import threading
 
 
 def main(argv):
-    portfile, token = argv[1], argv[2]
-    seconds = float(argv[3]) if len(argv) > 3 else 600
+    address, portfile, token = argv[1], argv[2], argv[3]
+    seconds = float(argv[4]) if len(argv) > 4 else 600
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
@@ -33,7 +35,7 @@ def main(argv):
         def log_message(self, fmt, *args):
             print(f"REQUEST {self.client_address[0]} {fmt % args}", flush=True)
 
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    srv = http.server.ThreadingHTTPServer((address, 0), Handler)
     tmp = portfile + ".tmp"
     with open(tmp, "w") as f:
         f.write(f"{srv.server_address[1]}\n")

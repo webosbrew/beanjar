@@ -46,9 +46,9 @@ none (docs/dev/architecture/manager.md, "Several VMs at once"). `beanjar host co
 also caps how many VMs may run at once on this host, every library's, the development VMs' and the
 regress harness's together; a start beyond it is refused, naming the VMs that run.
 
-To reach a VM from another PC (ares, a second-screen app), `beanjar settings NAME set listen=0.0.0.0` (or one
+To reach a VM from another PC (ares, a second-screen app), `beanjar config set NAME listen=0.0.0.0` (or one
 of the host's addresses) makes its TV-service ports, SSAP 3000 and 3001, root SSH 6622 and developer
-mode 9922 and 9991, listen there instead of `127.0.1.N`; `beanjar settings NAME unset listen` returns them to the VM's
+mode 9922 and 9991, listen there instead of `127.0.1.N`; `beanjar config unset NAME listen` returns them to the VM's
 own address. No password is added: the SSH servers take keys only, the key server's key is encrypted
 with the guest's passphrase, and SSAP pairs a client only when it is accepted on the TV's screen,
 as on a TV. The mitm inspector and VNC keep their own settings and password rules
@@ -56,7 +56,7 @@ as on a TV. The mitm inspector and VNC keep their own settings and password rule
 overlapping addresses (`0.0.0.0` overlaps every address): a start that would collide fails, naming
 the other VM or the port's holder.
 
-An app's own ports are reached the same way: `beanjar settings NAME set forward=8080,3000` relays guest
+An app's own ports are reached the same way: `beanjar config set NAME forward=8080,3000` relays guest
 TCP ports 8080 and 3000 on the VM's address as its TV-service ports are (on `listen` with `link=nat`,
 on its LAN address too with `link=lan`), and `8081:80` puts guest port 80 on host port 8081. A port that
 a layer forwards (3000 and 3001 on webOS, 6622, 9922, 9991), 5900 (VNC), 18083 (the inspector) or one
@@ -66,16 +66,23 @@ The network is two settings (docs/dev/architecture/network.md): `link`, where th
 (`nat`, behind this host, the default; `lan`, on the host's wired LAN as a TV of its own; `off`, no
 network), and `mode`, whether its TCP and UDP go through the recording proxy (`mitm`, the
 default: mitmweb in tun mode, the user's own mitmproxy 12.0.1 or newer, `pipx install mitmproxy`;
-[inspect emulator traffic](../../docs/user/inspect-emulator-traffic.md#install-mitmproxy)) or not (`direct`); `beanjar settings NAME set link=nat mode=direct`. `link = "lan"` with `mode =
+[inspect emulator traffic](../../docs/user/inspect-emulator-traffic.md#install-mitmproxy)) or not (`direct`); `beanjar config set NAME link=nat mode=direct`. `link = "lan"` with `mode =
 "mitm"` puts the VM on the library's `lan_parent` (`beanjar library config set lan_parent=eth0`) with its own
 MAC and a DHCP lease (or the static `address`), its TV-service ports on that LAN address; the
 package installs the one privileged helper it needs (docs/dev/architecture/network.md, "`lan` with
-`mitm`"). `lan` with `direct` is not implemented yet: a start refuses it.
+`mitm`"). `lan` with `direct` is not implemented yet: a start refuses it. Both modes run in a
+rootless network namespace with slirp4netns as its uplink, and the guest never reaches this host's
+loopback; with `link = "nat"` it reaches the LAN and this host's own addresses only with
+`lan_access = "on"` (`beanjar config set NAME lan_access=on`; docs/dev/architecture/network.md,
+"What the guest reaches"). `lg_services = "mock"`, the default, refuses LG's telemetry and cloud
+hosts and answers LG's online check in the namespace (`host/helpers/network/lg_hosts.py`,
+`lg_mock.py`); `"real"` reaches LG as a TV does (docs/dev/architecture/network.md, "LG
+services").
 
 ## This machine's settings
 
 `$XDG_CONFIG_HOME/beanjar/config.toml` (`~/.config/beanjar/config.toml` by default), shown and set
-with `beanjar host config`, holds what is one for the whole host, every library's alike:
+with `beanjar host config show`, holds what is one for the whole host, every library's alike:
 `max_running`, how many VMs may run at once (a whole number from 1; unset, the default, is no
 limit), `memory_headroom_mib`, the positive whole number of MiB allowed beyond each VM's RAM
 (unset: 1024), and `firmware_dirs`, the host's firmware collections (a list of absolute directories;
@@ -98,7 +105,7 @@ on the machine where Beanjar is running.
 `BEANJAR_LIBRARY`.
 
 ```
-config.toml            repo (the checkout: set on first use, or --repo), auto_reconnect (GUI option), epk2extract,
+config.toml            repo (the checkout: only `library config set repo=DIR` stores it; `--repo DIR` is for one command and writes nothing), auto_reconnect (GUI option), epk2extract,
                        mac_prefix (the new VMs' MAC prefix, below), lan_parent (the host's wired interface for
                        link = "lan", e.g. "eth0"; named, never guessed; a wireless one is refused),
                        addresses (the first three octets of its VMs' addresses, default "127.0.1")
@@ -164,7 +171,7 @@ env = {}
 
 [metadata]
 # Creation time is maintained by the manager.
-# tags = ["scratch"]  # beanjar tag / create --tag: labels for list --tag (Tags, below)
+# tags = ["scratch"]  # config set NAME tags= / create --tag: labels for list --tag (Tags, below)
 ```
 
 Only `firmware.directory` is required. Paths are relative to the VM directory;
@@ -195,7 +202,7 @@ ones are dropped. `network.mitm_flow_bytes` (bytes, or K, M, G such as `"200M"`;
 default, for no limit) also bounds the bytes of bodies those flows hold. The platform and its version are derived from
 the selected firmware. Unknown keys and invalid types or values are errors, and so are
 `network.listen` with `link = "lan"` and `network.address` without it.
-`network.slot` (1 to 254) is the manager's, not a setting: `settings NAME set` does not take it, and a VM
+`network.slot` (1 to 254) is the manager's, not a setting: `config set NAME` does not take it, and a VM
 without one gets the lowest free one of its library once, when the library is opened or the VM
 starts.
 
@@ -234,10 +241,10 @@ A VM's files are in `identity/`, not in `vm.toml`: plain files, private keys 060
   - `authorized_keys`: more keys that may log in as root, made with none. Every key in it goes
     into the guest, which can read it, and your own keys identify you (a code host publishes its
     users' public keys, and a key's comment is often `user@host`), so yours go in only if you
-    add them: by hand, or with `beanjar identity authorized-keys NAME add-mine` (your
+    add them: by hand, or with `beanjar identity authorized-keys add NAME --mine` (your
     `~/.ssh/*.pub`, certificates left out). The guest gets every key without its comment. It is
-    read at each start; `beanjar identity authorized-keys NAME` shows what the guest gets and
-    `... reset` empties it again. A VM made before this default may still hold your keys: `show`
+    read at each start; `beanjar identity authorized-keys show NAME` shows what the guest gets and
+    `... reset NAME` empties it again. A VM made before this default may still hold your keys: `show`
     marks them `mine`.
   - `rootssh_host_key`, `devmode_host_key` (+ `.pub`): the host keys of root SSH (ed25519) and
     developer mode (RSA), in Dropbear's format (`host/helpers/ssh/dropbear-hostkey.py`).
@@ -248,7 +255,7 @@ A VM's files are in `identity/`, not in `vm.toml`: plain files, private keys 060
     `[127.0.1.N]:9922`), written at create and each start, so no first connection has to be trusted
     blindly and no two VMs' pins collide.
 
-  With `rootssh` (or `hbchannel`, which needs `devmode`) and `devmode` in `layers`, `beanjar info NAME` has the commands (`ssh`), with
+  With `rootssh` (or `hbchannel`, which needs `devmode`) and `devmode` in `layers`, `beanjar show NAME` has the commands (`ssh`), with
   the key server's URL and, for developer mode, the form that runs the ares tools against the VM
   (see ares tools):
 
@@ -266,9 +273,9 @@ A VM's files are in `identity/`, not in `vm.toml`: plain files, private keys 060
   `identity/sestore.toml`: exact names map to text, hex bytes or files. The root `missing` policy
   chooses existing fallback behavior or a missing-item error.
 - **The SDP model key**, `identity/sestore.toml`: `beanjar key model
-  tv1 install FILE` installs one (44 characters of base64 for 32 bytes, as `host/core/beanjar/modelkey.py`
-  checks; the value is never printed), `beanjar key model tv1 clear` removes it and `beanjar
-  key model tv1` says whether there is one, all while the VM is off. The GUI's Settings has the
+  set tv1 FILE` sets one (44 characters of base64 for 32 bytes, as `host/core/beanjar/modelkey.py`
+  checks; the value is never printed), `beanjar key model unset tv1` removes it and `beanjar
+  key model show tv1` says whether there is one; set and unset while the VM is off. The GUI's Settings has the
   same on its Network page (Model Key: install from a file, clear; done at Save, a bad file
   refused before anything is saved). With the default missing policy a VM without one has
   libhal_crypto's built-in model secret; `missing = "error"` disables that fallback.
@@ -335,12 +342,12 @@ The launcher is part of this package (stdlib only), with `host/scripts/vm-launch
 | `launch.py` | `host/scripts/vm-launcher`: `run` (boot in the foreground, serial console on stdio), `argv` (print the QEMU command of `run`, a dry run), `start`/`stop` (the checkout's VM in the background, or a VM directory with `--dir`), `status --dir`, `console`, `qmp`, `reset-state`, `firmware-cache`, `config FW\|FW_NAME\|TARGET\|PAKS\|TARGETS\|RENDERNODE` |
 | `qemu.py` | the QEMU command line from the launcher's environment (`FW MEM SMP LAYERS NET_LINK NET_MODE ROOTFS STATE DISPLAY_BACKEND AUDIO`, ...): x86_64 TCG or aarch64 KVM (`ACCEL`), the paks, the state disks, the network, the port forwards, the display and audio |
 | `unit.py` | a VM's processes as one transient systemd user service (`python3 -m beanjar.unit run`), or a setsid session without one; its private D-Bus for `display = "dbus"`; the guest sync at stop |
-| `netns.py` | `mode = "mitm"` (a rootless namespace: `unshare -rn`, slirp4netns, ip, mitmweb, and beanjar-relay (`host/helpers/network/relay.c`) for the port bridges) and `link = "off"` (the NIC's link set down over QMP) |
+| `netns.py` | `link = "nat"` and `"lan"`, both modes (a rootless namespace: `unshare -rn`, slirp4netns, ip, mitmweb for `mitm`, beanjar-relay (`host/helpers/network/relay.c`) for the port bridges, and the policy rules that keep the guest off the host's loopback and, without `lan_access`, the LAN) and `link = "off"` (the NIC's link set down over QMP) |
 | `console.py` | the serial console bridge |
 | `dbus.py` | the VM's private D-Bus through Gio, the core's only use of gi: QEMU's display size, the front end's `Screenshot`, `SetUIInfo` of the secondary display, and the connection the remote, pointer and touch pipes call through |
 | `screensaver.py` | native screensaver state and real-window verification over the console |
 | `fwcache.py` | the checkout VM's `ROOTFS=uncompressed` images (`host/scripts/vm-launcher firmware-cache`); the paks' digests that the partition map's cache is keyed by |
-| `keys.py` | a VM's SSH keys in its identity directory: made at create, again at a start that misses one, all anew for `identity renew` (`renew`); known_hosts; the VNC password (`ensure_vnc_password`, `set_vnc_password`); root's authorized_keys for the guest; the proxy's CA (`ensure_ca`) |
+| `keys.py` | a VM's SSH keys in its identity directory: made at create, again at a start that misses one, all anew for `identity reset` (`renew`); known_hosts; the VNC password (`ensure_vnc_password`, `set_vnc_password`); root's authorized_keys for the guest; the proxy's CA (`ensure_ca`) |
 | `paths.py` | where everything is: the checkout, its `build/`, the default firmware, the host's firmware collections (`firmware_dirs`). The one place to change for an install prefix |
 
 
@@ -378,8 +385,8 @@ uses `root.pak`, `mode.pak`'s `RELEASE.cfg` and the vendor graphics library to d
 SimpleSmart from NetCast 4.5. The supported targets are the files of
 `guest/targets/` (`targets.MODELS`: WT1H with afro is `h13-afro`); firmware without one is refused.
 
-Settings can change `firmware.directory` later (`settings NAME set fw=/path`, or Settings'
-"Directory in Place…"). A relative `fw` is relative to the VM's folder; `settings NAME unset fw`
+Settings can change `firmware.directory` later (`config set NAME fw=/path`, or Settings'
+"Directory in Place…"). A relative `fw` is relative to the VM's folder; `config unset NAME fw`
 goes back to the VM's own `firmware/`. In `vm.toml`, `fw` is always a directory, never a name to
 look up.
 
@@ -388,48 +395,55 @@ at the end: Ctrl-C, SIGTERM, a failure or the GUI's Cancel leaves nothing behind
 
 ## Commands
 
-`NAME` is always the VM (`-d NAME` for `ares-TOOL`, as the ares tools take it). A group's verb comes after `NAME`, and where it may be left out the
-command shows what it manages. `beanjar --help` and `beanjar COMMAND --help` describe each one.
+Every command is `VERB NAME` or `NOUN... VERB NAME`: the verb comes before the VM, and nothing but
+the command's arguments and options follows `NAME` (`-d NAME` for `ares-TOOL`, as the ares tools
+take it). `NAME` is always the VM (`NAME`, `HOST/NAME` or `local/NAME`, see Several machines). A group
+without its verb (`beanjar config`, `beanjar vnc password`) prints its help and exits with status 2;
+a VM's name where the verb goes, or a verb where the VM goes, is an error that names the right form.
+The global options, `--json`, `--library DIR` and `--repo DIR`, go anywhere on the line, except in
+`shell`'s command (the words after its `NAME`), in an `ares-TOOL`'s arguments, which are the SDK
+tool's (before `ares-TOOL` they are beanjar's), and after `--`. Durations carry a unit: `200ms`,
+`1.5s`, `2m`. `--repo DIR` names the checkout for that command only and never writes the library; without `--repo` a command uses the stored checkout, else the checkout the running code comes from (in memory, never written); an installed package uses its own files; when no checkout is known at all the command refuses and names `beanjar library config set repo=DIR`. `beanjar --help` and `beanjar COMMAND... --help` describe each one; the guideline the
+commands follow is in [AGENTS.md](../../AGENTS.md#follow-the-command-line-guideline).
 
 | Command | What it does |
 |---|---|
-| `list [--all] [--local \| --host HOST] [--tag TAG ...]` | With hosts configured (see Several machines), every machine's VMs, under a `HOST` column (`local` for this machine). Each VM's state: Off, Starting (until `debug shell` is on the serial console), Running or Stopping, with a QMP run state other than running (e.g. `paused`, or `standby`: Quick Start+'s, the guest's `webos.standby` port open) and `+viewer`, its network (`nat+mitm`, `nat+direct`, `lan+direct`, `off`, ...), its address, and while it runs its `GPU`: the busiest engine's percent, `on` without usage counters, or `off` (as `info`'s `gpu`), its `TAGS`, and its `REASON` (see Why a VM runs), cut to 32 characters (`--json`'s `reason` has it whole). `--tag` lists only the VMs that have that tag, every one given when repeated (see Tags). Stale pidfiles and stale start locks are removed. |
+| `list [--all] [--local \| --host HOST] [--tag TAG ...]` | With hosts configured (see Several machines), every machine's VMs, under a `HOST` column (`local` for this machine). Each VM's state: Off, Starting (until `debug shell` is on the serial console), Running or Stopping, with a QMP run state other than running (e.g. `paused`, or `standby`: Quick Start+'s, the guest's `webos.standby` port open) and `+viewer`, its network (`nat+mitm`, `nat+direct`, `lan+direct`, `off`, ...), its address, and while it runs its `GPU`: the busiest engine's percent, `on` without usage counters, or `off` (as `show`'s `gpu`), its `TAGS`, and its `REASON` (see Why a VM runs), cut to 32 characters (`--json`'s `reason` has it whole). `--tag` lists only the VMs that have that tag, every one given when repeated (see Tags). Stale pidfiles and stale start locks are removed. |
 | `create NAME --firmware NAME\|PATH [--import] [--mem --smp --layers --link --mode --display --audio] [--tag TAG ...]` | `--firmware` is a firmware of the host's collections (`firmware_dirs`) or, with a `/`, a directory of extracted paks, used in place (it needs a `manifest.toml`); with `--import` its paks become the VM's own `firmware/` (hard links, or a copy). A `.epk` file is extracted into the VM's own `firmware/`, keeping only the paks it uses. See Firmware. `platform` is its target's. `--layers` is comma-separated. Defaults: no `mem`, the VM has its firmware's model's RAM at each launch (`nvm.board_ram`: 1.25 GB for WT1H, W15M and W16R, 1.5 GB for W17H, W18R and W19P), 4 CPUs, `normal,gl`, link `nat` and mode `mitm`, `dbus`, and audio `dbus` (`none` without the dbus display). |
 | `start NAME [cmdline words] [--reason TEXT [--by LABEL]]` | Checks the host's free memory (`MemAvailable` covers the VM's RAM and `memory_headroom_mib`, default 1 GiB), takes the VM's start lock and boots it, beside any others. The launcher's output is progress, on stderr. `--reason` says why it runs (see Why a VM runs). |
-| `tag NAME [+TAG \| -TAG ...]` | The VM's tags: shown, or `+TAG` (or a bare `TAG`) added and `-TAG` removed, whether it runs or not. See Tags. |
-| `reason NAME [TEXT] [--by LABEL]` | Why a running VM runs: shown, set to `TEXT`, or cleared with an empty `TEXT` (`''`). See Why a VM runs. |
+| `status show NAME` / `status set NAME reason=TEXT [--by LABEL]` / `status unset NAME reason` | A running VM's status, what lasts only while it runs: `reason`, why it runs: shown, set, or unset. See Why a VM runs. |
 | `stop NAME [--unplug \| --no-fallback] [--force]` | The power-off signal, or with `--unplug` a kill at once (see Stopping a VM). Either way the start lock is released, and a viewer left open is closed. A VM that runs for a reason is refused, the reason printed, unless `--force`. |
-| `info NAME` | One VM: its state, settings, slot and address, with link lan `lan_address` (its lease, while it runs) and `lan_hostname` (the DHCP hostname it sends: its name as a DNS label, see [network](../../docs/dev/architecture/network.md)), its identity directory, how to reach it (`ssh`), its inspector and VNC (`url`, with link lan `local_url` for this host, and `password_file`), and `gpu`: `off`; `on (usage unavailable)` for host GL whose driver counts no engine time (WSL's d3d12); or `on (v3d) render 12% bin 2%, 310 MiB`, the busy engines and resident memory from the kernel's DRM fdinfo of the VM unit's processes over 0.1 s (`beanjar/gpu.py`; `--json` has every engine). The manager's Summary shows the same, each second. |
+| `show NAME` | One VM: its state, settings, slot and address, with link lan `lan_address` (its lease, while it runs) and `lan_hostname` (the DHCP hostname it sends: its name as a DNS label, see [network](../../docs/dev/architecture/network.md)), its identity directory, how to reach it (`ssh`), its inspector and VNC (`url`, with link lan `local_url` for this host, and `password_file`), and `gpu`: `off`; `on (usage unavailable)` for host GL whose driver counts no engine time (WSL's d3d12); or `on (v3d) render 12% bin 2%, 310 MiB`, the busy engines and resident memory from the kernel's DRM fdinfo of the VM unit's processes over 0.1 s (`beanjar/gpu.py`; `--json` has every engine). The manager's Summary shows the same, each second. |
 | `delete NAME` | Remove a VM that is off, with its firmware, state and logs (an external `fw` is left alone). |
 | `rename NAME NEW` | Renames a VM that is off, in place: the same TV under another name, in its own library on its own host (`HOST/NAME NEW` runs there; `NEW` is a bare name, a VM never changes host: `clone` copies one). Its folder `vms/NAME` becomes `vms/NEW`, with everything in it as it was: `vm.toml` (its MAC, serial, slot, so its address and ports, and every setting), `identity/` (the keys, the model key, `known_hosts`, the VNC password), `state/`, its own `firmware/`, `logs/` and the last thumbnail. Only the comments of the public keys that name the VM (`beanjar NAME`) follow, and `run/unit` (its last unit, stale while it is off) goes. What is derived from the name follows at the next start: its unit `beanjar-vm-<tag>-NEW`, and with link lan its DHCP hostname (`lan_hostname`), so a router that registers hostnames knows it as `NEW` from then on. Refused while it is not off, while a viewer or beanjar-vnc is open for it or its unit is up, for a `NEW` that is invalid (as `create`) or taken, and for a development VM (named after its checkout and `INSTANCE`). The rename of the folder is the commit, under the VM's start lock and the library's slot lock: interrupted, it leaves the VM whole under one of the two names. The GUI's VM menu has it too (Rename…, F2). |
 | `prepare NAME` | Works out again what the VM's start needs from its firmware and board (the partition map, the new EEPROM chip, the local key, the chip modules' parameters: [prepared board data](../../docs/dev/architecture/manager.md#prepared-board-data)), only while it is off. `create` and a change of `fw`, `broadcast`, `debug_mode` or `serial` do it, and a start whose data is missing or stale does it first and says so; this does it ahead, for instance after an update of the tree. |
 | `wipe NAME [--part P ...]` | Deletes the VM's state disks (`host/scripts/vm-launcher reset-state`), only while it is off. Without `--part`, every disk. nvram and eeprom hold the TV's settings. |
-| `settings NAME [show]` | The VM's `vm.toml` settings; a setting it leaves at the default is shown as `(default)` (`null` in JSON). `beanjar settings --help` lists every key, its values and its default (from `vmsettings.SETTING_HELP`, next to the keys it describes). |
-| `settings NAME set KEY=VALUE...` | Change `vm.toml` while the VM is off: `fw broadcast mem smp free_page_reporting userland guest_kernel debug_mode layers link mode display audio mac serial listen forward address mitm_flows mitm_flow_bytes`, `layers` comma-separated, each `NAME` or `NAME@VERSION` for a versioned layer (`hbchannel@0.7.3`; Homebrew Channel) (`settings tv1 set mem=1536 layers=normal,gl`; `fw=/path` boots that directory in place; `platform` follows `fw`'s target). `mac` is six hex octets, unicast; `serial` 1 to 16 letters and digits (upper-cased). `listen` an IPv4 address for the TV-service ports, `link=nat` only; `forward` the guest's own TCP ports relayed beside them, `PORT` or `HOST:GUEST` comma-separated (`forward=8080,8081:80`), refused on a host port a layer has, 5900, 18083 or below 1024; `address` `dhcp` or `A.B.C.D/NN,GATEWAY`, `link=lan` only. `free_page_reporting` `on` or `off` (the default). `userland` `auto` (the default: native or qemu-user by the host, at each start), `native` or `qemu-user` (refused on NetCast and SimpleSmart; its qemu-arm is `QEMU_ARM` or beanjar-vendor's qemu-user). `guest_kernel` `arm64` (the default) or `x86-64` (experimental: x86-64 hosts only, q35, userland qemu-user; refused with `userland=native` and on NetCast and SimpleSmart; its QEMU is the vendored qemu-system-x86_64 or `QEMU_X86_64`). `debug_mode` `debug` (the default, `debugMode=3`: a development set, with faultmanager's crash popup), `event` (4: event logs, the popup stays) or `release` (5, what a retail set runs: no crash popup, and the set reboots when tvservice or lginit_app exits); the kernel's `debugMode=` word and the EEPROM's debug status follow it at the next start (webOS 4.x keeps the kernel's word only; webOS 1 to 3.9 also write `debug` to the EEPROM), `unset debug_mode` brings `debug` back. `mitm_flows` a number, 5000 by default, 0 for no limit; `mitm_flow_bytes` a size such as `200M`, `0` for no limit (the default). `link=lan` with a `listen`, or another link with an `address`, is refused: unset it first. An empty value of a key that `unset` takes is refused, naming `unset`. |
-| `settings NAME unset KEY...` | Back to the default, while the VM is off: `fw` (the VM's own `firmware/`), `broadcast` (the firmware's own, else the chip's default board), `listen` (the VM's own address), `forward` (none), `address` (dhcp), `mitm_flows` (5000) and `mitm_flow_bytes` (no limit). The other keys have no unset: set them to a value. |
+| `config show NAME` | The VM's config, its `vm.toml`: its settings and its tags; a key it leaves at the default is shown as `(default)` (`null` in JSON). `beanjar config set --help` lists every key, its values and its default (from `vmsettings.SETTING_HELP`, next to the keys it describes). |
+| `config set NAME KEY=VALUE...` | Change `vm.toml`. `tags=TAG[,TAG...]` replaces the VM's tags, whether it runs or not (see Tags); every other key changes only while the VM is off: `fw broadcast mem smp free_page_reporting userland guest_kernel debug_mode layers link mode display audio mac serial listen forward address mitm_flows mitm_flow_bytes`, `layers` comma-separated, each `NAME` or `NAME@VERSION` for a versioned layer (`hbchannel@0.7.3`; Homebrew Channel) (`config set tv1 mem=1536 layers=normal,gl`; `fw=/path` boots that directory in place; `platform` follows `fw`'s target). `mac` is six hex octets, unicast; `serial` 1 to 16 letters and digits (upper-cased). `listen` an IPv4 address for the TV-service ports, `link=nat` only; `forward` the guest's own TCP ports relayed beside them, `PORT` or `HOST:GUEST` comma-separated (`forward=8080,8081:80`), refused on a host port a layer has, 5900, 18083 or below 1024; `address` `dhcp` or `A.B.C.D/NN,GATEWAY`, `link=lan` only. `free_page_reporting` `on` or `off` (the default). `userland` `auto` (the default: native or qemu-user by the host, at each start), `native` or `qemu-user` (refused on NetCast and SimpleSmart; its qemu-arm is `QEMU_ARM` or beanjar-vendor's qemu-user). `guest_kernel` `arm64` (the default) or `x86-64` (experimental: x86-64 hosts only, q35, userland qemu-user; refused with `userland=native` and on NetCast and SimpleSmart; its QEMU is the vendored qemu-system-x86_64 or `QEMU_X86_64`). `debug_mode` `debug` (the default, `debugMode=3`: a development set, with faultmanager's crash popup), `event` (4: event logs, the popup stays) or `release` (5, what a retail set runs: no crash popup, and the set reboots when tvservice or lginit_app exits); the kernel's `debugMode=` word and the EEPROM's debug status follow it at the next start (webOS 4.x keeps the kernel's word only; webOS 1 to 3.9 also write `debug` to the EEPROM), `unset debug_mode` brings `debug` back. `mitm_flows` a number, 5000 by default, 0 for no limit; `mitm_flow_bytes` a size such as `200M`, `0` for no limit (the default). `link=lan` with a `listen`, or another link with an `address`, is refused: unset it first. An empty value of a key that `unset` takes is refused, naming `unset`. |
+| `config unset NAME KEY...` | Back to the default: `tags` (none, whenever), and while the VM is off `fw` (the VM's own `firmware/`), `broadcast` (the firmware's own, else the chip's default board), `listen` (the VM's own address), `forward` (none), `address` (dhcp), `mitm_flows` (5000) and `mitm_flow_bytes` (no limit). The other keys have no unset: set them to a value. |
 | `viewer open NAME [viewer options]` / `viewer close NAME` | Open (`display = "dbus"` only, one per VM) or close the viewer. It is `build/viewer/beanjar-viewer` of the checkout, or `BEANJAR_VIEWER`. |
-| `screenshot NAME FILE [--size WxH]` | Save the TV picture of a running VM (`display = "dbus"`) as a PNG, with its video windows and LG's cursor in and no window chrome; prints the path. Default size 1280x720 (the viewer's picture area at its default size, which Save Screenshot gives), the TV picture letterboxed into it; `--size` is 64 to 8192 each way. Whoever owns the VM's display takes it: an open viewer or beanjar-vnc owns `org.beanjar.Display1` on the VM's bus and answers its `Screenshot(path, width, height)` method (`gdbus call --address unix:path=VM/run/dbus.sock --dest org.beanjar.Display1 --object-path /org/beanjar/Display1 --method org.beanjar.Display1.Screenshot /tmp/x.ppm 1280 720` writes a PPM); with neither, a headless viewer runs once and exits (about 2 s). A VM that is off is an error, as is a viewer or beanjar-vnc started before this command, which does not own the name (close it and open it again). `--json` has `file`, `width`, `height` and `taken_by` (`viewer`, `vnc` or `headless`), and how the frame shows the guest's display: `source_width` and `source_height` (QEMU's display, the guest's graphic plane, 1920x1080 on most boards), `scale` (frame pixels per display pixel, 0.666667 for 1080p in 1280x720) and `offset_x`, `offset_y` (the letterbox bars, 0 when the aspects match); `null` when unknown. The PNG records the display's size (a `tEXt` chunk `beanjar-source`, `1920x1080`), so `HOST/NAME`, `--last` and `elements` give it too. |
-| `elements NAME` / `elements --image PNG` | The TV picture's text and controls as a list (OCR and UI-element detection), for scripts and tests. Captures through `screenshot`, including remote hosts, then runs the optional user-installed `textshot` on this PC. `--image` reads a local PNG without a VM or library. Refs belong to this frame only; `[dimmed]` means low contrast, not disabled; go-textshot does not report focus on webOS today, so `[focused]` will rarely appear. See [Reading screen elements](#reading-screen-elements). |
-| `vnc start NAME [--port N] [--listen ADDRESS] [beanjar-vnc options]` / `vnc stop NAME` | Serve the TV picture over VNC on the VM's address, port 5900, and with link lan also on its LAN address, port 5900 ([beanjar-vnc](../../docs/dev/architecture/vnc.md); `display = "dbus"`, not while the viewer is open), or stop it. Always behind the VM's own password (`vnc password`); `info` shows its file under `vnc`. `--port` moves this host's listener (with link lan only that one); `--port 0` takes any free port (what beanjar-web uses; `info` shows it); `--listen` is for link nat. It is `build/vnc/beanjar-vnc`, `/usr/bin/beanjar-vnc` installed, or `BEANJAR_VNC`; its log is `logs/vnc.log`. |
+| `screenshot NAME FILE [--frame WxH]` | Save the TV picture of a running VM (`display = "dbus"`) as a PNG, with its video windows and LG's cursor in and no window chrome; prints the path. Default frame 1280x720 (the viewer's picture area at its default size, which Save Screenshot gives), the TV picture letterboxed into it; `--frame` is 64 to 8192 each way. Whoever owns the VM's display takes it: an open viewer or beanjar-vnc owns `org.beanjar.Display1` on the VM's bus and answers its `Screenshot(path, width, height)` method (`gdbus call --address unix:path=VM/run/dbus.sock --dest org.beanjar.Display1 --object-path /org/beanjar/Display1 --method org.beanjar.Display1.Screenshot /tmp/x.ppm 1280 720` writes a PPM); with neither, a headless viewer runs once and exits (about 2 s). A VM that is off is an error, as is a viewer or beanjar-vnc started before this command, which does not own the name (close it and open it again). `--json` has `file`, `width`, `height` and `taken_by` (`viewer`, `vnc` or `headless`), and how the frame shows the guest's display: `source_width` and `source_height` (QEMU's display, the guest's graphic plane, 1920x1080 on most boards), `scale` (frame pixels per display pixel, 0.666667 for 1080p in 1280x720) and `offset_x`, `offset_y` (the letterbox bars, 0 when the aspects match); `null` when unknown. The PNG records the display's size (a `tEXt` chunk `beanjar-source`, `1920x1080`), so `HOST/NAME`, `--last` and `elements` give it too. |
+| `elements NAME` / `elements --from-png PNG` | The TV picture's text and controls as a list (OCR and UI-element detection), for scripts and tests. Captures through `screenshot`, including remote hosts, then runs the optional user-installed `textshot` on this PC. `--image` reads a local PNG without a VM or library. Refs belong to this frame only; `[dimmed]` means low contrast, not disabled; go-textshot does not report focus on webOS today, so `[focused]` will rarely appear. See [Reading screen elements](#reading-screen-elements). |
+| `vnc start NAME [--port N] [--listen ADDRESS] [beanjar-vnc options]` / `vnc stop NAME` | Serve the TV picture over VNC on the VM's address, port 5900, and with link lan also on its LAN address, port 5900 ([beanjar-vnc](../../docs/dev/architecture/vnc.md); `display = "dbus"`, not while the viewer is open), or stop it. Always behind the VM's own password (`vnc password`); `show` shows its file under `vnc` (and `vnc_password_file`). `--port` moves this host's listener (with link lan only that one); `--port 0` takes any free port (what beanjar-web uses; `show` shows it); `--listen` is for link nat. It is `build/vnc/beanjar-vnc`, `/usr/bin/beanjar-vnc` installed, or `BEANJAR_VNC`; its log is `logs/vnc.log`. |
 | `vnc pipe NAME` | Relay stdin and stdout to the running beanjar-vnc's local RFB socket (`run/rfb-local.sock`, owner-only, no RFB authentication): an RFB client on stdio. For `HOST/NAME` it runs there with this process's stdio. The [web viewer](../../docs/dev/architecture/web-viewer.md) carries noVNC over it. |
 | `vnc audio-pipe NAME` | Relay stdin and stdout to the running beanjar-vnc's audio socket (`run/audio-local.sock`, owner-only): send `opus` or `pcm` and a newline, read a 16-byte header, then the VM's mixed audio (the guest's and the media's, 48 kHz stereo) as length-prefixed 20 ms Opus packets or s16le PCM ([vnc](../../docs/dev/architecture/vnc.md#audio)). It ends at the end of stdin; for `HOST/NAME` it runs there with this process's stdio. The web viewer's speaker plays it. |
 | `vnc video-pipe NAME` | Relay stdin and stdout to the running beanjar-vnc's video socket (`run/video-local.sock`, owner-only): send `h264` (optionally `bitrate=N`, kbit/s) and a newline, read a 32-byte header naming the encoder, then the TV picture as H.264 access units, each with a 16-byte header (length, keyframe flag, timestamp) ([vnc](../../docs/dev/architecture/vnc.md#video)). It ends at the end of stdin; for `HOST/NAME` it runs there with this process's stdio. The web viewer's H.264 picture plays it. |
-| `remote pipe NAME` / `remote press NAME KEY... [--hold MS]` / `remote layout NAME` | The TV remote's buttons through the display's front end (beanjar-vnc or the viewer: `org.beanjar.Display1.Ir`, [viewer](../../docs/dev/architecture/viewer.md#remote-buttons-from-a-script)). `pipe` reads `down CODE` / `up CODE` lines (an IR code such as `0x7c`, or a key's name such as `HOME`), answers `ready` and `error: ...`, and releases what it holds at the end of stdin; `press` presses keys in turn (100 ms each); `in Quick Start+ standby the micom reports no keys, so both send a POWER key-down (IR 0x08) as QMP `system_powerdown` (the wake line) instead of IR, and drop its key-up ([suspend](../../docs/dev/architecture/suspend.md)); on a model with a touch screen `pipe` also takes `touch KIND SLOT X Y WxH` lines ([Touch](#touch)); `layout` is the VM's remote, the viewer's for its firmware (`--json`: its keys, boxes, colours and codes). |
-| `remote click NAME X Y [--button left\|middle\|right] [--frame WxH] [--settle MS] [--hold MS]` / `remote move NAME X Y [--frame WxH]` | The Magic Remote's pointer through the display's front end (beanjar-vnc or the viewer: `org.beanjar.Display1.Pointer`), at X Y of a screenshot: the 1280x720 frame `screenshot` and `elements` report (`--frame` for `screenshot --size`), whole pixels or an element's `centre`. Each call stands alone: a wake movement, the pointer to X Y, and for `click` SETTLE ms (default 300), then the button held HOLD ms (default 100). `--json` has the display pixel it went to (`display_x`, `display_y`) and the frame's geometry as `screenshot --json`. See [Pointer](#pointer). |
-| `remote tap NAME X Y [--hold MS] [--frame WxH]` / `remote swipe NAME X Y X2 Y2 [--time MS] [--steps N] [--frame WxH]` | The touch screen of a model that has one (the StanbyME, `lm21u`) through the display's front end (`org.beanjar.Display1.Touch`), at X Y of a screenshot as `remote click`: `tap` holds one finger HOLD ms (default 100), `swipe` moves it to X2 Y2 in TIME ms (default 300) over STEPS moves (default 10). A model without one is an error. See [Touch](#touch). |
-| `vnc password NAME [show \| set [FILE] \| reset]` | The VM's VNC password, in the owner-only `identity/vnc.password`: made at random (20 characters, none easily confused) the first time VNC starts or it is asked for, then kept across VNC and VM restarts. Without a verb, where it is; `show` prints it alone (the only form that prints it, also with `--json`); `set` reads a new one from a prompt on a terminal, else stdin's line (no `FILE`, or `-`), or a one-line `FILE`, never argv (1 to 255 characters of printable ASCII, no space at either end); `reset` makes a new random one. A running `beanjar vnc start` keeps the old one until it restarts. Clients may give any user name, an empty one too ([vnc](../../docs/dev/architecture/vnc.md#authentication-and-the-lan)). `identity renew` makes a new one; `wipe` keeps it. |
-| `identity renew NAME` | Makes a VM that is off another TV: every state disk wiped (as `wipe` without `--part`), a new MAC (the library's `mac_prefix`) and serial in `vm.toml`, every key pair of `identity/` made anew (the SSH client key, both host keys, the developer key; `known_hosts` rewritten), and a new random VNC password. The model key, `authorized_keys` and the library's CA are kept. It asks nothing, as `wipe` does. |
-| `clone SRC DEST` | Makes `DEST` a copy of the VM `SRC`, which must be off, as another TV. Either may be on another host (`HOST/NAME`; `SRC` is looked up as other commands do, a bare `DEST` is this machine's); this machine drives the copy and relays it, so a copy between two hosts passes through it as a tar stream, never as a file. Kept: every setting of `vm.toml` but its slot (`DEST` gets the lowest free one of its library), the state disks (first use, region, installed apps such as Homebrew Channel), an own `firmware/`, and `identity/` but what a new identity replaces: `sestore.toml` with the model key, `tee-huk` (what the guest's secure store holds is encrypted with it), `authorized_keys` and any other file there. New, as `identity renew` makes them (`vmidentity.next_identity`, `vmidentity.renew_keys`): the MAC (`DEST` library's `mac_prefix`) and serial, every key pair, the VNC password; `known_hosts` is written at the first start. The state is not wiped: the guest brings what it derives from the identity in line at boot (the NDUID from the MAC; the developer key, encrypted again with the new passphrase; root's `authorized_keys` and the host keys of root SSH, Homebrew Channel and developer mode, from the per-VM layer), and the EEPROM's serial records, which a start does not rewrite on LLS's chips (webOS 5 on), are rewritten by the clone. Refused when `SRC` is not off, `DEST` exists, or `DEST`'s host has no `SRC`'s in-place firmware directory (the shared collection is at the same path on every host). `DEST` is assembled in a hidden `vms/.clone-DEST-*` on its host and renamed into place once `SRC` is seen off again; a failure, Ctrl-C, SIGTERM or SIGHUP removes it, and a clone killed outright leaves only that hidden directory, which is no VM. What this machine makes for `DEST` (`vm.toml`, the new keys, the EEPROM) is staged in its own library's `vms/.clone-stage-*` and removed at the end. A host needs only its installed `beanjar` (`info`, `settings`), `sh` and GNU tar. |
-| `identity authorized-keys NAME [show \| reset \| add-mine]` | The public keys that may log in to the VM as root over SSH (`rootssh`, `hbchannel`), and so go into the guest: `identity/authorized_keys` and the VM's client key, each with its type, fingerprint and whose it is (`vm`, `mine`: one of your `~/.ssh/*.pub`, `other`). `reset` removes every key but the VM's own, which is what a new VM has; `add-mine` adds your own `~/.ssh/*.pub` without their comments (local only: it refuses `HOST/NAME`). A change reaches the guest at its next start. |
-| `key model NAME [show \| install FILE \| clear]` | The VM's SDP model key in `identity/sestore.toml` (below): whether it has one, install one from `FILE`, or clear it; install and clear while it is off. The value is never printed. |
+| `remote pipe NAME` / `remote press NAME KEY... [--hold DURATION]` / `remote layout NAME` | The TV remote's buttons through the display's front end (beanjar-vnc or the viewer: `org.beanjar.Display1.Ir`, [viewer](../../docs/dev/architecture/viewer.md#remote-buttons-from-a-script)). `pipe` reads `down CODE` / `up CODE` lines (an IR code such as `0x7c`, or a key's name such as `HOME`), answers `ready` and `error: ...`, and releases what it holds at the end of stdin; `press` presses keys in turn (each held `--hold`, default 100ms); `in Quick Start+ standby the micom reports no keys, so both send a POWER key-down (IR 0x08) as QMP `system_powerdown` (the wake line) instead of IR, and drop its key-up ([suspend](../../docs/dev/architecture/suspend.md)); on a model with a touch screen `pipe` also takes `touch KIND SLOT X Y WxH` lines ([Touch](#touch)); `layout` is the VM's remote, the viewer's for its firmware (`--json`: its keys, boxes, colours and codes). |
+| `remote click NAME X Y [--button left\|middle\|right] [--frame WxH] [--settle DURATION] [--hold DURATION]` / `remote move NAME X Y [--frame WxH]` | The Magic Remote's pointer through the display's front end (beanjar-vnc or the viewer: `org.beanjar.Display1.Pointer`), at X Y of a screenshot: the 1280x720 frame `screenshot` and `elements` report (`--frame` for `screenshot --frame`), whole pixels or an element's `centre`. Each call stands alone: a wake movement, the pointer to X Y, and for `click` a wait of `--settle` (default 300ms), then the button held `--hold` (default 100ms). `--json` has the display pixel it went to (`display_x`, `display_y`) and the frame's geometry as `screenshot --json`. See [Pointer](#pointer). |
+| `remote tap NAME X Y [--hold DURATION] [--frame WxH]` / `remote swipe NAME X Y X2 Y2 [--time DURATION] [--steps N] [--frame WxH]` | The touch screen of a model that has one (the StanbyME, `lm21u`) through the display's front end (`org.beanjar.Display1.Touch`), at X Y of a screenshot as `remote click`: `tap` holds one finger for `--hold` (default 100ms), `swipe` moves it to X2 Y2 in `--time` (default 300ms) over `--steps` moves (default 10). A model without one is an error. See [Touch](#touch). |
+| `vnc password show NAME` / `vnc password set NAME [FILE]` / `vnc password reset NAME` | The VM's VNC password, in the owner-only `identity/vnc.password`: made at random (20 characters, none easily confused) the first time VNC starts or it is asked for, then kept across VNC and VM restarts. `show NAME` (the VM's) says where it is (`vnc_password_file`); `vnc password show` prints it alone (the only form that prints it, also with `--json`); `set` reads a new one from a prompt on a terminal, else stdin's line (no `FILE`, or `-`), or a one-line `FILE`, never argv (1 to 255 characters of printable ASCII, no space at either end); `reset` makes a new random one. A running `beanjar vnc start` keeps the old one until it restarts. Clients may give any user name, an empty one too ([vnc](../../docs/dev/architecture/vnc.md#authentication-and-the-lan)). `identity reset` makes a new one; `wipe` keeps it. |
+| `identity reset NAME` | Makes a VM that is off another TV: every state disk wiped (as `wipe` without `--part`), a new MAC (the library's `mac_prefix`) and serial in `vm.toml`, every key pair of `identity/` made anew (the SSH client key, both host keys, the developer key; `known_hosts` rewritten), and a new random VNC password. The model key, `authorized_keys` and the library's CA are kept. It asks nothing, as `wipe` does. |
+| `clone SRC DEST` | Makes `DEST` a copy of the VM `SRC`, which must be off, as another TV. Either may be on another host (`HOST/NAME`; `SRC` is looked up as other commands do, a bare `DEST` is this machine's); this machine drives the copy and relays it, so a copy between two hosts passes through it as a tar stream, never as a file. Kept: every setting of `vm.toml` but its slot (`DEST` gets the lowest free one of its library), the state disks (first use, region, installed apps such as Homebrew Channel), an own `firmware/`, and `identity/` but what a new identity replaces: `sestore.toml` with the model key, `tee-huk` (what the guest's secure store holds is encrypted with it), `authorized_keys` and any other file there. New, as `identity reset` makes them (`vmidentity.next_identity`, `vmidentity.renew_keys`): the MAC (`DEST` library's `mac_prefix`) and serial, every key pair, the VNC password; `known_hosts` is written at the first start. The state is not wiped: the guest brings what it derives from the identity in line at boot (the NDUID from the MAC; the developer key, encrypted again with the new passphrase; root's `authorized_keys` and the host keys of root SSH, Homebrew Channel and developer mode, from the per-VM layer), and the EEPROM's serial records, which a start does not rewrite on LLS's chips (webOS 5 on), are rewritten by the clone. Refused when `SRC` is not off, `DEST` exists, or `DEST`'s host has no `SRC`'s in-place firmware directory (the shared collection is at the same path on every host). `DEST` is assembled in a hidden `vms/.clone-DEST-*` on its host and renamed into place once `SRC` is seen off again; a failure, Ctrl-C, SIGTERM or SIGHUP removes it, and a clone killed outright leaves only that hidden directory, which is no VM. What this machine makes for `DEST` (`vm.toml`, the new keys, the EEPROM) is staged in its own library's `vms/.clone-stage-*` and removed at the end. A host needs only its installed `beanjar` (`show`, `config show`), `sh` and GNU tar. |
+| `identity authorized-keys show NAME` / `identity authorized-keys reset NAME` / `identity authorized-keys add NAME --mine` | The public keys that may log in to the VM as root over SSH (`rootssh`, `hbchannel`), and so go into the guest: `identity/authorized_keys` and the VM's client key, each with its type, fingerprint and whose it is (`vm`, `mine`: one of your `~/.ssh/*.pub`, `other`). `reset` removes every key but the VM's own, which is what a new VM has; `add --mine` adds your own `~/.ssh/*.pub` without their comments (local only: it refuses `HOST/NAME`). A change reaches the guest at its next start. |
+| `key model show NAME` / `key model set NAME FILE` / `key model unset NAME` | The VM's SDP model key in `identity/sestore.toml` (below): whether it has one, set it from `FILE` (local only: it refuses `HOST/NAME`), or unset it; set and unset while it is off. The value is never printed. |
 | `key list NAME` | The item names in `identity/sestore.toml`, and its `missing` policy; never a value. |
-| `library config [show \| set KEY=VALUE... \| unset KEY...]` | The library's `config.toml`: shown (with `mac_prefix`'s default), or set: `repo auto_reconnect epk2extract mac_prefix lan_parent addresses` (`mac_prefix` three hex octets, unicast; `lan_parent` an existing wired interface of this host, `unset lan_parent` removes it; `addresses` three octets inside 127.0.0.0/8 but not 127.0.0, the prefix of the VMs' addresses, its development libraries' too, changed only while all of them are off: two libraries with different prefixes run their VMs side by side, and each VM's `known_hosts` pins follow at its next start). The GUI has no page for these; only auto_reconnect is in its main menu. |
-| `host config [show \| set KEY=VALUE... \| unset KEY...]` | This machine's `config.toml` (above): shown, or set: `max_running=N`, how many VMs may run at once on this host, counting every beanjar VM up in `beanjar.slice` (every library's, the development VMs', the regress harness's); `unset max_running` removes the limit. `start` (and the GUI's Start, `vm-launcher start`) beyond it is refused before anything is launched. `firmware_dirs=DIR[:DIR...]`, the host's firmware collections; `unset firmware_dirs` goes back to `/srv/beanjar/firmware`. It reads and makes no library. |
+| `library config show` / `library config set KEY=VALUE...` / `library config unset KEY...` | The library's `config.toml`: shown (with `mac_prefix`'s default), or set: `repo auto_reconnect epk2extract mac_prefix lan_parent addresses` (`mac_prefix` three hex octets, unicast; `lan_parent` an existing wired interface of this host, `unset lan_parent` removes it; `addresses` three octets inside 127.0.0.0/8 but not 127.0.0, the prefix of the VMs' addresses, its development libraries' too, changed only while all of them are off: two libraries with different prefixes run their VMs side by side, and each VM's `known_hosts` pins follow at its next start). The GUI has no page for these; only auto_reconnect is in its main menu. |
+| `host config show` / `host config set KEY=VALUE...` / `host config unset KEY...` | This machine's `config.toml` (above): shown, or set: `max_running=N`, how many VMs may run at once on this host, counting every beanjar VM up in `beanjar.slice` (every library's, the development VMs', the regress harness's); `unset max_running` removes the limit. `start` (and the GUI's Start, `vm-launcher start`) beyond it is refused before anything is launched. `firmware_dirs=DIR[:DIR...]`, the host's firmware collections; `unset firmware_dirs` goes back to `/srv/beanjar/firmware`. It reads and makes no library. |
 | `host add NAME URI` / `host remove NAME` / `host list` | The remote hosts of this machine's `config.toml` (see Several machines): add one (`ssh://[USER@]HOST[:PORT]`), remove it, or list the names and URIs (an array with `--json`). They need no library. |
 | `ares-TOOL [--root] -d NAME [ARGS...]` | Runs the webOS SDK tool `ares-TOOL` (`ares-install`, `ares-shell`, `ares-launch`, `ares-novacom`, ...) against the running VM alone, as the developer-mode user `prisoner`, or with `--root` as root over the VM's root SSH, the other arguments passed on as they are, and exits with its status (see ares tools). |
 | `shell [-t \| -T] NAME [[--] CMD [ARG...]]` | A root shell inside webOS on the running VM, or one command, over the VM's own `webos.shell` port: no SSH, developer mode, network or layer (see Shell). Exits with the command's status. |
 | `mitm show NAME [--password]` | The traffic inspector of a running `mode = "mitm"` VM: its mode, status (`Running`, `Inspector is not ready`, `Inspector off: REASON`, `Not running`, ...), whether it is ready, its URL (with `link = "lan"` the LAN one, and `local_url`, the host's way in), its password file, and `mitmweb`: the `version` and `path` the start found and the `problem` that kept the inspector off (no mitmweb, older than 12.0.1, or it failed; the guest then goes out directly); the password itself only with `--password`. |
-| `io usb attach NAME [--id ID]` / `io usb detach NAME ID` / `io usb list NAME` / `io usb plug NAME --device VENDOR:PRODUCT\|BUS-DEVICE [--id ID] [--sudo]` / `io usb plug NAME --camera [--pattern NAME]` | USB devices plugged into a running VM over usbredir: `attach` adds a `usb-redir` device with a unix socket in the run directory and prints the socket, `detach` unplugs it, `list` shows each with whether a client is on its socket and whether the guest has the device; `plug` does the lot for a device of this machine, or for the virtual camera, until Ctrl-C (see [USB devices](#usb-devices)). |
+| `io usb attach NAME [--id ID] [--image FILE [--readonly] \| --device VENDOR:PRODUCT\|BUS-DEVICE [--sudo] \| --camera [--pattern NAME]]` / `io usb detach NAME ID` / `io usb list NAME` | USB devices plugged into a running VM over usbredir: `attach` without a source adds a `usb-redir` device with a unix socket in the run directory and prints the socket; with `--image` a disk image as a USB stick; with `--device` or `--camera` it does the lot for a device of this machine, or for the virtual camera, until Ctrl-C. `detach` unplugs one, `list` shows each with whether a client is on its socket and whether the guest has the device (see [USB devices](#usb-devices)). |
 | `mitm connect NAME` | Makes the inspector reachable from this machine and keeps it so until stdin ends, across the VM's restarts (`stop` and `start`, a guest reboot): prints one JSON line, `{"url", "password"}`, and another whenever they change (a restarted VM's inspector has a new password and no flows); stderr says when the inspector is gone and when it is back. Every 5 s it asks mitmweb with the session cookie of its first login, and when that fails asks for the VM's state again (at most every 10 s). For `HOST/NAME` it asks the host's `mitm show --password` and adds a forward from `127.0.0.1:PORT` here to the inspector there to the host's shared ssh connection; those requests keep that connection open (`ControlPersist` ends an idle one after 60 s, and the forward with it), and should it end anyway the same forward is added to a new one. It is cancelled at the end (also on SIGTERM, SIGHUP, Ctrl-C; one left by a killed run is cancelled by the next remote run, as `ares-TOOL`'s). Refused for a VM without mitm, not running, or whose inspector is not ready. beanjar-web serves the inspector through it ([web viewer](../../docs/dev/architecture/web-viewer.md#the-traffic-inspector)). |
 | `mitm clear NAME` | Empties the inspector's flow list, as its page's Clear does (`POST /clear` with the password and tornado's XSRF pair: the `_mitmproxy_xsrf` cookie and an equal `X-XSRFToken` header). For `HOST/NAME` through a forward as `mitm connect`'s, for the one request. |
 
@@ -438,7 +452,7 @@ command shows what it manages. `beanjar --help` and `beanjar COMMAND --help` des
 `beanjar elements NAME` captures the same TV picture as `beanjar screenshot`, then
 runs the optional [go-textshot CLI](https://github.com/devcell-sh/go-textshot)
 on this PC. `NAME` may be `HOST/NAME`: only the PNG crosses SSH, and the remote host
-needs no screen reader. `beanjar elements --image PNG` reads an existing local PNG
+needs no screen reader. `beanjar elements --from-png PNG` reads an existing local PNG
 without looking up a VM or creating a library. This command does not start a VM.
 A capture can run the screenshot path's one-shot headless viewer.
 
@@ -569,7 +583,7 @@ caller holds are released when it leaves the bus.
   without its button's action). So each call first moves 4 display pixels beside the
   target, then onto it.
 - **Settle.** 300 ms between arrival and press by default (hover, then click). On
-  W22H ombre `--settle 0 --hold 0` worked as well; the default leaves room for slower
+  W22H ombre `--settle 0ms --hold 0ms` worked as well; the default leaves room for slower
   guests (TCG).
 - **Measured 2026-10-29 on the x86 PC** (beanjar-vnc with no client): system alert
   (`createAlert`, two buttons) clicks ran the clicked button's action on W22H ombre and
@@ -608,8 +622,8 @@ A model with a touch screen (`targets.Soc.touch`: the StanbyME, `lm21u`) gets QE
 ### Rotation
 
 A model that turns to portrait (`targets.Soc.portrait`: the StanbyME, `lm21u`) is turned from the
-host: `beanjar sensor rotate NAME ANGLE` (ANGLE 0, 90, 180 or 270; `off` is 0) turns the set itself, and
-waits until the guest reports what webOS made of it; `beanjar sensor rotate NAME` prints the rotation the
+host: `beanjar sensor set rotate NAME ANGLE` (ANGLE 0, 90, 180 or 270; `off` is 0) turns the set itself, and
+waits until the guest reports what webOS made of it; `beanjar sensor show rotate NAME` prints the rotation the
 guest last reported. Other models refuse it, and so does a VM started before the rotation port
 existed. The guest's framebuffer stays the panel's landscape, as on the set, where the panel itself
 turns.
@@ -648,8 +662,8 @@ turns.
 Two of the board's sensors are set from the host on a running VM, over the console into lgemu's
 module parameters (`host/core/beanjar/sensors.py`). Neither is kept across a restart.
 
-- **Ambient light.** `beanjar sensor light NAME CH0 [CH1]` sets the light sensor's two channels in raw
-  counts (0 to 65535; one value sets both); `beanjar sensor light NAME` prints them. pqcontroller reports
+- **Ambient light.** `beanjar sensor set light NAME CH0 [CH1]` sets the light sensor's two channels in raw
+  counts (0 to 65535; one value sets both); `beanjar sensor show light NAME` prints them. pqcontroller reports
   CH0 as `luminance` and CH1 as `visibleLuminance` (`getEyeqSensorData` subscribed) and, with
   energy saving on auto, moves `backlightValue` by them. The sensor is lgemu's `light1` or `light2`
   device (`guest/kernel/modules/lgemu/light.c`) at 7-bit 0x10 on the channel of the firmware's
@@ -663,7 +677,7 @@ module parameters (`host/core/beanjar/sensors.py`). Neither is kept across a res
   on W24P and W22O (W21A's pqcontroller does not stream). On W22O `backlightValue` held 48 in the
   dark and climbed about 2 a second to 100 at 6000; it settles at 49 for 400 counts, 55 for 1500
   and 60 for 3000. W24P's stayed at the user's value.
-- **SoC temperature.** `beanjar sensor temperature NAME CELSIUS` (-40 to 200) sets what
+- **SoC temperature.** `beanjar sensor set temperature NAME CELSIUS` (-40 to 200) sets what
   `/proc/thermalinfo/soc_temperature` reads (45 at a start), which fancontroller reports each
   second (`NL_CHIP_THERMAL {"soc_temperature":N}`); webOS 23 and later also read `iddq_core` and
   `iddq_scpu` there (150 and 90 mA). Every chip whose firmware has fancontroller has the directory
@@ -675,7 +689,7 @@ module parameters (`host/core/beanjar/sensors.py`). Neither is kept across a res
 
 ### Presence (ToF motion sensor)
 
-`beanjar sensor presence NAME [present|absent|MM]` sets who is in front of the set's ToF motion sensor,
+`beanjar sensor set presence NAME present|absent|MM` sets who is in front of the set's ToF motion sensor,
 an AMS TMF8821: someone who keeps moving at MM millimetres (100 to 5000; `present` is
 1500), or nobody (`absent`, the state at a start); without a value it prints it. It is lgemu's
 `tof` device (`guest/kernel/modules/lgemu/tof.c`) at 7-bit 0x41 on channel 1, libdile_i2c's
@@ -707,9 +721,9 @@ with `noMotionAutoOff` when its `addNoMotionAndNoOperationTimer` (5 minutes or l
 
 ### Tuner
 
-`beanjar io tuner NAME` lists the physical channels of a small US over-the-air lineup
+`beanjar io tuner list NAME` lists the physical channels of a small US over-the-air lineup
 (`beanjar/tuner_stream.py`: RF 7, 14 and 33 with four virtual channels), which of them are mapped
-and what the set is tuned to; `beanjar io tuner NAME map RF...` and `unmap RF...|all` change the
+and what the set is tuned to; `beanjar io tuner map NAME RF...` and `unmap NAME RF...|all` change the
 map, kept in the VM's state for its next starts. Only boards whose SoC data loads
 `dtv_soc` have the tuner (`targets.Soc.modules`; `k7lp`, `k8lp`, `k8lpn` but its number1, `k8lpn2`,
 `k24` ponytail and queue and `o22` ponytail and queue). Mapping a channel makes
@@ -736,21 +750,21 @@ the scaler window connected to the decoder's VDEC port.
 The helper is a feeder that needs neither TSDuck nor ffmpeg when a feed serves it: a generator on
 another machine connected to `run/tuner-feed.sock`, which it tells the channels the map wants and
 the guest's tunes, and whose map and stream frames it passes on to the guest whole. Without a feed
-it makes and sends the streams itself. `beanjar io tuner HOST/NAME map RF...` uses that for a VM
+it makes and sends the streams itself. `beanjar io tuner map HOST/NAME RF...` uses that for a VM
 on a host without the tools (the Pi, the ROCK Pi boards): it makes the streams here, keeps the map
 on the host (no streams made there) and, while the VM runs, starts a detached feed here (`python
 -m beanjar.tuner feed`, its log in the cache's `tuner/feeds/`) that reaches the socket through a
 forward of the host's shared ssh connection (`ares.Forward`). Only the tuned channel crosses the
 network, under 5 Mbit/s. The feed ends when the VM stops (the helper ends with QEMU and closes the
 connection) and when `unmap` leaves nothing mapped; a VM started again is fed again by the next
-`map` from here. `beanjar io tuner HOST/NAME` shows whether a feed of this machine runs.
+`map` from here. `beanjar io tuner list HOST/NAME` shows whether a feed of this machine runs.
 
 ```sh
-beanjar io tuner tv map 7 14 33
-beanjar io tuner tv --json
+beanjar io tuner map tv 7 14 33
+beanjar io tuner list tv --json
 tests/regress/tuner/run-scan.py tv        # an automatic scan by Luna: PASS or FAIL with numbers
 tests/regress/tuner/run-watch.py tv       # Live TV's picture and sound after it: PASS or FAIL
-beanjar io tuner rk-1/tv map 7 14 33   # made here, fed over ssh
+beanjar io tuner map rk-1/tv 7 14 33   # made here, fed over ssh
 ```
 
 ### USB devices
@@ -760,11 +774,12 @@ with usbredir (`beanjar/usb.py`), the protocol QEMU's `usb-redir` device speaks 
 `usbredirect` (Debian's `usbredirect` package) serves for a local device:
 
 ```sh
-beanjar io usb plug tv --device 046d:082d          # lsusb's VENDOR:PRODUCT, or BUS-DEVICE (1-4)
-beanjar io usb plug pi/tv --device 1-4 --sudo      # a VM on another host: the device stays here
+beanjar io usb attach tv --device 046d:082d          # lsusb's VENDOR:PRODUCT, or BUS-DEVICE (1-4)
+beanjar io usb attach pi/tv --device 1-4 --sudo      # a VM on another host: the device stays here
 ```
 
-`plug` holds until Ctrl-C (or SIGTERM, SIGHUP), until the device is unplugged here, or until
+`io usb attach` with `--device` (or `--camera`, below) feeds the device from here, so it holds
+until Ctrl-C (or SIGTERM, SIGHUP), until the device is unplugged here, or until
 `usbredirect` ends, and unplugs the device from the VM whatever ends it. It prints one line once
 the guest has the device (`--json`: `name`, `id`, `socket`, `device`, `bus_device`, `product`);
 status 0 when the device was unplugged, 1 when `usbredirect` ended on its own, 130 or 128+N on a
@@ -774,32 +789,32 @@ user the device. With several devices of one VENDOR:PRODUCT, `--device` takes BU
 
 The steps, each also a command of its own:
 
-- **`usb attach NAME [--id ID]`**, on the VM's host: QMP `chardev-add` of a listening unix socket
+- **`io usb attach NAME [--id ID]`** (no source), on the VM's host: QMP `chardev-add` of a listening unix socket
   `run/usb-ID.sock` (a socket, not TCP, since QEMU runs in the VM's network namespace with
   `mode = "mitm"`) and `device_add usb-redir` with it on the launcher's `qemu-xhci`
   (`usb-bus.0`), QEMU device id `usb-ID`; prints the socket. ID is 1 to 16 letters, digits, `_` or
   `-`, by default the lowest free number. The guest sees nothing until a usbredir client connects
   to the socket and sends its handshake; it sees the device unplugged when the client goes.
 - **The way to the socket**, on the machine with the device: `usbredirect --to` takes only
-  `host:port`, so `plug` gives it `127.0.0.1:PORT`: for a local VM a relay in the `plug` process
+  `host:port`, so `attach --device` gives it `127.0.0.1:PORT`: for a local VM a relay in its process
   to the socket; for `HOST/NAME` a forward of the host's shared ssh connection to the socket there
   (`ssh -O forward -L 127.0.0.1:PORT:SOCKET`, as `ares-TOOL`'s forwards; usbredir's plain TCP is
-  carried inside ssh), cancelled at the end, or by the next remote run should `plug` be killed
+  carried inside ssh), cancelled at the end, or by the next remote run should `attach` be killed
   outright. No socat.
-- **`usbredirect --device BUS-DEVICE --to 127.0.0.1:PORT -k`**. `plug` watches the device's sysfs
+- **`usbredirect --device BUS-DEVICE --to 127.0.0.1:PORT -k`**. `attach` watches the device's sysfs
   entry, as `usbredirect` does not end when the device is unplugged.
-- **`usb detach NAME ID`**: `device_del`; QEMU destroys the chardev with the device, and its
-  socket. `usb list NAME` shows what is attached: `CLIENT` connected (a client on the socket),
+- **`io usb detach NAME ID`**: `device_del`; QEMU destroys the chardev with the device, and its
+  socket. `io usb list NAME` shows what is attached: `CLIENT` connected (a client on the socket),
   `GUEST` attached (the device on the guest's bus).
 
 A guest restart keeps what is attached, as a TV keeps what is in its ports. The restart ends QEMU
 and the VM's unit starts a new one (`beanjar/lifecycle.py`, docs/dev/architecture/gpu-process.md):
 `attach` and `attach --image` record each device in the unit's `RuntimeDirectory` (`usb.json`,
 in attach order; `detach` takes it out), and the unit puts them back on the new QEMU, before its
-guest boots, at the same sockets and on ports in the same order. `plug`'s client ends with the old
-QEMU; `plug` then waits while the VM restarts (`usb list` says `restarting`; `--json` has
+guest boots, at the same sockets and on ports in the same order. The client of `attach --device`
+ends with the old QEMU; `attach` then waits while the VM restarts (`io usb list` says `restarting`; `--json` has
 `restarting` and `restarts`, how many times the unit started QEMU again) and starts the client
-again for the new QEMU. A client of a plain `attach` has to connect again by itself. A new start
+again for the new QEMU. A client of an `attach` without a source has to connect again by itself. A new start
 of the VM has none of them.
 
 A virtual webcam takes the device's place with `--camera`: `beanjar-virtcam`
@@ -811,39 +826,39 @@ stream counters (frames, packets, late wake-ups, skipped and dropped packets) to
 `tests/regress/virtcam/run-camera.py NAME` checks it end to end in the guest.
 
 ```sh
-beanjar io usb plug tv --camera                    # until Ctrl-C
-beanjar io usb plug rk-1/tv --camera --pattern ball
+beanjar io usb attach tv --camera                    # until Ctrl-C
+beanjar io usb attach rk-1/tv --camera --pattern ball
 ```
 
-A disk image is plugged in as a USB stick instead, with no client: `usb attach --image`, on the
+A disk image is plugged in as a USB stick instead, with no client: `io usb attach --image`, on the
 VM's host as the other steps.
 
 ```sh
-beanjar io usb mkimage stick.img --fs ntfs --size 64M   # fat32, exfat or ntfs; --label, --force
+beanjar io usb mkimage stick.img --fs ntfs --size 64M   # fat32, exfat or ntfs; --label, --overwrite
 beanjar io usb attach tv --image stick.img [--readonly] [--id ID]
 beanjar io usb attach pi/tv --image /srv/sticks/fat.img # a path on pi: the image is not copied
 beanjar io usb detach tv 1
 ```
 
-- **`usb attach NAME --image FILE [--readonly]`**: QMP `blockdev-add` of FILE as a raw image
+- **`io usb attach NAME --image FILE [--readonly]`**: QMP `blockdev-add` of FILE as a raw image
   (block node `usb-ID-disk`, read-only all the way down with `--readonly`, when QEMU takes only a
   shared lock on the file) and `device_add usb-storage` with it on `usb-bus.0`, `removable`, as a
   stick reports itself. FILE is a regular file this user may read, and write without
   `--readonly`; the guest writes to it, so it is used in place and never copied. For `HOST/NAME`
   it is a path on that host, which must be absolute (the host's beanjar runs elsewhere); put the
-  image there first (`scp`, or `usb mkimage` run there). QEMU's file lock refuses a second writer
+  image there first (`scp`, or `io usb mkimage` run there). QEMU's file lock refuses a second writer
   of one image (another VM, another attachment). IDs are shared with the `usb-redir` devices.
-- **`usb detach NAME ID`**: `device_del`, then `blockdev-del` of its node, which releases the
+- **`io usb detach NAME ID`**: `device_del`, then `blockdev-del` of its node, which releases the
   image. Like pulling a stick out: eject it in webOS first unless the test is the pulling.
-- **`usb list NAME`**: `KIND` is `redir` or `storage`; `SOURCE` the socket, or the image and
+- **`io usb list NAME`**: `KIND` is `redir` or `storage`; `SOURCE` the socket, or the image and
   whether it is read-only (`--json`: `kind`, and `image` and `readonly` for a stick).
-- **`usb mkimage FILE --fs fat32|exfat|ntfs [--size 64M] [--label BEANJAR]`**, on this machine
+- **`io usb mkimage FILE --fs fat32|exfat|ntfs [--size 64M] [--label BEANJAR] [--overwrite]`**, on this machine
   (no VM): an MBR (`sfdisk`) with one partition from sector 2048 to the end, type `0c` for FAT32
   and `07` for exFAT and NTFS, the layout LG's PDM mounts, and in it `mkfs.vfat -F 32`,
   `mkfs.exfat` or `mkfs.ntfs -Q` (Debian: util-linux, dosfstools, exfatprogs, ntfs-3g; found in
   `/usr/sbin` too). The filesystem is made in a file of its own beside FILE (`mkfs.exfat` cannot
   write at an offset) and copied in with its holes kept; FILE is replaced only when all went well,
-  and an existing one only with `--force`. The size is whole MiB, 2 MiB or more; `mkfs` decides
+  and an existing one only with `--overwrite`. The size is whole MiB, 2 MiB or more; `mkfs` decides
   what is too small for its filesystem.
 
 Checked on the x86 PC (TCG): W24P (`k8lpn2-ombre`) mounted an NTFS image read-write (a file
@@ -854,10 +869,10 @@ was still starting (load 40), PDM listed the drive unmounted; attached again onc
 it mounted.
 
 QMP serves one client at a time; these commands wait up to 15 s for one that holds it (`list` and
-`info` hold it briefly). A device stays across a guest reboot (a machine reset in the same QEMU)
+`show` hold it briefly). A device stays across a guest reboot (a machine reset in the same QEMU)
 and Quick Start+ standby, but not across a stop and start: it is QEMU's, not one of the VM's
-settings. A `plug` killed outright (SIGKILL) leaves its `usb-redir` device with no client, which
-the guest does not see; `usb detach` removes it. The guest kernel's USB class drivers are per
+settings. An `attach --device` killed outright (SIGKILL) leaves its `usb-redir` device with no
+client, which the guest does not see; `io usb detach` removes it. The guest kernel's USB class drivers are per
 release ([build and boot](../../docs/dev/architecture/build-and-boot.md), "Peripheral modules").
 
 ### ares tools
@@ -889,7 +904,7 @@ tools') and `.webos/tv/novacom-devices.json` (the official ones', profile `tv`),
 `.ssh/devmode_rsa`, a copy of the VM's developer key. `APPDATA` (which the official tools prefer to
 `HOME`) and `ARES_DEVICE` (the Rust tools' `-d`) are unset; the rest of the environment is kept.
 The user's own `~/.webos` is never read or written. Neither implementation checks a device's host
-key, so none is pinned (`ssh` in `info` pins it). A device list the tool changes (`ares-novacom
+key, so none is pinned (`ssh` in `show` pins it). A device list the tool changes (`ares-novacom
 --getkey`, `ares-setup-device`) is written over at the next run.
 
 `--root` makes the device root instead of prisoner: `"username": "root"`, the port of the VM's root
@@ -898,7 +913,7 @@ SSH (the guest's 22, which a layer forwards when its `layer.toml` says so: `root
 "id_ed25519"}`, a copy of the VM's client key in `.ssh/id_ed25519`. It needs no `devmode`. A local
 VM's `HOME` for it is `run/ares-home-root/`, so that a root run and a prisoner run at the same time
 never share a device list. A VM without such a layer is refused, naming the layers to add (stop the
-VM, `beanjar settings NAME set layers=...`, start it again; settings change only while it is off).
+VM, `beanjar config set NAME layers=...`, start it again; settings change only while it is off).
 With the Rust ares-cli, `ares-shell -r CMD` passes the command's stdout, stderr (kept apart), stdin
 and exit status through without a terminal, so it runs scripts (`ares-shell --root -d tv1 -r sh <
 script.sh`); `ares-push` and `ares-pull` copy as root over SFTP.
@@ -971,7 +986,7 @@ tar c app | beanjar shell pi/tv1 -- tar x -C /tmp
 - Several sessions run at once, on one VM or several. A session whose client goes away (killed,
   a closed connection) is given up in the guest: its process group gets SIGHUP, then SIGKILL 3 s
   later.
-- `HOST/NAME` asks the host's `beanjar info` where the VM's run directory is and adds a forward
+- `HOST/NAME` asks the host's `beanjar show` where the VM's run directory is and adds a forward
   of the host's shared ssh connection to its `shell.sock` (`ssh -O forward`, as `ares-TOOL` and the
   tuner feed do), cancelled at the end.
 
@@ -1034,9 +1049,11 @@ what webOS has not written to its disks is lost.
 
 A running VM can carry a reason, one line of up to 300 characters saying why it runs, so that
 another agent or the user can see whose it is before stopping it: `start NAME --reason TEXT`, or
-`reason NAME TEXT` on a VM that runs (`reason NAME ''` clears it, `reason NAME` shows it). With it
-go the time it was set, the caller's user and an optional `--by LABEL` (an agent's or a script's
-name). `list` shows it in its `REASON` column, `info` as `reason.*`, `--json` as `reason`
+`status set NAME reason=TEXT` on a VM that runs (`status unset NAME reason` clears it, `status
+show NAME` shows it). It is the VM's status, which lasts only while it runs, where its config
+(`config`) is kept. With it go the time it was set, the caller's user and an optional `--by LABEL`
+(an agent's or a script's name). `list` shows it in its `REASON` column, `show` as `reason.*`,
+`--json` as `reason`
 (`{"text", "set", "user", "by"}`, or `null`), and the web viewer on the VM's card. `HOST/NAME`
 forms run on that host, as other commands do.
 
@@ -1054,10 +1071,11 @@ one: `start --reason` is refused there before anything starts.
 ### Tags
 
 Tags are short labels on a VM, kept with its settings in `vm.toml` (`metadata.tags`) so they last
-until changed: `create --tag TAG` (repeatable), `tag NAME +TAG -TAG` (a bare `TAG` adds it too),
-and `list --tag TAG` (repeatable: VMs with all of them; filtered on this machine, every host's rows
+until changed: `create --tag TAG` (repeatable), `config set NAME tags=TAG[,TAG...]` (in place of
+the ones it has), `config unset NAME tags`, and `list --tag TAG` (repeatable: VMs with all of them; filtered on this machine, every host's rows
 alike). A tag is letters, digits and dashes, at most 32, starting with a letter or digit; it is
-kept lower-case, each once, in the order added. `list` shows them in `TAGS`, `info` and `--json`
+kept lower-case, each once, in the order given. `list` shows them in `TAGS`, `show`, `config show`
+and `--json`
 as `tags` (an array), and the web viewer on the VM's card. They are labels, not settings: a
 running VM's tags change too, and its launch never reads them. `clone` copies them and `rename`
 keeps them. `HOST/NAME` forms run on that host.
@@ -1077,33 +1095,38 @@ deletes what it made.
 Every command follows the same rules:
 
 - **Output.** The result goes to stdout; progress (the launcher's output, a wipe's steps) and
-  warnings go to stderr. With `--json`, which every command takes, stdout is one JSON document:
-  `list` an array of VMs, `info` one object with the same fields, `settings`, `library config` and
-  `host config` an object of their keys (`null` for a default, except `host config`'s
+  warnings go to stderr. With `--json`, which every command but `shell` takes, stdout is one JSON
+  document: `list` an array of VMs, `show` one object with the same fields, `config show`, `library
+  config show` and `host config show` an object of their keys (`null` for a default, except `host config`'s
   `firmware_dirs` and `memory_headroom_mib`, which always report their effective values), and the other commands an object
-  naming the VM and what was done (`start`: `name`, `state`, `pid`, `reason`). `vnc password` gives the
-  password's file, never the password, except with `show`.
-- **Text.** Without `--json`, `list` prints aligned columns under a header row, `info` and the
-  settings commands one `KEY: value` line each (a nested table's keys joined with a dot: `ssh.root`;
+  naming the VM and what was done (`start`: `name`, `state`, `pid`, `reason`; `status`: `name`,
+  `reason`). `vnc password set` and `reset` give the password's file, never the password; only
+  `vnc password show` prints it.
+- **Text.** Without `--json`, `list` prints aligned columns under a header row, `show` and the
+  config commands one `KEY: value` line each (a nested table's keys joined with a dot: `ssh.root`;
   `-` for none). No colour.
 - **Exit status.** 0 when it is done, 1 when the operation fails (the VM is not off, the host lacks
   the memory, no VM of that name), 2 for a usage error (an unknown command or option, a missing
-  argument, a KEY that is not one).
+  argument, a KEY that is not one, a group without its verb, a wrong order).
 - **Errors.** Without `--json` an error is one line on stderr, `beanjar: MESSAGE`. With `--json` it
   is one JSON object on stderr, `{"error": MESSAGE}`, with `"key"` when it concerns one setting and
   `"usage": true` for a usage error; stdout stays empty.
 - **No prompts without a terminal.** Only a terminal on stdin is asked anything (a VNC password).
-  Otherwise `vnc password NAME set` reads stdin.
-- **Names.** `NAME` is the VM's positional argument everywhere; `--library` and `--repo` come
-  before the command; a secret is never an argument (`vnc password set` and `key model install`
-  read a file or stdin).
+  Otherwise `vnc password set NAME` reads stdin.
+- **Order.** The verb comes first, then `NAME`, the VM's positional argument everywhere, then
+  the command's arguments and options; `--json`, `--library` and `--repo` go anywhere (but in
+  `shell`'s command); a duration carries its unit (`250ms`, `2s`); a secret is never an argument
+  (`vnc password set` and `key model set` read a file or stdin).
+- **Version.** `beanjar --version` prints `beanjar VERSION` and exits 0 (an installed package: its
+  version, such as `0.6.0+git109.geba1f197817a`; a checkout: `packaging/VERSION` followed by
+  `(checkout)`). With `--json` it prints `{"name": "beanjar", "version": "..."}`.
 
 ### Native screensaver
 
-`beanjar screensaver start NAME [--timeout SECONDS] [--json]` and
-`beanjar screensaver stop NAME [--timeout SECONDS] [--json]` control the native screensaver
+`beanjar screensaver start NAME [--timeout DURATION] [--json]` and
+`beanjar screensaver stop NAME [--timeout DURATION] [--json]` control the native screensaver
 through the initramfs root console; they need neither a viewer nor root SSH. `HOST/NAME`
-uses the existing host dispatch. The timeout defaults to 60 seconds (range 5 to 300).
+uses the existing host dispatch. The timeout defaults to 60s (range 5s to 300s, e.g. `--timeout 2m`).
 The default leaves margin for cold Flutter fallback startup: a controlled failed-ad recovery
 on webOS 10.3.1 took 31.48 seconds including host SSH, returning Active with no saver windows.
 Completion requires both the native power state and SAM's actual screensaver window types;
@@ -1169,12 +1192,13 @@ hosts existed; `--host HOST` lists one host (`--host local` this machine). The G
 library directly and ignores hosts. In a remote row `library`, `unit`, `fw` and `run_dir` are paths
 on that host.
 
-**Addressing.** The commands that take a VM (`info start stop settings delete wipe vnc start`,
-`vnc stop`, `vnc password`, `identity renew`, `key list`, `key model`, `screenshot`, `usb`) take `NAME` or
-`HOST/NAME`; `local/NAME` is this machine's. A bare `NAME` is looked up on this machine and on every
-host (a read-only `settings local/NAME show`, in parallel), so a duplicate is never hidden: found in one
+**Addressing.** The commands that take a VM (`show start stop delete rename prepare wipe
+screenshot elements shell`, and `config`, `status`, `vnc`, `screensaver`, `remote`, `identity`,
+`key`, `sensor`, `io tuner`, `io usb`, `mitm`) take `NAME` or `HOST/NAME`; `local/NAME` is this machine's. A bare `NAME` is looked up on this machine and on every
+host (a read-only `config show local/NAME`, in parallel), so a duplicate is never hidden: found in one
 place, the command runs there; in several, it is an error listing the `HOST/NAME` forms; nowhere,
-`no VM named NAME`. A host that cannot be asked is warned about and left out, so with a host down
+`no VM named NAME`. With `--library DIR` given, a bare `NAME` is that library's VM and no host is
+asked (the GTK manager, which lists one library, always passes it). A host that cannot be asked is warned about and left out, so with a host down
 a bare name still works but is not proven unique; `local/NAME` and `HOST/NAME` ask nobody. With no
 host configured nothing is asked.
 
@@ -1183,25 +1207,26 @@ and the same options (without
 `--library` and `--repo`, which are this machine's paths), and its stdout, stderr and exit status
 (0, 1, 2) are relayed. Exceptions:
 
-- `info` always reads the host's JSON and adds `host` (first); its `dir`, `identity`, `ssh.*`,
+- `show` always reads the host's JSON and adds `host` (first); its `dir`, `identity`, `ssh.*`,
   `inspector.password_file` and `vnc.password_file` are paths and commands on that host, as it
   reports them.
 - `screenshot HOST/NAME FILE` runs `screenshot NAME -` there (the PNG alone on stdout) and writes
   `FILE` here; `--json` has `host`, and `taken_by` is `null`. `screenshot NAME -` also works on one
   machine, writing the PNG to stdout.
-- `vnc password HOST/NAME set [FILE]` reads the password here (FILE, stdin or a prompt) and sends
+- `vnc password set HOST/NAME [FILE]` reads the password here (FILE, stdin or a prompt) and sends
   it on the remote's stdin, never as an argument.
 - `viewer open` and `viewer close` of a remote VM are refused, pointing at `beanjar vnc start
-  HOST/NAME` and the VM's address in `info`.
+  HOST/NAME` and the VM's address in `show`.
 - `ares-TOOL -d HOST/NAME` runs the tool on this machine, through an ssh port forward to the
   VM's developer-mode port on the host (with `--root` its root SSH port; see ares tools).
 - `shell HOST/NAME` runs here, through an ssh port forward to the VM's `shell.sock` on the host
   (see Shell).
-- `usb plug HOST/NAME` runs here, where the device is, asking the host's `usb attach`, `list`
-  and `detach` and forwarding to the socket there (see USB devices).
-- `create`, `key model NAME install FILE` and `identity authorized-keys NAME add-mine` are local
+- `io usb attach HOST/NAME --device|--camera` runs here, where the device is, asking the host's
+  `io usb attach`, `list` and `detach` and forwarding to the socket there (see USB devices).
+- `io tuner map|unmap HOST/NAME` makes the streams here and feeds them to the host (see Tuner).
+- `create`, `key model set NAME FILE` and `identity authorized-keys add NAME --mine` are local
   only for now (a directory, a file, the keys of this machine): they refuse `HOST/NAME`.
-- `clone SRC DEST` takes a `HOST/NAME` for either and runs here, asking the hosts' `beanjar info`
+- `clone SRC DEST` takes a `HOST/NAME` for either and runs here, asking the hosts' `beanjar show`
   and copying over their shells (see Commands).
 
 ## GUI
@@ -1252,10 +1277,10 @@ testing real apps: the app is a developer app, as on a rooted TV, and its servic
 keys: the client key `id_ed25519` and the `authorized_keys` above log in, and the host key is
 `rootssh_host_key`, so `known_hosts` pins it as for `rootssh`. The layer is built once per
 Homebrew Channel release: `layers=normal,devmode,hbchannel@0.7.3` picks one, plain `hbchannel`
-is the default (0.8.0-rc1), and an unknown version is refused with the list. `settings` shows
+is the default (0.8.0-rc1), and an unknown version is refused with the list. `config show` shows
 `layer_versions.hbchannel` and `list` a `VERSIONS` column. HBC can update itself in the VM as on a
 TV (its service's `install`, which writes into the VM's state); a newer copy there then stays
-whatever the layer's version, until `beanjar wipe`. `beanjar info NAME` prints the
+whatever the layer's version, until `beanjar wipe`. `beanjar show NAME` prints the
 same `ssh` command. It needs `devmode` (HBC installs apps through developer mode's
 `dev/install`) and cannot be combined with `rootssh` (both are the guest's port 22); its
 `layer.toml` says so, and `set` and the launcher refuse a selection that does not follow it. Its root telnet (guest port 23) is not forwarded. HBC's placeholder
@@ -1392,12 +1417,12 @@ tiles' live figures are the ones the list rows compute every second (uptime and 
 /proc/PID/stat, the GPU's use from gpu.Sampler) plus QEMU's resident memory
 (capacity.rss_mib); "Last run" for a VM that is off is the newer modification time of
 logs/console.log and logs/qemu.out (summary_facts.last_run). The picture is `beanjar screenshot
-NAME - --size 384x216` while the VM runs and `--last` once when it is off, the same commands the
+NAME - --frame 384x216` while the VM runs and `--last` once when it is off, the same commands the
 web list runs, each in a worker thread, one at a time per VM, at most every 5 s and only while the
 Summary is shown, the window is active and no viewer is open (picture.Pictures). With neither a
 viewer nor beanjar-vnc running, a screenshot runs a headless viewer for about 3 s; one costs about
 0.25 s of CPU on the development PC, so the 5 s refresh takes about 5% of a core while it is seen.
-A portrait model's picture is turned by rotation.status (what `beanjar sensor rotate --json`
+A portrait model's picture is turned by rotation.status (what `beanjar sensor show rotate --json`
 reports). Clicking it opens the viewer, or sends an open viewer SIGUSR1, which it presents its
 window on (only when /proc says it catches the signal).
 

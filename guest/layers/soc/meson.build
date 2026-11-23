@@ -20,6 +20,7 @@
 #   libdile_gal/     DILE_GAL on the emulator's graphics memory (the SoC module's /dev/gfx)
 #   libhal_crypto/   the secure store's model secret (NDUID)
 #   libdile_crypto/  the model secret's DILE read, as stock does it after its initialisation
+#                    (dile-crypto.c), and on M3 and K5LP the debug status's pass-through cipher (dbg-data.c)
 #   libsestore/      secure store items by their exact names: the second screen gateway's TLS key
 #                    (every firmware whose gateway reads it), the model secret (DILE's regional read,
 #                    and nyx crypto's from queue on)
@@ -33,6 +34,8 @@
 #   libaibspLib/     O22's AI tone and scene services for pqcontroller, likewise
 #   libhal_direct/   the direct video decoder and audio output under DILE's direct libraries
 #                    (NDL DirectMedia's first API), to the host's media ports
+#   omx_core/        MStar's OpenMAX IL core under NDL's Esplayer (W15U), to the host's media
+#                    ports
 #   video/           the media elements under their stock names, in gst_plugin_dir (none if '')
 #
 # The board's I2C devices (the micom, the NVM EEPROM, the amplifier) are not here: they are in
@@ -119,6 +122,10 @@ if gst_plugin_dir != ''            # a chip without media elements has ''
 endif
 if gst_plugin_dir != '' and ('libhal_vdec_direct' in hal_stock or 'libhal_audio_direct' in hal_stock)
   subdir('src/libhal_direct')      # with the media elements' GLib
+endif
+omx_core = get_variable('omx_core', '')
+if gst_plugin_dir != '' and omx_core != ''
+  subdir('src/omx_core')           # the chip's OpenMAX IL core, with the media elements' GLib
 endif
 
 soc_layer_args = []

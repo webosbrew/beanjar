@@ -5,7 +5,7 @@
 - CPU: QEMU's utime+stime from /proc/<pid>/stat over wall time (% of one host CPU, as top); the
   vCPUs are the "CPU n/KVM|TCG" threads (-name debug-threads=on), sampled individually for the meter.
 - GPU: the busiest DRM engine of the VM's host GL, from the fdinfo of its unit's processes (the
-  core's beanjar/gpu.py, shared with `beanjar info`); unavailable without engine counters (WSL).
+  core's beanjar/gpu.py, shared with `beanjar show`); unavailable without engine counters (WSL).
 - Memory: the guest's RAM and swap for the meter, the VM's host footprint for the tooltip.
   Guest RAM: QMP qom-get of the balloon's guest-stats (/machine/peripheral/balloon, polled by
   QEMU every qemu.BALLOON_STATS_S), used = stat-total-memory - stat-available-memory (MemTotal -

@@ -19,6 +19,9 @@ bring_up = ["SS1A"]
 # W16R's XC window and audio command numbers are not taken (SS1A's Utopia build is not W16R's).
 [soc]
 board_cmdline = "/etc/emulator/board.cmdline"
+# a DVB build (its RELEASE.cfg modelName DVB-M2, firmware_broadcast) boots the European LH570V of
+# its spec table; the US builds (ATSC-M2) the US LH5700 of board_cmdline
+broadcast_boards = { dvb = "/etc/emulator/board-dvb.cmdline" }
 board_src = "guest/layers/simplesmart/rootfs"
 
 [[soc.modules]]

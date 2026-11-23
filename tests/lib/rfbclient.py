@@ -32,6 +32,7 @@ class Rfb:
         self.error = None
         self.cut_texts = []  # ServerCutText received (beanjar-vnc's beanjar:planes= answers)
         self.stop = False
+        self.on_update = None  # called with the client after each whole update, under the lock
         self.take(12)
         self.sock.sendall(b"RFB 003.008\n")
         n = self.byte()
@@ -134,6 +135,8 @@ class Rfb:
                             if self.rect() == -224:
                                 break
                         self.updates += 1
+                        if self.on_update:
+                            self.on_update(self)
                 elif t == 2:
                     pass
                 elif t == 3:

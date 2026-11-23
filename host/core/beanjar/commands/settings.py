@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Settings: a VM's (settings), the library's (library config) and this machine's (host config,
+"""Config: a VM's (config), the library's (library config) and this machine's (host config,
 add, remove, list, prune-layer-images)."""
 
 import argparse
@@ -18,11 +18,12 @@ def settings_of(a):
 
 
 def settings_view(vm):
-    """The VM's settings (SETTINGS' keys): vm.toml's values, None where it leaves the default; and,
-    with a versioned layer, layer_versions: {layer: the version it runs} (plain NAME's default
-    named), which is no setting of its own."""
-    c = vm.config
+    """The VM's config (SETTINGS' keys, and tags): vm.toml's values, None where it leaves the
+    default; and, with a versioned layer, layer_versions: {layer: the version it runs} (plain
+    NAME's default named), which is no setting of its own."""
+    c = vm.config_unchecked  # a bad broadcast still shows, to be fixed
     out = {k: c.get(k) for k in vmsettings.SETTINGS}
+    out["tags"] = c.get("tags") or None
     versions = layer_versions(c.get("layers"))
     if versions:
         out["layer_versions"] = versions
@@ -40,28 +41,29 @@ def key_values(items, keys, cmd):
     return values
 
 
-def set_or_unset(a, cmd, keys, unsettable, apply):
-    """A settings command's verb: show (none), set KEY=VALUE... or unset KEY...; apply(values) makes
-    the change, an unset being KEY's empty value, which only the keys of unsettable take (set refuses
-    it for them, naming unset)."""
-    verb = a.verb or "show"
+def set_or_unset(a, group, keys, unsettable, apply, name=None):
+    """A config command's verb (a.verb): show, set KEY=VALUE... or unset KEY...; apply(values)
+    makes the change, an unset being KEY's empty value, which only the keys of unsettable take (set
+    refuses it for them, naming unset). group is the command's group (config, library config),
+    name the VM's NAME as given, if it has one."""
+    verb = a.verb
+
+    def form(v):
+        return " ".join([group, v, *([name] if name else [])])
+
     if verb == "show":
-        if a.items:
-            raise Usage(f"beanjar {cmd} show takes no KEY")
         return
-    if not a.items:
-        raise Usage(
-            f"beanjar {cmd} {verb} needs " + ("KEY=VALUE..." if verb == "set" else "KEY...")
-        )
     if verb == "set":
-        values = key_values(a.items, keys, cmd)
+        values = key_values(a.items, keys, form(verb))
         for k, v in values.items():
             if k in unsettable and not v.strip():
-                raise Usage(f"{k}= is empty: beanjar {cmd} unset {k} sets it back to the default")
+                raise Usage(
+                    f"{k}= is empty: beanjar {form('unset')} {k} sets it back to the default"
+                )
     else:
         for k in a.items:
             if k not in keys:
-                raise Usage(f"{k}: KEY one of {' '.join(keys)} (beanjar {cmd} --help)")
+                raise Usage(f"{k}: KEY one of {' '.join(keys)} (beanjar {form(verb)} --help)")
             if k not in unsettable:
                 raise Usage(
                     f"{k} has no unset (only {', '.join(unsettable)}); set it to a value instead"
@@ -70,43 +72,54 @@ def set_or_unset(a, cmd, keys, unsettable, apply):
     apply(values)
 
 
-def cmd_settings(lib, a):
-    """A VM's settings: shown, set (while it is off) or unset (back to the default)."""
-    unsettable = [k for k, h in vmsettings.SETTING_HELP.items() if h[3]]
+CONFIG_KEYS = (*vmsettings.SETTINGS, "tags")
+
+
+def cmd_config(lib, a):
+    """A VM's config: shown, set or unset (back to the default); its settings while it is off, its
+    tags whether it runs or not."""
+    unsettable = [k for k, h in vmsettings.SETTING_HELP.items() if h[3]] + ["tags"]
     changed = []
-    set_or_unset(
-        a,
-        f"settings {a.name}",
-        tuple(vmsettings.SETTINGS),
-        unsettable,
-        lambda values: changed.append(lib.configure(a.name, out=progress, **values)),
-    )
+
+    def apply(values):
+        tags = values.pop("tags", None)
+        if values:
+            changed.append(lib.configure(a.name, out=progress, **values))
+        if tags is not None:
+            lib.set_tags(a.name, tags or [])
+
+    set_or_unset(a, "config", CONFIG_KEYS, unsettable, apply, a.name)
     vm = changed[0] if changed else lib.vm(a.name)
     emit(a, settings_view(vm), none="(default)")
-    if changed and (a.verb or "show") == "set":
+    if changed and a.verb == "set":
         warn_mitm(vm)
     return 0
 
 
 def settings_help():
-    """The settings' keys as `beanjar settings --help` lists them, from vmsettings.SETTING_HELP."""
+    """The config keys as `beanjar config set --help` lists them, from vmsettings.SETTING_HELP."""
     import textwrap
 
+    def described(text):
+        return textwrap.fill(text, width=94, initial_indent="      ", subsequent_indent="      ")
+
     lines = [
-        "Settings change only while the VM is off. Each KEY, its values, its default, and what",
-        "`unset` brings back where it has one:",
+        "Settings change only while the VM is off, tags whether it runs or not. Each KEY, its",
+        "values, its default, and what `unset` brings back where it has one:",
         "",
     ]
     for k, (values, default, what, unset) in vmsettings.SETTING_HELP.items():
         lines.append(f"  {k}={values}")
         lines.append(
-            textwrap.fill(
-                f"{what}; default {default}" + (f"; unset: {unset}" if unset else ""),
-                width=94,
-                initial_indent="      ",
-                subsequent_indent="      ",
-            )
+            described(f"{what}; default {default}" + (f"; unset: {unset}" if unset else ""))
         )
+    lines.append("  tags=TAG[,TAG...]")
+    lines.append(
+        described(
+            "the VM's tags (letters, digits, dashes), in place of the ones it has: labels, listed "
+            "by list --tag and copied by clone; default none; unset: no tags"
+        )
+    )
     return "\n".join(lines)
 
 
@@ -122,8 +135,10 @@ def warn_mitm(vm):
             )
 
 
-def config_command(a, cmd, keys, unsettable, setter):
-    set_or_unset(a, cmd, keys, unsettable, lambda values: [setter(k, v) for k, v in values.items()])
+def config_command(a, group, keys, unsettable, setter):
+    set_or_unset(
+        a, group, keys, unsettable, lambda values: [setter(k, v) for k, v in values.items()]
+    )
 
 
 def cmd_library_config(lib, a):
@@ -205,52 +220,70 @@ def cmd_host_prune_layer_images(lib, a):
     )
 
 
+def config_verbs(cli, g, func, what, usage_name, keys_help="", epilog=None, vm=False):
+    """A config group's show, set and unset commands (in g), each running func."""
+    name = " NAME" if vm else ""
+    extra = (
+        {"epilog": epilog, "formatter_class": argparse.RawDescriptionHelpFormatter}
+        if epilog
+        else {}
+    )
+    for verb, text, usage, nargs, metavar in (
+        ("show", f"show {what}", f"show{name}", None, None),
+        (
+            "set",
+            f"set {what}: KEY=VALUE...{keys_help}",
+            f"set{name} KEY=VALUE...",
+            "+",
+            "KEY=VALUE",
+        ),
+        ("unset", f"unset keys of {what}, back to the default", f"unset{name} KEY...", "+", "KEY"),
+    ):
+        s = cli.command(
+            g, verb, text, func, usage=f"beanjar {usage_name} {usage} [--json]", **extra
+        )
+        if vm:
+            cli.vm_name(s)
+        if nargs:
+            s.add_argument("items", nargs=nargs, metavar=metavar)
+        else:
+            s.set_defaults(items=[])
+        if usage_name == "host config":
+            s.set_defaults(library_needed=False)  # needs no library, and makes none
+
+
 def register_vm_settings(cli):
-    sub, command, vm_name = cli.sub, cli.command, cli.vm_name
-    s = command(
-        sub,
-        "settings",
-        "a VM's settings (vm.toml): show them, set KEY=VALUE or unset KEY (back to the "
-        "default) while it is off",
-        cmd_settings,
-        usage="beanjar settings NAME [show | set KEY=VALUE... | unset KEY...] [--json]",
-        epilog=settings_help(),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+    g = cli.group(
+        "config",
+        "a VM's config, kept in its vm.toml: its settings (changed while it is off) and its tags "
+        "(whenever); show it, set KEY=VALUE or unset KEY (back to the default). The keys: "
+        "beanjar config set --help",
+        dest="verb",
     )
-    vm_name(s)
-    s.add_argument(
-        "verb",
-        nargs="?",
-        choices=("show", "set", "unset"),
-        metavar="VERB",
-        help="show (the default), set or unset",
-    )
-    s.add_argument("items", nargs="*", metavar="KEY[=VALUE]")
+    config_verbs(cli, g, cmd_config, "the VM's config", "config", epilog=settings_help(), vm=True)
 
 
 def register_config(cli):
     command, group = cli.command, cli.group
     g = group("library", "this library's settings")
-    s = command(
-        g,
+    g = group(
         "config",
         "the library's settings (config.toml): show them, set KEY=VALUE "
         f"({', '.join(vmsettings.CONFIG_KEYS)}) or unset lan_parent",
-        cmd_library_config,
-        usage="beanjar library config [show | set KEY=VALUE... | unset KEY...] [--json]",
+        under=g,
+        dest="verb",
     )
-    s.add_argument(
-        "verb",
-        nargs="?",
-        choices=("show", "set", "unset"),
-        metavar="VERB",
-        help="show (the default), set or unset",
-    )
-    s.add_argument("items", nargs="*", metavar="KEY[=VALUE]")
-
-    g = group("host", "this machine's settings, every library's")
-    s = command(
+    config_verbs(
+        cli,
         g,
+        cmd_library_config,
+        "the library's settings",
+        "library config",
+        f" ({', '.join(vmsettings.CONFIG_KEYS)})",
+    )
+
+    host = group("host", "this machine's settings, every library's")
+    g = group(
         "config",
         "this machine's settings ($XDG_CONFIG_HOME/beanjar/config.toml): max_running=N, how "
         "many VMs may run at once on this host (every library's, the development VMs' and the "
@@ -261,18 +294,18 @@ def register_config(cli):
         "the launcher and regress look a firmware up (default /srv/beanjar/firmware). "
         "runner=auto|systemd|session, how VMs run here (default auto: a systemd user service "
         "where a user systemd runs, else a session of their own; BEANJAR_RUNNER overrides)",
+        under=host,
+        dest="verb",
+    )
+    config_verbs(
+        cli,
+        g,
         cmd_host_config,
-        usage="beanjar host config [show | set KEY=VALUE... | unset KEY...] [--json]",
+        "this machine's settings",
+        "host config",
+        f" ({', '.join(hostconfig.GLOBAL_KEYS)})",
     )
-    s.add_argument(
-        "verb",
-        nargs="?",
-        choices=("show", "set", "unset"),
-        metavar="VERB",
-        help="show (the default), set or unset",
-    )
-    s.add_argument("items", nargs="*", metavar="KEY[=VALUE]")
-    s.set_defaults(library_needed=False)  # needs no library, and makes none
+    g = host
     s = command(
         g,
         "prune-layer-images",

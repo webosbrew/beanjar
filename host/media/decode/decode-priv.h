@@ -31,6 +31,8 @@
 #define HW_QUEUE           8            /* pictures queued from a hardware decoder's pool */
 #define REPORT_NS          5000000000ll
 #define DECODE_ONLY_RING   64
+#define REPLAY_PACKETS     64 /* kept for a hardware decoder's fallback to software */
+#define REPLAY_BYTES       (16u << 20)
 #define HW_TYPES           32 /* above enum AVHWDeviceType's values */
 
 struct caps {
@@ -88,10 +90,16 @@ struct stream {
     uint32_t pic_off;        /* the picture extent's offset in the pool */
     uint32_t slot_size;      /* bytes per slot of the current layout (0: none yet) */
     unsigned nslots;
-    struct {
+    struct slot {
         uint32_t input; /* the input its picture answered */
         int busy;       /* the guest's until it is on the release ring */
     } slots[WEBOS_MEDIA_POOL_SLOTS];
+    /* the layout before, while the guest still has a slot of it (frame.c, take_slot): LIVE, so
+     * a picture of it still on the ring can be mapped; retired when its last slot comes back */
+    int old_e; /* -1: none */
+    uint32_t old_off, old_slot_size, old_bytes;
+    unsigned old_nslots;
+    struct slot old_slots[WEBOS_MEDIA_POOL_SLOTS];
     unsigned long long slot_drops;   /* pictures dropped for want of a free slot */
     unsigned long long bad_releases; /* release entries that named no slot of the session */
     int64_t slot_wait_ns;            /* waiting for a free slot */
@@ -121,9 +129,17 @@ struct stream {
     AVCodecParserContext *parser; /* for streams whose buffers are not whole frames */
     enum AVPixelFormat hw_format;
     int hw_errors, hw_banned, hw_fallback, queue_max;
+    /* what a hardware context took before its first picture, decoded again in software when it
+     * cannot take the stream (frame.c, to_software); whether it gave one, and the last it gave */
+    AVPacket *replay[REPLAY_PACKETS];
+    unsigned nreplay;
+    size_t replay_bytes;
+    int hw_gave;
+    int64_t hw_last_pts, replay_until;
     struct SwrContext *swr;
     AVChannelLayout swr_layout;
     int swr_rate, swr_format;
+    int swr_s16; /* the converter's output: S16 for a DECODE session's samples, else float */
     int64_t next_apts;
     int64_t decode_only[DECODE_ONLY_RING];
     unsigned decode_only_n;
@@ -184,9 +200,16 @@ int handle(struct stream *s, const struct webos_media_header *h, const uint8_t *
 /* codec.c: codec selection, hardware setup and opens. */
 void close_codec(struct stream *s);
 void open_codec(struct stream *s, const char *caps, int allow_hw);
+/* the codec context again from s->caps in software; the parser and its state stay */
+void software_codec(struct stream *s);
+/* the packets kept for a fallback to software, freed */
+void drop_replay(struct stream *s);
 /* frame.c: decoded frame/audio queues and the decoder thread. */
 void free_frames(struct stream *s);
 void *decoder_thread(void *arg);
+/* one packet to the codec, its pictures queued; a hardware context that cannot take the stream
+ * is replaced by a software one here, given again what the hardware took */
+void decode_packet(struct stream *s, AVPacket *pkt, AVFrame *f, unsigned gen);
 /* 10-bit conversion for frames the viewer cannot take as they are. */
 AVFrame *to_8bit(AVFrame *f);
 AVFrame *p010_to_nv12(AVFrame *f);
@@ -196,6 +219,8 @@ void return_picture(struct stream *s, AVFrame *f, uint32_t input, int last);
 /* session.c: a pool session's releases taken off its ring (with s->lock); and its extents given
  * back (with s->lock), the session then inline. */
 void take_releases(struct stream *s);
+/* session.c: the layout before the current one retired (with s->lock) */
+void retire_old_layout(struct stream *s);
 void end_pool_session(struct stream *s);
 /* export.c: viewer snapshots and object/lease export. */
 struct host_media_message snapshot(struct stream *s, unsigned type);

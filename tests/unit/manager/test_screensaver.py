@@ -549,7 +549,7 @@ class CliTest(unittest.TestCase):
             mock.patch.object(ss, "control", return_value=result) as control,
         ):
             rc, out, err = self.invoke(
-                "screensaver", "stop", "local/tv", "--timeout", "12", "--json"
+                "screensaver", "stop", "local/tv", "--timeout", "12s", "--json"
             )
         self.assertEqual((rc, err), (0, ""))
         self.assertEqual(json.loads(out), result)
@@ -582,19 +582,19 @@ class CliTest(unittest.TestCase):
                     "screensaver",
                     action,
                     "--timeout",
-                    "18",
+                    "18s",
                     "pi/tv",
                     "--json",
                 )
             self.assertEqual(rc, 0)
             self.assertEqual(
                 run.call_args.args[1:],
-                ("pi", ["screensaver", action, "--timeout", "18", "local/tv", "--json"]),
+                ("pi", ["screensaver", action, "--timeout", "18s", "local/tv", "--json"]),
             )
             control.assert_not_called()
 
     def test_timeout_validation(self):
-        for value in ("nan", "inf", "0", "-1", "301", "four"):
+        for value in ("nan", "inf", "0s", "-1s", "301s", "four", "12", "4999ms"):
             with self.subTest(value=value):
                 rc, _, err = self.invoke("screensaver", "start", "tv", "--timeout", value, "--json")
                 self.assertEqual(rc, 2)

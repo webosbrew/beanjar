@@ -1,0 +1,37 @@
+# Board parameters SimpleSmart SS1A's MBoot (LG's build for M2) puts on the kernel command line,
+# for its rc scripts, lginit, procmgr, RELEASE and libdile_boardinfo, on a European (DVB) build
+# (RELEASE.cfg's DVB-M2, country group EU, as 05.00.06); the US builds boot board.cmdline, and
+# everything but the model is as there. The launcher puts these on the
+# kernel's command line, first (Release.board_in_kernel).
+# Keys and formats: SS1A's boot.pak (scratch/ss-board-identity.md, docs/dev/architecture/simplesmart.md,
+# "Board"); the values describe the set its RELEASE.cfg is (DVB-M2, EU, 49", TOOL_LH57: the
+# LH570V series of its EU spec table). Nothing here is W16R's. Where SS1A's firmware does not fix
+# a value, it is the emulator's, marked (E).
+# The partitions the bootloader hands over (its default bootargs): the root, p18 (the emulator's
+# root is the initramfs's overlay of it), and lginit, p19, which rc.local runs for bootmode=auto
+# from bootdev=emmc (rc.local and rcS read both).
+lginit=/dev/mmcblk0p19 root=/dev/mmcblk0p18 ro rootfstype=squashfs rootwait
+macadr=a8:23:fe:12:34:56
+# (E) the model-option straps: all 0 (RELEASE reads digits 0-10; their meanings are not recovered)
+modelopt=00000000000000
+# hwopt: libdile_boardinfo's digits, d3 1 the 1920x1080 panel, d14 1 the 1366x768 graphic plane
+# (RELEASE.cfg eDispResolution 0x780438, eOSDResolution 0x556300); (E) every other digit 0
+hwopt=000100000000001000
+# the series and size the firmware names (mspec.EU.LCD "LH570V|49,43"); no retail suffix is
+# in the firmware. serialNum (E).
+modelName=49LH570V serialNum=605RAXX00001
+emmc_log=1 bootmode=auto bootdev=emmc console=ttyS0,115200
+# the factory words of RELEASE.cfg's options in OSA_MD_SetValueOfToolOption1..7's layouts; word 1
+# (inch 9, LH57) as the factory's encoding is not fully recovered. Only libdile_boardinfo reads
+# them; RELEASE takes its ToolOptionDB from the EEPROM, which it programs itself on first boot.
+ToolOpt=9:6417:264:0:86:1354:32911
+# (E) countryGrp: its EU index is not recovered (libdile_boardinfo only)
+countryGrp=0
+# 3 = DEBUG (the emulator's boards boot LG's debug mode)
+debugMode=3
+devtmpfs.mount=1
+# one of MBoot's three (chip=LM14AA0, LM14AA1, LM14AB0, chosen by the chip's revision)
+chip=LM14AA0
+# the eMMC of part.pak's map (3728 MB), in MBoot's 0x%01lx%08lx
+emmc_size=0x0e9000000
+cmdEnd

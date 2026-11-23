@@ -35,7 +35,8 @@ secret as `1D492999` when no model item of any name is configured, and generates
 keys at launch. Error adds nothing: without a model item the HAL/DILE model-key read fails.
 Legacy files are migration inputs only; removing an entry never revives an archived key.
 
-Each entry contains exactly one of `text`, `hex`, or `file`. Text is UTF-8, hex is decoded binary,
+Each entry contains exactly one of `text`, `hex`, or `file`. Text is UTF-8, hex is decoded binary
+(two digits per byte, either case, no `0x`; ASCII whitespace between bytes is ignored),
 and a file contributes exact bytes. Relative paths resolve beside the TOML; absolute paths are
 also accepted. No newline, base64 decoding, trimming or terminator is implicit.
 `nul_terminated = true` appends one zero byte to any source. Empty generic items are supported.
@@ -54,7 +55,7 @@ stop launch. Diagnostics identify an item and reason without printing its value.
 | `1D492999`, its `_a`, `_d`, `_r` variants, legacy `SDP_MODEL` | Exactly 44 canonical base64 characters encoding 32 bytes; no NUL or newline. |
 | `77D1DD90` | A usable private PEM key, at most 1999 bytes, without NUL. Launch generates its matching gateway certificate. |
 | `C1FFB834` | Nonempty printable ASCII `<part1>;<part2>` followed by one NUL or LF, at most 100 bytes including that terminator. No embedded control characters. |
-| `dvr_key` | Exactly 16 bytes: the DVR's secure key, which MStar's board HAL reads through KADP for the recording middleware (M2, M3 and LM21: W16R, W18R, W21A and their kin). Launch makes a random one when it is missing (not with `missing = "error"`); clone keeps it, `identity renew` makes a new one. |
+| `dvr_key` | Exactly 16 bytes: the DVR's secure key, which MStar's board HAL reads through KADP for the recording middleware (M2, M3 and LM21: W16R, W18R, W21A and their kin). Launch makes a random one when it is missing (not with `missing = "error"`); clone keeps it, `identity reset` makes a new one. |
 
 The observed native OLED C2 YouTube record ends in LF. Preserve that byte in an exact `hex`
 or `file` export; the stock DILE consumer replaces the final stored byte with NUL in its
@@ -77,10 +78,10 @@ an identity are not read. `migrate-local` imports them into `sestore.toml` as pa
 (`model-secret` as `1D492999` text, `ssg-key` as `77D1DD90` PEM text, `youtube-key` as `C1FFB834` text with
 `nul_terminated = true`), keeping the originals.
 
-`beanjar key model NAME install FILE` and the GUI model-key setting update TOML. Installing replaces
+`beanjar key model set NAME FILE` and the GUI model-key setting update TOML. Installing replaces
 every configured model item with one: the item of the VM's board broadcast where the firmware reads
 regional items (`1D492999_a`, `_d` or `_r`), else plain `1D492999`. To move it, change the board
-(`beanjar settings NAME set broadcast=...`) and install again. `clear` removes all model items,
+(`beanjar config set NAME broadcast=...`) and install again. `clear` removes all model items,
 retaining the policy and other items. CLI and GUI detect TOML-only model keys. Generated SSG keys are written directly into TOML. SSH keys, `tee-huk`
 and the proxy CA keep their existing storage.
 

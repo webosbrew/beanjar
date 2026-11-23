@@ -202,6 +202,7 @@ if guest_lane
       soc_dirs +                   # the chip's table (hal_stock, soc_phys_base, ...) for these:
       ['guest/layers/webos/src/pmlogd'] +  # libpmlog-keep-all, which the preload releases' webos layers take
       ['guest/layers/webos/src/bootd-scale'] +  # libbootd-scale, in every webos layer
+      ['guest/layers/webos/src/memchute-scale'] +  # libmemchute-scale, in every webos layer
       webos_dirs + [               # the release's jobs and fstabs, and its table (nvm_*, ...)
       'guest/layers/webos',              # the webos layer of webos_layer_args
       'guest/layers/common',             # what every firmware gets; hal_common, which the soc layer links
@@ -304,7 +305,7 @@ else
       'host/vnc',                  # beanjar-vnc, over the viewer's core
       'host/helpers/kvm',                 # opt-in per-VM halt polling on the Pi
       'host/helpers/media-helper',            # the VM's end of the media ports
-      'host/helpers/virtcam',             # the virtual USB camera (beanjar io usb plug --camera)
+      'host/helpers/virtcam',             # the virtual USB camera (beanjar io usb attach --camera)
       'host/ui',                   # the GTK windows: beanjar_ui and its layouts
       'host/scripts',              # the firmware cache
       'host/helpers/network',             # the port relay and the LAN helper

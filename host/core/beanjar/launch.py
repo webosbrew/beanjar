@@ -31,6 +31,10 @@ beanjar.launch with host/core on PYTHONPATH).
                                    (share.take); exit 1 if it is missing or not a regular file
   host/scripts/vm-launcher rm-out [--dir VM-DIR] PATH...   remove files of the VM's out share,
                                    never through a link the guest made there (share.remove)
+  host/scripts/vm-launcher netns-exec [--dir VM-DIR] COMMAND...   run COMMAND in the running VM's
+                                   network namespace (link nat: netns.enter_argv), the guest's
+                                   neighbour there; the guest reaches what it serves at 10.0.2.254
+                                   (netns.DHCP_SERVER), the host never (scripts/regress --tv's server)
   host/scripts/vm-launcher logs [--dir VM-DIR]   save the guest's finished logs (check-m1.sh's) to SAVED_LOG_DIR now
   host/scripts/vm-launcher prepare [--dir VM-DIR] [--force]   work out the VM's board data from its
                                    firmware (prepare.py: partition map, new EEPROM chip, local key,
@@ -183,6 +187,7 @@ RUNTIME_VARS = (
     "SLOT",
     "VM_ADDRESS",
     "NETSTUB_WEB_PASSWORD_FILE",
+    "FRESH_STATE",
 )
 
 
@@ -345,7 +350,7 @@ def run(words, env=None):
     # the TEE's hardware-unique key, the VM's own (rtk.ko's stand-in TAs derive their keys from it)
     tee = targets.tee_module(p.target)
     vm = {tee: ("tee_huk=" + keys.ensure_tee_huk(p.identity_dir, warn=say),)} if tee else {}
-    # the StanbyME's accelerometer stands as the set was last turned (rotation.py, beanjar sensor rotate)
+    # the StanbyME's accelerometer stands as the set was last turned (rotation.py, beanjar sensor set rotate)
     accel = rotation.launch_params(p.target, p.state_dir)
     if accel:
         vm["lgemu"] = accel
@@ -386,7 +391,7 @@ def run(words, env=None):
         info["touch"] = True
     if targets.soc(p.target).portrait:
         # the viewer turns the picture as the guest's rotation says (run/rotation) and offers to
-        # turn the set (beanjar sensor rotate)
+        # turn the set (beanjar sensor set rotate)
         info["portrait"] = True
     if p.prepared.local_key:
         info["local_key"] = p.prepared.local_key  # the viewer's local key, prepared
@@ -500,8 +505,8 @@ def run(words, env=None):
             # Link-down must complete before the display helper resumes the VM.
             return netns.off(p.argv, p.env, before_cont=setup_display if p.display_setup else None)
         setup_display()
-        if p.wrap == "mitm":
-            return netns.mitm(p.argv, p.env)
+        if p.wrap == "netns":
+            return netns.run(p.argv, p.env)
         sys.stdout.flush()
         hostswap.open_fds(p.argv)  # its swap disk's memfd, inherited, if it has one
         os.execvpe(p.argv[0], p.argv, p.env)
@@ -560,6 +565,8 @@ def argv(words, env=None):
         "NETNS_TAP",
         "NETSTUB_LOG",
         "LISTEN_ADDRESS",
+        "NET_LAN_ACCESS",
+        "NET_LG_SERVICES",
     ):
         if p.env.get(k) != env.get(k):
             print(f"# {k}={shlex.quote(p.env[k])}")
@@ -997,6 +1004,29 @@ def vm(cmd, vm_dir, words, env=None, power_off=None):
     return 0
 
 
+# ------------------------------------------------------------------ netns-exec
+def netns_exec(vm_dir, command):
+    """Run command (argv) in the network namespace of the VM's running QEMU (vm_dir's, else the
+    checkout VM's RUN_DIR/qemu.pid): it replaces this process (netns.enter_argv)."""
+    if command[:1] == ["--"]:
+        command = command[1:]
+    if not command:
+        raise Error("netns-exec: no command")
+    if vm_dir:
+        run_dir = os.path.join(os.path.abspath(vm_dir), "run")
+    else:
+        run_dir = os.path.join(TREE.top, os.environ.get("RUN_DIR") or "build")
+    pid = core.read_pid(os.path.join(run_dir, "qemu.pid"))
+    if not unit.alive(pid) or not unit.comm(pid).startswith("qemu-system"):
+        raise Error(f"netns-exec: the VM of {run_dir} is not running")
+    try:
+        argv = netns.enter_argv(pid, command)
+    except netns.Error as e:
+        raise Error(str(e)) from None
+    sys.stdout.flush()
+    os.execvp(argv[0], argv)
+
+
 # ------------------------------------------------------------------ qmp: one command
 def qmp(sock, command, timeout=10.0):
     """Send command (a QMP JSON object, as text) over the QMP socket sock; its reply (a dict)."""
@@ -1092,6 +1122,11 @@ def parser():
     s = sub.add_parser("rm-out", help="remove files of the VM's out share (/host/out/PATH)")
     s.add_argument("--dir", help="a VM directory: its run/share")
     s.add_argument("paths", nargs="+", help="paths in the out share")
+    s = sub.add_parser(
+        "netns-exec", help="run a command in the running VM's network namespace (link nat)"
+    )
+    s.add_argument("--dir", help="a VM directory: its run/qemu.pid")
+    s.add_argument("command", nargs=argparse.REMAINDER, help="the command and its arguments")
     s = sub.add_parser("logs", help="save the guest's finished logs to SAVED_LOG_DIR")
     s.add_argument("--dir", help="a VM directory: its run/share and logs/saved")
     s = sub.add_parser(
@@ -1211,6 +1246,8 @@ def main(argv_=None):
             r = qmp(sock, a.command)
             print(json.dumps(r))
             return 1 if "error" in r else 0
+        if a.cmd == "netns-exec":
+            return netns_exec(a.dir, a.command)
         if a.cmd in ("put", "put-out", "get-out", "rm-out", "logs"):
             if a.dir:
                 vm_dir = os.path.abspath(a.dir)

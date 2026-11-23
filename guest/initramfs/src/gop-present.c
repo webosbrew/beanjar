@@ -84,27 +84,35 @@ static int kms_setup(void)
         return -1;
     for (unsigned i = 0; i < res.count_connectors; i++) {
         struct drm_mode_get_connector c = {.connector_id = conns[i]};
-        struct drm_mode_modeinfo modes[32];
         uint32_t cencs[8];
         if (ioctl(drm, DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0 || c.connection != 1 || !c.count_modes)
             continue;
-        if (c.count_modes > 32)
-            c.count_modes = 32;
         if (c.count_encoders > 8)
             c.count_encoders = 8;
+        /* room for every mode: the kernel copies none into a shorter array (it only reports the
+         * count), and virtio-gpu without EDID lists every standard mode up to its maximum */
+        uint32_t want = c.count_modes;
+        struct drm_mode_modeinfo *modes = calloc(want, sizeof(*modes));
+        if (!modes)
+            return -1;
         c.modes_ptr = (uintptr_t)modes;
         c.encoders_ptr = (uintptr_t)cencs;
         c.count_props = 0;
-        if (ioctl(drm, DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0)
+        if (ioctl(drm, DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0 || !c.count_modes ||
+            c.count_modes > want) {
+            free(modes); /* failed, or the modes changed between the calls */
             continue;
+        }
         mode = modes[0];
         for (unsigned m = 0; m < c.count_modes; m++)
             if (modes[m].type & DRM_MODE_TYPE_PREFERRED) {
                 mode = modes[m];
                 break;
             }
+        free(modes);
         conn_id = c.connector_id;
-        for (unsigned e = 0; e < c.count_encoders && !crtc_id; e++) {
+        /* more encoders than cencs holds: none were copied */
+        for (unsigned e = 0; e < c.count_encoders && c.count_encoders <= 8 && !crtc_id; e++) {
             struct drm_mode_get_encoder enc = {.encoder_id = cencs[e]};
             if (ioctl(drm, DRM_IOCTL_MODE_GETENCODER, &enc) < 0)
                 continue;

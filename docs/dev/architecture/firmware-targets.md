@@ -78,6 +78,11 @@ the CLI or the manager, prints `warning: <chip>-<release>: not tested yet: may n
 on; the manager's New VM marks such a firmware of the collections with "(not tested yet: may not
 boot)". Remove the line once the target passes `scripts/regress --headless`.
 
+`first_boot_restart = true` says the target's firmware restarts the set once on the first boot of
+a fresh state, as a set of it does at its first setup (W24G spacebuns' google-home-controller
+switches sdx to its QA2 server, and eula-service reboots). `scripts/regress` follows that one restart
+and fails a target on any other ("Regression runs" in `docs/dev/guides/build.md`).
+
 To add a target, add `<chip>-<release>.toml` with its `models`; add `soc/<chip>.toml` or
 `release/<release>.toml` for a new chip or release, preferably as a `base` of the closest one
 with what differs, and the layer directories the build needs. A new webOS release's base is the
@@ -112,7 +117,7 @@ forwards = [{ guest = 22, host = 6622 }]  # guest TCP ports forwarded to the VM'
 ```
 
 `layermeta.check` is the one test of a selection: every name has a `layer.toml`, every required
-layer is there, no two conflict, and a version a selection names (below) is one the layer has. `beanjar create`/`settings set`, the dialogs and the launcher
+layer is there, no two conflict, and a version a selection names (below) is one the layer has. `beanjar create`/`config set`, the dialogs and the launcher
 (`qemu.plan`) all use it; a `vm.toml` read back may still name a layer this tree lacks, which the
 dialogs show but do not save. The launcher's port forwards are `layermeta.forwards`: the
 `forwards` of the selected and the always-used layers (the `webos` layer's SSAP, 3000 and 3001),
@@ -132,7 +137,7 @@ lacks is refused with the list (`layer hbchannel has no version '0.9.0'; its ver
 named at two versions. The rules in `layer.toml` are the layer's whatever its version, and the
 guest knows the layer by its name only (`boot.conf`, the disk serial `layer-hbchannel`):
 `share.resolve_layers` takes the version's component. A version not built for the VM's target is
-left out like any optional layer that is not built. `beanjar settings` shows
+left out like any optional layer that is not built. `beanjar config show` shows
 `layer_versions.<name>` and `beanjar list` a `VERSIONS` column (`hbchannel@0.8.0-rc1` for plain
 `hbchannel`): the version of the layer, not what the guest's state may have updated it to.
 

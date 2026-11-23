@@ -48,6 +48,6 @@ journalctl --user -u 'beanjar-vm-*-tv1'
   `broadcast`: the old EEPROM and settings are still on the state disks; `beanjar wipe NAME` gives
   a fresh TV.
 
-`beanjar info NAME` shows a VM's state, settings, addresses and SSH command, which is a good first
+`beanjar show NAME` shows a VM's state, settings, addresses and SSH command, which is a good first
 thing to include in a bug report. Keep the library's logs private: they can contain the VM's
 identity and, with a real model key, its secret.

@@ -3,10 +3,12 @@
 /* Stream parameters for LG's video-info message: codec, size, frame rate, pixel aspect ratio and
  * scan type. The caps from the demuxer or parser usually carry all of them; when they do not
  * (WebKit's MSE caps), an H.264 SPS from codec_data or from the byte stream fills the gaps.
- * H.264 only: other codecs report what their caps say. */
+ * H.264 only: other codecs report what their caps say. With STREAMINFO_CORE (no GStreamer: the
+ * OpenMAX core, ../../omx_core), only the SPS part. */
 #include "streaminfo.h"
 #include <string.h>
 
+#ifndef STREAMINFO_CORE
 static const struct {
     const char *mime;
     const char *codec;
@@ -19,11 +21,14 @@ static const struct {
     {"video/x-ffv", "FFV"},      {"image/jpeg", "MJPEG"},        {"video/x-raw", "RAW"},
 };
 
+#endif
+
 gboolean stream_info_complete(const struct stream_info *info)
 {
     return info->width && info->height && info->fps_n > 0 && info->fps_d > 0;
 }
 
+#ifndef STREAMINFO_CORE
 gboolean stream_info_from_caps(struct stream_info *info, GstCaps *caps)
 {
     memset(info, 0, sizeof *info);
@@ -74,6 +79,7 @@ gboolean stream_info_from_caps(struct stream_info *info, GstCaps *caps)
     }
     return stream_info_complete(info);
 }
+#endif
 
 /* ---- H.264 sequence parameter set (ITU-T H.264 7.3.2.1.1, E.1.1) ---- */
 

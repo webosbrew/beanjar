@@ -121,8 +121,8 @@ so a partial extraction cannot change a selection. `guest/layers/soc/meson.build
 Where only the release can decide, a rule applies from a release on, in LG's order
 (`targets.WEBOS_ORDER`, `vm-launcher config RELEASES`): `webos_reached` holds the releases up to and
 including the build's, and a rule tests `'queue' in webos_reached`. O22's media element set
-(ponytail's, then queue's) and O22N2's Weston13 handling (spacebuns: no Qt bootstrap tree, no media
-elements) are such rules. Chip-keyed tables (a chip's directory and its `base`) are unchanged.
+(ponytail's, then queue's) and O22N2's Weston13 handling (spacebuns: no Qt bootstrap tree; queue's
+media elements) are such rules. Chip-keyed tables (a chip's directory and its `base`) are unchanged.
 
 ## One place for each setting
 
@@ -336,13 +336,22 @@ the guest layers (`share.kernel_args`); every other target sees no modifiers, as
 `0020` virtio-gpu's `tv_connector` parameter: with `virtio_gpu.tv_connector=1` the first
 scanout's connector is a TV connector (TV-1) instead of a Virtual one. Queue's stock Weston names its
 primary output and fb0 after it, and copies every connector into a second head named with index 2,
-so the copies need names of their own. The launcher sets it for queue's two outputs only.
+so the copies need names of their own. The launcher sets it for queue's two outputs, and spacebuns'
+gl layer for its one (below).
 `0021` starts gpiolib's dynamic bases at 1024 instead of 512 (below, `GPIOLIB`): the vendor
 module's chip at base 0 serves the firmware's own line numbers, K24's up to 733, and the PL061,
 the one chip with a dynamic base, must sit above them.
 `0022` gives virtio-gpu's CRTCs DRM's vblank timer (`drm_vblank_helper`, as vkms has): a commit's
 event is armed at the flush and sent at the next vblank of the CRTC's mode, after the host's
 answer as before, and blocking commits wait for it ([The display's refresh](#the-displays-refresh)).
+`0028` virtio-gpu's `overlay_plane` parameter: with `virtio_gpu.overlay_plane=1` each CRTC also has
+an overlay plane, with the primary's formats, that may be positioned and clipped. A set's lg1kdrm
+has one (primary, overlay, cursor on one CRTC), and spacebuns' Weston puts its second output, TV-2,
+on it; without it LSMW's popup window gets no controllers and the compositor faults. A virtio
+scanout composes nothing, so the overlay is scanned out only while the primary has no framebuffer
+(LG's exclusive output path), at its visible source size, its position not kept. Spacebuns' gl
+layer carries the word with `tv_connector=1` (`guest/layers/gl/native-tv-rootfs`); no other target
+has it.
 
 **How it was derived** (2026-09-28): `allnoconfig` with the options below forced
 (`make allnoconfig KCONFIG_ALLCONFIG=<list>`), booted and compared with the arm64 `defconfig`
@@ -380,7 +389,7 @@ listed.
 | | `OVERLAY_FS`, `BLK_DEV_LOOP` | `/webos`; loop devices as on the TV (LG's kernel has them and the firmware ships losetup, though no boot or test here uses one) |
 | USB | `USB`, `USB_XHCI_HCD` (`USB_SUPPORT`, `USB_PCI` and `USB_XHCI_PCI` come with them) | the TV's USB host, the launcher's `qemu-xhci`: `/sys/bus/usb`, which webOS 5's and 6's native jails mount (`jail_native_builtin.conf`'s `mount ro /sys/bus/usb`; without it the jailer cannot build the browser's jail on W20L and W21P). The class drivers are modules ("Peripheral modules", below). LG's kernels drive their ports with EHCI, never xHCI; what in the firmware names the stock controller's path is under "Peripheral modules". The ports have power while the board's VBUS switches are on (`gpio_usb_vbus`, the GPIO paragraph of the SoC modules below). Patch `0019`: no uevent for a SCSI power-on unit attention, which QEMU's stick reports and LG's 4.4 kernels never send (webOS's `60-block.rules` would turn it into a disk change that drops PDM's `READ_ONLY`) |
 | Peripherals (`=m`) | `USB_HID` (`HID_PID`), `UHID`, `INPUT_JOYDEV`, `JOYSTICK_XPAD` (`_FF`), `HID_ACRUX`, `HID_DRAGONRISE`, `HID_LOGITECH`, `HID_MICROSOFT`, `HID_PANTHERLORD`, `HID_SONY`, `HID_PLAYSTATION`, `HID_ZEROPLUS` (each with its `_FF`; `LEDS_CLASS`, `LEDS_CLASS_MULTICOLOR`), `MEDIA_SUPPORT`, `MEDIA_CAMERA_SUPPORT`, `MEDIA_USB_SUPPORT`, `USB_VIDEO_CLASS` (`_INPUT_EVDEV`), `SCSI`, `BLK_DEV_SD`, `USB_STORAGE`, `SND_USB_AUDIO`, `USB_ACM`, `USB_SERIAL` (`_GENERIC`; `_PL2303`, `_OPTION`, `_SIERRAWIRELESS`, `_IPW`, `_FTDI_SIO`, `_CH341`, `_CP210X`, `_WWAN`), `FUSE_FS`, `VFAT_FS`, `EXFAT_FS`, `NTFS3_FS` (without ntfs3's legacy `ntfs`, which is lgfs's), `NLS_CODEPAGE_437`, `NLS_CODEPAGE_949`, `NLS_ASCII`, `NLS_ISO8859_1`, `NLS_UTF8` | the USB class drivers and filesystems LG's own kernels build (their decoded configs and `modules.builtin`), for the peripherals the stock userland handles: PDM's classes (HID, gamepad, storage, video, sound, CDC, whose USB serial check needs `/sys/bus/usb-serial/drivers/pl2303`; its PTP and MTP mounts are fuse), lginput2's HID gamepads (hidraw and uhid), camera2's UVC camera, audiod's USB headset and microphone. Not `HID_APPLE` and `HID_CHICONY`, which `USB_HID` brings by default and no LG kernel has. Loaded per release line, "Peripheral modules" below |
-| Network | `NET`, `UNIX`, `INET`, `IP_MULTICAST`, `PACKET`, `IPV6` (Kconfig's default, no longer turned off) | multicast for SSDP/DIAL; connman's DHCP client uses packet sockets. IPv6 as W20L's own kernel has it (its config: `IPV6`, `IPV6_SIT`, `IPV6_NDISC_NODETYPE`, Kconfig's defaults, as here; WT1H's 3.10 had none): W20L's mdnsd exits without an `AF_INET6` socket. Sockets and link-local only: no NET mode gives the guest IPv6 connectivity (`NET=direct`'s slirp has `ipv6=off`, `NET=mitm`'s slirp4netns runs without `--enable-ipv6`, `NET=off` has the link down), so no router advertisement and no global route. `Image` 9,144,328 to 9,615,368 bytes; Pi KVM, `normal,headless`, h13-afro, three boots each interleaved: `core-boot-done` 19.5 s with and without (one 14.5 s outlier with). No netfilter: the firmware's iptables and connman ran without it on the defconfig kernel too (its netfilter was all modules, never loaded) |
+| Network | `NET`, `UNIX`, `INET`, `IP_MULTICAST`, `PACKET`, `IPV6` (Kconfig's default, no longer turned off) | multicast for SSDP/DIAL; connman's DHCP client uses packet sockets. IPv6 as W20L's own kernel has it (its config: `IPV6`, `IPV6_SIT`, `IPV6_NDISC_NODETYPE`; here `IPV6_SIT` is a module, `sit.ko`, which only the releases whose stock kernel has SIT load, "Peripheral modules" below; WT1H's 3.10 had no IPv6): W20L's mdnsd exits without an `AF_INET6` socket. Sockets and link-local only: no NET mode gives the guest IPv6 connectivity (`NET=direct`'s slirp has `ipv6=off`, `NET=mitm`'s slirp4netns runs without `--enable-ipv6`, `NET=off` has the link down), so no router advertisement and no global route. `Image` 9,144,328 to 9,615,368 bytes; Pi KVM, `normal,headless`, h13-afro, three boots each interleaved: `core-boot-done` 19.5 s with and without (one 14.5 s outlier with). No netfilter: the firmware's iptables and connman ran without it on the defconfig kernel too (its netfilter was all modules, never loaded) |
 
 Left out on purpose: the I2C HID transport, the class drivers LG's kernels have that the stock userland has no class for (`USB_HIDDEV`, which nothing in the firmware opens; W22A's CD-ROM `BLK_DEV_SR`; PS/2 keyboards and mice, `INPUT_KEYBOARD`/`INPUT_MOUSE` and `INPUT_MOUSEDEV`, no consumer of `/dev/input/mice`), the StanbyME's own `HID_MULTITOUCH` (its touch panel is virtio here), virtio-fs (nothing mounts it), netfilter,
 bridge/VLAN, wireless and Bluetooth (no such devices), zram (`swapon.conf` finds no zram
@@ -460,6 +469,8 @@ what that firmware's stock kernel has, built in or as a module:
 | ombre (webOS 24) to queue (webOS 26), spacebuns | 5.4, 6.12 | as webOS 23 (lgfs for `ntfs`); queue's 6.12 kernels add ftdi_sio, ch341 and cp210x | `modules.builtin`; spacebuns (W24G 02.68.80, no module tree in its rootfs) as W24G's webOS 24 |
 | simplesmart (SS1A) | 3.10 | uvcvideo, usb-storage, cdc-acm, the storage filesystems, USB serial pl2303, option, sierra, lgfs | kernel strings (no HID, xpad or USB audio); its RELEASE insmods lgli.pak's tfat.ko and tntfs.ko |
 | netcast45 (NC5U) | 3.10 | vfat and lgfs only | its kernel pak is encrypted; LG's published config builds the class drivers as modules (none ships in its paks), FAT in and no USB serial; lgli.pak ships tfat.ko and tntfs.ko |
+
+`sit` (IPv6-in-IPv4, `IPV6_SIT=m`) is not a peripheral but is loaded the same way: it creates `sit0`, the fallback tunnel device that a kernel with SIT has from the start (`/proc/net/dev`). Every webOS release from beehive on has SIT built in (`modules.builtin` of 37 firmwares' rootfs, W15M 2.2 to W22H 43.22.73, none ships a `sit.ko`), so each loads it; afro's WT1H has no IPv6 at all, and the NetCast line (simplesmart, netcast45) does not load it: there `networkmanager`, a Wi-Fi daemon with no Wi-Fi interface, takes the first device that is not `lo`, `eth0` or `ppp0` for its Wi-Fi interface, and its private ioctl on `sit0` overruns a stack buffer ([research note](../../research/netcast-networkmanager-wifi-country.md); `sit0` cannot be removed, it is `init_net`'s fallback device, and `ipv6.disable=1` does not stop `sit` creating it).
 
 USB serial is the converters and modems of each stock kernel (`usbserial` and `usb_wwan` come with
 them). Besides any real converter, PDM needs it from webOS 5 on: its CDC handler lists
@@ -651,11 +662,13 @@ The kernel enables `SWAP`, `MD` and `BLK_DEV_DM`. Systemd releases from jhericur
 attach the firmware's `efs` partition as a VM state disk. Its size comes from the firmware
 partition map; W21A provides 600 MiB. Older releases retain their existing disk layout.
 
-The initramfs adds service drop-ins for `efs-on` and `swap-on`, ordered after
-`mount-readwrite`. Their `ExecStartPre` runs `beanjar-eswap`, which creates an upstream
-device-mapper linear mapping at `/dev/mapper/eswap` and validates it on subsequent calls.
-`USE_EFS_SWAP=YES` selects the stock EFS path. The unmodified firmware scripts then format
-and activate swap and set `low_mem_notify/efs_swap`; Beanjar does not call `swapon` itself.
+The initramfs adds a oneshot `beanjar-eswap.service`, wanted by `sysinit.target` but ordered only
+after `mount-readwrite`, which runs `beanjar-eswap` once per boot, early and beside the rest of
+the boot: it creates an upstream device-mapper linear mapping at `/dev/mapper/eswap`. Drop-ins make `efs-on`, `f2io-on` and `swap-on` require it and order after it,
+so their later starts (memchute starts `swap-on` inside its 40 s watchdog, and `swap-on` starts
+`efs-on`) find it active and run nothing of ours. `USE_EFS_SWAP=YES` selects the stock EFS path.
+The unmodified firmware scripts then format and activate swap and set `low_mem_notify/efs_swap`;
+Beanjar does not call `swapon` itself.
 
 This mapping offers ordinary disk-backed swap, without LG's compression or application
 hibernation API. The helper sets the firmware's `hib.disable` flag in VM-owned persistent

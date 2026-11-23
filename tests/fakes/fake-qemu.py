@@ -12,7 +12,7 @@ Starts a private dbus-daemon at DIR/dbus.sock, owns org.qemu with /org/qemu/Disp
 (repeated every second, as libdile_gal's heartbeat), and DIR/ir.sock (the webos.ir port's socket).
 Every Keyboard/Mouse call is appended to DIR/input.log as "Interface.Method args", every IR
 record as "IR.Down 0x44" or "IR.Up 0x44" (a local key's "Local.Down 0xea"). DIR/ready appears once the bus name is owned. SIGTERM
-or SIGINT stops it and its dbus-daemon. With --reuse-bus it uses the bus already at DIR/dbus.sock and
+or SIGINT stops it and its dbus-daemon. The file DIR/display-control sends a Disable (display_control). With --reuse-bus it uses the bus already at DIR/dbus.sock and
 leaves it running, as a VM's unit keeps its bus across the QEMUs of a guest restart.
 
 The picture: opaque RGB (32, 128, 192) with a white 1/4-size rectangle in the middle. With --bars,
@@ -681,6 +681,36 @@ def main():
         return True
 
     GLib.timeout_add(50, cursor_control)
+
+    # DIR/display-control: "disable", a Disable to each listener (the guest's output off); "stray MS",
+    # a Disable and the 2D Scanout again MS ms later (QEMU's dmabuf release between two flips,
+    # docs/research/pi-black-flashes.md); "scanout", the Scanout again. A Disable is logged as
+    # "Listener.Disable sent T COMMAND" (T: monotonic seconds).
+    def display_control():
+        path = os.path.join(d, "display-control")
+        try:
+            command = open(path).read().split()
+            os.unlink(path)
+        except FileNotFoundError:
+            return True
+
+        def rescan():
+            for conn in peers:
+                scanout(conn)
+            return False
+
+        if command[:1] == ["scanout"]:
+            rescan()
+            return True
+        for conn in peers:
+            conn.call(None, "/org/qemu/Display1/Listener", "org.qemu.Display1.Listener",
+                      "Disable", None, None, Gio.DBusCallFlags.NONE, 1000, None, None)  # fmt: skip
+        log.write(f"Listener.Disable sent {time.monotonic():.6f} {' '.join(command)}\n")
+        if command[:1] == ["stray"]:
+            GLib.timeout_add(int(command[1]), rescan)
+        return True
+
+    GLib.timeout_add(10, display_control)
 
     # webos.ir: each 4-byte record (include/webos-ir.h) is logged as IR.Down/IR.Up <code>, or
     # IR.Bad <bytes>; one client at a time, as QEMU's chardev

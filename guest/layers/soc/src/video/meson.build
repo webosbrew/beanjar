@@ -57,6 +57,10 @@ mstar_plugins = {
 gst_set += {
   'mstar-m2': {'wrap': 'gstreamer', 'glib': '2_40', 'args': ['-DMSTAR_REL=16'], 'plugins': mstar_plugins},
   'mstar-m3': {'wrap': 'gstreamer112', 'glib': '2_48', 'args': ['-DMSTAR_REL=18'], 'plugins': mstar_plugins},
+  # LM15U (W15U): W16R's elements over W15U's GLib 2.34; no masink, as the stock libgstmasink.so
+  # fails to load there (it imports msil_audio_ErrorString, which no W15U library defines)
+  'mstar-lm15u': {'wrap': 'gstreamer', 'glib': '2_34', 'args': ['-DMSTAR_REL=15'],
+                  'plugins': {'gstomx': mstar_plugins['gstomx'], 'gstmvsink': mstar_plugins['gstmvsink']}},
 }
 rtk_plugins = {
   'gstomx': ['rtkomx.c', 'omxconf.c', 'esdec.c', 'streaminfo.c', 'mediaport.c'],

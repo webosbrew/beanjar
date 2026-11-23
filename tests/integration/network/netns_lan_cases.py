@@ -189,7 +189,7 @@ class Lan(unittest.TestCase):
                     sys.executable,
                     "-c",
                     "import os, sys; from beanjar import netns; "
-                    "sys.exit(netns.mitm(sys.argv[1:], os.environ))",
+                    "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
                 ],
@@ -251,12 +251,16 @@ class Lan(unittest.TestCase):
             server.listen()
 
             def greet():
-                try:
-                    c, _ = server.accept()
-                except OSError:
-                    return
-                with c:
-                    c.sendall(b"RFB 003.008\n")
+                while True:  # the relay's probe connects first and leaves again
+                    try:
+                        c, _ = server.accept()
+                    except OSError:
+                        return
+                    with c:
+                        try:
+                            c.sendall(b"RFB 003.008\n")
+                        except OSError:
+                            pass
 
             threading.Thread(target=greet, daemon=True).start()
             for _ in range(20):
@@ -427,7 +431,7 @@ class LanCrash(unittest.TestCase):
                     sys.executable,
                     "-c",
                     "import os, sys; from beanjar import netns; "
-                    "sys.exit(netns.mitm(sys.argv[1:], os.environ))",
+                    "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
                 ],

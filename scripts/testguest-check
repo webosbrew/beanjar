@@ -116,7 +116,9 @@ def main():
     ap.add_argument("--keep", action="store_true", help="keep the VM afterwards")
     ap.add_argument("--library", help="the Beanjar library (default: beanjar's)")
     ap.add_argument("--tag", action="append", default=[], help="a tag for the VM (repeatable)")
-    ap.add_argument("--reason", help="why the VM runs (beanjar reason; needs a user systemd)")
+    ap.add_argument(
+        "--reason", help="why the VM runs (beanjar start --reason; needs a user systemd)"
+    )
     ap.add_argument("--logs", help="copy the VM's logs and the guest's output here before it goes")
     ap.add_argument(
         "--userland",
@@ -139,7 +141,7 @@ def main():
          "--mode", "direct", *tags],
         a.library,
     )  # fmt: skip
-    _, info = beanjar(["info", a.name, "--json"], a.library)
+    _, info = beanjar(["show", a.name, "--json"], a.library)
     vm_dir = json.loads(info)["dir"]
     run = os.path.join(vm_dir, "run")
     share_out = os.path.join(run, "share", "out")
@@ -149,9 +151,9 @@ def main():
     rc = 2
     try:
         if a.guest_kernel != "arm64":
-            beanjar(["settings", a.name, "set", f"guest_kernel={a.guest_kernel}"], a.library)
+            beanjar(["config", "set", a.name, f"guest_kernel={a.guest_kernel}"], a.library)
         if a.userland != "native":
-            beanjar(["settings", a.name, "set", f"userland={a.userland}"], a.library)
+            beanjar(["config", "set", a.name, f"userland={a.userland}"], a.library)
         t0 = time.monotonic()
         reason = ["--reason", a.reason] if a.reason else []
         code, text = beanjar(["start", a.name, *reason], a.library, False)

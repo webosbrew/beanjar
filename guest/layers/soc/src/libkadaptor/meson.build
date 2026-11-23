@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # usr/lib/<soname> of hal_stock['libkadaptor']: replaces the stock symlink under the name its users
 # NEED and NEEDs the stock file, unchanged; the chip table's kadaptor_source picks what is wrapped.
-#   kadaptor-xc.c          M2 (bsppart's MStar KADP, libkadaptor.so, no SONAME): W16R's KADP runs the
-#                          XC scaler's window calls on a user-mode Utopia XC instance, so they are passed
-#                          on to a kernel-mode one as well, where mstar-utopia.ko reports the windows.
+#   kadaptor-xc.c          M2 (bsppart's MStar KADP, libkadaptor.so, no SONAME) and LM15U (the rootfs's,
+#                          libkadaptor.so.1): their KADP runs the XC scaler's window calls on a user-mode
+#                          Utopia XC instance, so they are passed on to a kernel-mode one as well, where
+#                          mstar-utopia.ko reports the windows.
+#   kadaptor-capture.c     M2 (beside kadaptor-xc.c): tv.capture's XC status, display DE window and DIP
+#                          answers over that user-mode XC.
 #   kadaptor-pvrkey.c      M2 (beside kadaptor-xc.c) and M3: the DVR's secure key (MAdp_Secure_GetSecureDataEMMC's
 #                          "/tmp/dvr_key", M3's "/tmp/96B14BF8"), which MStar's TEE decrypts on the TV, from the
 #                          VM's store.

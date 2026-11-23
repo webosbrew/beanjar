@@ -34,6 +34,10 @@
 # The board HAL reads the DVR's key through it (MAdp_Secure_GetSecureDataEMMC("/tmp/96B14BF8")),
 # which MStar's TEE decrypts on the TV; the shim answers it from the VM's store, as on M2
 # (src/libkadaptor/kadaptor-pvrkey.c).
+# dile_crypto_dbgdata: W18R's tvservice keeps its debug status as 32 bytes at EEPROM 0x1C6 that
+# DILE_CRYPTO_DecryptDbgData decrypts through bsppart's HAL and MStar's TEE (the mailbox's Customer AES command, which guest/kernel/modules/mstar-utopia/mailbox.c does not implement);
+# the shim's cipher is the identity and beanjar programs the clear block (src/libdile_crypto/dbg-data.c).
+dile_crypto_dbgdata = true
 hal_stock = {
   'libdile_gal': ['libdile_gal.so.1', 'libdile_gal.so.1.0.2', []],
   'libdile_crypto': ['libdile_crypto.so.0', 'libdile_crypto.so.0.1.1', []],

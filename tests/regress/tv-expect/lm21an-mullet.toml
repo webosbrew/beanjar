@@ -173,8 +173,33 @@ what = "User Guide"
 
 [tee]
 clients = ["rootfs.pak:/usr/bin/tee-supplicant", "bsppart.pak:/bsp/usr/lib/libkadaptor.so"]
+node = false
+node_source = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0; the firmware's own bsppart.pak:/bsp/etc/systemd/system/scripts/optee-init.sh opens /dev/tee0"
 source = "ELF files naming /dev/tee: rootfs.pak:/usr/bin/tee-supplicant, bsppart.pak:/bsp/usr/lib/libkadaptor.so"
-tas = []
+tas = [
+    "0987be40-05fb-11e6-9893-0002a5d5c51b",
+    "30db8f36-7069-11e9-a923-1681be663d3e",
+    "51aaf0be-6ad3-4494-8b14-c367b44c010e",
+    "5e629af5-38da-4063-8977-97ffbd9902d4",
+    "61328cc8-8df1-4821-8901-761bb2b9115c",
+    "7350842e-2d2a-4a8b-9742-6695913832a9",
+    "748487d6-eb5f-463c-b688-23b9edc286e5",
+    "778ee68e-6ee0-11e8-adc0-fa7ae01bbebc",
+    "79f0049a-4098-8642-ab92-e65be0885f95",
+    "94ce86fb-07ff-4f43-adb8-93d2fa968ca2",
+    "99986025-2c8d-43ca-9598-b90e324e9d3b",
+    "a51ba47c-7252-11e9-a923-1681be663d3e",
+    "a9ed7ca0-0e1e-11e6-a486-0002a5d5c51b",
+    "b9dbbfa1-8b01-4643-8187-7f845788cd45",
+    "bc2f95bc-1111-2222-a43c-a1796e7cac31",
+    "c305a84a-b4a5-11e8-96f8-529269fb1459",
+    "d03c1b74-1896-43d3-a6fa-12a3b7cb9d32",
+    "dba51a17-0563-11e7-93b1-6fa7b0071a51",
+    "e95601fc-8423-481d-aa67-2749d5a369b8",
+    "edff8ba9-79d6-4ace-a3c8-27dcd51d21ed",
+    "f235e3dc-b4a5-11e8-96f8-529269fb1459",
+    "fc5196b1-555b-4288-8f46-e78472e1f05e",
+]
 
 [audio]
 alsa_hw = { device = "hw:0,6", present = true, source = "rootfs.pak:/etc/pulse/system.pa: pcm_output is module-alsa-sink device=hw:0,6; player rootfs.pak:/usr/bin/aplay" }
@@ -192,9 +217,9 @@ webaudio = { level_db = 0.0, level_source = "rootfs.pak:/usr/lib/libcbe.so names
 "file.vp9" = { present = true, source = "rootfs.pak:/usr/lib/gstreamer-1.0/libgstmatroska.so; rootfs.pak:/etc/xdg/gstomx.conf [omxvp9dec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists VP9" }
 "file.vp9-opus" = { present = false, source = "rootfs.pak:/etc/xdg/gstomx.conf [omxopusdec]; but rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists no OPUS or Opus" }
 "mse.av1" = { present = false, source = "rootfs.pak:/etc/xdg/gstomx.conf [omxopusdec]; but rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists no OPUS or Opus" }
-"mse.h264" = { present = true, source = "rootfs.pak:/usr/lib/libcbe.so: MediaSource, video/mp4, avc1; rootfs.pak:/etc/xdg/gstomx.conf [omxh264dec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists H.264; rootfs.pak:/etc/xdg/gstomx.conf [omxaacdec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists AAC" }
-"mse.hevc" = { present = true, source = "rootfs.pak:/usr/lib/libcbe.so: MediaSource, video/mp4, hvc1; rootfs.pak:/etc/xdg/gstomx.conf [omxhevcdec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists HEVC; rootfs.pak:/etc/xdg/gstomx.conf [omxaacdec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists AAC" }
-"mse.vp9" = { present = true, source = "rootfs.pak:/usr/lib/libcbe.so: MediaSource, video/webm, vp09; rootfs.pak:/etc/xdg/gstomx.conf [omxvp9dec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists VP9" }
+"mse.h264" = { present = true, source = "rootfs.pak:/usr/lib/libcbe.so: MediaSource (StreamParserFactory), video/mp4 avc1.4d401f (avc1.*), audio/mp4 mp4a.40.2 (mp4a.40.*); rootfs.pak:/etc/xdg/gstomx.conf [omxh264dec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists H.264; rootfs.pak:/etc/xdg/gstomx.conf [omxaacdec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists AAC" }
+"mse.hevc" = { present = true, source = "rootfs.pak:/usr/lib/libcbe.so: MediaSource (StreamParserFactory), video/mp4 hvc1.1.6.L93.B0 (hvc1.*), audio/mp4 mp4a.40.2 (mp4a.40.*); rootfs.pak:/etc/xdg/gstomx.conf [omxhevcdec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists HEVC; rootfs.pak:/etc/xdg/gstomx.conf [omxaacdec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists AAC" }
+"mse.vp9" = { present = true, source = "rootfs.pak:/usr/lib/libcbe.so: MediaSource (StreamParserFactory), video/webm vp9 (vp9); rootfs.pak:/etc/xdg/gstomx.conf [omxvp9dec]; rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists VP9" }
 "mse.vp9-opus" = { present = false, source = "rootfs.pak:/etc/xdg/gstomx.conf [omxopusdec]; but rootfs.pak:/etc/umediaserver/device_codec_capability_config.json lists no OPUS or Opus" }
 
 [smp]

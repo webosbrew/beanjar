@@ -1,0 +1,60 @@
+# Board parameters the bootloader (MStar's MBoot, LG's build for LM15U in boot.pak) puts on the
+# kernel command line, parsed by libdile_boardinfo, tvservice and the Upstart jobs. The initramfs
+# appends these to the real cmdline and bind-mounts the result over /proc/cmdline inside webOS.
+# Format and order follow W15U's MBoot (its command line builder appends them in this order, each
+# value followed by a space); the values describe a 65UF850V, a model that runs W15U (the models
+# DB), in W15U's own encodings; they are not read from a real set. RELEASE.cfg's series is the
+# model's own (TOOL_UF85, INCH_65), so its defaults are the model's. MBoot's kernel-only parameters
+# between chip= and emmc_size= (emmc_log=1, NR_BANK=, vmalloc=, DRAM_LEN=, DRAM_SIZE*=, LX_MEM*=,
+# KERNEL_PROTECT) are left out: libkadaptor reads the memory layout from /proc/mmapger. So are
+# sver=/bver= (the boot versions; libdile_boardinfo then has none). There is no rev=.
+ethaddr=a8:23:fe:12:34:56
+# 9 model-option straps, '0'/'1' each, as W15U's MBoot reads its GPIO pads 66 67 74 75 76 113 112
+# 31 32: "10" EU (gmodelopt_country_type), "01" tuner column 1 of gmodelopt_LM15U_tuner_comb[EU]
+# (S + T2, one internal tuner: RELEASE.cfg's nMaxNumOfTVTuner 1), no optical out, pad 113 '1' UHD,
+# pad 112 '0' (no FRC/URSA strap), URSA type "00" (none). RELEASE.cfg names an FRC
+# (FRC_CHIP_UD_BE_FRC, UD_BE_URSA7), which has no strap value; the emulator models no FRC chip.
+modelopt=100101000
+# 18 digits (MBoot's "%d" x 18), as this MBoot prints them for those straps and W15U's tvservice
+# (SystemHdrInit) decodes them: EU (d0 2), external EDID (d1 1, constant), V-by-One (d2 2,
+# constant), UD (d3 2), no FRC (d4 0), panel type 4 (MODELOPT_PANEL_TYPE_NONE, constant), tuner
+# column 1 (d8 1), DDR 2.5 GB (d11 5, DDR_SIZE_2_5G: a constant in this MBoot; tee/mmap.ini's
+# MIU_DRAM_LEN 0xA0000000), no URSA (d13 0), graphic resolution 1920x1080 (d14 2, constant)
+hwopt=212204001005002000
+# W15U's MBoot prints 8 tool option words (the ToolOptionDB's 16-bit words: ToolOption1..7 and
+# ToolOption9, there is no ToolOption8), which the launcher programs into a new EEPROM
+# (host/core/beanjar/nvm.py) for tvservice. Decoded with W15U's tvservice's setters and RELEASE.cfg:
+#   ToolOpt1 34569: inch index 9 (INCH_65), tool type 56 (TOOL_UF85), maker 0 (LGD), LVDS bit 1.
+#   ToolOpt2 4628: video input row 4 of the UHD DVB table (HDMI x3, component, SCART, AV), audio
+#     index 1, backlight 2 (edge LED), USB field 2 (three ports).
+#   ToolOpt3 25257: AMP_NTP7515 (RELEASE.cfg "[i2c]NTP7515:4:0x54:1"), headphone, DVR ready, ISF,
+#     dual view, local dimming and its menu.
+#   ToolOpt4 64601: demodulators TCS_COMBO 1 (S), DVB_SI2169C 6 (T2/C), ATV_SOC 1, NO_DEMOD 14 and
+#     NO_DEMOD_ANA 7. No tuner or demodulator chip is modelled.
+#   ToolOpt5 10790: wifi 2 (WIFI_11N_COMBO), camera ready, mouse RC 2 (MOTION_REMOCON_BUILTIN_MR15:
+#     the Magic Remote in the box), component/RCA common, 3D, scanning backlight.
+#   ToolOpt6 2376: backlight index 8 (RELEASE.cfg's 65), motion eye care MIDDLE1, audio power 1,
+#     speaker wattage 1.
+#   ToolOpt7 48271: the MAC, ESN, CI and Widevine keys in the AP, EDID DTS, PSU power board, edge
+#     LED bar EDGE_6, PWM 100/120 Hz.
+#   ToolOption9 2048: eCellType RGBW (bit 11).
+ToolOpt=34569:4628:25257:64601:10790:2376:48271:2048
+# 4 = EU (libdile_boardinfo)
+countryGrp=4
+# 3 = DEBUG, 4 = EVENT, 5 = RELEASE (MBoot copies the EEPROM's debug status byte; the lginit_app
+# and tvservice jobs start the reboot job when they end in RELEASE)
+debugMode=3
+# modelName <= 12 chars, serialNum <= 16 chars (MBoot copies the EEPROM's ModelInfoDB). The
+# EEPROM's area (ContinentOptionDB) is the factory's, not MBoot's: targets.py's Soc.continent.
+modelName=65UF850V-ZA serialNum=505RAXX00001
+# chip= is MBoot's LM15UA0, LM15UA1 or LM15UB0 by a revision byte it reads (libdile_boardinfo
+# knows A0, A1, B0, B1); which one a retail set prints is not established: B0, MBoot's default
+# for any revision past A1. mknod.conf creates the /etc/device_table nodes only with
+# devtmpfs.mount=1.
+devtmpfs.mount=1 chip=LM15UB0
+# 0x + 9 hex digits (MBoot's 0x%01lx%08lx); parsers drop the last 2 digits and read KB. The
+# firmware's own partition map's device size, 3,833,593,856 B (lginit_app2's partinfo; the
+# state disks' sizes are the launcher's, not this)
+emmc_size=0x0e4800000
+# MBoot ends with cmdEnd.
+cmdEnd

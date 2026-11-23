@@ -28,11 +28,6 @@ from launchkit import TOP
 
 class DisplaySetupTest(unittest.TestCase):
     def test_stock_console_protocol(self):
-        for physical_size in ((200, 500), (0, 0)):
-            with self.subTest(physical_size=physical_size):
-                self.check_stock_console_protocol(physical_size)
-
-    def check_stock_console_protocol(self, physical_size):
         connection = mock.Mock()
         gio = types.SimpleNamespace(
             Cancellable=mock.Mock(),
@@ -52,13 +47,13 @@ class DisplaySetupTest(unittest.TestCase):
                 )
             },
         ):
-            display_setup.set_ui_info("unix:path=bus", 1, physical_size=physical_size)
+            display_setup.set_ui_info("unix:path=bus", 1)
         call = connection.call_sync.call_args.args
         self.assertEqual(
             call[:4],
             ("org.qemu", "/org/qemu/Display1/Console_1", "org.qemu.Display1.Console", "SetUIInfo"),
         )
-        self.assertEqual(call[4], ("(qqiiuu)", (*physical_size, 0, 0, 768, 2160)))
+        self.assertEqual(call[4], ("(qqiiuu)", (200, 500, 0, 0, 768, 2160)))
         connection.close_sync.assert_called_once()
 
     def test_network_off_defers_cont_until_display_setup(self):
@@ -98,15 +93,9 @@ class DisplaySetupTest(unittest.TestCase):
         command.assert_not_called()
 
     def test_console_before_resume(self):
-        for size in ((200, 500), (0, 0)):
-            with self.subTest(physical_size=size):
-                self.check_console_before_resume(size)
-
-    def check_console_before_resume(self, size):
         events = []
 
-        def configure(address, timeout, *, physical_size):
-            self.assertEqual(physical_size, size)
+        def configure(address, timeout):
             events.append(("console", address))
             if len(events) == 1:
                 raise OSError("console not yet exported")
@@ -119,7 +108,6 @@ class DisplaySetupTest(unittest.TestCase):
             "bus",
             "qmp",
             1,
-            physical_size=size,
             configure=configure,
             command=command,
             alive=lambda: True,
@@ -150,20 +138,15 @@ class DisplaySetupTest(unittest.TestCase):
             display_setup.prepare("bus", "qmp", 1, command=command, alive=lambda: False)
         command.assert_not_called()
 
-    def test_main_physical_size_and_pause(self):
-        for options, size, resume in (
-            ([], (200, 500), True),
-            (["--physical-size", "0", "0"], (0, 0), True),
-            (["--physical-size", "0", "0", "--keep-paused"], (0, 0), False),
-            (["--keep-paused"], (200, 500), False),
-        ):
+    def test_main_pause(self):
+        for options, resume in (([], True), (["--keep-paused"], False)):
             with (
                 self.subTest(options=options),
                 mock.patch.object(sys, "argv", ["helper", "1", "bus", "qmp", *options]),
                 mock.patch.object(display_setup, "prepare") as prepare,
             ):
                 self.assertEqual(display_setup.main(), 0)
-                prepare.assert_called_once_with("bus", "qmp", 1, resume=resume, physical_size=size)
+                prepare.assert_called_once_with("bus", "qmp", 1, resume=resume)
 
     def test_failure_quits_paused_vm(self):
         with (

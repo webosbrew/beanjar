@@ -8,13 +8,13 @@ disks (first use, region, installed apps), its own firmware/ when it has one (an
 directory is used in place, and must be at the same path on DEST's host) and its identity/ but the
 files a new identity replaces: sestore.toml with the model key, tee-huk (the TEE's key, which what the
 state's secure store holds is encrypted with), authorized_keys and anything else there. What is new,
-as `identity renew` makes it (vmidentity.next_identity, vmidentity.renew_keys): the MAC and serial, every key pair,
+as `identity reset` makes it (vmidentity.next_identity, vmidentity.renew_keys): the MAC and serial, every key pair,
 the VNC password; known_hosts is written at DEST's first start. The state is not wiped: the guest
 brings what it derives from the identity in line at boot (the NDUID from the MAC, the devmode and
 Homebrew Channel keys from the per-VM layer), and the EEPROM's serial records, which a start does not
 rewrite on LLS's chips (webOS 5 on), are rewritten here (nvm.replace_serial).
 
-Nothing but `beanjar info` (and `settings ... show` once DEST is in place) is asked of a host's
+Nothing but `beanjar show` (and `config show` once DEST is in place) is asked of a host's
 beanjar: the copy is plain sh and GNU tar over the hosts' ssh (remote.shell_argv), so a host needs no
 newer beanjar for it. The data goes from SRC's host through this machine to DEST's host as a tar
 stream, never to a file here; only the files this machine makes for DEST (vm.toml, the new keys, the
@@ -81,11 +81,11 @@ class End:
         if not self.host:
             vm = self.lib.vm(name)
             return vm.dir, vm.state()[0]
-        data = remote.call_json(self.host, self.uri, ["info", remote.own(name)])
+        data = remote.call_json(self.host, self.uri, ["show", remote.own(name)])
         try:
             return data["dir"], data["state"]
         except (KeyError, TypeError):
-            raise remote.HostError(self.host, "its beanjar info has no dir or state") from None
+            raise remote.HostError(self.host, "its beanjar show has no dir or state") from None
 
     def identities(self, root):
         """({mac}, {serial}, mac_prefix) of the library at root (its VMs, not the hidden scratch)."""
@@ -140,12 +140,12 @@ def pipe(src_argv, dst_argv):
                 raise Error(f"copy failed {what}: {reason}")
 
 
-def clone(lib, src_spec, dest_spec, out=print, warn=print):
+def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
     """DEST (dest_spec: NAME here, local/NAME or HOST/NAME), a copy of the VM src_spec (NAME, looked
-    up as other commands do, or HOST/NAME) that is off. Returns what the CLI prints."""
+    up as other commands do, or HOST/NAME; pinned: a bare NAME is lib's, nobody is asked) that is off. Returns what the CLI prints."""
     from .newvm import _hold
 
-    src_host, src_name = remote.locate(src_spec, lambda n: n in lib.names(), warn)
+    src_host, src_name = remote.locate(src_spec, lambda n: n in lib.names(), warn, pinned)
     dst_host, dst_name = remote.split_spec(dest_spec)
     if dst_host == remote.LOCAL:
         dst_host = None
@@ -276,8 +276,8 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print):
         scratch = None
         # its slot, the lowest free one of its library (as one made before slots gets it)
         if dst.host:
-            remote.call_json(dst.host, dst.uri, ["settings", remote.own(dst_name), "show"])
-            info = remote.call_json(dst.host, dst.uri, ["info", remote.own(dst_name)])
+            remote.call_json(dst.host, dst.uri, ["config", "show", remote.own(dst_name)])
+            info = remote.call_json(dst.host, dst.uri, ["show", remote.own(dst_name)])
             address = info.get("address")
         else:
             vmidentity.ensure_slot(dest_dir, say=lambda line: None)

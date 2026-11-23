@@ -19,10 +19,16 @@ STOCK = (
     b"[output]\nname=TV-1\nmode=1920x1080\n"
     b"[other]\ngbm-format=abgr8888\n"
 )
-OUTPUTS = (
-    b"\n[output]\nname=Virtual-1\nmode=1920x1080\nbuffer_size=1920x1080\n"
-    b"\n[output]\nname=Virtual-2\nmode=768x2160\nbuffer_size=768x2160\n"
+# The core format as the helper binds it: alpha kept, in the GBM EGL format that has a config.
+ARGB = STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=argb8888", 1)
+# The measured end of the stock launcher (W24G 02.68.80 usr/bin/surface-manager.sh).
+LAUNCHER = (
+    b'#!/bin/sh\nexport WEBOS_COMPOSITOR_OPTIONS="--tty=1"\n\n'
+    b"# For PVR GPU\nexport WESTON_FORCE_RENDERER=\n\n"
+    b"exec /usr/bin/surface-manager $WEBOS_COMPOSITOR_OPTIONS\n"
 )
+# The launcher as the helper binds it: LG's punch-through hole clear on, nothing else changed.
+HOLE_CLEAR = LAUNCHER.replace(b"WESTON_FORCE_RENDERER=\n", b"WESTON_FORCE_RENDERER=1\n")
 spec = importlib.util.spec_from_file_location(
     "gl_integration", TOP / "tests/integration/layers/check-gl-integration.py"
 )
@@ -37,6 +43,10 @@ class TestNativeWestonFormatTest:
         self.ini = self.root / "usr/share/weston/weston.ini"
         self.ini.parent.mkdir(parents=True)
         self.ini.write_bytes(STOCK)
+        self.launcher = self.root / "usr/bin/surface-manager.sh"
+        self.launcher.parent.mkdir(parents=True)
+        self.launcher.write_bytes(LAUNCHER)
+        self.launcher.chmod(0o755)
         self.runtime = self.root / "run/beanjar/native-weston"
         self.commands = self.root / "commands"
         self.commands.mkdir()
@@ -71,7 +81,7 @@ class TestNativeWestonFormatTest:
 
     def test_changes_only_core_format_and_restarts_idempotently(self):
         self.run_helper()
-        expected = STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=xrgb8888", 1)
+        expected = ARGB
         assert (self.runtime / "stock.ini").read_bytes() == STOCK
         assert (self.runtime / "virtio.ini").read_bytes() == expected
         assert self.ini.read_bytes() == expected
@@ -81,10 +91,11 @@ class TestNativeWestonFormatTest:
         assert (self.runtime / "stock.ini").read_bytes() == STOCK
         assert self.ini.read_bytes() == expected
 
-    def test_spacebuns_matching_modes_and_buffers_restart_idempotently(self):
+    def test_spacebuns_keeps_lg_outputs_and_restarts_idempotently(self):
+        # LG's frontend writes TV-1 and TV-2 itself; the helper adds no output section
         self.set_profile("o22n2-spacebuns")
         self.run_helper()
-        expected = STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=xrgb8888", 1) + OUTPUTS
+        expected = ARGB
         assert self.ini.read_bytes() == expected
         assert (self.runtime / "stock.ini").read_bytes() == STOCK
         mount_log = (self.root / "mount.log").read_bytes()
@@ -98,7 +109,7 @@ class TestNativeWestonFormatTest:
         adjusted = STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=xrgb8888", 1)
         self.ini.write_bytes(adjusted)
         self.run_helper()
-        assert self.ini.read_bytes() == adjusted + OUTPUTS
+        assert self.ini.read_bytes() == adjusted
         assert (self.runtime / "stock.ini").read_bytes() == adjusted
 
     @pytest.mark.parametrize(
@@ -111,9 +122,7 @@ class TestNativeWestonFormatTest:
         self.ini.write_bytes(STOCK)
         Path(str(self.ini) + ".bound").unlink(missing_ok=True)
         self.run_helper()
-        assert self.ini.read_bytes() == STOCK.replace(
-            b"gbm-format=abgr8888", b"gbm-format=xrgb8888", 1
-        )
+        assert self.ini.read_bytes() == ARGB
 
     @pytest.mark.parametrize(
         "data",
@@ -124,16 +133,12 @@ class TestNativeWestonFormatTest:
             STOCK.replace(
                 b"gbm-format=abgr8888\n", b"gbm-format=abgr8888\ngbm-format=xrgb8888\n", 1
             ),
-            STOCK + b"[output]\nname=Virtual-1\nmode=800x600\n",
-            STOCK + b"[output]\nname=Virtual-2\nmode=800x600\n",
         ),
         ids=[
             "env-override-false",
             "env-override-missing",
             "format-rgb565",
             "format-twice",
-            "output-1-mode",
-            "output-2-mode",
         ],
     )
     def test_spacebuns_rejects_unsupported_defaults_without_binding(self, data):
@@ -142,7 +147,7 @@ class TestNativeWestonFormatTest:
         result = self.run_helper(check=False)
         assert result.returncode != 0
         assert self.ini.read_bytes() == data
-        assert not (self.root / "mount.log").exists()
+        assert "weston.ini" not in (self.root / "mount.log").read_text()
         assert not (self.runtime / "virtio.ini").exists()
         assert not (self.runtime / "virtio.ini.tmp").exists()
 
@@ -155,10 +160,7 @@ class TestNativeWestonFormatTest:
         assert self.ini.read_bytes() == STOCK
         mount.write_text(original)
         self.run_helper()
-        assert (
-            self.ini.read_bytes()
-            == STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=xrgb8888", 1) + OUTPUTS
-        )
+        assert self.ini.read_bytes() == ARGB
 
     def test_user_configuration_takes_precedence_without_mutation(self):
         self.set_profile("o22n2-spacebuns")
@@ -169,13 +171,54 @@ class TestNativeWestonFormatTest:
         self.run_helper()
         assert user.read_bytes() == custom
         assert self.ini.read_bytes() == STOCK
-        assert not self.runtime.exists()
-        assert not (self.root / "mount.log").exists()
+        assert not (self.runtime / "stock.ini").exists()
+        # The hole clear is the renderer's, not an output policy: a user ini keeps it.
+        assert self.launcher.read_bytes() == HOLE_CLEAR
+        assert "weston.ini" not in (self.root / "mount.log").read_text()
 
     def test_unexpected_default_does_not_mount(self):
         self.ini.write_bytes(STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=rgb565"))
         result = self.run_helper(check=False)
         assert result.returncode != 0
+        assert "weston.ini" not in (self.root / "mount.log").read_text()
+
+    def test_launcher_gets_only_the_hole_clear_and_restarts_idempotently(self):
+        self.run_helper()
+        assert self.launcher.read_bytes() == HOLE_CLEAR
+        assert os.access(self.runtime / "surface-manager.sh", os.X_OK)
+        mount_log = (self.root / "mount.log").read_bytes()
+        assert mount_log.count(b"surface-manager.sh") == 2
+        self.run_helper()
+        assert (self.root / "mount.log").read_bytes() == mount_log
+        assert not (self.runtime / "surface-manager.sh.tmp").exists()
+
+    @pytest.mark.parametrize(
+        "data",
+        (
+            LAUNCHER.replace(b"WESTON_FORCE_RENDERER=\n", b"WESTON_FORCE_RENDERER=1\n"),
+            LAUNCHER.replace(b"export WESTON_FORCE_RENDERER=\n", b""),
+            LAUNCHER + b"export WESTON_FORCE_RENDERER=\n",
+        ),
+        ids=["already-set", "missing", "twice"],
+    )
+    def test_unexpected_launcher_binds_nothing(self, data):
+        self.launcher.write_bytes(data)
+        result = self.run_helper(check=False)
+        assert result.returncode != 0
+        assert "unexpected compositor launcher" in result.stderr
+        assert self.launcher.read_bytes() == data
+        assert self.ini.read_bytes() == STOCK
+        assert not (self.root / "mount.log").exists()
+        assert not (self.runtime / "surface-manager.sh").exists()
+        assert not (self.runtime / "surface-manager.sh.tmp").exists()
+
+    def test_existing_foreign_launcher_mount_is_preserved(self):
+        Path(str(self.launcher) + ".bound").touch()
+        result = self.run_helper(check=False)
+        assert result.returncode != 0
+        assert "launcher already mounted by another owner" in result.stderr
+        assert self.launcher.read_bytes() == LAUNCHER
+        assert self.ini.read_bytes() == STOCK
         assert not (self.root / "mount.log").exists()
 
     def test_existing_foreign_mount_is_preserved(self):
@@ -183,9 +226,9 @@ class TestNativeWestonFormatTest:
         Path(str(self.ini) + ".bound").touch()
         result = self.run_helper(check=False)
         assert result.returncode != 0
-        assert "another owner" in result.stderr
+        assert "default ini already mounted by another owner" in result.stderr
         assert self.ini.read_bytes() == STOCK
-        assert not self.runtime.exists()
+        assert not (self.runtime / "stock.ini").exists()
 
 
 class TestGlIntegrationBoundaryTest:
@@ -213,6 +256,8 @@ class TestGlIntegrationBoundaryTest:
         if target == integration.NATIVE_CURSOR_TARGET:
             shutil.copytree(integration.NATIVE_CURSOR_ROOTFS, self.layer, dirs_exist_ok=True)
             (self.layer / integration.CURSOR_LIBRARY).touch()
+        if target == integration.NATIVE_TV_TARGET:
+            shutil.copytree(integration.NATIVE_TV_ROOTFS, self.layer, dirs_exist_ok=True)
         profile = self.layer / "usr/share/beanjar/native-weston-target"
         profile.parent.mkdir(parents=True, exist_ok=True)
         profile.write_text(target + "\n")
@@ -230,8 +275,19 @@ class TestGlIntegrationBoundaryTest:
     def test_native_helper_mutation_is_rejected(self):
         self.native("o22n2-spacebuns")
         helper = self.layer / integration.NATIVE_BOOTSTRAP[0]
-        helper.write_text(helper.read_text().replace("mode=768x2160", "mode=1920x1080"))
+        helper.write_text(helper.read_text().replace('"=argb8888"', '"=xrgb8888"'))
         with pytest.raises(ValueError, match="changed native format bootstrap"):
+            integration.check(self.layer, "native", target="o22n2-spacebuns")
+
+    def test_native_tv_head_words_are_spacebuns_only(self):
+        self.native("o22n2-spacebuns")
+        words = self.layer / integration.KERNEL_CMDLINE
+        assert b"virtio_gpu.overlay_plane=1" in words.read_bytes()
+        words.write_text("virtio_gpu.tv_connector=1\n")
+        with pytest.raises(ValueError, match="changed native TV head kernel words"):
+            integration.check(self.layer, "native", target="o22n2-spacebuns")
+        words.unlink()
+        with pytest.raises(ValueError, match="changed native TV head kernel words"):
             integration.check(self.layer, "native", target="o22n2-spacebuns")
 
     def test_native_spacebuns_requires_unchanged_cursor_route(self):

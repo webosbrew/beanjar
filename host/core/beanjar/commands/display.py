@@ -9,13 +9,22 @@ import tempfile
 
 from .. import framing, keys, remote
 from ..core import Library
-from .common import Usage, emit, late_options, parse_size, progress, read_new_password, warn
+from .common import (
+    DURATION_HELP,
+    Usage,
+    duration,
+    emit,
+    late_options,
+    parse_size,
+    progress,
+    read_new_password,
+    warn,
+)
 from .forward import png_size, remote_picture
 
 
 def cmd_viewer_open(lib, a):
-    _late, rest = late_options(a, a.args, "beanjar viewer open")
-    pid = lib.view(a.name, rest)
+    pid = lib.view(a.name, a.args)
     return emit(a, {"name": a.name, "viewer": pid}, f"{a.name}: viewer pid {pid}")
 
 
@@ -30,8 +39,8 @@ def cmd_viewer_close(lib, a):
 
 def cmd_screenshot(lib, a):
     if a.last:
-        if a.size:
-            raise Usage("screenshot --last gives the kept thumbnail: it takes no --size")
+        if a.frame:
+            raise Usage("screenshot --last gives the kept thumbnail: it takes no --frame")
         png = lib.last_thumbnail(a.name)
         if a.file == "-":
             if a.json:
@@ -49,7 +58,7 @@ def cmd_screenshot(lib, a):
             | framing.frame_geometry((w, h), framing.png_source(png)),
             path,
         )
-    size = parse_size(a.size) if a.size else None
+    size = parse_size(a.frame) if a.frame else None
     if a.file == "-":
         # the PNG on stdout and nothing else there (what a remote screenshot reads): the
         # progress goes to stderr
@@ -77,12 +86,12 @@ def cmd_screenshot(lib, a):
 def cmd_elements(_lib, a):
     from .. import elements
 
-    if bool(a.name) == bool(a.image):
-        raise Usage("elements takes NAME or --image PNG, exactly one")
+    if bool(a.name) == bool(a.from_png):
+        raise Usage("elements takes NAME or --from-png PNG, exactly one")
     binary = elements.executable()
-    if a.image:
-        data = elements.read(a.image, binary, out=progress)
-        with open(a.image, "rb") as f:
+    if a.from_png:
+        data = elements.read(a.from_png, binary, out=progress)
+        with open(a.from_png, "rb") as f:
             source = framing.png_source(f.read())
     else:
         library = []
@@ -92,7 +101,9 @@ def cmd_elements(_lib, a):
                 library.append(Library(a.library, a.repo))
             return library[0]
 
-        host, name = remote.locate(a.name, lambda n: n in local_library().names(), warn)
+        host, name = remote.locate(
+            a.name, lambda n: n in local_library().names(), warn, a.library is not None
+        )
         with tempfile.TemporaryDirectory(prefix="beanjar-elements-") as tmp:
             image = os.path.join(tmp, "screen.png")
             if host:
@@ -182,33 +193,22 @@ def cmd_screensaver(lib, a):
 
 
 def cmd_vnc_password(lib, a):
-    """A VM's VNC password: where it is (made the first time), show it, set it, reset it. Only show
-    prints the password itself."""
-    verb = a.verb or None
-    if a.file is not None and verb != "set":
-        raise Usage(f"only beanjar vnc password {a.name} set takes a FILE")
-    if verb in ("set", "reset"):
-        password = None if verb == "reset" else read_new_password(a.file)
+    """A VM's VNC password: show it (made the first time), set it, reset it. Only show prints the
+    password itself; show NAME says where it is."""
+    if a.verb in ("set", "reset"):
+        password = None if a.verb == "reset" else read_new_password(a.file)
         vm = lib.set_vnc_password(a.name, password, out=progress)
         path = lib.vm(a.name).ensure_vnc_password()
         return emit(
             a,
             {"name": vm.name, "password_file": path},
-            f"{vm.name}: {'a new random' if verb == 'reset' else 'the'} VNC password in "
+            f"{vm.name}: {'a new random' if a.verb == 'reset' else 'the'} VNC password in "
             f"{path}; it takes effect at the next beanjar vnc start",
         )
     vm = lib.vm(a.name)
-    path = vm.ensure_vnc_password()
-    if verb == "show":
-        with open(path) as f:
-            password = f.readline().rstrip("\r\n")
-        return emit(a, {"name": vm.name, "password": password}, password)
-    return emit(
-        a,
-        {"name": vm.name, "password_file": path},
-        f"{vm.name}: VNC password in {path} (any user name; "
-        f"beanjar vnc password {vm.name} show prints it)",
-    )
+    with open(vm.ensure_vnc_password()) as f:
+        password = f.readline().rstrip("\r\n")
+    return emit(a, {"name": vm.name, "password": password}, password)
 
 
 def register_pictures(cli):
@@ -219,14 +219,14 @@ def register_pictures(cli):
         "save the TV picture of a running VM (video windows and LG's cursor in) as a PNG, "
         "whether or not a viewer or beanjar-vnc is open; prints the path",
         cmd_screenshot,
-        usage="beanjar screenshot NAME FILE [--size WxH | --last] [--json]",
+        usage="beanjar screenshot NAME FILE [--frame WxH | --last] [--json]",
     )
     vm_name(s, "screenshot")
     s.add_argument("file", metavar="FILE", help="the PNG to write; - for stdout, the PNG alone")
     s.add_argument(
-        "--size",
+        "--frame",
         metavar="WxH",
-        help="the picture's size, the TV picture letterboxed into it (default 1280x720); "
+        help="the picture's frame, the TV picture letterboxed into it (default 1280x720); "
         "640x360 or smaller is a thumbnail, kept for --last",
     )
     s.add_argument(
@@ -243,11 +243,22 @@ def register_pictures(cli):
         "Refs are valid for this frame only. go-textshot does not report focus on webOS "
         "today, so [focused] will rarely appear",
         cmd_elements,
-        usage="beanjar elements [NAME | --image PNG] [--json]",
+        usage="beanjar elements [NAME | --from-png PNG] [--json]",
     )
     s.set_defaults(library_needed=False)
     s.add_argument("name", nargs="?", metavar="NAME", help="the VM: NAME or HOST/NAME")
-    s.add_argument("--image", metavar="PNG", help="read an existing PNG here; no VM needed")
+    s.add_argument("--from-png", metavar="PNG", help="read an existing PNG here; no VM needed")
+
+
+def timeout_duration(text):
+    """screensaver's --timeout: a duration (common.duration), 5 to 300 seconds."""
+    from .. import screensaver
+
+    seconds = duration(text)
+    try:
+        return screensaver.timeout_value(seconds)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"{text!r}: {e}") from None
 
 
 def register(cli):
@@ -267,7 +278,7 @@ def register(cli):
         "start",
         "serve the TV picture over VNC on the VM's address, port 5900, and with link lan "
         "also on its LAN address (display dbus; not with the viewer open); always behind the "
-        "VM's own password (RSA-AES, any user name; beanjar vnc password)",
+        "VM's own password (RSA-AES, any user name; beanjar vnc password show NAME)",
         cmd_vnc_start,
     )
     vnc_options(s)
@@ -309,27 +320,29 @@ def register(cli):
     )
     vm_name(s, "pipe")
 
+    g = group(
+        "password",
+        "a VM's VNC password (identity/vnc.password, owner-only, random until set, kept across "
+        "restarts; clients may give any user name; beanjar show NAME says where it is). A running "
+        "beanjar-vnc keeps the old one until it restarts",
+        under=g,
+        dest="verb",
+    )
+    s = command(g, "show", "print the VM's VNC password (alone, for copying)", cmd_vnc_password)
+    vm_name(s)
     s = command(
         g,
-        "password",
-        "a VM's VNC password (identity/vnc.password, owner-only, random until set, kept "
-        "across restarts; clients may give any user name). No verb: where it is; show: print "
-        "it (alone, for copying); set: from FILE, one line, or from stdin (- or no FILE; a "
-        f"prompt on a terminal), 1 to {keys.VNC_MAX} characters of printable ASCII, no space at "
-        "either end; reset: a new random one. A running beanjar-vnc keeps the old one until it "
-        "restarts",
+        "set",
+        "set the VM's VNC password from FILE, one line, or from stdin (- or no FILE; a prompt on "
+        f"a terminal): 1 to {keys.VNC_MAX} characters of printable ASCII, no space at either end",
         cmd_vnc_password,
-        usage="beanjar vnc password NAME [show | set [FILE] | reset] [--json]",
+        usage="beanjar vnc password set NAME [FILE] [--json]",
     )
-    vm_name(s, "password")
-    s.add_argument(
-        "verb",
-        nargs="?",
-        choices=("show", "set", "reset"),
-        metavar="VERB",
-        help="none (where it is), show, set or reset",
-    )
+    vm_name(s, "password-set")
     s.add_argument("file", nargs="?", metavar="FILE")
+    s = command(g, "reset", "give the VM a new random VNC password", cmd_vnc_password)
+    vm_name(s)
+    s.set_defaults(file=None)
 
     g = group("screensaver", "start or stop the native webOS screensaver (verified on 10.3.1)")
     for verb in ("start", "stop"):
@@ -342,8 +355,9 @@ def register(cli):
         vm_name(s)
         s.add_argument(
             "--timeout",
-            type=screensaver.timeout_value,
+            type=timeout_duration,
             default=screensaver.DEFAULT_TIMEOUT,
-            metavar="SECONDS",
-            help=f"native completion deadline, 5 to 300 seconds (default {screensaver.DEFAULT_TIMEOUT})",
+            metavar="DURATION",
+            help="native completion deadline, 5s to 300s (default "
+            f"{screensaver.DEFAULT_TIMEOUT}s); {DURATION_HELP}",
         )

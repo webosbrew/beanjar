@@ -24,6 +24,16 @@ table = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(table)
 
 
+# the derived words of LM14 04.11.18's libmadp (targets._mstar_mmap)
+LM14_DERIVED = (
+    "mmap_ids=77",
+    "lx_mem_id=0",
+    "lx_mem2_id=76",
+    "gop_fb=60",
+    "mmap_file=/host/mstar-mmap.bin",
+)
+
+
 def module(target, name="mstar-utopia"):
     return next(m for m in targets.soc(target).modules if m.name == name)
 
@@ -31,7 +41,7 @@ def module(target, name="mstar-utopia"):
 def test_current_targets():
     for target in targets.all_targets():
         derived = {
-            m.name: (("mmap_file=/host/mstar-mmap.bin",) if m.derived == "mstar-mmap" else ())
+            m.name: (LM14_DERIVED if m.derived == "mstar-mmap" else ())
             for m in targets.soc(target).modules
             if m.derived
         }
@@ -46,10 +56,13 @@ def test_lm14_requires_derived_transport(tmp_path):
         targets.boot_conf(target, [])
     with pytest.raises(targets.Error):
         targets.boot_conf(target, [], {"mstar-utopia": ()})
-    targets.boot_conf(target, [], {"mstar-utopia": ("mmap_file=/host/mstar-mmap.bin",)})
+    with pytest.raises(targets.Error):  # the record IDs are the firmware's too
+        targets.boot_conf(target, [], {"mstar-utopia": ("mmap_file=/host/mstar-mmap.bin",)})
+    targets.boot_conf(target, [], {"mstar-utopia": LM14_DERIVED})
     bad = tmp_path / "mmap.bin"
     bad.write_bytes(b"truncated cache")
-    result = mock.Mock(returncode=0, stdout=str(bad), stderr="")
+    words = " ".join(LM14_DERIVED[:-1])
+    result = mock.Mock(returncode=0, stdout=f"{bad}\n{words}\n", stderr="")
     with mock.patch.object(targets.subprocess, "run", return_value=result):
         with pytest.raises(targets.Error, match="expected 77 records"):
             targets.derived_files(target, "firmware", "target")
@@ -143,12 +156,12 @@ def test_derived_file_contract():
 
 def test_derived_effective_overrides(tmp_path):
     target = ("lm14", "netcast45")
-    m = module(target)
-    count = memory.number(memory.parameters(m.params), "mmap_ids")
+    count = 77
     path = tmp_path / "mmap.bin"
     # Valid structural rows, not firmware or expected retail addresses.
     path.write_bytes(struct.pack("<5I", 0, 0, 0, 8192, 4) * count)
-    result = mock.Mock(returncode=0, stdout=str(path), stderr="")
+    words = " ".join(LM14_DERIVED[:-1])
+    result = mock.Mock(returncode=0, stdout=f"{path}\n{words}\n", stderr="")
     with mock.patch.object(targets.subprocess, "run", return_value=result):
         targets.derived_files(target, "firmware", "target")
         for word in ("miu_len=4096", "mmap_ids=76", "mmap_file=/host/unprepared"):
@@ -158,7 +171,7 @@ def test_derived_effective_overrides(tmp_path):
         targets.boot_conf(
             target,
             [],
-            {"mstar-utopia": ("mmap_file=/host/mstar-mmap.bin",)},
+            {"mstar-utopia": LM14_DERIVED},
             vm={"mstar-utopia": ("mmap_file=/host/unprepared",)},
         )
 
@@ -206,19 +219,25 @@ def test_cache_provenance_and_corruption(tmp_path):
     # Mock extraction only: expectations are structural contracts, no retail
     # firmware constants or bytes. Source is authoritative over cache output.
     repo = tmp_path
+
+    def ids(data, count):
+        return {"mmap_ids": count, "lx_mem_id": 0, "lx_mem2_id": 1, "gop_fb": 1}
+
     library = b"authoritative source fixture"
     r = mock.Mock(returncode=0, stdout=library)
     with (
         mock.patch.object(table, "REPO", repo),
         mock.patch("subprocess.run", return_value=r),
         mock.patch.object(table, "extract", return_value=[(0, 0), (4096, 4096)]) as extract,
+        mock.patch.object(table, "record_ids", side_effect=ids),
     ):
-        out = table.cached("firmware", "target", 0x80000000, 0x40000000, 2)
+        out, got = table.cached("firmware", "target", 0x80000000, 0x40000000)
+        assert got == ids(None, 2)
         original = out.read_bytes()
-        table.cached("firmware", "target", 0x80000000, 0x40000000, 2)
+        table.cached("firmware", "target", 0x80000000, 0x40000000)
         assert extract.call_count == 1
         out.write_bytes(original[:-1])
-        table.cached("firmware", "target", 0x80000000, 0x40000000, 2)
+        table.cached("firmware", "target", 0x80000000, 0x40000000)
         assert extract.call_count == 2
         assert out.read_bytes() == original
         metadata = json.loads(out.with_suffix(".json").read_text())
@@ -226,12 +245,49 @@ def test_cache_provenance_and_corruption(tmp_path):
         changed = bytearray(original)
         struct.pack_into("<I", changed, 20 + 12, 8192)
         out.write_bytes(changed)
-        table.cached("firmware", "target", 0x80000000, 0x40000000, 2)
+        table.cached("firmware", "target", 0x80000000, 0x40000000)
         assert extract.call_count == 3
         assert out.read_bytes() == original
         metadata["sha256"] = "stale source"
         out.with_suffix(".json").write_text(json.dumps(metadata))
-        table.cached("firmware", "target", 0x80000000, 0x40000000, 2)
+        table.cached("firmware", "target", 0x80000000, 0x40000000)
         assert extract.call_count == 4
-        with pytest.raises(table.Ambiguous, match="configured mmap_ids"):
-            table.cached("firmware", "target", 0x80000000, 0x40000000, 3)
+        # metadata from before the record IDs is regenerated
+        metadata = json.loads(out.with_suffix(".json").read_text())
+        del metadata["ids"]
+        out.with_suffix(".json").write_text(json.dumps(metadata))
+        assert table.cached("firmware", "target", 0x80000000, 0x40000000)[1] == ids(None, 2)
+        assert extract.call_count == 5
+
+
+def test_record_ids_choice():
+    # Mocked calls in code order: LX_MEM and LX_MEM2 are MPool_Init's first two GetMMAP records,
+    # GOP_FRAMEBUFFER gfx_Init's last GetBlockPa before gfx_CreatePool.
+    calls = {
+        "MAdp_MPool_Init": [("MAdp_SYS_GetMMAP", 0), ("MAdp_SYS_GetMMAP", 76), ("x", 5)],
+        "gfx_Init": [
+            ("MAdp_MPool_GetBlockPa", 70),
+            ("MAdp_MPool_GetBlockPa", 60),
+            ("gfx_CreatePool", None),
+            ("MAdp_MPool_GetBlockPa", 61),
+        ],
+    }
+
+    def fake(data, caller, callees):
+        return [c for c in calls[caller] if c[0] in callees]
+
+    with mock.patch.object(table, "_calls", side_effect=fake):
+        assert table.record_ids(b"", 77) == {
+            "mmap_ids": 77,
+            "lx_mem_id": 0,
+            "lx_mem2_id": 76,
+            "gop_fb": 60,
+        }
+        with pytest.raises(table.Ambiguous):
+            table.record_ids(b"", 70)  # an ID outside the records
+        calls["gfx_Init"][1] = ("MAdp_MPool_GetBlockPa", None)
+        with pytest.raises(table.Ambiguous):
+            table.record_ids(b"", 77)
+        calls["gfx_Init"] = [("MAdp_MPool_GetBlockPa", 60)]
+        with pytest.raises(table.Ambiguous):
+            table.record_ids(b"", 77)

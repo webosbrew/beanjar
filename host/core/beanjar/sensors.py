@@ -2,18 +2,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The board's sensors that the host sets on a running VM: the ambient light sensor, the
 SoC's temperature and the ToF motion sensor, all in lgemu.ko and set through its module parameters over the console,
-as `beanjar sensor rotate` sets the accelerometer (rotation.py).
+as `beanjar sensor set rotate` sets the accelerometer (rotation.py).
 
-`beanjar sensor light NAME [CH0 [CH1]]` sets the light sensor's two channels, raw counts of the chip
+`beanjar sensor set light NAME CH0 [CH1]` sets the light sensor's two channels, raw counts of the chip
 (0 to 65535; one value sets both): pqcontroller reports ch0 as luminance and ch1 as
 visibleLuminance, and with energy saving on auto dims the backlight by them. The sensor exists on
 a board whose tool option digitalEye says the set has one (targets.light_dev); lgemu's i2c_dev in the
-guest says whether this VM has it. `beanjar sensor temperature NAME [CELSIUS]` sets what
+guest says whether this VM has it. `beanjar sensor set temperature NAME CELSIUS` sets what
 /proc/thermalinfo/soc_temperature reads, which fancontroller reports each second (NL_CHIP_THERMAL);
 the chips whose firmware has fancontroller have it (targets.Soc.thermal). Neither is kept across a
 restart: a start has lgemu's defaults (light.c, thermal.c).
 
-`beanjar sensor presence NAME [present|absent|MM]` sets who is in front of the ToF motion sensor: a
+`beanjar sensor set presence NAME present|absent|MM` sets who is in front of the ToF motion sensor: a
 person who keeps moving at MM millimetres (100 to 5000; present is 1500), or nobody (absent).
 msc reports motion while someone moves (getMotionStatus), and only drives the sensor in Always
 Ready (Life On Screen with the motion sensor on). The sensor exists on a board whose tool option

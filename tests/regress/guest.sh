@@ -35,7 +35,7 @@
 #                                                     tests/regress/tv.sh app-* (launch, state,
 #                                                     close, install, remove)
 #   sh /host/tests/regress/guest.sh tee LIB SSTORE TA...  scripts/regress --tv's tee step:
-#                                                     tests/regress/tv.sh tee (with build/tests/tee)
+#                                                     tests/regress/tv.sh tee (with build/tests/regress/tee)
 #   sh /host/tests/regress/guest.sh audio DIR SVC N RB HW  scripts/regress --tv's audio step:
 #                                                     tests/regress/tv.sh audio (the host records)
 #   sh /host/tests/regress/guest.sh decode-log CASE   scripts/regress --tv's decode step: tests/regress/tv.sh

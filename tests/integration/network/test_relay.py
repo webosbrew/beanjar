@@ -209,7 +209,9 @@ def test_upload_delivered_after_client_left(h):
         c.sendall(b"bye")
         c.shutdown(socket.SHUT_WR)
         time.sleep(0.5)
-        got.append(hashlib.sha256(recv_all(c)).digest())
+        body = recv_all(c)
+        if body:  # not the relay's own probe, which connects and closes
+            got.append(hashlib.sha256(body).digest())
 
     for connect in (h.tcp_to_unix(srv), h.unix_to_tcp(srv)):
         got.clear()
@@ -321,14 +323,67 @@ def test_bad_pair(h):
     assert b"bad address" in p.stderr.read()
 
 
+def wait_listening(port, up, timeout=10):
+    """Poll until a connect to the relay's port is accepted (up) or refused (not up)."""
+    end = time.monotonic() + timeout
+    while True:
+        try:
+            socket.create_connection(("127.0.0.1", port), 2).close()
+            if up:
+                return
+        except ConnectionRefusedError:
+            if not up:
+                return
+        assert time.monotonic() < end, "port stayed " + ("refused" if up else "open")
+        time.sleep(0.05)
+
+
 def test_target_refused(h):
+    """No service behind the relay: the client gets "connection refused", not an accepted close."""
     port = free_port()
     path = os.path.join(h.dir, "none.sock")
     p, _ = h.relay(f"tcp:127.0.0.1:{port}=unix:{path}")
-    with socket.create_connection(("127.0.0.1", port), 5) as s:
-        s.settimeout(5)
-        assert s.recv(10) == b""  # closed, not left hanging
+    with pytest.raises(ConnectionRefusedError):
+        socket.create_connection(("127.0.0.1", port), 5)
     assert p.poll() is None
+
+
+def test_refused_then_served(h):
+    """The port opens once the service is there, and shuts again when it goes away."""
+    port = free_port()
+    path = os.path.join(h.dir, "late.sock")
+    h.relay(f"tcp:127.0.0.1:{port}=unix:{path}")
+    with pytest.raises(ConnectionRefusedError):
+        socket.create_connection(("127.0.0.1", port), 5)
+    srv = h.server(echo, path)
+    wait_listening(port, True)
+    assert h.roundtrip(lambda: socket.create_connection(("127.0.0.1", port), 5)) == b"hello relay\n"
+    srv.close()
+    # the next connection finds the service gone; later ones are refused
+    try:
+        socket.create_connection(("127.0.0.1", port), 2).close()
+    except OSError:
+        pass
+    wait_listening(port, False)
+
+
+def test_unix_listener_follows_target(h):
+    """A unix listener exists only while its tcp target accepts connections."""
+    port = free_port()
+    path = os.path.join(h.dir, "gate.sock")
+    h.relay(f"unix:{path}=tcp:127.0.0.1:{port}")
+    assert not os.path.exists(path)
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind(("127.0.0.1", port))
+    s.listen(5)
+    try:
+        end = time.monotonic() + 10
+        while not os.path.exists(path):
+            assert time.monotonic() < end, "socket never appeared"
+            time.sleep(0.05)
+    finally:
+        s.close()
 
 
 def test_stale_socket_replaced(h):

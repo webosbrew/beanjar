@@ -36,13 +36,17 @@ a sysvinit `root.pak` and `mode.pak`'s `RELEASE.cfg`, as SimpleSmart; both lines
   "lgtv" Buildroot SDK of openlgtv/buildroot-nc4, glibc 2.12; the firmware's glibc is 2.16). It
   builds `guest/layers/netcast45`, the kernel and the initramfs; it links nothing of the firmware and
   needs only its paks.
-- mstar-utopia: the study's LM14 parameters, the 77 mmapger records derived at each start
+- mstar-utopia: the study's LM14 parameters, the mmapger records derived at each start
   (`SocModule.derived = "mstar-mmap"`: `host/helpers/mstar/mmap-table.py --cache` reads the vendor pak's
   libmadp into `build/mstar/<firmware>/mmap.bin`, which the launcher puts in the host share;
   a host given the cache needs no pyelftools). Cache reuse checks source
-  hash, MIU geometry, record count, binary ranges and output digest; older metadata without a
-  digest must first be regenerated on the host with pyelftools, then synced. `gop_fb=60`: libmadp's
-  `gfx_Init` makes its GOP pool in record 60 (0x2a448000, 300 MiB).
+  hash, MIU geometry, record IDs, binary ranges and output digest; older metadata without them
+  must first be regenerated on the host with pyelftools, then synced. The record IDs are derived
+  with the records, from libmadp's code: `mmap_ids`, GetMMAP's count (77 in 04.11.18; 78 in
+  04.11.22, 04.12.36 and the 2015 03.01.38, which add a record at index 7 and move every later
+  one up); `lx_mem_id` and `lx_mem2_id`, the two records `MAdp_MPool_Init` asks GetMMAP for (0
+  and 76 in 04.11.18); `gop_fb`, the record whose block `gfx_Init` gets last before
+  `gfx_CreatePool` makes its GOP pool (60 in 04.11.18, 0x2a448000, 300 MiB).
 - The VM's display is 1920x1080 (`Release.screen`, the emulator's choice): the panel is UHD
   (RELEASE.cfg `eDispResolution` 3840x2160) behind the URSA9 FRC.
 

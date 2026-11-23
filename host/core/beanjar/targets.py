@@ -66,7 +66,10 @@ VM_LAYER = "vm"
 # serial: the virtio-blk serial the guest finds the disk by; mount: where init mounts it in the
 # firmware's root ("/" is the stock rootfs, the overlay's bottom; None: init does not mount it, it is
 # attached for a PakLower, or for the firmware to mount itself from its /dev/mmcblk0pN).
-Pak = namedtuple("Pak", "file serial mount")
+# optional: a pak only some builds of the release ship (tpli.pak, the satellite transponder list of
+# the European NetCast-line builds): a firmware without it boots without its disk, as a set whose
+# partition is empty (release(target, fw) leaves it out).
+Pak = namedtuple("Pak", "file serial mount optional", defaults=(None, False))
 # A lower layer made from a pak (W16R's bsppart): the directory subdir of the pak serial, stacked
 # above the stock rootfs and below the soc layer.
 PakLower = namedtuple("PakLower", "serial subdir")
@@ -105,7 +108,7 @@ SocModule = namedtuple("SocModule", "name params derived", defaults=(None,))
 # initramfs's touch bridge gives webOS as LG's panel (guest/initramfs/src/README.md, "Touch screen").
 # portrait: the board's model turns to portrait (the StanbyME: its toolType ART10 makes configd's
 # com.webos.service.msc.supportPortrait true, and msc turns the UI by the set's accelerometer,
-# lgemu's accel device): `beanjar sensor rotate` sets the sensor, the launcher adds the webos.rotation port
+# lgemu's accel device): `beanjar sensor set rotate` sets the sensor, the launcher adds the webos.rotation port
 # that reports msc's orientation back, and the viewers turn the picture to match
 # (host/core/beanjar/rotation.py). Other models refuse a rotation.
 # light_bus: the I2C channel (lgemu's Linux adapter) of the ambient light sensor, libdile_i2c's
@@ -197,16 +200,29 @@ MapPart = namedtuple("MapPart", "name size filename sw_ver used valid flags")
 # viewer's local key (lls.local_key).
 # debug_status_offset, where the EEPROM keeps the TV's debug status as one plain byte, 3 DEBUG,
 # 4 EVENT, 5 RELEASE (the system DB's nDebugStatus, tvservice's OSA_MD_GetDebugStatus: webOS 1 to
-# 3.9, 0x1A1); None where it is not a plain byte (webOS 4.x: 32 AES bytes by the TEE or the MCP engine,
-# which the emulator has no key for) or lowlevelstorage's (webOS 5 on: lls.debug_status_item). A blank
-# or out-of-range byte reads as 5. Every start writes the effective mode to it (nvm.sync_debug_status).
+# 3.9, 0x1A1; W19P's 0x1A8, the plain copy its tvservice and U-Boot check the encrypted block
+# against); None where there is none (W18R, whose status is the block only) or the status is
+# lowlevelstorage's (webOS 5 on: lls.debug_status_item). A blank or out-of-range byte reads as 5.
+# Every start writes the effective mode to it (nvm.sync_debug_status).
+# debug_status_values, the byte's values for DEBUG, EVENT and RELEASE where they are not 3, 4, 5
+# (NetCast 4.5: 0, 1, 2).
+# debug_block_offset, where webOS 4.x (W18R, W19P) keeps the debug status as 32 bytes that the
+# SoC's TEE encrypts (DILE_CRYPTO_EncryptDbgData; 0x1C6). The soc layer's cipher for it is the
+# identity (guest/layers/soc/src/libdile_crypto/dbg-data.c), and every start writes the clear
+# block of the effective mode in the firmware's own encoding (nvm.sync_debug_block,
+# beanjar/nvmdebug.py); the new chip's preparation checks the offset, and the plain copy's, against
+# the build's tvservice (nvm.check_debug_block) and refuses one that differs. None elsewhere.
+# factory, (pak, path) of the ELF file whose code says the fields a factory leaves in a new chip of
+# a release without records (NetCast 4.5's RELEASE: beanjar/nvmfactory.py); None: such a chip is
+# left all 0xFF for the firmware.
 Nvm = namedtuple(
     "Nvm",
     "eeprom records modelinfo_offset modelinfo_mark model_field serial_field "
     "tooloption_offset tool_option_words tool_option_word_bytes tool_option_first "
     "tool_option_mark continent_offset continent_table lastinput_offset inputs_field "
-    "tool_option_given factory_offset lls local_key debug_status_offset",
-    defaults=(None,) * 10 + (0, None, 0, None, None, 0, None, None, None),
+    "tool_option_given factory_offset lls local_key debug_status_offset debug_status_values "
+    "factory debug_block_offset",
+    defaults=(None,) * 10 + (0, None, 0, None, None, 0, None, None, None, (3, 4, 5), None, None),
 )
 LocalKeyField = namedtuple("LocalKeyField", "word offset width names")
 # tvservice's own records, in every release here (the tvservice pak's lgapp/tvservice)
@@ -223,16 +239,20 @@ TVSERVICE = ("tvservice-dvb", "/mnt/lg/tvservice/lgapp/tvservice")
 # libpqeca (kadpd's histogram thread) reads /proc/lg/de/v4l2_capture_read and crashes in fscanf
 # when it is missing: lg115x.ko's stopped-histogram entry (de_histogram_proc). v4l2_capture: the V4L2 capture
 # /dev/video60 (lgemu.ko's v4l2-capture.c, added by the chip's vendor module, CAPTURE_MODULES, with v4l2_capture=1),
-# which captureservice's BLENDED and VIDEO read: every LG-O target from mullet to queue, Realtek's from K6LP and
-# MStar's LM21 (libvtcapture's VtDriver, and queue's nyxScreenCapture.module, make the same calls as W24G ombre's client).
+# which captureservice's BLENDED and VIDEO read: every LG-O target from mullet to spacebuns, Realtek's from K6LP and
+# MStar's LM21 (libvtcapture's VtDriver, and queue's and spacebuns' nyxScreenCapture.module, make the same calls as W24G ombre's client).
 # viewer_capture: the launcher's webos.capture port (the viewer's picture on demand, lgemu_capture_frame)
 # for a capture model other than video60, which has it anyway: M14's VT frame buffers (lg115x.ko's de0)
 # and W16R's DIP (the libkadaptor shim, through video60, so v4l2_capture there).
 # tested: False for a target that has never booted (its file's tested = false; absent: True).
+# first_boot_restart: the firmware restarts the set once on the first boot of a fresh state, as a set
+# of it does at its first setup (W24G spacebuns' google-home-controller switches sdx to its QA2 server
+# and eula-service reboots: docs/research/spacebuns-fresh-state-restarts.md); scripts/regress follows
+# that one restart and fails any other.
 Target = namedtuple(
     "Target",
-    "models bring_up lg_scaler de_histogram v4l2_capture viewer_capture tested",
-    defaults=(True,),
+    "models bring_up lg_scaler de_histogram v4l2_capture viewer_capture tested first_boot_restart",
+    defaults=(True, False),
 )
 
 INIT_SYSTEMS = ("upstart", "systemd", "sysvinit")
@@ -348,8 +368,13 @@ def _pairs_of(check):
 
 
 def _pak(where, v):
-    t = _table(where, v, {"file": _str, "serial": _str, "mount": _str}, ("file", "serial"))
-    return Pak(t["file"], t["serial"], t.get("mount"))
+    t = _table(
+        where,
+        v,
+        {"file": _str, "serial": _str, "mount": _str, "optional": _bool},
+        ("file", "serial"),
+    )
+    return Pak(t["file"], t["serial"], t.get("mount"), t.get("optional", False))
 
 
 def _pak_lower(where, v):
@@ -451,6 +476,11 @@ def _nvm(where, v):
             "lls": _str,
             "local_key": _local_key,
             "debug_status_offset": _int,
+            "debug_status_values": lambda w, x: tuple(_ints(3)(w, x)),
+            "debug_block_offset": _int,
+            "factory": lambda w, x: tuple(
+                _table(w, x, {"pak": _str, "path": _str}, ("pak", "path")).values()
+            ),
         },
         ("eeprom",),
     )
@@ -626,6 +656,7 @@ TARGET_KEYS = {
     "v4l2_capture": _bool,
     "viewer_capture": _bool,
     "tested": _bool,
+    "first_boot_restart": _bool,
     "soc": lambda w, v: _table(w, v, SOC_KEYS),
     "release": lambda w, v: _table(w, v, RELEASE_KEYS),
 }
@@ -742,6 +773,7 @@ def load(directory):
             t.get("v4l2_capture", False),
             t.get("viewer_capture", False),
             t.get("tested", True),
+            t.get("first_boot_restart", False),
         )
     for n in sorted(set(layouts) - used):
         raise Error(f"{rel('partmap', n + '.toml')}: no release names it")
@@ -905,6 +937,12 @@ def v4l2_capture(target):
     return _target(target).v4l2_capture
 
 
+def first_boot_restart(target):
+    """True for a target whose firmware restarts the set once on the first boot of a fresh state
+    (its file's first_boot_restart)."""
+    return _target(target).first_boot_restart
+
+
 def viewer_capture(target):
     """True for a target whose guest reads the viewer's picture on demand (the webos.capture port and
     the guest's bridge to lgemu.ko): video60's (v4l2_capture) and the other capture models' (its file's
@@ -965,12 +1003,21 @@ MODEL_ID_REGIONS = {"ARIB": "arib", "ATSC": "atsc", "DVB": "dvb", "GLOBAL": None
 def firmware_broadcast(fw):
     """The broadcast standard of the firmware directory fw as the firmware itself states it: its
     rootfs's etc/starfish/model_id.json region (paths.model_id; ARIB, ATSC, DVB, or GLOBAL for a
-    global build: None), which a super.pak firmware's pak names do not carry. None for a firmware
-    without model_id.json (before jhericurl; those chips have one board, and their paks are named
-    for their standard, which only picks the paks: _broadcast_release) or without fw. An Error for
-    a region LG's code does not name."""
+    global build: None), which a super.pak firmware's pak names do not carry; a NetCast-line
+    firmware's, its RELEASE.cfg modelName's first word (paths.release_cfg_model). None for a webOS
+    firmware without model_id.json (before jhericurl; those chips have one board, and their paks
+    are named for their standard, which only picks the paks: _broadcast_release) or without fw. An
+    Error for a region LG's code does not name."""
     identity = paths.model_id(fw)
-    if identity is None or "region" not in identity:
+    if identity is None:
+        # a NetCast-line firmware (SimpleSmart, NetCast 4.5) states it as its RELEASE.cfg's
+        # modelName, the standard before the platform: DVB-M2, ATSC-LM14
+        model = paths.release_cfg_model(fw)
+        standard = model.split("-", 1)[0] if model else None
+        if standard is not None and standard not in MODEL_ID_REGIONS:
+            raise Error(f"{fw}: RELEASE.cfg's modelName {model!r} names no broadcast standard")
+        return MODEL_ID_REGIONS[standard] if standard else None
+    if "region" not in identity:
         return None
     region = identity["region"]
     if region not in MODEL_ID_REGIONS:
@@ -1076,9 +1123,17 @@ def root_pak(target):
 
 def release(target, fw=None):
     """The target's Release; with fw, a firmware directory, its paks as that firmware names them
-    (_broadcast_release)."""
+    (_broadcast_release), without the optional ones it does not ship (Pak.optional)."""
     r = TARGET_RELEASES.get(tuple(target)) or RELEASES[target[1]]
-    return _broadcast_release(r, fw) if fw else r
+    if not fw:
+        return r
+    r = _broadcast_release(r, fw)
+    present = set(firmware_paks(fw))
+    if any(p.optional and p.file + ".pak" not in present for p in r.paks):
+        r = r._replace(
+            paks=tuple(p for p in r.paks if not p.optional or p.file + ".pak" in present)
+        )
+    return r
 
 
 def platform(target):
@@ -1280,42 +1335,46 @@ def _param(m, key):
     return next((w.split("=", 1)[1] for w in m.params if w.startswith(key + "=")), None)
 
 
+def _mstar_mmap(m, fw, fw_name):
+    """(path, words) of the module m's "mstar-mmap" records of the firmware directory fw:
+    mmap-table.py --cache's build/mstar/<fw_name>/mmap.bin (reused while the vendor pak's libmadp
+    is the same) and the module parameters it reads out of libmadp with them (mmap_ids, lx_mem_id,
+    lx_mem2_id, gop_fb), then mmap_file=. Error if it cannot say."""
+    r = subprocess.run(
+        [
+            sys.executable,
+            MMAP_TABLE,
+            fw,
+            "--cache",
+            "--name",
+            fw_name,
+            "--miu-interval",
+            _param(m, "miu_interval"),
+            "--miu-length",
+            _param(m, "miu_len"),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    lines = r.stdout.strip().split("\n")
+    if r.returncode != 0 or len(lines) != 2:
+        raise Error(f"{m.name}.ko's mmapger records from {fw}: {r.stderr.strip() or r.returncode}")
+    return lines[0], tuple(lines[1].split()) + (f"mmap_file=/host/{MMAP_SHARE_NAME}",)
+
+
 def derived_files(target, fw, fw_name, vm=None):
     """{name: path}: the files of the firmware the chip's modules read from the host share
-    (/host/<name>), made from fw rather than kept in the tree. "mstar-mmap": mmap-table.py --cache
-    (build/mstar/<fw_name>/mmap.bin, reused while the vendor pak's libmadp is the same). Error if
-    it cannot make one."""
+    (/host/<name>), made from fw rather than kept in the tree. "mstar-mmap": _mstar_mmap's
+    mmap.bin, checked with the record IDs it derives along. Error if it cannot make one."""
     out = {}
     vm = vm or {}
     for m in soc(target).modules:
         if m.derived != "mstar-mmap":
             continue
-        r = subprocess.run(
-            [
-                sys.executable,
-                MMAP_TABLE,
-                fw,
-                "--cache",
-                "--name",
-                fw_name,
-                "--miu-interval",
-                _param(m, "miu_interval"),
-                "--miu-length",
-                _param(m, "miu_len"),
-                "--count",
-                _param(m, "mmap_ids"),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if r.returncode != 0:
-            raise Error(
-                f"{m.name}.ko's mmapger records from {fw}: {r.stderr.strip() or r.returncode}"
-            )
-        path = r.stdout.strip()
+        path, derived = _mstar_mmap(m, fw, fw_name)
         try:
-            words = m.params + (f"mmap_file=/host/{MMAP_SHARE_NAME}",) + vm.get(m.name, ())
+            words = m.params + derived + vm.get(m.name, ())
             if memory.parameters(words).get("mmap_file") != f"/host/{MMAP_SHARE_NAME}":
                 raise ValueError(
                     "mmap_file: only the prepared firmware-derived host-share file is supported"
@@ -1332,14 +1391,14 @@ def derived_params(target, fw, fw_name):
     """{module: (words...)}: the parameters of the chip's modules that come from the firmware fw
     (a directory with the paks; fw_name its name, the cache's key) rather than the table
     (SocModule.derived). "rpc-table": rpc-table.py --cache (build/rtk/<fw_name>/, reused while
-    the library is the same). "mstar-mmap": mmap_file=, the records derived_files puts into the
-    host share. Error if it cannot say."""
+    the library is the same). "mstar-mmap": _mstar_mmap's record IDs and mmap_file=, the records
+    derived_files puts into the host share. Error if it cannot say."""
     out = {}
     for m in soc(target).modules:
         if m.derived is None:
             continue
         if m.derived == "mstar-mmap":
-            out[m.name] = (f"mmap_file=/host/{MMAP_SHARE_NAME}",)
+            out[m.name] = _mstar_mmap(m, fw, fw_name)[1]
             continue
         if m.derived != "rpc-table":
             raise Error(f"{m.name}: unknown derived parameters {m.derived!r}")

@@ -1351,14 +1351,15 @@ static gboolean print_stats(gpointer data)
             "reply_max_us=%ld skipped=%ld renders=%u unchanged=%u render_us=%ld feeds=%u "
             "video_units=%llu video_nv12=%u rgb_reads=%u rgb_rows=%llu thumbnails=%u "
             "thumbnails_cached=%u thumbnail_us=%lld cache_w=%ld cache_h=%ld recopies=%ld fps=%d "
-            "frame_main_us=%lld frame_encode_us=%lld\n",
+            "frame_main_us=%lld frame_encode_us=%lld disables=%ld disables_dropped=%ld\n",
             (long long)g_get_monotonic_time(), wv_counter(s->v, "dmabuf_updates"),
             wv_counter(s->v, "imports"), wv_counter(s->v, "frames"), wv_counter(s->v, "reply_us"),
             wv_counter(s->v, "reply_max_us"), wv_counter(s->v, "skipped"), s->frames, s->unchanged,
             render_us, s->feeds, units, nv12, s->rgb_reads, s->rgb_rows, s->shots, s->shots_cached,
             (long long)s->shot_us, wv_counter(s->v, "cache_w"), wv_counter(s->v, "cache_h"),
             wv_counter(s->v, "recopies"), s->fps, (long long)s->rate.last_main,
-            (long long)s->rate.last_enc);
+            (long long)s->rate.last_enc, wv_counter(s->v, "disables"),
+            wv_counter(s->v, "disables_dropped"));
     return G_SOURCE_CONTINUE;
 }
 int main(int argc, char **argv)

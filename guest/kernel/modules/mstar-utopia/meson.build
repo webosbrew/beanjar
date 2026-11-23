@@ -5,7 +5,7 @@
 # table, guest/targets/soc/). Published as build/mstar-utopia.ko too.
 mstar_utopia_dir = kernel_root / 'mstar-utopia'
 mstar_utopia_inputs = kbuild + [files('Kbuild', 'main.c', 'memory.c', 'mmio.c', 'semutex.c', 'semutex-new.c',
-                             'mailbox.c', 'gop.c', 'utopia.c', 'hwi2c.c', 'ir.c', 'diagnostics.c',
+                             'mailbox.c', 'gop.c', 'utopia.c', 'hwi2c.c', 'swi2c.c', 'gpio.c', 'ir.c', 'diagnostics.c',
                              'private.h', '../../../../include/webos-video.h',
                              '../../../../include/mstar-gop.h'), lgemu_h]
 mstar_utopia_ko = custom_target('mstar-utopia',

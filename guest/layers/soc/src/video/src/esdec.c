@@ -17,7 +17,12 @@
  * in a DECODE session on a webos.media port (include/webos-media.h), and the decoder pushes the
  * pictures that come back (NV12 or YUY2, as its src template and downstream agree:
  * choose_format), as raw video. Which case holds is found from the pads (consumer_of): the sinks
- * the output reaches. */
+ * the output reaches.
+ *
+ * Audio decoders do the same: LG's push PCM whatever follows them, and W24G spacebuns' playbin3
+ * links them to PulseAudio's pulsesink (its autoaudiosink ranks pulsesink above LG's audiosink),
+ * which plays what it gets as samples. There the host decodes, and the decoder pushes stereo S16
+ * at 48 kHz (WEBOS_MEDIA_S16LE). */
 #include "esdec.h"
 #include <string.h>
 #include <syslog.h>
@@ -389,10 +394,44 @@ static void add_video_meta(GstBuffer *buf, const struct webos_media_picture *pic
                                    offset, stride);
 }
 
+/* Samples from the host (WEBOS_MEDIA_S16LE): the caps once, then the samples at their pts. */
+static void on_samples(struct es_dec *d, const struct webos_media_picture *pic, GstBuffer *buf)
+{
+    GstObject *parent = GST_OBJECT_PARENT(d->srcpad);
+    if (!d->picture_caps || gst_pad_check_reconfigure(d->srcpad)) {
+        if (!d->picture_caps)
+            d->picture_caps =
+                gst_caps_new_simple("audio/x-raw", "format", G_TYPE_STRING, "S16LE", "layout",
+                                    G_TYPE_STRING, "interleaved", "rate", G_TYPE_INT,
+                                    WEBOS_MEDIA_S16LE_RATE, "channels", G_TYPE_INT, 2, NULL);
+        gchar *str = gst_caps_to_string(d->picture_caps);
+        syslog(LOG_INFO, "%s: samples from the host: %s", GST_OBJECT_NAME(parent), str);
+        g_free(str);
+        if (!gst_pad_push_event(d->srcpad, gst_event_new_caps(gst_caps_ref(d->picture_caps))))
+            GST_WARNING_OBJECT(parent, "downstream refused %" GST_PTR_FORMAT, d->picture_caps);
+    }
+    push_held(d);
+    GST_BUFFER_PTS(buf) =
+        pic->pts == WEBOS_MEDIA_NONE ? GST_CLOCK_TIME_NONE : (GstClockTime)pic->pts;
+    GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_DURATION(buf) = (GstClockTime)pic->width * GST_SECOND / WEBOS_MEDIA_S16LE_RATE;
+    if (d->in && !d->in_pictures++ && GST_BUFFER_FLAG_IS_SET(d->in, GST_BUFFER_FLAG_DISCONT))
+        GST_BUFFER_FLAG_SET(buf, GST_BUFFER_FLAG_DISCONT);
+    d->pictures++;
+    if (d->last_flow == GST_FLOW_OK)
+        d->last_flow = gst_pad_push(d->srcpad, buf);
+    else
+        gst_buffer_unref(buf);
+}
+
 static void on_picture(gpointer data, const struct webos_media_picture *pic, GstBuffer *buf)
 {
     struct es_dec *d = data;
     GstObject *parent = GST_OBJECT_PARENT(d->srcpad);
+    if (pic->format == WEBOS_MEDIA_S16LE) {
+        on_samples(d, pic, buf);
+        return;
+    }
     const GstStructure *s = d->picture_caps ? gst_caps_get_structure(d->picture_caps, 0) : NULL;
     gint w = 0, h = 0;
     if (s) {
@@ -436,13 +475,17 @@ static GstFlowReturn decode_input(struct es_dec *d, GstBuffer *in)
 {
     GstElement *element = GST_ELEMENT(GST_OBJECT_PARENT(d->srcpad));
     if (!d->decoding) {
-        if (!media_port_start(&d->port, element, WEBOS_MEDIA_VIDEO, -1, 0)) {
+        if (!media_port_start(&d->port, element, d->video ? WEBOS_MEDIA_VIDEO : WEBOS_MEDIA_AUDIO,
+                              -1, 0)) {
             d->dropped++;
             return GST_FLOW_OK;
         }
-        choose_format(d);
-        media_port_decode(&d->port, element,
-                          !strcmp(d->format, "YUY2") ? WEBOS_MEDIA_YUY2 : WEBOS_MEDIA_NV12);
+        if (d->video) {
+            choose_format(d);
+            media_port_decode(&d->port, element,
+                              !strcmp(d->format, "YUY2") ? WEBOS_MEDIA_YUY2 : WEBOS_MEDIA_NV12);
+        } else
+            media_port_decode(&d->port, element, WEBOS_MEDIA_S16LE);
         if (d->es)
             media_port_caps(&d->port, element, d->es);
         d->decoding = TRUE;
@@ -518,11 +561,9 @@ static void decode_stop(struct es_dec *d)
     d->picture_caps = NULL;
 }
 
-/* What the output goes to (ES_CONSUMER_*), found again after a relink; video only. */
+/* What the output goes to (ES_CONSUMER_*), found again after a relink. */
 static gint es_dec_consumer(struct es_dec *d, gboolean relinked)
 {
-    if (!d->video)
-        return ES_CONSUMER_SINK;
     if (relinked || d->consumer == ES_CONSUMER_UNKNOWN)
         d->consumer = consumer_of(d->srcpad, 0);
     return d->consumer;
@@ -532,7 +573,14 @@ static GstFlowReturn es_dec_chain(GstPad *pad, GstObject *parent, GstBuffer *buf
 {
     struct es_dec *d = dec_of(parent);
     gboolean relinked = gst_pad_check_reconfigure(d->srcpad);
-    if (es_dec_consumer(d, relinked) == ES_CONSUMER_PIXELS) {
+    gint consumer = es_dec_consumer(d, relinked);
+    /* An audio decoder's output pad is linked on to the sink only once its caps are out
+     * (decodebin3 exposes it then): the stream's caps, and then where they went. */
+    if (consumer == ES_CONSUMER_UNKNOWN && !d->video && d->pending) {
+        push_pending(d);
+        consumer = es_dec_consumer(d, TRUE);
+    }
+    if (consumer == ES_CONSUMER_PIXELS) {
         GstFlowReturn r;
         /* the stream's caps never go downstream here: the pictures' do, with the first one */
         if (d->pending)

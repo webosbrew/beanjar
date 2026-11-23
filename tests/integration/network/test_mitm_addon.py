@@ -101,6 +101,28 @@ class TlsFailure(unittest.TestCase):
         self.assertEqual(hosts, [r"^Pinned\.Example\.org:443$"])
         self.assertEqual(log.count("tls-failed Pinned.Example.org:443 client-rejected"), 2)
 
+    def test_lg_hosts_are_never_passed_through_with_the_mock(self):
+        """lg_services=mock (NET_LG_SERVICES unset or mock): an LG host's TLS failure, client or
+        upstream, leaves it failing (tls-refused), not passed through; other hosts as before."""
+        lg = [tls_context("aic.cdpbeacon2.lgtvcommon.com"), tls_context("US.lgtvsdp.com")]
+        for value in (None, "mock"):
+            env = {"NET_LG_SERVICES": value} if value else {}
+            with patch.dict(os.environ, env):
+                if not value:
+                    os.environ.pop("NET_LG_SERVICES", None)
+                for hook in ("tls_failed_client", "tls_failed_server"):
+                    hosts, log = self.run_hook(hook, lg + [tls_context("www.youtube.com")])
+                    self.assertEqual(hosts, [r"^www\.youtube\.com:443$"])
+                    self.assertIn("tls-refused aic.cdpbeacon2.lgtvcommon.com:443 beacon", log)
+                    self.assertIn("tls-refused US.lgtvsdp.com:443 sdp", log)
+                    self.assertEqual(log.count("tls-passthrough"), 1)
+
+    def test_lg_hosts_pass_through_with_real_lg_services(self):
+        with patch.dict(os.environ, {"NET_LG_SERVICES": "real"}):
+            hosts, log = self.run_hook("tls_failed_client", [tls_context("aic.lgtviot.com")])
+        self.assertEqual(hosts, [r"^aic\.lgtviot\.com:443$"])
+        self.assertNotIn("tls-refused", log)
+
     def test_upstream_failure_is_logged_by_address_without_sni(self):
         hosts, log = self.run_hook("tls_failed_server", [tls_context(None, ("203.0.113.9", 8443))])
         self.assertEqual(hosts, [r"^203\.0\.113\.9:8443$"])
@@ -203,6 +225,210 @@ class WebPassword(unittest.TestCase):
     def test_empty_file_refused(self):
         with self.assertRaisesRegex(RuntimeError, "no password"):
             self.load("\n")
+
+
+HASH = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0$w317mQRBxpG4zuYUWInXMBuz/H5Qp1vRW8j9ptJr+rQ"  # the password "pw"
+
+
+class Freeze(unittest.TestCase):
+    """mitm_addon.Freeze: once mitmweb runs, the API cannot change FROZEN options or run commands
+    that take a path; everything else the web interface sets still changes. Each test runs a real
+    mitmweb master (WebMaster, its own addons, no servers started) with Freeze added."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.marker = os.path.join(self.dir.name, "loaded")
+        self.script = os.path.join(self.dir.name, "x.py")
+        # a stand-in for a guest-written addon: proof that it was loaded, if it ever is
+        Path(self.script).write_text(f"open({self.marker!r}, 'w').close()\n")
+
+    async def loaded(self):
+        """Give mitmproxy's script watcher (it loads a script on its first round) time to run."""
+        import asyncio
+
+        for _ in range(20):
+            if os.path.exists(self.marker):
+                return
+            await asyncio.sleep(0.05)
+
+    def master(self, test, freeze=True, extra=(), **startup):
+        """Run test(master), a coroutine, in a WebMaster whose options are startup, Freeze running unless not
+        freeze."""
+        import asyncio
+
+        from mitmproxy import options
+        from mitmproxy.tools.web.master import WebMaster
+
+        async def run():
+            m = WebMaster(options.Options(), with_termlog=False)
+            m.addons.add(*extra)
+            m.options.update(**startup)
+            if freeze:
+                f = mitm_addon.Freeze()
+                m.addons.add(f)
+                f.running()
+            try:
+                await test(m)
+            finally:
+                await m.done()
+
+        asyncio.run(run())
+
+    def test_without_it_the_script_loads(self):
+        """The control: the same update loads the script when nothing refuses it."""
+
+        async def test(m):
+            m.options.update(scripts=[self.script])
+            await self.loaded()
+            self.assertTrue(os.path.exists(self.marker))
+
+        self.master(test, freeze=False)
+
+    def test_scripts_refused_before_loading(self):
+        from mitmproxy import exceptions
+
+        async def test(m):
+            with self.assertLogs(level="WARNING"):
+                with self.assertRaisesRegex(exceptions.OptionsError, "scripts"):
+                    m.options.update(scripts=[self.script])
+            await self.loaded()
+            self.assertFalse(os.path.exists(self.marker))
+            self.assertEqual(m.options.scripts, [])
+            # with an allowed option in the same update: all of it is rolled back
+            with self.assertLogs(level="WARNING"):
+                with self.assertRaises(exceptions.OptionsError):
+                    m.options.update(intercept="~q", save_stream_file=self.marker)
+            self.assertIsNone(m.options.intercept)
+            self.assertFalse(os.path.exists(self.marker))
+            # the same values again (an Options menu that sends them all back) are no change
+            m.options.update(scripts=[], mode=list(m.options.mode))
+
+        self.master(test)
+
+    def test_frozen_options(self):
+        from mitmproxy import exceptions
+
+        changes = {
+            "save_stream_file": self.marker,
+            "confdir": self.dir.name,
+            "client_certs": self.dir.name,
+            "mode": ["regular@8080"],
+            "web_password": "",
+            "listen_host": "0.0.0.0",
+            "listen_port": 8080,
+            "web_port": 1,
+            "map_local": [f"|~q|{self.dir.name}"],
+        }
+
+        async def test(m):
+            for name, value in changes.items():
+                with self.subTest(name), self.assertLogs(level="WARNING"):
+                    self.assertIn(name, mitm_addon.FROZEN)
+                    with self.assertRaises(exceptions.OptionsError):
+                        m.options.update(**{name: value})
+            self.assertEqual(m.options.web_password, HASH)
+            self.assertEqual(m.options.mode, ["tun:mitm0"])
+
+        self.master(test, web_password=HASH, mode=["tun:mitm0"])
+
+    def test_ui_options_still_change(self):
+        async def test(m):
+            m.options.update(
+                intercept="~u example", intercept_active=True, view_filter="~h example",
+                view_order="size", ignore_hosts=["^x$"], web_columns=["path"], anticache=True,
+            )  # fmt: skip
+            self.assertEqual(m.options.intercept, "~u example")
+            self.assertEqual(m.options.ignore_hosts, ["^x$"])
+
+        self.master(test)
+
+    def test_reset_keeps_frozen_values(self):
+        from mitmproxy import exceptions
+
+        async def test(m):
+            for reset in (lambda: m.commands.call_strings("options.reset", []), m.options.reset):
+                with self.assertLogs(level="WARNING"):
+                    with self.assertRaises((exceptions.OptionsError, exceptions.CommandError)):
+                        reset()
+                self.assertEqual(m.options.web_password, HASH)
+                self.assertEqual(m.options.mode, ["tun:mitm0"])
+            with self.assertLogs(level="WARNING"):
+                with self.assertRaises((exceptions.OptionsError, exceptions.CommandError)):
+                    m.commands.call_strings("options.reset.one", ["mode"])
+            self.assertEqual(m.options.mode, ["tun:mitm0"])
+
+        self.master(test, web_password=HASH, mode=["tun:mitm0"])
+
+    def test_unreviewed_option_frozen(self):
+        from mitmproxy import exceptions
+
+        class New:
+            def load(self, loader):
+                loader.add_option("future_path", str, "", "an option a later mitmproxy adds")
+
+        async def test(m):
+            freeze = mitm_addon.Freeze()
+            m.addons.add(freeze)
+            with self.assertLogs(level="WARNING") as logs:
+                freeze.running()
+            self.assertIn("future_path", logs.output[0])
+            with self.assertLogs(level="WARNING"), self.assertRaises(exceptions.OptionsError):
+                m.options.update(future_path="/x")
+
+        self.master(test, freeze=False, extra=[New()])
+
+    def test_path_commands_refused(self):
+        from mitmproxy import exceptions
+
+        async def test(m):
+            for name, args in (
+                ("script.run", ["@all", self.script]),
+                ("save.file", ["@all", self.marker]),
+                ("options.save", [self.marker]),
+                ("options.load", [self.script]),
+                ("browser.start", ["chrome"]),
+            ):
+                with self.subTest(name), self.assertRaisesRegex(exceptions.CommandError, name):
+                    m.commands.call_strings(name, args)
+            self.assertFalse(os.path.exists(self.marker))
+            # set goes through the options: refused there
+            with self.assertLogs(level="WARNING"), self.assertRaises(exceptions.CommandError):
+                m.commands.call_strings("set", ["scripts", self.script])
+            await self.loaded()
+            self.assertFalse(os.path.exists(self.marker))
+            m.commands.call_strings("set", ["anticache", "true"])  # the others still work
+            self.assertTrue(m.options.anticache)
+            self.assertIn("curl", m.commands.call_strings("export.formats", []))
+
+        self.master(test)
+
+    def test_every_option_reviewed(self):
+        """mitmweb's options, all of them, are in REVIEWED: a newer mitmproxy's new options are
+        frozen until they are reviewed here, and this test fails until then."""
+
+        async def test(m):
+            self.assertEqual(sorted(set(m.options.keys()) - mitm_addon.REVIEWED), [])
+
+        self.master(test, freeze=False, extra=[mitm_addon.FlowLimit()])
+
+    def test_reload_keeps_the_hash(self):
+        """A reload of this addon (mitmproxy reloads a changed script) finds the password set and
+        does not touch the frozen option; another password still replaces it (before Freeze)."""
+        import argon2
+
+        pw = Path(self.dir.name, "pw")
+
+        async def test(m):
+            pw.write_text("pw\n")
+            with patch.dict(os.environ, {"NETSTUB_WEB_PASSWORD_FILE": str(pw)}):
+                mitm_addon.WebPassword().load(None)
+                self.assertEqual(m.options.web_password, HASH)
+                pw.write_text("other\n")
+                mitm_addon.WebPassword().load(None)
+            self.assertTrue(argon2.PasswordHasher().verify(m.options.web_password, "other"))
+
+        self.master(test, freeze=False, web_password=HASH)
 
 
 class FlowLimit(unittest.TestCase):

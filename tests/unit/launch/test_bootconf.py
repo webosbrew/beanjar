@@ -26,6 +26,14 @@ from beanjar import (
 from launchkit import boot_conf, FW_NAME, H13_AFRO, store_snapshot, text, TOP, TRUST_PAK
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# made-up parameters of an "mstar-mmap" module (targets._mstar_mmap: LM14 04.11.18's record IDs)
+MSTAR_DERIVED = (
+    "mmap_ids=77",
+    "lx_mem_id=0",
+    "lx_mem2_id=76",
+    "gop_fb=60",
+    "mmap_file=/host/mstar-mmap.bin",
+)
 
 
 SYSTEMD_ROW = targets.RELEASES["dreadlocks"]._replace(
@@ -37,8 +45,9 @@ class BootConfTest(unittest.TestCase):
     """targets.boot_conf: the boot manifest guest/initramfs/rootfs/init carries out, from the per-axis tables."""
 
     def test_lg_scaler_scope(self):
-        # Stock O22, O22N, ombre and LM21's libval use video30/31 in UHD panel coordinates: the
-        # media lanes with our elements get lgemu.ko's model, spacebuns does not.
+        # Stock O22, O22N, ombre and LM21's libval use video30/31 in UHD panel coordinates, as
+        # spacebuns' nyxVscaler does (videooutputd's connect fails without the nodes): the media
+        # lanes with our elements get lgemu.ko's model.
         for chip, release in (
             ("o22", "mullet"),
             ("o22", "number1"),
@@ -56,21 +65,21 @@ class BootConfTest(unittest.TestCase):
                 f.flush()
                 conf = boot_conf(f.name, ("MODULE_PARAMS_lgemu", "MODULE_PARAMS_lg115x"))
             params = conf["MODULE_PARAMS_lgemu"].split()
-            self.assertEqual("v4l2_vsc=1" in params, release != "spacebuns")
+            self.assertIn("v4l2_vsc=1", params)
             # The scaler's panel space: UHD, but the StanbyME's (lm21u) panel is FHD.
             screen = "1920,1080" if chip == "lm21u" else "3840,2160"
-            self.assertEqual(f"vsc_screen={screen}" in params, release != "spacebuns")
+            self.assertIn(f"vsc_screen={screen}", params)
             self.assertNotIn("v4l2_vsc=1", conf["MODULE_PARAMS_lg115x"].split())
 
     def test_v4l2_capture(self):
         """video60 (v4l2_capture=1) is the chip's vendor module's, on every captureservice target
-        whose libvtcapture opens it: LG-O's but spacebuns, Realtek's from K6LP, MStar's LM21; and
+        whose libvtcapture opens it: LG-O's, Realtek's from K6LP, MStar's LM21; and
         W16R's, read by its libkadaptor shim's DIP; no other module gets the parameter, and no
         other target."""
         for target in targets.all_targets():
-            chip, release = target
+            chip = target[0]
             want = (
-                (chip.startswith("o2") and release != "spacebuns")
+                chip.startswith("o2")
                 or (chip.startswith("k") and chip != "k5lp")
                 or chip.startswith("lm21")
                 or targets.name(target) == "m2-dreadlocks"
@@ -475,11 +484,7 @@ class BootConfTest(unittest.TestCase):
                         target,
                         ["webos"],
                         {
-                            m.name: (
-                                ("mmap_file=/host/mstar-mmap.bin",)
-                                if m.derived == "mstar-mmap"
-                                else ()
-                            )
+                            m.name: (MSTAR_DERIVED if m.derived == "mstar-mmap" else ())
                             for m in targets.soc(target).modules
                             if m.derived
                         },
@@ -579,6 +584,7 @@ class BootConfTest(unittest.TestCase):
             "m3-goldilocks": base | {"ipw"},
             "m2-simplesmart": base,
             "lm14-netcast45": set(),
+            "lm15u-beehive": base | {"ftdi_sio"},
             "lm21a-kisscurl": base | {"ipw"},
             "lm21u-kisscurl": base | {"ipw"},
             "lm21an-mullet": base | {"ipw"},
@@ -635,13 +641,31 @@ class BootConfTest(unittest.TestCase):
                     if backend in mods:
                         self.assertGreater(mods.index("lgfs"), mods.index(backend))
 
+    def test_sit(self):
+        """sit.ko (IPv6-in-IPv4, whose fallback device is sit0) loads where the release's stock
+        kernel has SIT (every webOS release's but WT1H's, which has no IPv6; modules.builtin of the
+        firmware's rootfs), and nowhere else: NetCast 4.5's and SimpleSmart's networkmanager takes
+        sit0 for its Wi-Fi interface and its private ioctl overruns a stack buffer
+        (docs/research/netcast-networkmanager-wifi-country.md)."""
+        for target in targets.all_targets():
+            name = targets.name(target)
+            mods = targets.release(target).peripherals
+            if targets.platform(target) == "Test" or name in (
+                "h13-afro",
+                "lm14-netcast45",
+                "m2-simplesmart",
+            ):
+                self.assertNotIn("sit", mods, name)
+            else:
+                self.assertIn("sit", mods, name)
+
     def test_golden(self):
         """Every target's boot.conf is byte for byte tests/unit/launch/data/boot-conf/<target>.conf (with made-up
         derived parameters where the chip has some): a change to the tables' output is a change there."""
         for target in targets.all_targets():
             derived = {
                 m.name: (
-                    ("mmap_file=/host/mstar-mmap.bin",)
+                    MSTAR_DERIVED
                     if m.derived == "mstar-mmap"
                     else ("rpc_reply=100:108:68", "rpc_create=100:10,201:1")
                 )
@@ -1300,6 +1324,7 @@ class BootConfTest(unittest.TestCase):
                 "k8lpn2-ponytail",
                 "k8lpn2-queue",
                 "lm14-netcast45",
+                "lm15u-beehive",
                 "lm21a-kisscurl",
                 "lm21an-mullet",
                 "lm21ann-number1",
@@ -1360,6 +1385,7 @@ class BootConfTest(unittest.TestCase):
             {
                 "h13-afro": 3072,
                 "m14-beehive": 1536,
+                "lm15u-beehive": 2560,
                 "m2-dreadlocks": 1280,
                 "m16p-dreadlocks2": 1536,
                 "m3-goldilocks": 1536,
@@ -1512,7 +1538,7 @@ class InitBootConfTest(unittest.TestCase):
     """guest/initramfs/rootfs/init's PmLog and systemd blocks, run by sh over a scratch root in place of
     /webos (mount, log and the kernel command line stubbed), for each init and PmLog mode."""
 
-    def run_init(self, target, release=None, cmdline=""):
+    def run_init(self, target, release=None, cmdline="", stock=None):
         init = text(os.path.join(TOP, "guest", "initramfs", "rootfs", "init"))
         block = init[
             init.index("# --- PmLog: keep every message") : init.index(
@@ -1524,15 +1550,17 @@ class InitBootConfTest(unittest.TestCase):
         root = os.path.join(tmp, "webos")
         os.makedirs(os.path.join(root, "etc", "init"))
         os.makedirs(os.path.join(root, "run"))
+        for rel, body in (stock or {}).items():  # the firmware's own files, left out of the result
+            os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+            with open(os.path.join(root, rel), "w") as f:
+                f.write(body)
         rows = {target[1]: release} if release else {}
         with mock.patch.dict(targets.RELEASES, rows):
             conf = targets.boot_conf(
                 target,
                 ["webos"],
                 {
-                    m.name: (
-                        ("mmap_file=/host/mstar-mmap.bin",) if m.derived == "mstar-mmap" else ()
-                    )
+                    m.name: (MSTAR_DERIVED if m.derived == "mstar-mmap" else ())
                     for m in targets.soc(target).modules
                     if m.derived
                 },
@@ -1555,6 +1583,8 @@ class InitBootConfTest(unittest.TestCase):
         for d, _, names in os.walk(root):
             for n in names:
                 files[os.path.relpath(os.path.join(d, n), root)] = text(os.path.join(d, n))
+        for rel in stock or ():
+            del files[rel]
         mounts = (
             text(os.path.join(tmp, "mounts")) if os.path.exists(os.path.join(tmp, "mounts")) else ""
         )
@@ -1608,6 +1638,29 @@ class InitBootConfTest(unittest.TestCase):
             self.assertIn("bootd: timeouts x4", out)
         files, _, _ = self.run_init(("m2", "systemdtest"), SYSTEMD_ROW, "webos.time_scale=4")
         self.assertNotIn("etc/init/bootd.override", files)
+
+    def test_time_scale_memchute(self):
+        # webos.time_scale=4 on systemd with a memchute unit: a drop-in LD_PRELOADs the heartbeat
+        # scaling; time_scale=1 (KVM), or no memchute unit, writes none
+        dropin = "etc/systemd/system/memchute.service.d/beanjar-scale.conf"
+        unit = {"lib/systemd/system/memchute.service": "[Service]\nExecStart=/usr/sbin/memchute\n"}
+        target = ("m2", "systemdtest")
+        files, _, out = self.run_init(target, SYSTEMD_ROW, "webos.time_scale=4", unit)
+        self.assertEqual(
+            files[dropin].splitlines()[1:],
+            [
+                "[Service]",
+                "Environment=LD_PRELOAD=/usr/lib/libmemchute-scale.so MEMCHUTE_HEARTBEAT_SCALE=4",
+            ],
+        )
+        self.assertIn("memchute: heartbeat x4", out)
+        files, _, out = self.run_init(target, SYSTEMD_ROW, "webos.time_scale=1", unit)
+        self.assertNotIn(dropin, files)
+        self.assertNotIn("memchute:", out)
+        files, _, _ = self.run_init(target, SYSTEMD_ROW, "webos.time_scale=4")
+        self.assertNotIn(dropin, files)
+        files, _, _ = self.run_init(H13_AFRO, cmdline="webos.time_scale=4")
+        self.assertNotIn(dropin, files)
 
     def test_systemd_pmlog_stock(self):
         # webos.pmlog=stock: the unit stays stock; the marker is made all the same

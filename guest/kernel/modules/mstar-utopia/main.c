@@ -123,6 +123,8 @@ static int __init mstar_utopia_init(void)
     if (!err)
         err = adc_idac_registers();
     if (!err)
+        err = swi2c_parse();
+    if (!err)
         err = lm14_mmio_registers();
     if (!err)
         err = registers_preset();
@@ -130,6 +132,10 @@ static int __init mstar_utopia_init(void)
         err = hwi2c_parse();
     if (!err)
         err = adv_fn009_parse();
+    if (!err)
+        err = audio_info_parse();
+    if (!err)
+        err = gpio_parse();
     /* XC's windows are in the panel's pixels */
     utopia_screen_init();
     if (err) {
@@ -158,6 +164,8 @@ static int __init mstar_utopia_init(void)
     if (mmio_has_pq() && !proc_create("pq_y_sram", 0444, counts_dir, &pq_y_state_proc_ops))
         goto fail;
     if (hwi2c_enabled() && !proc_create("hwi2c", 0444, counts_dir, &hwi2c_state_proc_ops))
+        goto fail;
+    if (swi2c_enabled() && !proc_create("swi2c", 0444, counts_dir, &swi2c_state_proc_ops))
         goto fail;
     if (memory_has_tee() && !proc_create("mmap.ini", 0444, mmapger_dir, &mmap_ini_proc_ops))
         goto fail;

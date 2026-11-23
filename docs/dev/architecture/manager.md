@@ -26,7 +26,7 @@ changed before the commit, and its stale `run/unit` is removed. What is derived 
 unit and with link lan its DHCP hostname, follows at its next start. A VM does not change host or
 library by a rename; `clone` makes a copy elsewhere, as another TV.
 
-A VM's tags (`metadata.tags`, `beanjar tag`, `list --tag`) are labels kept with its settings,
+A VM's tags (`metadata.tags`, `beanjar config set NAME tags=...`, `list --tag`) are labels kept with its settings,
 copied by `clone` and never read by its launch, so they change while it runs too. `scratch`
 (throwaway) and `keep` (do not delete) are conventions only: nothing deletes a VM by its tags
 ([manager README](../../../host/core/README.md#tags)).
@@ -64,7 +64,7 @@ waited out, since webOS has powered off after one. Unplug kills the VM at once, 
 sync. The GUI's Shut Down dialog offers the signal and Unplug
 ([manager README](../../../host/core/README.md#stopping-a-vm)).
 
-A running VM may carry a reason (`start --reason`, `reason`), which `stop` prints and refuses
+A running VM may carry a reason (`start --reason`, `status set NAME reason=TEXT`), which `stop` prints and refuses
 without `--force`. It is not persistent by design: it is a file in the VM unit's
 `RuntimeDirectory`, so it lives exactly as long as the unit and systemd removes it at a stop, a
 crash or a reboot, with no cleanup code; a VM without a unit cannot have one
@@ -79,7 +79,7 @@ programmed with the board's values, or on webOS 5 and later lowlevelstorage's re
 firmware's own programs), LLS's probe output for a later debug-mode change, the viewer's local key,
 and the chip modules' parameters and host-share files derived from the firmware. It is made when the
 VM is created (before it is published, so a failure creates nothing), when `fw`, `broadcast`,
-`debug_mode` or `serial` changes, by `identity renew` and a local `clone`, and by
+`debug_mode` or `serial` changes, by `identity reset` and a local `clone`, and by
 `beanjar prepare NAME`; all of them run the launcher's `prepare`. The GUI's Settings dialog saves
 the settings, then prepares in the background (`beanjar prepare NAME --if-stale`, a progress dialog
 over Settings): the window stays responsive, the progress dialog can be neither cancelled nor
@@ -184,7 +184,7 @@ a remote VM is reached through an `ssh -L` forward of its developer-mode port, m
 command, with its developer key read from the host, so only this machine needs the tools and path
 arguments stay local. USB devices follow the same split (`beanjar/usb.py`): `io usb attach` on the
 VM's host hot-plugs a QEMU `usb-redir` device whose usbredir socket is a unix socket in the run
-directory, and `io usb plug`, where the device is, runs `usbredirect` against it through a relay
+directory, and `io usb attach`, where the device is, runs `usbredirect` against it through a relay
 (local) or an `ssh -L` forward of the shared connection to that socket (remote), and detaches at
 the end. `io usb attach --image FILE` makes a disk image a USB stick instead (`blockdev-add` and
 `usb-storage`); the image is a file of the VM's host, never copied, as the guest writes to it. A

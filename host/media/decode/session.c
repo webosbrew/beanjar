@@ -63,6 +63,33 @@ void report(struct stream *s, const char *why)
  * busy slot of the session's layout answering that input. A release of a slot of an earlier
  * layout (an extent of the port's, retiring) is old news; anything else is the guest's mistake,
  * counted and logged once per session. */
+/* r's slot of the layout at off (n slots of size bytes) given back: whether it was one */
+static int give_back(struct slot *slots, uint32_t off, uint32_t size, unsigned n,
+                     const struct webos_media_release *r)
+{
+    if (!size || r->slot < off || (r->slot - off) % size)
+        return 0;
+    uint32_t i = (r->slot - off) / size;
+    if (i >= n || !slots[i].busy || slots[i].input != r->input)
+        return 0;
+    slots[i].busy = 0;
+    return 1;
+}
+
+/* The layout before the current one back to the host (with s->lock): retiring, freed once the
+ * guest maps nothing of it. */
+void retire_old_layout(struct stream *s)
+{
+    if (s->old_e < 0)
+        return;
+    pool_retire(s->m->pool, (unsigned)s->index, s->old_e);
+    pool_reap(s->m->pool);
+    s->old_e = -1;
+    s->old_off = s->old_slot_size = s->old_bytes = 0;
+    s->old_nslots = 0;
+    memset(s->old_slots, 0, sizeof s->old_slots);
+}
+
 void take_releases(struct stream *s)
 {
     if (!s->shared || !s->rings.c)
@@ -70,12 +97,16 @@ void take_releases(struct stream *s)
     unsigned budget = WEBOS_MEDIA_RING_ENTRIES;
     struct webos_media_release r;
     while (rings_take_release(&s->rings, &r, &budget)) {
-        if (s->slot_size && r.slot >= s->pic_off && !((r.slot - s->pic_off) % s->slot_size)) {
-            uint32_t i = (r.slot - s->pic_off) / s->slot_size;
-            if (i < s->nslots && s->slots[i].busy && s->slots[i].input == r.input) {
-                s->slots[i].busy = 0;
-                continue;
-            }
+        if (give_back(s->slots, s->pic_off, s->slot_size, s->nslots, &r))
+            continue;
+        if (s->old_e >= 0 &&
+            give_back(s->old_slots, s->old_off, s->old_slot_size, s->old_nslots, &r)) {
+            unsigned busy = 0;
+            for (unsigned i = 0; i < s->old_nslots; i++)
+                busy += s->old_slots[i].busy != 0;
+            if (!busy)
+                retire_old_layout(s);
+            continue;
         }
         int old = 0;
         for (int e = 0; e < WEBOS_MEDIA_POOL_EXTENTS && !old; e++)
@@ -99,11 +130,14 @@ void end_pool_session(struct stream *s)
     }
     s->shared = 0;
     s->rings.c = NULL;
-    s->ctrl_e = s->pic_e = -1;
+    s->ctrl_e = s->pic_e = s->old_e = -1;
     s->pic_off = 0;
     memset(s->slots, 0, sizeof s->slots);
     s->slot_size = 0;
     s->nslots = 0;
+    s->old_off = s->old_slot_size = s->old_bytes = 0;
+    s->old_nslots = 0;
+    memset(s->old_slots, 0, sizeof s->old_slots);
 }
 
 /* DECODE asked for shared pictures: the session's control extent, answered with POOL (size 0:
@@ -289,14 +323,16 @@ int handle(struct stream *s, const struct webos_media_header *h, const uint8_t *
         if (!s->open || h->size < sizeof d)
             break;
         memcpy(&d, payload, sizeof d);
-        if (d.format != WEBOS_MEDIA_NV12 && d.format != WEBOS_MEDIA_YUY2) {
-            elog(s->index, "media %d: decode to format %#x refused (NV12, YUY2)", s->index,
+        int audio = d.format == WEBOS_MEDIA_S16LE;
+        if (d.format != WEBOS_MEDIA_NV12 && d.format != WEBOS_MEDIA_YUY2 && !audio) {
+            elog(s->index, "media %d: decode to format %#x refused (NV12, YUY2, 16LE)", s->index,
                  d.format);
             break;
         }
         s->ret = (int)d.format;
         end_pool_session(s);
-        if (d.flags & WEBOS_MEDIA_DECODE_SHARED)
+        /* an audio session's samples come inline (include/webos-media.h) */
+        if ((d.flags & WEBOS_MEDIA_DECODE_SHARED) && !audio)
             begin_pool_session(s);
         elog(s->index, "media %d: %s's pictures go back to the guest (%.4s, %s)", s->index,
              s->info.element, (const char *)&d.format, s->shared ? "shared" : "inline");
