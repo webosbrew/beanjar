@@ -26,6 +26,17 @@ struct webos_ir_record {
 };
 _Static_assert(sizeof(struct webos_ir_record) == 4, "IR wire record");
 
+/* A Japanese (ISDB) remote's extended code on the same stream: a record with WEBOS_IR_EXT_MAGIC,
+ * custom WEBOS_IR_CUSTOM_LG, and code the code's second byte N. The remote's broadcast-type keys
+ * and their one-touch 1-12 send two bytes, 0xDB N, instead of a data code and its complement; the
+ * micom reports them as event, 0xDB, N (docs/research/arib-data-broadcasting.md, "JP remote
+ * infrared codes"): BS DB 00, CS DB 10, terrestrial DB 30, BS4K DB 40, then 1-12 of each type
+ * at + 0x01 to + 0x0C. The host names such a code WEBOS_IR_EXT(N), 0xDB00 | N, beside the data
+ * codes 0 to 255. */
+#define WEBOS_IR_EXT_MAGIC  0x45 /* 'E' */
+#define WEBOS_IR_EXT_PREFIX 0xDB
+#define WEBOS_IR_EXT(n)     ((WEBOS_IR_EXT_PREFIX << 8) | (n))
+
 /* The set's own keys (the local key) on the same stream: a record with WEBOS_LOCAL_MAGIC, custom 0,
  * and code the micom's local key code of the physical button. They are not infrared: the micom
  * reads the buttons itself and reports them as its local key events (lgemu's i2c.c, "the local

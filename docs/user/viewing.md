@@ -72,5 +72,7 @@ beanjar remote click tv1 640 360
 beanjar screenshot tv1 shot.png
 ```
 
-`beanjar remote layout tv1` lists the key names of the VM's remote. Coordinates are those of the
+`beanjar remote layout tv1` lists the key names of the VM's remote: the remote of its firmware,
+the Japanese remote (with d, the broadcast types and 1-12) for a webOS VM on an ARIB (Japanese)
+board. Coordinates are those of the
 1280x720 screenshot. See [Commands](../../host/core/README.md#commands) in the manager guide.

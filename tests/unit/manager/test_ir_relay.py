@@ -44,6 +44,22 @@ def test_awake_passes_everything(st):
     assert st.wakes == 0
 
 
+def ext(down, n):
+    return bytes((0x45, int(down), 0x04, n))
+
+
+def test_extended_records(st):
+    """A Japanese remote's extended code: passed awake; in standby dropped with its key-up, no wake
+    (0x08 there is N, not POWER)."""
+    data = ext(1, 0x30) + ext(0, 0x30)
+    assert st.f.feed(data[:5]) + st.f.feed(data[5:]) == data
+    st.standby = True
+    assert st.f.feed(ext(1, 0x08)) == b""
+    st.standby = False
+    assert st.f.feed(ext(0, 0x08)) == b""
+    assert st.wakes == 0
+
+
 def test_split_records(st):
     data = ir(1, 0x7C) + ir(0, 0x7C)
     assert st.f.feed(data[:3]) + st.f.feed(data[3:6]) + st.f.feed(data[6:]) == data

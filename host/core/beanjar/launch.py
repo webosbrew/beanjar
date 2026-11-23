@@ -386,6 +386,8 @@ def run(words, env=None):
     )
     info = paths.vm_info(p.target, p.fw, p.fw_name)  # the viewer's window title
     info["layers"] = list(p.layers)  # the viewer's GPU meter: the gl layer is the guest on host GL
+    if p.broadcast:
+        info["broadcast"] = p.broadcast  # the board's standard: an ARIB board's Japanese remote
     if targets.soc(p.target).touch:
         # the viewer's touches go to the guest's touch screen (qemu.input_devices)
         info["touch"] = True

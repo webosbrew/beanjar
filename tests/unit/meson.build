@@ -70,6 +70,11 @@ endif
 check_pace = executable('check-pace', 'viewer/check-pace.c',
   override_options: ['c_std=c11', 'warning_level=2', 'werror=true'])
 test('check-pace', check_pace, suite: ['unit', 'viewer'], timeout: 10)
+# the remote's infrared records (host/viewer/core/ir.c): data codes, a Japanese remote's extended
+# codes, its one-touch 11 and 12 per broadcast type
+check_ir = executable('check-ir', 'viewer/check-ir.c', '../../host/viewer/core/ir.c',
+  override_options: ['c_std=c11', 'warning_level=2', 'werror=true'])
+test('check-ir', check_ir, suite: ['unit', 'viewer'], timeout: 10)
 # QEMU's display Disable taken as provisional (host/viewer/core/disable.h): a stray one before a
 # scanout leaves the picture, a real one blanks it after the wait
 check_disable = executable('check-disable', 'viewer/check-disable.c',

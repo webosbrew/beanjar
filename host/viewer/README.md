@@ -205,10 +205,10 @@ a value for "no key"; the key is hidden only where nothing is decoded.
 `beanjar_ui/viewer/remote.py` provides firmware-specific LG remotes and the shared
 service remote; their data (keys, colours, IR codes) is `beanjar/remote_layouts.py`, without
 GTK, which the web viewer's remote also draws. For an instance with `vm-info.toml`, the chin menu offers only
-its **webOS Remote**, **NetCast Remote** or **SimpleSmart Remote**, plus **Service
-Remote**. With no firmware metadata, standalone previews retain all choices.
+its **webOS Remote**, **NetCast Remote**, **SimpleSmart Remote** or **Japanese Remote** (a webOS
+board whose broadcast is ARIB, `vm-info.toml`'s `broadcast`), plus **Service Remote**. With no firmware metadata, standalone previews retain all choices.
 The choice lasts for the viewer's run; there is no viewer settings file.
-`--remote-layout auto|normal|netcast|simplesmart|service` selects the initial
+`--remote-layout auto|normal|netcast|simplesmart|japan|service` selects the initial
 layout; an incompatible explicit choice is refused when the firmware is known.
 
 The header controls and Home/Super shortcuts follow the firmware, even while
@@ -223,6 +223,11 @@ the normal IR mapping previously used for its successful launcher test
 - **NetCast**: the numeric/D-pad layout with NetCast, Q.MENU, RATIO, AV MODE,
   SIMPLINK and teletext keys. Codes come from LM14 US 04.11.18 RELEASE
   (`); unresolved APP/* and ENERGY SAVING labels are inactive.
+- **Japanese**: the webOS remote with a Japanese (ISDB) remote's keys, for an ARIB board (188x700):
+  the broadcast types (TER, BS, CS, BS4K) under POWER, the number pad 1-12 in place of 1-9, LIST,
+  0 and FLASHBACK, and d (data broadcasting), DISPLAY and 3-DIGIT above the volume row. LG's
+  physical Japanese remote has not been found in public sources, so the keys are placed on the
+  normal remote rather than copied from one.
 - **Service**: LG's factory service remote, "Factory SVC Remocon" MKJ39170828, measured from a
   photo of it (188x764; 62 buttons, the names printed on its body, the boxed direct-input keys and
   "Factory SVC Remocon" on the chin).
@@ -283,7 +288,7 @@ A held key is its face mixed 25% toward black (light) or 30% toward white (dark)
 - Keys typed while the remote window has focus still go to the guest, except Escape. Focus loss,
   hiding, switching layouts and exit release what is held.
 - Buttons WT1H has no key for are drawn dimmed and send nothing (a click prints why).
-- `--remote-preview OUT.ppm [--remote-layout normal|service] [--remote-press KEY] [--seconds N]`
+- `--remote-preview OUT.ppm [--remote-layout normal|netcast|simplesmart|japan|service] [--remote-press KEY] [--seconds N]`
   renders only the remote, with no VM, at 2x (376x1304 normal, 376x1528 service), to `OUT.ppm`
   (KEY drawn held). It needs a display: `xvfb-run -a` in scripts (with `GDK_BACKEND=x11` where
   `WAYLAND_DISPLAY` is set).
@@ -357,6 +362,28 @@ FASTFORWARD 0x8E):
 | SIMPLINK, AV3 | 0x7E, 0xD1 | 0x30a, 0x3b8 | dimmed: no Qt key on WT1H |
 | RGB, COMP2, HDMI4/DVI | 0xD5, 0xD4, 0xDA | (0x3bc, 0x3ba, 0x3c2) | dimmed: tvservice drops them, the model has no such input |
 
+Japanese remote, its own keys (the others send the normal remote's codes; 10 is 0x10, KEY_0). The
+codes are the firmware's key tables' (`docs/research/arib-data-broadcasting.md`, "JP remote
+infrared codes"); the Linux keys were seen on W22O 43.21.89 (o22 queue, Japanese board):
+micomservice's `input keycode` / `output keycode` and the compositor's `IM_KEY_INPUT` from `LGE
+RCU` in `/var/log/messages`.
+
+| Key | IR | Linux key | Name in the firmware |
+|---|---|---|---|
+| DATA ("d") | 0x9F | 885 | Key_webOS_BMLData (kept for country JPN only) |
+| DISPLAY | 0xAC | 886 | Key_webOS_JapanDisplay |
+| THREE_DIGIT | 0x23 | 884 | Key_webOS_3DigitInput |
+| TERRESTRIAL / BS / CS / BS4K | 0xDB30 / 0xDB00 / 0xDB10 / 0xDB40 | 871 / 832 / 845 / 1055 | the broadcast-type keys |
+| 11 / 12 | 0xDB3B / 0xDB3C (as sent: type + 0x0B / 0x0C) | TER 882 / 883, BS 843 / 844, ... | Key_webOS_TER_11 and so on |
+
+The broadcast-type keys and 11 and 12 are extended codes: two bytes, 0xDB N, where a data code is
+the code and its complement (`include/webos-ir.h`, `WEBOS_IR_EXT`); the host writes them as
+0xDB00 | N, which `beanjar remote press` and `remote pipe` take as numbers too (`0xdb30`). As on
+the real remote, 11 and 12 are sent for the broadcast type selected last, terrestrial before any
+(the viewer core, `ir.h`): the keys carry terrestrial's codes, and after BS the 12 key sends
+0xDB0C. 1-10 send the ordinary digit codes. Digit keys are pressed by code from the CLI, since a
+number there is a code: `remote press NAME 0x11` for 1.
+
 The printed names that are not keys (INFO/STILL/HDMI HOT/USB HOT over the colour keys, PIP PR-,
 PIP PR+, SWAP and PIP INPUT under them, TIME SHIFT by the arrows, PAGE by CH) are older chassis'
 second functions of those keys; the keys send their own codes. tvservice drops the direct-input
@@ -374,12 +401,13 @@ input list?"); TV came back to Live TV.
 ### Delivery path
 
 The viewer's core (`ir.c`) writes each button edge as a 4-byte record (`include/webos-ir.h`:
-`'I'`, down/up, custom code, data code) to `ir.sock` next to the D-Bus socket (`--ir-socket`;
+`'I'`, down/up, custom code, data code; a Japanese remote's extended code is an `'E'` record with
+N as its code) to `ir.sock` next to the D-Bus socket (`--ir-socket`;
 the launcher's `IR_SOCK`), the chardev of the `webos.ir` virtio-serial port. In the guest, the
 initramfs's IR pump (`guest/initramfs/src/virtio-ir.c`) copies the port to lgemu.ko's micom model
 (guest/kernel/modules/lgemu/i2c.c), which queues the micom's own events, and MICOM_Task reads them with
 its 40 ms poll over the I2C bus (WT1H: I2C ch 2, slave 0x52, command 0xC0, 3 bytes): `02 code ~code` for a button down, `0A code ~code` for its release, and
-while it is held `03 code ~code`, first 500 ms after the press, then every 108 ms (the NEC repeat
+while it is held `03 code ~code` (an extended code `DB N` in place of `code ~code`), first 500 ms after the press, then every 108 ms (the NEC repeat
 frame rate). tvservice checks the code, maps it, and injects the Linux key on its own uinput
 device `LGE RCU` (bus USB, 0001:0001, version 4, EV_KEY for 0..0x4ff and EV_REL; value 1 press,
 2 repeat, 0 release), which libim reads, as on the set. It also only hands keys to the UI while
@@ -613,7 +641,7 @@ or stop the probe using its `/run/viewer-probe.pid` from the initramfs shell.
 Replay lines are `milliseconds operation arguments`, relative to the first
 scanout. Operations: `motion X Y`, `down BUTTON`, `up BUTTON` (SDL buttons 1/2/3),
 `wheel STEPS`, `keydown NAME`, `keyup NAME` (SDL scancode names; the PC keyboard, so Home is
-the remote's HOME), `irdown CODE`, `irup CODE` (a remote button, its LG IR data code, e.g. 0x72),
+the remote's HOME), `irdown CODE`, `irup CODE` (a remote button, its LG IR data code, e.g. 0x72, or an extended code, 0xdb30),
 `localdown CODE`, `localup CODE` (the set's own key, its micom local key code: 0xea the one key or a
 joystick's centre, 0x00-0x03 a joystick's directions; include/webos-ir.h), `blur`, and `resize WIDTH HEIGHT`; `--replay` always runs headless. `--screenshot` writes the final
 scaled picture (rendered offscreen at the drawable size, guest only) as PPM. Headless runs until

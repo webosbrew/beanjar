@@ -8,7 +8,7 @@ import signal
 import tomllib
 from urllib.parse import unquote
 
-USAGE = """usage: beanjar-viewer BUS_ADDRESS [--size WxH] [--remote] [--remote-layout auto|normal|netcast|simplesmart|service]
+USAGE = """usage: beanjar-viewer BUS_ADDRESS [--size WxH] [--remote] [--remote-layout auto|normal|netcast|simplesmart|japan|service]
   [--no-statusbar] [--seconds N] [--straight-alpha] [--cursor-socket PATH] [--video-socket PATH]
   [--ir-socket PATH] [--media-socket PREFIX] [--capture-socket PATH]
   [--no-media] [--hwdec auto|none|TYPE] [--media-wav OUT.wav] [--media-latency MS] [--media-volume 0..2] [--media-mute]
@@ -17,7 +17,7 @@ USAGE = """usage: beanjar-viewer BUS_ADDRESS [--size WxH] [--remote] [--remote-l
   [--hide-planes video,ui,cursor] (planes left out at start; More shows or hides them)
 or: beanjar-viewer BUS_ADDRESS --headless [--seconds N] [--replay FILE] [--screenshot OUT.ppm
   [--screenshot-every MS] [--osd-alpha]] [--no-osd] ...   (viewer-headless)
-or: beanjar-viewer --remote-preview OUT.ppm [--remote-layout normal|netcast|simplesmart|service] [--remote-press KEY]
+or: beanjar-viewer --remote-preview OUT.ppm [--remote-layout normal|netcast|simplesmart|japan|service] [--remote-press KEY]
   [--seconds N]
 """
 VALUED = (
@@ -108,9 +108,9 @@ def parse(args):
             i += 2
             continue
         if name == "remote-layout" and value:
-            if value not in ("auto", "normal", "netcast", "simplesmart", "service"):
+            if value not in ("auto", "normal", "netcast", "simplesmart", "japan", "service"):
                 raise SystemExit(
-                    "viewer: --remote-layout is auto, normal, netcast, simplesmart or service"
+                    "viewer: --remote-layout is auto, normal, netcast, simplesmart, japan or service"
                 )
             o["layout"] = value
             i += 2

@@ -712,8 +712,8 @@ def main():
 
     GLib.timeout_add(10, display_control)
 
-    # webos.ir: each 4-byte record (include/webos-ir.h) is logged as IR.Down/IR.Up <code>, or
-    # IR.Bad <bytes>; one client at a time, as QEMU's chardev
+    # webos.ir: each 4-byte record (include/webos-ir.h) is logged as IR.Down/IR.Up <code> (an
+    # extended one as 0xdbNN), or IR.Bad <bytes>; one client at a time, as QEMU's chardev
     isock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     isock.bind(os.path.join(d, "ir.sock"))
     isock.listen(1)
@@ -737,6 +737,8 @@ def main():
                 del buf[:4]
                 if magic == 0x4B and custom == 0 and down <= 1:  # the set's own key
                     log.write(f"Local.{'Down' if down else 'Up'} 0x{code:02x}\n")
+                elif magic == 0x45 and custom == 0x04 and down <= 1:  # an extended code
+                    log.write(f"IR.{'Down' if down else 'Up'} 0xdb{code:02x}\n")
                 elif magic != 0x49 or custom != 0x04 or down > 1:
                     log.write(f"IR.Bad {magic:02x}{down:02x}{custom:02x}{code:02x}\n")
                 else:

@@ -1657,7 +1657,8 @@ static gboolean tick(gpointer data)
  * serves a VM.
  * - Screenshot(path, width, height): the scene saved as PPM (wv_screenshot, with LG's cursor even
  *   for a front end that shows it itself).
- * - Ir(code, down): a TV remote button edge, LG's IR data code (0 to 255), as wv_ir: one button is
+ * - Ir(code, down): a TV remote button edge, LG's IR data code (0 to 255) or a Japanese remote's
+ *   extended code (0xDB00 | N, include/webos-ir.h WEBOS_IR_EXT), as wv_ir: one button is
  *   down at a time, a press of another releases it. A button a client holds is released when that
  *   client leaves the bus (beanjar remote pipe, docs/dev/architecture/web-viewer.md).
  * - Pointer(x, y, buttons): the tablet to x, y in the guest's display (scanout) pixels, then the
@@ -1706,9 +1707,10 @@ static void ir_call(struct wv *v, const char *sender, GVariant *params, GDBusMet
     guint code;
     gboolean down;
     g_variant_get(params, "(ub)", &code, &down);
-    if (code > 0xff) {
-        g_dbus_method_invocation_return_dbus_error(call, SCREENSHOT_NAME ".Error.InvalidArgs",
-                                                   "an IR data code of 0 to 255");
+    if (!ir_code_valid(code)) {
+        g_dbus_method_invocation_return_dbus_error(
+            call, SCREENSHOT_NAME ".Error.InvalidArgs",
+            "an IR data code of 0 to 255, or a Japanese remote's extended code 0xdb00 to 0xdbff");
         return;
     }
     if (down) {

@@ -9,15 +9,29 @@ Firmware layouts and the shared service remote:
 - "normal": build/remote-reference.html's layout, 48 buttons in CSS pixels on a 188x652 panel;
 - "netcast": the selected NetCast firmware's dashboard and legacy keys;
 - "simplesmart": the existing SimpleSmart IR mapping, with HOME rather than NetCast;
+- "japan": the normal remote with a Japanese remote's keys, for a VM whose board is ARIB: the
+  broadcast types, one-touch 1-12, d (data broadcasting), display and 3-digit input;
 - "service": LG's factory service remote, "Factory SVC Remocon" MKJ39170828, from a photo of it,
   on a 188x764 panel.
 Every key is a button of the remote's infrared: its LG IR data code (NEC custom code 0x04) goes to
-the guest's micom (include/webos-ir.h). Keys with no code (None) are dimmed and send nothing.
+the guest's micom (include/webos-ir.h). The Japanese remote's broadcast-type keys and one-touch 11
+and 12 send extended codes, 0xDB00 | N (EXT_PREFIX, webos-ir.h WEBOS_IR_EXT). Keys with no code
+(None) are dimmed and send nothing.
 """
 
 from collections import namedtuple
 
 REMOTE_W = 188  # every layout's panel width, CSS px
+# a Japanese remote's extended code: EXT_PREFIX << 8 | N (webos-ir.h WEBOS_IR_EXT)
+EXT_PREFIX = 0xDB
+
+
+def code_valid(code):
+    """Whether code is one a remote button sends: an LG IR data code (0 to 255) or an extended code
+    (0xDB00 to 0xDBFF)."""
+    return 0 <= code <= 0xFF or code >> 8 == EXT_PREFIX
+
+
 # The remote's window beside the TV picture (window_scale): 1.125x the picture's height, at 1.125x
 # to 2.25x the layout (the normal remote 212x734 to 423x1467): taller than the picture beside it.
 WINDOW_SHARE, WINDOW_MIN, WINDOW_MAX = 1.125, 1.125, 2.25
@@ -477,7 +491,80 @@ NETCAST = Layout(
 # SimpleSmart has the existing normal IR mapping, including HOME (0x7c), rather
 # than NetCast's dashboard key. See docs/dev/architecture/simplesmart.md.
 SIMPLESMART = NORMAL._replace(name="simplesmart", title="SimpleSmart Remote")
-LAYOUTS = {layout.name: layout for layout in (NORMAL, NETCAST, SIMPLESMART, SERVICE)}
+
+
+# ---- the Japanese remote --------------------------------------------------------------------
+# The normal remote with a Japanese (ISDB) remote's keys, for an ARIB board. Codes from two JP
+# builds' key tables (docs/research/arib-data-broadcasting.md, "JP remote infrared codes"): d 0x9F
+# (885 Key_webOS_BMLData, which the firmware keeps for country JPN only), display 0xAC (886
+# Key_webOS_JapanDisplay), 3-digit input 0x23 (884 Key_webOS_3DigitInput); the broadcast types are
+# extended codes, 0xDB N: BS 00, CS 10, terrestrial 30, BS4K 40. 1-10 are the ordinary 0x11-0x19 and
+# 0x10; 11 and 12 exist only as extended codes, N = type + 0x0B, 0x0C: the keys carry terrestrial's,
+# and the viewer core sends them for the type selected last, as the remote does
+# (host/viewer/core/ir.h). LG's physical JP remote layout is not known: the keys are placed on the
+# normal remote, two rows (the types; 10-12) taller, FLASHBACK and LIST giving way to 10 and 12.
+def _ext(n):
+    return (EXT_PREFIX << 8) | n
+
+
+_JP_SHIFT = 48  # the normal remote's keys from the volume row down
+_JP_TOP = {  # the keys above the number pad, one row lower
+    "CC",
+    "GUIDE",
+    "SEARCH",
+    "LIVETV",
+}
+
+
+def _jp_key(key):
+    if key.name in ("LIST", "0", "FLASHBACK") or key.name.isdigit():
+        return None
+    if key.name in _JP_TOP:
+        return key._replace(y=key.y + 24)
+    if key.y >= 236:
+        return key._replace(y=key.y + _JP_SHIFT)
+    return key
+
+
+def _jp_type(name, x, text, n):
+    return Key(name, x, 64, 28, 18, _L, _r(6), None, text, SMALL, LABEL_ON_LIGHT, _ext(n))
+
+
+def _jp_digit(d):
+    # 1-9, then 10 (Key_0's 0x10) under 7, 11 and 12 under 8 and 9
+    code = 0x10 + d if d < 10 else 0x10 if d == 10 else _ext(0x30 + d)
+    row, col = (d - 1) // 3, (d - 1) % 3
+    return Key(str(d), 20 + 54 * col, 128 + 30 * row, 40, 22, _D, _r(6), None, str(d), LARGE,
+               LABEL_ON_DARK, code)  # fmt: skip
+
+
+JAPAN = Layout(
+    "japan",
+    "Japanese Remote",
+    NORMAL.height + _JP_SHIFT,
+    NORMAL.body[:3] + (NORMAL.body[3] + _JP_SHIFT,) + NORMAL.body[4:],
+    BODY_FACE,
+    BODY_RIM,
+    PRINT,
+    [k for k in map(_jp_key, NORMAL.keys) if k is not None]
+    + [
+        _jp_type("TERRESTRIAL", 20, "TER", 0x30),
+        _jp_type("BS", 60, "BS", 0x00),
+        _jp_type("CS", 100, "CS", 0x10),
+        _jp_type("BS4K", 140, "BS4K", 0x40),
+        *[_jp_digit(d) for d in range(1, 13)],
+        Key("DATA", 20, 252, 40, 20, _D, _r(6), None, "d", LARGE, LABEL_ON_DARK, 0x9F),
+        Key("DISPLAY", 74, 252, 40, 20, _D, _r(6), None, "DISPLAY", SMALL, LABEL_ON_DARK, 0xAC),
+        Key(
+            "THREE_DIGIT", 128, 252, 40, 20, _D, _r(6), None, "3-DIGIT", SMALL, LABEL_ON_DARK, 0x23
+        ),  # fmt: skip
+    ],
+    [(x, y + _JP_SHIFT, t) for x, y, t in NORMAL.labels],
+    [],
+    _controls(597 + _JP_SHIFT),
+    [],
+)
+LAYOUTS = {layout.name: layout for layout in (NORMAL, NETCAST, SIMPLESMART, JAPAN, SERVICE)}
 # the normal layout's tables, as before there were two
 BUTTONS, BODY, REMOTE_H = NORMAL.keys, NORMAL.body, NORMAL.height
 
@@ -490,9 +577,10 @@ def find(name, layout=NORMAL):
 
 
 def remote_layout(requested, info):
-    """The layout's name for a VM whose launch wrote info (vm-info.toml: platform, release): the
-    selected target's remote by default; an explicit layout takes precedence, if it is the firmware's
-    own or the service remote."""
+    """The layout's name for a VM whose launch wrote info (vm-info.toml: platform, release,
+    broadcast): the selected target's remote by default, the Japanese remote on a webOS board whose
+    broadcast is ARIB; an explicit layout takes precedence, if it is the firmware's own or the
+    service remote."""
     if requested != "auto":
         if info and requested not in (remote_layout("auto", info), "service"):
             raise ValueError(f"remote layout {requested!r} does not match this firmware")
@@ -501,6 +589,8 @@ def remote_layout(requested, info):
         return "simplesmart"
     if info.get("platform") == "NetCast" or info.get("release") == "netcast45":
         return "netcast"
+    if info.get("broadcast") == "arib":
+        return "japan"
     return "normal"
 
 

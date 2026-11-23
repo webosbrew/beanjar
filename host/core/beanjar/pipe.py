@@ -15,7 +15,8 @@ and the web server never opens a VM's socket itself.
   come out (host/vnc/video.h; docs/dev/architecture/vnc.md, "Video").
 - remote_pipe: lines on stdin, "down CODE" and "up CODE", as org.beanjar.Display1.Ir calls on the
   VM's bus (the front end that owns the display, beanjar-vnc or the GTK viewer, serves it). CODE is
-  an LG IR data code (0x7c, 124) or a key's name in the VM's layout (HOME). "touch KIND SLOT X Y
+  an LG IR data code (0x7c, 124), a Japanese remote's extended code (0xdb30, include/webos-ir.h
+  WEBOS_IR_EXT) or a key's name in the VM's layout (HOME). "touch KIND SLOT X Y
   [WxH]" (KIND begin, move, end or cancel; X Y in the guest display's pixels, or with WxH in a
   frame of that size, the picture letterboxed into it) is a Display1.Touch call, for a VM whose
   model has a touch screen (the web viewer's touch events, in noVNC's framebuffer). "pointer X Y
@@ -48,8 +49,9 @@ POWER_CODE = 0x08  # LG's KEY_POWER IR code, the power key of every layout
 
 
 def vm_layout(vm):
-    """The layout the GTK viewer would show for vm: its firmware's remote."""
-    from . import targets
+    """The layout the GTK viewer would show for vm: its firmware's remote, the Japanese one on an
+    ARIB board (tuner.vm_broadcast, as the launch writes it to vm-info.toml)."""
+    from . import targets, tuner
     from . import remote_layouts as lib
 
     try:
@@ -57,6 +59,10 @@ def vm_layout(vm):
         info = {"platform": targets.platform(target), "release": target[1]}
     except Error:
         info = {}
+    else:
+        broadcast = tuner.vm_broadcast(vm)
+        if broadcast:
+            info["broadcast"] = broadcast
     return lib.LAYOUTS[lib.remote_layout("auto", info)]
 
 
@@ -175,7 +181,10 @@ class Remote(FrontEnd):
         self.woke = False  # the power key-down woke the guest by QMP: its key-up is dropped
 
     def code(self, word):
-        """A key's IR code: a number (0x7c, 124) or a name of the VM's layout (HOME)."""
+        """A key's IR code: a number (0x7c, 124; a Japanese remote's extended code 0xdb30) or a name of
+        the VM's layout (HOME)."""
+        from . import remote_layouts
+
         try:
             code = int(word, 0)
         except ValueError:
@@ -185,8 +194,8 @@ class Remote(FrontEnd):
             code = keys[word.upper()]
             if code is None:
                 raise Error(f"the key {word} sends nothing on the {self.layout.name} remote")
-        if not 0 <= code <= 0xFF:
-            raise Error(f"IR code {word} is not 0 to 255")
+        if not remote_layouts.code_valid(code):
+            raise Error(f"IR code {word} is not 0 to 255 or 0xdb00 to 0xdbff")
         return code
 
     def standby(self):

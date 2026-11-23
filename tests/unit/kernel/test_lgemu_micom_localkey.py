@@ -108,6 +108,70 @@ int main(void)
     subprocess.run([str(root / "runner")], check=True, timeout=5)
 
 
+def test_extended_codes(tmp_path):
+    """A Japanese remote's extended code (WEBOS_IR_EXT): down, repeats and up as event DB N, no
+    check byte; a plain code after it is code ~code again."""
+    source = (MODULE / "i2c.c").read_text()
+    start = source.index("/* ---- the micom's IR receiver ---- */")
+    section = source[start : source.index("/* Direct MStar IR controllers", start)]
+    runner = tmp_path / "runner.c"
+    runner.write_text(
+        r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "webos-ir.h"
+typedef uint8_t u8;
+typedef uint64_t u64;
+#define NSEC_PER_MSEC 1000000ULL
+static u64 clock_ns;
+static u64 ktime_get_ns(void) { return clock_ns; }
+#define DEFINE_SPINLOCK(name) int name
+#define spin_lock(l) ((void)(l))
+#define spin_unlock(l) ((void)(l))
+#define module_param(name, type, mode)
+#define MODULE_PARM_DESC(name, text)
+#define pr_info(...) ((void)0)
+#define pr_info_ratelimited(...) ((void)0)
+"""
+        + section
+        + r"""
+static void poll_is(u8 a, u8 b, u8 c)
+{
+    u8 buf[3];
+    ir_poll(buf, sizeof(buf));
+    assert(buf[0] == a && buf[1] == b && buf[2] == c);
+}
+static void at(u64 ms) { clock_ns = ms * NSEC_PER_MSEC; }
+int main(void)
+{
+    /* terrestrial (DB 30): down, a repeat while held, up */
+    at(1000); ir_edge(true, WEBOS_IR_EXT(0x30)); poll_is(0x02, 0xdb, 0x30); poll_is(0, 0, 0);
+    at(1000 + IR_FIRST_REPEAT_MS); poll_is(0x03, 0xdb, 0x30);
+    ir_edge(false, WEBOS_IR_EXT(0x30)); poll_is(0x0a, 0xdb, 0x30); poll_is(0, 0, 0);
+    /* a plain code pressed over an extended one releases it; d (0x9F) keeps its check byte */
+    at(5000); ir_edge(true, WEBOS_IR_EXT(0x3b)); ir_edge(true, 0x9f);
+    poll_is(0x02, 0xdb, 0x3b); poll_is(0x0a, 0xdb, 0x3b); poll_is(0x02, 0x9f, 0x60);
+    ir_edge(false, 0x9f); poll_is(0x0a, 0x9f, 0x60);
+    /* the sender gone with an extended key down: released */
+    ir_edge(true, WEBOS_IR_EXT(0x40)); poll_is(0x02, 0xdb, 0x40);
+    ir_lost(); poll_is(0x0a, 0xdb, 0x40); poll_is(0, 0, 0);
+    puts("extended codes passed");
+    return 0;
+}
+"""
+    )
+    subprocess.run(
+        ["cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+         "-I" + str(INCLUDE), str(runner), "-o", str(tmp_path / "runner")],
+        check=True,
+        timeout=20,
+    )  # fmt: skip
+    subprocess.run([str(tmp_path / "runner")], check=True, timeout=5)
+
+
 def test_keys_suspend(tmp_path):
     """Key events left in the queue when the SoC suspends: dropped, as one read after the wake would
     act again; a local key or the remote's POWER among them latches the wake, the remote's other

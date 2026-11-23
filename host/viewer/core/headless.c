@@ -7,6 +7,7 @@
  * (core.h). The desktop viewer is the GTK front end (beanjar_ui.viewer); beanjar-viewer runs this
  * program for the options above. */
 #include "core.h"
+#include "ir.h"
 #include <SDL.h>
 #include <glib.h>
 #include <stdio.h>
@@ -167,7 +168,8 @@ static GArray *load_replay(const char *path)
             if (!r.a)
                 die("unknown replay key name");
         } else if (!strcmp(op, "irdown") || !strcmp(op, "irup")) {
-            if (sscanf(line, "%u %31s %i", &r.ms, op, &r.a) != 3 || r.a < 0 || r.a > 255)
+            if (sscanf(line, "%u %31s %i", &r.ms, op, &r.a) != 3 || r.a < 0 ||
+                !ir_code_valid((unsigned)r.a))
                 die("invalid replay IR code");
             r.op = !strcmp(op, "irdown") ? IRDOWN : IRUP;
         } else if (!strcmp(op, "localdown") || !strcmp(op, "localup")) {

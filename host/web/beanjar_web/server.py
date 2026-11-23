@@ -60,7 +60,15 @@ NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 AUDIO_FORMATS = ("opus", "pcm")
 VIDEO_BITRATES = (100, 50000)  # kbit/s, as beanjar-vnc takes them
 PAGE_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")  # a page's id, pairing its /rfb and /video
-EDGE_RE = re.compile(r"(down|up) (0x[0-9a-fA-F]{1,2}|[0-9]{1,3})")
+# a remote button edge: an LG IR data code (0 to 255) or a Japanese remote's extended code
+# (0xDB00 | N, include/webos-ir.h WEBOS_IR_EXT)
+EDGE_RE = re.compile(r"(down|up) (0x[0-9a-fA-F]{1,4}|[0-9]{1,5})")
+
+
+def ir_code_valid(code):
+    return 0 <= code <= 0xFF or code >> 8 == 0xDB
+
+
 # a touch on the touch screen: kind, slot (0 to 9), x y in a frame of WxH (noVNC's framebuffer)
 TOUCH_RE = re.compile(
     r"touch (begin|move|end|cancel) ([0-9]) ([0-9]{1,5}) ([0-9]{1,5}) ([0-9]{1,5}x[0-9]{1,5})"
@@ -854,8 +862,10 @@ class Server:
                     continue
                 m = EDGE_RE.fullmatch(msg.data.strip())
                 code = int(m[2], 0) if m else -1
-                if not 0 <= code <= 0xFF:
-                    await ws.send_str("error: not 'down CODE' or 'up CODE', CODE 0 to 255")
+                if not ir_code_valid(code):
+                    await ws.send_str(
+                        "error: not 'down CODE' or 'up CODE', CODE 0 to 255 or 0xdb00 to 0xdbff"
+                    )
                     continue
                 if proc.stdin.is_closing():
                     break

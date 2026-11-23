@@ -24,7 +24,9 @@
  *                                IR_FIRST_REPEAT_MS. tvservice checks code + ~code == 0xFF, maps
  the
  *                                code with its _gKeyTable and injects the Linux key on its own
- *                                uinput device, "LGE RCU" (MICOM_UINPUT_Init). The set's own
+ *                                uinput device, "LGE RCU" (MICOM_UINPUT_Init). A Japanese
+ *                                remote's extended code (include/webos-ir.h, WEBOS_IR_EXT) is
+ *                                <event> DB <N>, without the check byte. The set's own
                                 keys arrive here too, as the micom's local key events (below,
                                 "the local key"): 04/05/0E/10 <code> <~code>.
  *     read 0xB1 (power state)    3, the set on (2 in warm standby: after 26 07 or 25 02, until 25
@@ -443,9 +445,9 @@ static unsigned int ir_repeat_ms = IR_REPEAT_MS;
 #define IR_CODE_POWER     0x08 /* LG's POWER, KEY_POWER (116) to the firmware */
 
 static DEFINE_SPINLOCK(ir_lock);
-static u8 ir_queue[IR_EVENTS][2]; /* event, data code */
+static u8 ir_queue[IR_EVENTS][3]; /* the poll's reply: event and two bytes */
 static unsigned int ir_head, ir_len;
-static int ir_held = -1;   /* the data code of the button down, or -1 */
+static int ir_held = -1;   /* the code of the button down (ir_push), or -1 */
 static u64 ir_next_repeat; /* ms, monotonic */
 
 static u64 now_ms(void)
@@ -453,8 +455,22 @@ static u64 now_ms(void)
     return ktime_get_ns() / NSEC_PER_MSEC;
 }
 
-/* With ir_lock held. A full queue drops its oldest event. */
-static void ir_push(u8 event, u8 code)
+/* An event's two bytes: a data code and its complement (code + ~code == 0xFF, as tvservice
+ * checks), or a Japanese remote's extended code WEBOS_IR_EXT(N) as 0xDB N, with no complement
+ * (include/webos-ir.h). */
+static void ir_bytes(u8 *b, int code)
+{
+    if (code > 0xFF) {
+        b[0] = (u8)(code >> 8);
+        b[1] = (u8)code;
+    } else {
+        b[0] = (u8)code;
+        b[1] = (u8)~code;
+    }
+}
+
+/* With ir_lock held. A full queue drops its oldest event. code: a data code, or WEBOS_IR_EXT(N). */
+static void ir_push(u8 event, int code)
 {
     unsigned int tail;
 
@@ -464,16 +480,16 @@ static void ir_push(u8 event, u8 code)
     }
     tail = (ir_head + ir_len++) % IR_EVENTS;
     ir_queue[tail][0] = event;
-    ir_queue[tail][1] = code;
+    ir_bytes(&ir_queue[tail][1], code);
 }
 
 /* A button edge. A second button going down releases the first, as a remote sends one code. */
-static void ir_edge(bool down, u8 code)
+static void ir_edge(bool down, int code)
 {
     spin_lock(&ir_lock);
     if (down) {
         if (ir_held >= 0)
-            ir_push(EV_REMOTE_RELEASE, (u8)ir_held);
+            ir_push(EV_REMOTE_RELEASE, ir_held);
         ir_push(EV_REMOTE_KEY, code);
         ir_held = code;
         ir_next_repeat = now_ms() + ir_first_repeat_ms;
@@ -569,7 +585,7 @@ static void ir_lost(void)
     spin_lock(&ir_lock);
     held = ir_held;
     if (held >= 0) {
-        ir_push(EV_REMOTE_RELEASE, (u8)held);
+        ir_push(EV_REMOTE_RELEASE, held);
         ir_held = -1;
     }
     local = local_held;
@@ -586,22 +602,23 @@ static void ir_lost(void)
 /* The poll's reply: a queued event, else the held button's repeat when due, else none. */
 static void ir_poll(u8 *buf, unsigned int len)
 {
-    u8 event = 0, code = 0;
+    u8 event = 0, code = 0, bytes[2] = {0, 0};
 
     spin_lock(&ir_lock);
     if (ir_len) {
         event = ir_queue[ir_head][0];
-        code = ir_queue[ir_head][1];
+        bytes[0] = ir_queue[ir_head][1];
+        bytes[1] = ir_queue[ir_head][2];
         ir_head = (ir_head + 1) % IR_EVENTS;
         ir_len--;
     } else if (local_due(&event, &code)) {
-        /* event, code set */
+        ir_bytes(bytes, code);
     } else if (ir_held >= 0) {
         u64 now = now_ms();
 
         if (now >= ir_next_repeat) {
             event = EV_REMOTE_REPEAT;
-            code = (u8)ir_held;
+            ir_bytes(bytes, ir_held);
             ir_next_repeat += ir_repeat_ms;
             if (ir_next_repeat <= now)
                 ir_next_repeat = now + ir_repeat_ms;
@@ -610,12 +627,14 @@ static void ir_poll(u8 *buf, unsigned int len)
     spin_unlock(&ir_lock);
     if (event == EV_LOCAL_KEY || event == EV_LOCAL_REPEAT || event == EV_LOCAL_RELEASE ||
         event == EV_LOCAL_TAP)
-        pr_info_ratelimited("micom: local key event %02x %02x\n", event, code);
+        pr_info_ratelimited("micom: local key event %02x %02x\n", event, bytes[0]);
+    else if (event && bytes[0] == WEBOS_IR_EXT_PREFIX && event != EV_REMOTE_REPEAT)
+        pr_info("micom: extended key event %02x %02x %02x\n", event, bytes[0], bytes[1]);
     memset(buf, 0, len);
     if (event && len >= 3) {
         buf[0] = event;
-        buf[1] = code;
-        buf[2] = (u8)~code; /* the check byte: code + ~code == 0xFF */
+        buf[1] = bytes[0]; /* the code and its check byte (code + ~code == 0xFF), or 0xDB N */
+        buf[2] = bytes[1];
     }
 }
 
@@ -742,7 +761,7 @@ static void keys_suspend(void)
             dropped++;
             continue;
         }
-        memmove(ir_queue[(ir_head + kept) % IR_EVENTS], e, 2);
+        memmove(ir_queue[(ir_head + kept) % IR_EVENTS], e, sizeof(ir_queue[0]));
         kept++;
     }
     ir_len = kept;
@@ -774,7 +793,8 @@ static ssize_t ir_write(struct file *file, const char __user *ubuf, size_t n, lo
         for (size_t i = 0; i < k; i++) {
             struct webos_ir_record *r = (struct webos_ir_record *)f->rec;
 
-            if (!f->have && chunk[i] != WEBOS_IR_MAGIC && chunk[i] != WEBOS_LOCAL_MAGIC)
+            if (!f->have && chunk[i] != WEBOS_IR_MAGIC && chunk[i] != WEBOS_IR_EXT_MAGIC &&
+                chunk[i] != WEBOS_LOCAL_MAGIC)
                 continue; /* out of step: find the next record */
             f->rec[f->have++] = chunk[i];
             if (f->have < sizeof(f->rec))
@@ -785,6 +805,8 @@ static ssize_t ir_write(struct file *file, const char __user *ubuf, size_t n, lo
             else if (r->custom != WEBOS_IR_CUSTOM_LG)
                 pr_info_ratelimited("micom: IR custom code 0x%02x ignored (LG's is 0x%02x)\n",
                                     r->custom, WEBOS_IR_CUSTOM_LG);
+            else if (r->magic == WEBOS_IR_EXT_MAGIC)
+                ir_edge(r->down != 0, WEBOS_IR_EXT(r->code));
             else
                 ir_edge(r->down != 0, r->code);
         }

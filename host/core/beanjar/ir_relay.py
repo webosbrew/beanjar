@@ -28,7 +28,7 @@ import sys
 import time
 
 QEMU_NAME = "ir-qemu.sock"
-IR_MAGIC, LOCAL_MAGIC = 0x49, 0x4B  # WEBOS_IR_MAGIC, WEBOS_LOCAL_MAGIC
+IR_MAGIC, EXT_MAGIC, LOCAL_MAGIC = 0x49, 0x45, 0x4B  # WEBOS_IR_MAGIC, _IR_EXT_, _LOCAL_
 CUSTOM_LG, POWER = 0x04, 0x08  # WEBOS_IR_CUSTOM_LG, LG's KEY_POWER
 CHUNK = 4096
 
@@ -70,7 +70,7 @@ class Filter:
         self.buf += data
         out = bytearray()
         while self.buf:
-            if self.buf[0] not in (IR_MAGIC, LOCAL_MAGIC):
+            if self.buf[0] not in (IR_MAGIC, EXT_MAGIC, LOCAL_MAGIC):
                 out += self.buf[:1]  # out of step: the guest skips to the next record too
                 self.buf = self.buf[1:]
                 continue
