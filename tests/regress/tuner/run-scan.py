@@ -6,11 +6,14 @@
   run-scan.py NAME [--timeout S]
 
 Takes the VM's channel map (beanjar io tuner list NAME) and the lineup's services on it as what the scan
-must find, waits for legacy-broadcast to run, runs tests/regress/tuner/scan.sh in the guest as root
+must find (the lineup of the VM's board: US ATSC, or the Japanese ISDB-T one on an ARIB board),
+waits for its legacy-broadcast (legacy-broadcast-atsc, legacy-broadcast-arib) to run, runs tests/regress/tuner/scan.sh in the guest as root
 (beanjar ares-shell --root: the VM needs the rootssh layer), and checks its answers: every mapped
 virtual channel in iepg/getChannelList, no other, and a current event for each in
 getCurrentEventList with the title the lineup has on air now, after scan.sh has watched the first
-channel of each RF in Live TV (a set reads only the tuned RF's guide). On a just-booted VM scan.sh
+channel of each RF in Live TV (a set reads only the tuned RF's guide). A Japanese set lists its
+satellite presets (BS, CS) beside what it found: only its terrestrial channels (channelId 1_...)
+count. On a just-booted VM scan.sh
 waits, bounded, until the broadcast service opens and startAutoScan answers (ready_s). Prints the
 numbers and PASS or FAIL; the exit status is 0 only for PASS."""
 
@@ -27,6 +30,7 @@ TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
 from beanjar import tuner_stream  # noqa: E402
+from beanjar import tuner_stream_arib as arib
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 
@@ -49,9 +53,21 @@ def shell(name, command, timeout):
     return r.stdout
 
 
-def expected(channels, now):
-    """{"major.minor": current title} of the lineup's services on the mapped channels."""
+# a Japanese set's terrestrial digital channels: their channelIds start with the source type 1
+ARIB_WATCH = '"channelId":"1_[^"]*"'
+
+
+def expected(channels, now, broadcast="atsc"):
+    """{"major.minor": current title} of the lineup's services on the mapped channels; for ARIB
+    {"NNN": title}, the three-digit number a Japanese set gives a service (remote control key
+    times ten plus the service's number within the TS)."""
     out = {}
+    if broadcast == "arib":
+        s = arib.SERVICE
+        if s["uhf"] in channels:
+            number = s["remote_key"] * 10 + (s["service_id"] & 7) + 1
+            out[f"{number:03d}"] = arib.events(now)[0][2]
+        return out
     for ch in channels:
         for s in tuner_stream.channel(ch)["services"]:
             on_air = [e for e in tuner_stream.events(s, now, now + 1)]
@@ -84,15 +100,17 @@ def main():
         ).stdout
     )
     mapped = [c["channel"] for c in st["channels"] if c["mapped"]]
+    broadcast = st.get("broadcast", "atsc")
+    service = f"legacy-broadcast-{broadcast}"
     if not mapped:
         print("FAIL: no channel mapped (beanjar io tuner map NAME RF...)")
         return 1
     for _ in range(90):  # legacy-broadcast runs a while after boot
-        if "up" in shell(a.name, "pidof legacy-broadcast-atsc >/dev/null && echo up", 60):
+        if "up" in shell(a.name, f"pidof {service} >/dev/null && echo up", 60):
             break
         time.sleep(10)
     else:
-        print("FAIL: legacy-broadcast-atsc is not running")
+        print(f"FAIL: {service} is not running")
         return 1
     subprocess.run(
         [
@@ -109,23 +127,29 @@ def main():
         env=env(),
         timeout=120,
     )
-    out = shell(a.name, f"sh /tmp/scan.sh {a.timeout}", a.timeout + 300)
+    watch = f" '{ARIB_WATCH}'" if broadcast == "arib" else ""
+    out = shell(a.name, f"sh /tmp/scan.sh {a.timeout}{watch}", a.timeout + 300)
     now = time.time()
     r = parse(out)
-    want = expected(mapped, now)
+    want = expected(mapped, now, broadcast)
     got_channels, ids = {}, {}
     for v in r.get("channel", []):
         number, cname, cid = (v.split(" ", 2) + ["", ""])[:3]
+        if broadcast == "arib" and not cid.startswith("1_"):
+            continue  # a satellite preset
         got_channels[number.replace("-", ".")] = cname
         ids[cid] = number.replace("-", ".")
     on_air = {}
     for v in r.get("event", []):
         cid, _, title = v.partition(" ")
-        on_air.setdefault(ids.get(cid, cid), set()).add(title)
+        # an ARIB event names its channel by the tail of the channelId (ONID_SVCID_TSID)
+        n = ids.get(cid) or next((x for i, x in ids.items() if i.endswith("_" + cid)), cid)
+        on_air.setdefault(n, set()).add(title)
     missing = sorted(set(want) - set(got_channels))
     extra = sorted(set(got_channels) - set(want))
     no_event = sorted(n for n, title in want.items() if title not in on_air.get(n, ()))
     numbers = {
+        "broadcast": broadcast,
         "mapped_rf": mapped,
         "ready_s": int(r.get("ready_s", ["-1"])[0]),
         "start_tries": int(r.get("start_tries", ["0"])[0]),

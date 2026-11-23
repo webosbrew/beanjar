@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 # An automatic channel scan by Luna on a set with our tuner, in the guest as root:
-#   scan.sh [TIMEOUT_S]
+#   scan.sh [TIMEOUT_S [WATCH_IDS]]
 # Keeps utp.broadcast/open (purpose SCAN) subscribed, starts utp.channel/scan/startAutoScan with
 # its broadcastId and follows it until its status says autoScanning false or TIMEOUT_S (default
 # 3600). Then asks iepg for the channel list and the current events in the forms utp and Live TV
@@ -11,15 +11,22 @@
 # (tests/regress/tuner/run-scan.py does).
 #
 # The passes are fixed by the region (US: terrestrial digital, terrestrial analogue, cable digital,
-# cable analogue; legacy-broadcast-atsc ignores setAutoScanChannelType). Our lineup is digital
-# over the air, so each other pass is skipped as it starts, as the stock app's Skip button does
-# (scan/skipAutoScan): about 40 s instead of 20 minutes under TCG. ALL=1 runs every pass.
+# cable analogue; legacy-broadcast-atsc ignores setAutoScanChannelType; Japan: terrestrial digital
+# alone). Our lineup is digital over the air, so each other pass is skipped as it starts, as the
+# stock app's Skip button does (scan/skipAutoScan): about 40 s instead of 20 minutes under TCG.
+# ALL=1 runs every pass.
+#
+# WATCH_IDS: the channelIds watched after the scan, an extended regular expression for a whole
+# "channelId":"..." pair; by default each US RF's first service (..._1_0_0_0). A Japanese set
+# (run-scan.py: '"channelId":"1_[^"]*"', terrestrial digital) lists its satellite presets too,
+# which are not watched.
 #
 # A service just started answers before it is ready: utp.broadcast/open "No resource" (-106) for
 # about 10 s, startAutoScan nothing at all, or a scan that never starts a pass. All are retried
 # until READY_WAIT (default 600) s after the start; ready_s is how long it took until a pass
 # started, start_tries the startAutoScan calls.
 TIMEOUT=${1:-3600}
+WATCH_IDS=${2:-'"channelId":"[^"]*_1_0_0_0"'}
 # seconds since boot: the set's clock jumps when it takes the broadcast's time (STT)
 mono() { cut -d. -f1 /proc/uptime; }
 READY_WAIT=${READY_WAIT:-600}
@@ -52,6 +59,10 @@ source_type() {
 	tr -d '\n ' < /tmp/scan-source.out | grep -o '"currentScanSourceType":"[A-Z_]*"' | tail -1 |
 		sed 's/.*:"\(.*\)"/\1/'
 }
+# Live TV in front keeps the tuner: a Japanese set's scan then runs for minutes and tunes nothing
+# (W22O queue's ARIB board, a set that already had a channel), as if the stock channel settings app,
+# which takes the front, had not. Closed for the scan; it is launched again for the watch below.
+$L luna://com.webos.service.applicationmanager/closeByAppId '{"id":"com.webos.app.livetv"}' </dev/null >/dev/null 2>&1
 tries=0
 START=
 while :; do
@@ -123,7 +134,7 @@ luna-send -i luna://com.webos.service.utp.broadcast/open \
 WATCH=$!
 sleep 5
 WID=$(sed -n 's/.*"broadcastId": *"\([^"]*\)".*/\1/p' /tmp/scan-watch.out | head -1)
-for cid in $(echo "$CH" | grep -o '"channelId":"[^"]*_1_0_0_0"' | sed 's/"channelId":"\(.*\)"/\1/' | sort -u); do
+for cid in $(echo "$CH" | grep -oE "$WATCH_IDS" | sed 's/"channelId":"\(.*\)"/\1/' | sort -u); do
 	w0=$(mono)
 	r=$($L luna://com.webos.service.utp.broadcast/changeChannel "{\"broadcastId\":\"$WID\",\"channelId\":\"$cid\"}" </dev/null | tr -d '\n ')
 	while [ $(($(mono) - w0)) -lt "${EPG_WAIT:-120}" ]; do
@@ -135,9 +146,11 @@ for cid in $(echo "$CH" | grep -o '"channelId":"[^"]*_1_0_0_0"' | sed 's/"channe
 done
 kill $WATCH 2>/dev/null
 EV=$($L $I/getCurrentEventList "{\"channelId\":[$IDS],\"dataType\":0,\"sort\":0}" </dev/null | tr -d '\n')
-# each entry's programName follows its channelId
-echo "$EV" | grep -oE '"(channelId|programName)":"[^"]*"' |
-	awk -F'"' '$2 == "channelId" { c = $4 } $2 == "programName" { print "event=" c " " $4 }'
+# each entry's programName follows its channelId (a Japanese set's is empty: its signalChannelId,
+# ONID_SVCID_TSID, the tail of the channel's channelId)
+echo "$EV" | grep -oE '"(channelId|signalChannelId|programName)":"[^"]*"' |
+	awk -F'"' '$2 == "channelId" { c = $4 } $2 == "signalChannelId" { s = $4 }
+		$2 == "programName" { print "event=" (c != "" ? c : s) " " $4 }'
 echo "events=$(echo "$EV" | sed -n 's/.*"programListCount":\([0-9]*\).*/\1/p')"
 echo "--- raw"
 echo "channel_list=$(echo "$CH" | cut -c1-6000)"

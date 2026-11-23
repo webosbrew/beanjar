@@ -28,7 +28,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .tuner_stream import PACKET, Error, crc32_mpeg
 
 MUX_RATE = 5_000_000  # bits a second
-VERSION = 1  # of the generator: part of a stream's key (stream_key)
+VERSION = 2  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 LOOP_SECONDS = 5  # of the A/V loop
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
@@ -38,6 +38,8 @@ TABLE_TDT, TABLE_TOT = 0x70, 0x73
 PMT_PID, VIDEO_PID, AUDIO_PID, DATA_PID = 0x1F0, 0x111, 0x112, 0x740
 
 TAG_VIDEO, TAG_AUDIO, TAG_DATA = 0x00, 0x10, 0x40  # component tags; 0x40 is the entry component
+# the video, 720x480 progressive 4:3: video_encode_format 3 (480p) and component_type 0xA1 (480p 4:3)
+VIDEO_ENCODE_FORMAT, COMPONENT_VIDEO = 3, 0xA1
 DATA_COMPONENT_BML_TERRESTRIAL = 0x000C  # data_component_id, ARIB STD-B10 part 2 annex J
 DATA_EVENT_ID = 0xF
 DOWNLOAD_ID = (DATA_EVENT_ID << 28) | 1  # top nibble data_event_id; the rest is 1 in practice
@@ -208,7 +210,10 @@ def _tables(now):
     t["pmt"] = (
         f'<PMT version="0" service_id="{sid}" PCR_PID="0x{VIDEO_PID:X}">\n'
         f'  <component stream_type="0x02" elementary_PID="0x{VIDEO_PID:X}">\n'
-        f'    <stream_identifier_descriptor component_tag="0x{TAG_VIDEO:02X}"/>\n  </component>\n'
+        f'    <stream_identifier_descriptor component_tag="0x{TAG_VIDEO:02X}"/>\n'
+        # ARIB STD-B10: the video's format, which a set takes before the decoder's; 3 is 480p
+        '    <video_decode_control_descriptor still_picture="false" sequence_end_code="false" '
+        f'video_encode_format="{VIDEO_ENCODE_FORMAT}"/>\n  </component>\n'
         f'  <component stream_type="0x0F" elementary_PID="0x{AUDIO_PID:X}">\n'
         f'    <stream_identifier_descriptor component_tag="0x{TAG_AUDIO:02X}"/>\n  </component>\n'
         f'  <component stream_type="0x0D" elementary_PID="0x{DATA_PID:X}">\n'
@@ -246,7 +251,13 @@ def _tables(now):
             f'duration="{minutes // 60:02d}:{minutes % 60:02d}:00" '
             f'running_status="{"running" if k == 0 else "not-running"}">\n'
             f'    <short_event_descriptor language_code="jpn"><event_name>{escape(title)}</event_name>'
-            f"<text>{escape(text)}</text></short_event_descriptor>\n  </event>\n"
+            f"<text>{escape(text)}</text></short_event_descriptor>\n"
+            # the event's video and audio, as broadcasts describe them (STD-B10 6.2.3, 6.2.26)
+            f'    <component_descriptor stream_content="1" component_type="0x{COMPONENT_VIDEO:02X}" '
+            f'component_tag="0x{TAG_VIDEO:02X}" language_code="jpn"/>\n'
+            f'    <audio_component_descriptor component_type="0x03" component_tag="0x{TAG_AUDIO:02X}" '
+            'stream_type="0x0F" quality_indicator="1" sampling_rate="7" ISO_639_language_code="jpn"/>\n'
+            "  </event>\n"
         )
     t["eit"] = eit + "</EIT>\n"
     t["tot"] = f'<TOT UTC_time="{_jst(now)}"/>\n'
