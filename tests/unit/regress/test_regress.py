@@ -402,6 +402,27 @@ class ArgsTest(unittest.TestCase):
                 (a.accel, a.scale, a.timeout), (accel, scale[accel], timeout * scale[accel])
             )
 
+    def test_guest_kernel(self):
+        """GUEST_KERNEL passes through to the launcher, given empty when not set (a development VM
+        never keeps an earlier run's), and a --local run's deadlines take the accelerator the
+        launcher picks for it: KVM for the x86-64 kernel on an x86-64 host that can open /dev/kvm."""
+        a, _ = regress.parse(["--local", "--headless"], found=FOUND, env={"GUEST_KERNEL": "x86-64"})
+        self.assertEqual(regress.start_env(a, WT1H)["GUEST_KERNEL"], "x86-64")
+        a, _ = regress.parse(["--local", "--headless"], found=FOUND, env={})
+        self.assertEqual(regress.start_env(a, WT1H)["GUEST_KERNEL"], "")
+        with (
+            mock.patch.object(regress.qemu.platform, "machine", return_value="x86_64"),
+            mock.patch.object(regress.qemu.os, "access", return_value=True),
+        ):
+            a, _ = regress.parse(["--local"], found=FOUND, env={"GUEST_KERNEL": "x86-64"})
+            self.assertEqual((a.accel, a.scale), ("kvm", 1))
+            a, _ = regress.parse(["--local"], found=FOUND, env={})
+            self.assertEqual((a.accel, a.scale), ("tcg", 4))
+            a, _ = regress.parse(
+                ["--local"], found=FOUND, env={"GUEST_KERNEL": "x86-64", "ACCEL": "tcg"}
+            )
+            self.assertEqual((a.accel, a.scale), ("tcg", 4))
+
     def test_bad_values(self):
         for argv in (
             ["--timeout", "0"],
@@ -1485,7 +1506,7 @@ class InstanceTest(unittest.TestCase):
             self.assertIn(f"is-active beanjar-vm-regress-{target}.service", text)
             # MEM: each target's model's; no SSH_PORT: the instance's ports are on its own address
             self.assertIn(
-                "NET_LINK=nat NET_MODE=direct AUDIO='' MEM='' SMP='' ACCEL='' PMLOG_DEBUG='' KERNEL_ARGS='' QEMU_EXTRA='' GPU_DEVICE='' NET_DUMP='' timeout",
+                "NET_LINK=nat NET_MODE=direct AUDIO='' MEM='' SMP='' ACCEL='' PMLOG_DEBUG='' KERNEL_ARGS='' QEMU_EXTRA='' GPU_DEVICE='' GUEST_KERNEL='' NET_DUMP='' timeout",
                 text,
             )
         self.assertNotRegex(text, r"MEM=[0-9]")  # empty: the launcher takes the model's

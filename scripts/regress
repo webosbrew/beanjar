@@ -271,6 +271,7 @@ PASSTHROUGH = (
     "KERNEL_ARGS",
     "QEMU_EXTRA",
     "GPU_DEVICE",
+    "GUEST_KERNEL",
 )
 DEFAULTS = {
     "graphics": {"LAYERS": "normal,gl", "DISPLAY_BACKEND": "dbus"},
@@ -301,11 +302,12 @@ LAUNCHER_DEFAULTED = (
     "KERNEL_ARGS",
     "QEMU_EXTRA",
     "GPU_DEVICE",
+    "GUEST_KERNEL",
 )
 # What a stopped checkout VM must not leave on its host. `pgrep -x` (a remote shell's own command line
-# never matches it); QEMU's name is cut to 15 characters.
+# never matches it); QEMU's name is cut to 15 characters (aarch64, or x86_64 for GUEST_KERNEL=x86-64).
 ORPHANS = (
-    "for p in qemu-system-aar vhost-user-gpu mitmweb slirp4netns beanjar-viewer beanjar-mediahu; do pgrep -ax $p; done; "
+    "for p in qemu-system-aar qemu-system-x86 vhost-user-gpu mitmweb slirp4netns beanjar-viewer beanjar-mediahu; do pgrep -ax $p; done; "
     "systemctl --user list-units --no-legend --plain --state=active,activating,deactivating "
     "'beanjar-vm-regress-*' 2>/dev/null; true"
 )
@@ -659,7 +661,8 @@ def parse(argv, found=None, env=None):
     a.vm_env.update(INSTANCE_DEFAULTS)
     a.vm_env.update({k: env[k] for k in PASSTHROUGH if env.get(k)})
     # the deadlines are for hangs, not for the guest's speed: TCG's factor, as the launcher's for bootd
-    a.accel = a.vm_env.get("ACCEL") or (qemu.default_accel() if a.local else "kvm")
+    # (here the launcher's own choice, which GUEST_KERNEL=x86-64 makes KVM on an x86-64 host)
+    a.accel = qemu.vm_accel(a.vm_env) if a.local else (a.vm_env.get("ACCEL") or "kvm")
     a.scale = qemu.time_scale(a.accel)
     a.timeout *= a.scale
     return a, select(a.target, a.fw, find_firmwares(firmware_dirs()) if found is None else found)

@@ -253,7 +253,7 @@ Nothing is copied to the VM host: a target whose firmware is not in its collecti
 ("firmware X not in the host's firmware collections", under "not run:" in the summary). Then, per target, the checkout VM with `FW=<fw> STATE=none LAYERS=normal,gl
 DISPLAY_BACKEND=dbus` (`NET_LINK` and `NET_MODE` as given, nat and direct by default; `LAYERS`,
 `DISPLAY_BACKEND`, `NET_LINK`, `NET_MODE`, `AUDIO`,
-`ACCEL`, `PMLOG_DEBUG`, `MEM`, `SMP`, `KERNEL_ARGS`, `QEMU_EXTRA` pass through, and those not given are passed
+`ACCEL`, `PMLOG_DEBUG`, `MEM`, `SMP`, `KERNEL_ARGS`, `QEMU_EXTRA`, `GPU_DEVICE`, `GUEST_KERNEL` pass through, and those not given are passed
 empty, the launcher's defaults, so a target's development VM never brings back what its `vm.toml` kept from an
 earlier run; `KERNEL_ARGS` are extra kernel cmdline words, e.g. `mstar_utopia.mbx_trace=1`, a module parameter `/init` passes on; `QEMU_EXTRA` extra QEMU arguments, e.g. `-trace virtio_snd_*`): boot-done (`tests/regress/guest.sh`, the guest's uptime at
 it), `guest/scripts/check-m1.sh`, `tests/regress/tvservice/app-calls.sh`, the bring-up checklist (below), HOME on the remote once the
@@ -323,7 +323,13 @@ and `tvservice` where the default has boot-done and the screenshot:
 scripts/regress --headless --keep-going                  # every target on the Pi
 scripts/regress --headless --local --target h13-afro --timeout 900   # this PC, TCG: slow, give it time
 scripts/regress --headless --local -j 6 --keep-going --timeout 900 # this PC: six VMs at once
+GUEST_KERNEL=x86-64 scripts/regress --headless --local --target kf23f-number1  # this PC: x86-64 kernel under KVM, the ARM userland under qemu-user
 ```
+
+On an x86-64 PC, `GUEST_KERNEL=x86-64` runs the lanes on the x86-64 guest kernel under KVM with the
+whole ARM userland under qemu-user ([the x86-64 guest kernel](../architecture/qemu-user-bridge.md#the-x86-64-guest-kernel-experimental)),
+instead of the arm64 kernel under full TCG; a graphics lane then renders with virgl on the host's
+render node. It does not apply to NetCast and SimpleSmart, which the launcher refuses with it.
 
 #### Parallel headless runs on this PC
 
@@ -398,8 +404,8 @@ and the factor from the environment, so resourcemon's CPU windows and what else 
 timing. Under KVM nothing is loaded. 4 is from the 4-VM TCG runs: tv-ready came up to 94 s into
 m3's 60 s wait and 45 s into h13's 30 s, 1.6 times the wait at most.
 
-`scripts/regress` takes the same factor for the VM host's accelerator (`--local`: this machine's,
-TCG on x86; the Pi: KVM; `ACCEL` as given). Its own deadlines exist to catch hangs, so it stretches
+`scripts/regress` takes the same factor for the VM host's accelerator (`--local`: the one the launcher
+picks here, TCG on x86 for the arm64 kernel, KVM with `GUEST_KERNEL=x86-64`; the Pi: KVM; `ACCEL` as given). Its own deadlines exist to catch hangs, so it stretches
 them all by that factor: `--timeout` (each step, start, stop and the ready/boot wait) and the 20 s
 past it, check-m1's boot-done wait, home-idle's 60 s, the standby's 60 s waits for the standby and
 the wake, and `guest.sh resumed`'s 30 s. The steps get it as `TIME_SCALE=` on the line typed on the
