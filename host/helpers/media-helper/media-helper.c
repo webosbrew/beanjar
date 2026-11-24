@@ -190,6 +190,55 @@ __attribute__((format(printf, 2, 3))) static void say(int port, const char *fmt,
     va_end(ap);
 }
 
+/* The open sessions (--streams FILE): one line per media port with an OPEN since its last CLOSE,
+ * "PORT KIND ELEMENT<TAB>CAPS", KIND audio or video, CAPS the last caps (empty before any),
+ * rewritten whole (a rename) at each OPEN, new caps and CLOSE. What `beanjar status show` reads
+ * for the streams a VM's audio comes from. The guest's element name and caps are made printable
+ * (spaces in the name, control and non-ASCII bytes as '?') and cut, so a line stays a line. */
+#define STREAMS_CAPS 1024
+static const char *streams_path;
+static struct chan *streams_ch;
+static int streams_n;
+
+static void printable(FILE *f, const unsigned char *s, size_t max, int space_ok)
+{
+    for (size_t i = 0; i < max && s[i]; i++)
+        fputc(s[i] >= 0x20 && s[i] < 0x7f && (space_ok || s[i] != ' ') ? s[i] : '?', f);
+}
+
+static void write_streams(void)
+{
+    if (!streams_path)
+        return;
+    char tmp[4200];
+    snprintf(tmp, sizeof tmp, "%s.tmp", streams_path);
+    FILE *f = fopen(tmp, "w");
+    if (!f)
+        return;
+    for (int i = 0; i < streams_n; i++) {
+        const struct chan *c = &streams_ch[i];
+        if (!c->media || !c->open || c->open_len < sizeof(struct webos_media_header))
+            continue;
+        struct webos_media_open o = {0};
+        size_t n = c->open_len - sizeof(struct webos_media_header);
+        memcpy(&o, c->open + sizeof(struct webos_media_header), n < sizeof o ? n : sizeof o);
+        fprintf(f, "%d %s ", c->index, o.kind == WEBOS_MEDIA_AUDIO ? "audio" : "video");
+        printable(f, (const unsigned char *)o.element, sizeof o.element, 0);
+        fputc('\t', f);
+        if (c->caps && c->caps_len > sizeof(struct webos_media_header))
+            printable(f, c->caps + sizeof(struct webos_media_header),
+                      c->caps_len - sizeof(struct webos_media_header) < STREAMS_CAPS
+                          ? c->caps_len - sizeof(struct webos_media_header)
+                          : STREAMS_CAPS,
+                      1);
+        fputc('\n', f);
+    }
+    if (fclose(f) == 0)
+        rename(tmp, streams_path);
+    else
+        unlink(tmp);
+}
+
 /* FFmpeg's own messages (a corrupt stream can make one per packet): the engine's log, limited per
  * FFmpeg format string like the engine's lines, instead of the helper's stderr */
 static void ffmpeg_line(const char *key, const char *fmt, ...)
@@ -324,6 +373,7 @@ static int media_message(struct chan *c, const unsigned char *data, size_t len)
         say(c->index, "media %d: open %s %s pid %d channel %d pad %u output %#x", c->index,
             o.kind == WEBOS_MEDIA_VIDEO ? "video" : "audio", o.element, o.pid, o.channel, o.pad,
             o.output);
+        write_streams();
         break;
     }
     case WEBOS_MEDIA_CAPS:
@@ -331,8 +381,12 @@ static int media_message(struct chan *c, const unsigned char *data, size_t len)
          * past the payload (into the next message's bytes) for the log */
         if (!h.size || pl[h.size - 1])
             say(c->index, "media %d: caps of %u bytes, not a string", c->index, h.size);
-        else if (!c->caps || c->caps_len != len || memcmp(c->caps + sizeof h, pl, h.size))
+        else if (!c->caps || c->caps_len != len || memcmp(c->caps + sizeof h, pl, h.size)) {
             say(c->index, "media %d: caps %.200s", c->index, (const char *)pl);
+            keep(&c->caps, &c->caps_len, data, len);
+            write_streams();
+            break;
+        }
         keep(&c->caps, &c->caps_len, data, len);
         break;
     case WEBOS_MEDIA_STATE: {
@@ -370,6 +424,7 @@ static int media_message(struct chan *c, const unsigned char *data, size_t len)
         keep(&c->open, &c->open_len, NULL, 0);
         keep(&c->caps, &c->caps_len, NULL, 0);
         keep(&c->state, &c->state_len, NULL, 0);
+        write_streams();
         break;
     }
     return decoder_submit(decode, c->index, &h, pl, hm_mono_ns());
@@ -574,6 +629,8 @@ int main(int argc, char **argv)
             logpath = argv[i + 1];
         else if (!strcmp(argv[i], "--decode-log"))
             decode_log = argv[i + 1];
+        else if (!strcmp(argv[i], "--streams"))
+            streams_path = argv[i + 1];
         else if (!strcmp(argv[i], "--hwdec"))
             hwdec = argv[i + 1];
         else if (!strcmp(argv[i], "--ports"))
@@ -587,9 +644,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--video") && !split(argv[i + 1], vq, vv)) {
         } else if (!strcmp(argv[i], "--media") && !split(argv[i + 1], mq, mv)) {
         } else {
-            fprintf(stderr,
-                    "usage: media-helper --pid PID [--log FILE] [--decode-log FILE] --video "
-                    "Q:V --media QPREFIX:VPREFIX [--ports N] [--pool FILE --pool-fd FD]\n");
+            fprintf(
+                stderr,
+                "usage: media-helper --pid PID [--log FILE] [--decode-log FILE] [--streams FILE] "
+                "--video Q:V --media QPREFIX:VPREFIX [--ports N] [--pool FILE --pool-fd FD]\n");
             return 2;
         }
     }
@@ -656,6 +714,9 @@ int main(int argc, char **argv)
         c->gfd = c->vfd = -1;
         c->lfd = unix_listen(c->viewer, c->media);
     }
+    streams_ch = ch;
+    streams_n = n;
+    write_streams();
     say(-1, "hub: %d media ports, QEMU %s / %s-<n>.sock, viewers %s / %s-<n>.sock", ports, vq, mq,
         vv, mv);
     struct timespec last_try = {0};
@@ -786,6 +847,9 @@ int main(int argc, char **argv)
                 viewer_close(&ch[i], "left");
     }
     say(-1, "hub: the VM ended");
+    if (streams_path)
+        unlink(streams_path);
+    streams_ch = NULL;
     for (int i = 0; i < n; i++) {
         viewer_close(&ch[i], "VM ended");
         if (ch[i].gfd >= 0)

@@ -373,6 +373,8 @@ class HubBase(unittest.TestCase):
                 str(listener.fileno()),
                 "--pool-size",
                 str(self.POOL),
+                "--streams",
+                os.path.join(d, "media-streams"),
                 *self.log_args(d),
             ],
             stdout=self.logfile,
@@ -466,6 +468,30 @@ class HubBase(unittest.TestCase):
         self.send(0, CLOSE)
         d, _ = receive(v)
         self.assertFalse(d.flags & 1)
+
+    def test_streams_file_lists_the_open_sessions(self):
+        """--streams: a line per open session (port, kind, element, caps), gone at CLOSE."""
+        path = os.path.join(self.dir.name, "media-streams")
+
+        def lines():
+            with open(path) as f:
+                return f.read().splitlines()
+
+        def wait(want):
+            for _ in range(300):
+                if lines() == want:
+                    return
+                time.sleep(0.01)
+            self.assertEqual(lines(), want)
+
+        wait([])
+        caps = "audio/x-ac3, framed=(boolean)true, rate=(int)48000, channels=(int)6"
+        self.start_stream(1, 2, caps, time.monotonic_ns())
+        wait([f"1 audio test-out\t{caps}"])
+        self.send(1, CAPS, b"audio/x-ac3,\nchannels=(int)2\0")
+        wait(["1 audio test-out\taudio/x-ac3,?channels=(int)2"])
+        self.send(1, CLOSE)
+        wait([])
 
     def test_no_viewer_never_blocks_the_guest(self):
         g = self.guest["qemu-media-1.sock"]

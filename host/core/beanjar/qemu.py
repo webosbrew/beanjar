@@ -225,6 +225,9 @@ def media_helper(top, env):
     return path if env.get("MEDIAHUB", "1") != "0" and os.access(path, os.X_OK) else None
 
 
+MEDIA_STREAMS = "media-streams"  # in RUN_DIR: the media helper's open sessions (--streams)
+
+
 def qemu_side(path):
     """QEMU's own socket behind a hub-served one: video.sock -> qemu-video.sock."""
     return os.path.join(os.path.dirname(path), "qemu-" + os.path.basename(path))
@@ -1037,6 +1040,9 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             os.path.join(p.run_dir, "media-sessions.log"),
             "--decode-log",
             os.path.join(p.run_dir, "media-helper.log"),
+            # the sessions open now, for status show's audio (soundout.py)
+            "--streams",
+            os.path.join(p.run_dir, MEDIA_STREAMS),
             "--video",
             f"{guest_video}:{socks['VIDEO_SOCK']}",
             "--media",
