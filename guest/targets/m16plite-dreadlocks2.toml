@@ -1,0 +1,32 @@
+models = ["W17M"]
+# tv.capture's video frames: lg115x.ko's de0 fills the frozen VT frame from the viewer, as on W17H
+viewer_capture = true
+
+# W17M dreadlocks2 (06.10.55, HE_DTV_W17M_AFADATAA, the ATSC build): W17H's paks and fstab pins (p29
+# tvservice, p31 otncabi, p32 otycabi, p33 fonts, p34 smartkey, p36 license, p53-p55 the state
+# partitions, uhdcp p48), named -atsc, which the release's -dvb names resolve to; the NVM records are
+# tvservice-atsc's. Its tvservice's ToolOptionDB (DWARF TOOL_OPTION_DB_T, 76 bytes) carries the input
+# ports after the area options (stExtVideoInputADJ at +48, 15 bytes, stExtAudioInputADJ 11), which a
+# factory programs.
+[release]
+base = "dreadlocks2"
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+factory_offset = 0x294
+local_key = { word = 3, offset = 18, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_status_offset = 0x1A1

@@ -9,7 +9,7 @@ pipeline services. These elements hand compressed media to the common host trans
 | Family | Targets | Element boundary |
 |---|---|---|
 | LG115x | `h13-afro`, `m14-beehive` | `vdecsink`, `adecsink` |
-| LG1313 | `m16p-dreadlocks2` | `omx_lxvideodec` / `lxvideodec`, `omx_lxvideosink` / `lxvideosink`, `audio_dec`, `audio_sink` |
+| LG1313 | `m16p-dreadlocks2`, `m16plite-dreadlocks2` | `omx_lxvideodec` / `lxvideodec`, `omx_lxvideosink` / `lxvideosink`, `audio_dec`, `audio_sink` |
 | MStar | `m2-dreadlocks`, `m3-goldilocks` | OMX decoder factories, `mvsink`, `masink`, `omxaudiosink` |
 | MStar | `lm15u-beehive` | OMX decoder factories, `mvsink`, `omxaudiosink` (W16R's set over GLib 2.34, `mstar-lm15u`; no `masink`); for NDL's Esplayer, MStar's OpenMAX IL core itself |
 | Realtek | `k5lp-goldilocks2`, `k6lp-jhericurl`, `k7lp-kisscurl` | OMX decoder factories, `dvovideosink`, `rtkalsasink`; `rvscale` where the firmware has it (K7, K8) |

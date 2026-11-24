@@ -1,0 +1,42 @@
+# The LG M16P lite (the firmware's machine name m16plite; lxboot's chip=M16P), W17M's SoC: M16P's
+# platform (guest/targets/soc/m16p.toml says where each of its values comes from) with W17M 06.10.55's
+# own board (docs/research/m16-kid24u-m23-groundwork.md). W17M's kernel is W17H's version
+# (4.4.3-119.drd4tv.6) with the same kdrivers, its libhal_lg115x imports the same KADP functions as
+# W17H's, its Mali libraries, kbase and kernel modules are W17H's files, and its fstab pins are
+# dreadlocks2's. What differs is the board: W17M's RELEASE.cfg (an SJ85's factory default, the same
+# I2C map as W17H's: "[i2c]MICOM:2:0x52", "[i2c]NVM:5:0xA0") and the 43UJ6300-UA's one amplifier,
+# AMP_NTP7515_1AMP's "[i2c]NTP7515:1:0x54" (iic0), where W17H's 55UJ750V has two.
+
+base = "m16p"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43UJ6300-UA's area, a US set's (board.cmdline): W17M's _aDefineContinent entry 10 ("US", in
+# the RMM country list of the US group), LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, EXT_VIDEO_INPUT_ADJ and EXT_AUDIO_INPUT_ADJ of tvservice's gToolOptionDB, from
+# W17M's RELEASE.cfg (SJ85 defaults), read by host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+
+# M16P's lg115x.ko parameters with the one amplifier
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x19b0",
+    "ace_rev=0x19b0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x224024",
+    "i2c=micom:1:0x52,nvm:4:0xa0,amp:0:0x54",
+    "spi_cs=2",
+    "se_mem=0x7f100000:0x700000",
+    "se_tzfw=0x7f800000:0x800000",
+    "logm_obj=84",
+    "de_mem=0x7e000000:0x1000000",
+    "de_capacity=6:4:4:3840:2160:3840:2160:0:60:2:1:1920:1080:0:0:1:1:3840:2160:1:320:240:2",
+    "de_panel=4",
+    "gpio_pins=144",
+    "pe_hdr=0x7de00000",
+    "amst=27:71:23:66:67",
+    "amst_se=60",
+    "be=24:22",
+    "be_led=0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
+]

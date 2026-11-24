@@ -4,9 +4,9 @@
 # Inside webOS: the tvservice methods and keys the firmware's own apps call, each checked for the reply LG's tvservice gives
 # on this emulator, and what the soc layer's HAL and DILE shims let it do: master volume, AV on
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
-# name the firmware or differ between its tvservice releases are chosen by the board's chip=
+# name the firmware or differ between its tvservice releases are chosen by the board's chip= and modelName=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W16R on M2, W17H
-# on M16P, W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W17M on M16P lite (a 43UJ6300-UA), W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -20,7 +20,7 @@ fails=0
 cmdline() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p"; }
 # Each board's model (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): its tool options as tvservice decodes them from the EEPROM, and its
 # rear panel, the input row of ToolOpt2 (inputs: getExternalInputStatusList's count).
-case $(cmdline chip) in
+case $(cmdline chip)/$(cmdline modelName) in
 # WT1H: a 49UB850V, UHD table row 1: SCART, AV, component, HDMI x4
 H13*)   model=WT1H ota=AFAAABAA fw=05.06.10 platform=lg115x sound_bad_type=SOUND_ERROR_1001
 	capture_no_video=CAPTURE_ERROR_09 inputs=7 reset3d='"returnValue":true'
@@ -80,6 +80,14 @@ M2*)    model=W16R ota=AFAAABAA fw=05.70.50 platform=msd93f2g sound_bad_type=SOU
 # from tv.display ("Unknown method"). Its tv.capture gets a handle from LG's HAL_VT over
 # lg115x.ko's display engine (/dev/lg/de0, the VTM page): GRAPHIC captures work; VIDEO without
 # video answers CAPTURE_ERROR_09 ("no signal state").
+# W17M (M16P lite: lxboot's chip=M16P as W17H's, so matched by its board's model, before M16P), the
+# ATSC build: a 43UJ6300-UA (US), RELEASE.cfg's SJ85 defaults: edge LED, camera ready, a headphone
+# output, 2D only; row 1 of the input table, AV, component, HDMI x4. tvSystemName is atsc. The rest
+# as W17H's.
+M16P*/43UJ6300*) model=W17M ota=AFADATAA fw=06.10.55 platform=lg1313 sound_bad_type=SOUND_ERROR_013
+	capture_no_video=CAPTURE_ERROR_09 calibration= max_devices= inputs=6 tv_system=atsc
+	tool_options='"panelInch":"43","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"'
+	reset3d='"errorCode":"DISPLAY_ERROR_1002"' ;;
 M16P*)  model=W17H ota=AFADABAA fw=06.10.65 platform=lg1313 sound_bad_type=SOUND_ERROR_013
 	capture_no_video=CAPTURE_ERROR_09 calibration= max_devices= inputs=6
 	tool_options='"panelInch":"55","backlightType":"edgeLed","cameraReady":"off","headphone":"true"'

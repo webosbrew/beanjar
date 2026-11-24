@@ -1,0 +1,36 @@
+# Board parameters the LG bootloader (lxboot) puts on the kernel command line, as on M16P
+# (guest/layers/soc/m16p/rootfs/etc/emulator/board.cmdline says who reads them). W17M's lxboot
+# (lxboot.pak 06.10.55) has W17H's format ("ethaddr=%s rev=1 ... chip=%s") and chip table (M16P);
+# W17M's kernel (4.4.3-119.drd4tv.6, W17H's version) handles the M16PB0 revision, so chip=M16PB0
+# as W17H's board.
+#
+# The values describe a 43UJ6300-UA, a US model the models DB lists for this firmware's OTA ID
+# (HE_DTV_W17M_AFADATAA: US, CA_EN, MX, BR, CL, PE, PH and KR), proposed by
+# host/tools/research/model-config.py from W17M 06.10.55's own tables with szCountryGroupCode=US
+# continent=10 eLanguageCountry=LANG_COUNTRY_US eHWSettingGroup=HWSETTING_US tuner=none; they are
+# not read from a real set. This ATSC firmware's RELEASE.cfg is the factory default of a Korean SJ85
+# (BOARD_M16P_ATSC_KR): the region values here are the US group's of the same tables.
+ethaddr=a8:23:fe:12:34:56 rev=1 chip=M16PB0 bver=4.03.21 devtmpfs.mount=1
+# 7.5 GB eMMC, as the others (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# 19 straps as W17M's lxboot reads them: all 0 but the DDR straps 12-14, "001" (DDR_SIZE_1_5G, hwopt
+# digit 11 '3'); the board's DDR is a strap, not in the firmware (W17H's board's 1.5 GB)
+modelopt=0000000000000010000
+# 18 digits, as W17M's tvconfig-gen decodes them: US (d0 4, gmodelopt_country_type), V-by-One (d2 2),
+# UD panel (d3 2), FRC (d4 1: RELEASE.cfg's FRC_CHIP_LG1154 on a UD panel), panel V17 (d5 7), no
+# DVB tuner (d8 0: column 0 of gmodelopt_H15_tuner_comb's US row, the ATSC demodulator is ToolOpt4's),
+# DDR 1.5 GB (d11 3), graphic resolution 1920x1080 (d14 2)
+hwopt=002217001003002000
+# 9 tool option words (TOOL_OPTIONn_T of W17M's tvservice), RELEASE.cfg's SJ85 defaults with the
+# model's inch and tool type: ToolOpt1 33354 = INCH_43 10, TOOL_UJ63 18, LGD, LVDS bit; ToolOpt2 row 1
+# of video_external_input_adjust (HDMI x4, component, AV), edge LED; ToolOpt3
+# AMP_NTP7515_1AMP ("[i2c]NTP7515:1:0x54", iic0), headphone, DVR ready, ISF, local dimming; ToolOpt4
+# ATSC_LGDT3307 with the SI2178B analog demodulator; ToolOpt5 the MTK 11ac combo, camera ready, TV
+# link, 2D only, WOL; ToolOpt9 HDR.
+ToolOpt=33354:10273:57681:64818:42477:134828:918155:0:134017
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=43UJ6300-UA serialNum=705RAXX00001
+cmdEnd

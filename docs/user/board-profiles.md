@@ -144,6 +144,8 @@ StanbyMEs, no US model, so each keeps one board; each line comes from its own fi
 graphicResolution=1920x1080`), and the two give the same values. W21U, the chip's 2021 OLED and NANO/QNED TV
 line, is not the StanbyME's firmware and has no board here.
 
+M16P lite's board (`m16plite-dreadlocks2`, W17M 06.10.55) is a 43UJ6300-UA, a US set (ATSC, countryGrp 2, continent 10): W17M's only OTA ID in the collection is the ATSC build (AFADATAA), which ships on US, Canadian, Latin American, Philippine and Korean models, so it has one board. Its RELEASE.cfg is a Korean SJ85, so the region values are the US group's of the same tables (`host/tools/research/model-config.py` with `--set szCountryGroupCode=US`); its DDR is the straps' default 1.5 GB, as W17H's board.
+
 M2R's board (`m2r-dreadlocks2`, W17R 06.10.60) is a 43LJ5500-UA, a US set (ATSC, countryGrp 2, continent 10): W17R's only OTA ID in the collection is the ATSC build (AFAAATAA), which ships on US, Canadian, Latin American, Philippine and Korean models, so it has one board. Its RELEASE.cfg is a Korean LJ61, so the region values are the US group's of the same tables (`host/tools/research/model-config.py` with `--set szCountryGroupCode=US`), and its DDR is 1.25 GB, as M2's board.
 
 M3R's board (`m3r-goldilocks2`, W19R 05.40.97) is a 43LM5700PUA, a US set (ATSC, countryGrp 2, continent 10): W19R's only OTA ID in the collection is the ATSC build (AFAAATAA), which ships on US, Canadian and Mexican models, so it has one board. Its RELEASE.cfg is a Korean LM63, so the region values are the US group's of the same tables (`host/tools/research/model-config.py` with `--set szCountryGroupCode=US`).
