@@ -1212,7 +1212,9 @@ def _lg_mock(env, tree, logdir, rundir):
                 "--upstream",
                 DNS,
             ]
-            + tls,
+            + tls
+            # the VM's country (qemu.plan from COUNTRY): where the mock's SDP tells the TV it is
+            + (["--country", env["LG_MOCK_COUNTRY"]] if env.get("LG_MOCK_COUNTRY") else []),
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,

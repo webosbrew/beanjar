@@ -64,6 +64,10 @@ Environment (both):
             debugMode=, 3 = debug): the TV's debug status. The guest's /proc/cmdline has that one
             debugMode= (webos.debugmode= for /init, or the board words on the kernel's line,
             Release.board_in_kernel), and nvm.prepare brings the EEPROM's debug status to it
+  COUNTRY   the TV's country, an ISO 3166 alpha-3 code (vm.toml's firmware.country): one of the
+            board's RMM country group (countries.check), else refused; the per-VM layer's
+            etc/emulator/country, which the guest's emulator-country sets through LG's settings
+            once per value. Default: none, the board's own
   MEM, SMP  the TV's RAM in MiB (default: the firmware's model's DDR, its board.cmdline's
             hwopt=: nvm.board_ram) / CPUs (default 4). A qemu-user start gives the guest more
             (-m: vmsettings.guest_ram_mib, the TV's and qemu-user's overhead) and a swap disk in
@@ -338,6 +342,7 @@ class Plan:
             self.fw_name
         ) = None
         self.broadcast = None  # the board's broadcast standard (targets.board_broadcast)
+        self.country = None  # COUNTRY, checked against the board's (countries.check)
         # USERLAND: "native" or "qemu-user" as resolved (vmsettings.resolve_userland), with
         # qemu_arm the interpreter the guest gets; GUEST_KERNEL: "arm64" or "x86-64", whose
         # qemu-user guest also gets qemu_aarch64 for the 64-bit ARM programs
@@ -464,6 +469,17 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         p.broadcast = targets.board_broadcast(p.target, fw, env.get("BROADCAST"))
     except targets.Error as e:
         raise Error(f"BROADCAST: {e}") from None
+    if env.get("COUNTRY"):
+        from . import countries
+
+        try:
+            p.country = countries.parse(env["COUNTRY"])
+            board = countries.check(fw, p.target, p.country, tree, p.broadcast)
+        except countries.Error as e:
+            raise Error(f"COUNTRY: {e}") from None
+        if board and board.names.get(p.country):
+            # where the mocked LG server tells the TV it is (netns.py, lg_mock.py --country)
+            p.env["LG_MOCK_COUNTRY"] = f"{p.country},{board.names[p.country]},{board.group}"
     p.guest_kernel = guest_kernel
     platform_name = targets.platform(p.target)
     if guest_kernel == "x86-64":
@@ -1642,6 +1658,7 @@ def guest_layer(p):
     directory, afresh, with what the guest needs of it and nothing else; directories are 0755 (the
     overlay shows the top layer's directories to the guest) unless named below, files 0600:
       etc/emulator/sestore.bin                        host helper's immutable kernel-store snapshot
+      etc/emulator/country (0644)                     COUNTRY, the alpha-3 code and a newline, where set
       the release's gateway reads an SSG key (targets.Release.ssg_key):
         usr/palm/services/com.webos.service.secondscreen.gateway/certs/cert/ssg.server.cert.pem (0644)
                                                       keys.ssg_cert_data of it, over LG's certificate
@@ -1708,6 +1725,9 @@ def guest_layer(p):
     if store:
         mkdir("etc/emulator")
         put("etc/emulator/sestore.bin", compiled)
+    if getattr(p, "country", None):
+        mkdir("etc/emulator")
+        put("etc/emulator/country", (p.country + "\n").encode(), 0o644)
     if sestore.SSG in items:
         try:
             cert = keys.ssg_cert_data(items[sestore.SSG])

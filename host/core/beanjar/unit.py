@@ -127,6 +127,7 @@ ENV_NAMES = frozenset(
         "MAC",
         "SERIAL",
         "BROADCAST",
+        "COUNTRY",
         "IDENTITY_DIR",
         "QEMU",
         "QEMU_EXTRA",

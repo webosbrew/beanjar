@@ -51,6 +51,7 @@ import time
 from . import (
     base,
     capture_relay,
+    countries,
     cpus,
     dbus,
     nvm,
@@ -110,7 +111,7 @@ def vm_firmware(vm_dir, fw=None):
 
 
 # The settings a VM's prepared board data depends on (prepare.Job): a change prepares it again.
-BOARD_SETTINGS = ("fw", "broadcast", "debug_mode", "serial")
+BOARD_SETTINGS = ("fw", "broadcast", "debug_mode", "serial", "country")
 
 
 def prepare_board_data(lib, vm_dir, out=None, force=False):
@@ -1096,6 +1097,14 @@ class Library:
             elif k == "broadcast" and not str(v).strip():
                 cfg.pop(k, None)  # the firmware's own, else the chip's default board
                 continue
+            elif k == "country":
+                if not str(v).strip():
+                    cfg.pop(k, None)  # the board's own; a TV state keeps the one it has
+                    continue
+                try:
+                    v = countries.parse(v)
+                except countries.Error as e:
+                    raise Error(str(e), k) from None
             elif k == "debug_mode" and v in ("", vmsettings.DEFAULT_DEBUG_MODE):
                 cfg.pop(k, None)  # debug is the default, not written out
                 continue
@@ -1129,6 +1138,23 @@ class Library:
             raise Error(f"firmware {d}: no rootfs.pak or root.pak", "fw")
         if cfg.get("broadcast"):
             vmconfig.check_firmware_broadcast(d, cfg["broadcast"])  # before anything is saved
+        if cfg.get("country") and any(
+            values.get(k) is not None for k in ("country", "fw", "broadcast")
+        ):
+            # the board's country group, after the broadcast standard that picks the board
+            try:
+                target = paths.firmware_target(d)
+                countries.check(
+                    d,
+                    target,
+                    cfg["country"],
+                    paths.Tree(self.repo),
+                    targets.board_broadcast(target, d, cfg.get("broadcast")),
+                )
+            except (ValueError, OSError, targets.Error) as e:
+                raise Error(f"country: {e}", "country") from None
+            except countries.Error as e:
+                raise Error(str(e), "country") from None
         if values.get("fw") is not None:
             # the platform is the firmware's (its target's)
             try:

@@ -139,13 +139,38 @@ def _substitute(value, env):
     return value
 
 
+# Where the TV is, as LG's server tells it from the request's address: the VM's country (lg_mock.py
+# --country, the launcher's from vm.toml firmware.country), (alpha-2, alpha-3, ric), or None
+LOCATION = None
+
+
+def location(value):
+    """LOCATION of lg_mock.py's --country value ALPHA3,ALPHA2,RMM-GROUP (the RMM group gives the
+    ric of a country lg_answers.COUNTRIES lacks); ValueError if it is not one."""
+    parts = [p.strip().upper() for p in value.split(",")]
+    if (
+        len(parts) != 3
+        or not re.fullmatch(r"[A-Z]{3}", parts[0])
+        or not re.fullmatch(r"[A-Z]{2}", parts[1])
+    ):
+        raise ValueError(f"--country {value!r}: ALPHA3,ALPHA2,GROUP such as CAN,CA,US")
+    three, two, group = parts
+    ric = lg_answers.COUNTRIES.get(two, (None, lg_answers.RIC_BY_GROUP.get(group, "KIC")))[1]
+    return two, three, ric
+
+
 def country(headers, host):
     """(alpha-2, alpha-3, ric) of the requesting TV: X-Device-Country (alpha-3) looked up in
-    lg_answers.COUNTRIES, else the SDP host's country prefix (us.lgtvsdp.com), else the default."""
+    lg_answers.COUNTRIES or naming the VM's own country, else where the TV is (LOCATION: the VM's
+    country, as LG's server answers from the TV's address; a TV whose service country is still its
+    group's Others row, us7.lgtvsdp.com, is told that country, not US), else the SDP host's country
+    prefix (us.lgtvsdp.com), else the default."""
     three = (headers.get("X-Device-Country") or "").strip().upper()
     for two, (three_, ric) in lg_answers.COUNTRIES.items():
         if three_ == three:
             return two, three_, ric
+    if LOCATION:
+        return LOCATION
     label = re.sub(r"^(qt2|st2|dv2|qt3|qt4|qt5)-", "", (host or "").split(".")[0]).upper()
     label = re.sub(r"\d+$", "", label)
     if label in lg_answers.COUNTRIES:

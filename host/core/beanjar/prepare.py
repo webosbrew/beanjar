@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """What a VM's start needs from its firmware, its model's board and its board settings, worked out
 ahead (docs/dev/architecture/manager.md, "Prepared board data"): when the VM is made (newvm.create),
-when a setting it depends on changes (core.Library.configure: fw, broadcast, debug_mode, serial;
+when a setting it depends on changes (core.Library.configure: fw, broadcast, debug_mode, serial,
+country;
 identity reset; a local clone), or with `beanjar prepare NAME`. A start only reads it.
 
 It is kept in the VM's directory, <vm>/prepared/ (the parent of its RUN_DIR: the checkout's
@@ -77,6 +78,8 @@ class Job:
         except (targets.Error, nvm.Error) as e:
             raise Error(str(e)) from None
         self.serial = env.get("SERIAL") or ""
+        # the VM's country (countries.py): a new LLS chip's factory countryName
+        self.country = (env.get("COUNTRY") or "").strip().upper()
         self.cache = env.get("FW_CACHE") or fwcache.default_cache(tree)
         run_dir = os.path.join(tree.top, env.get("RUN_DIR") or "build")
         self.vm_dir = os.path.dirname(os.path.abspath(run_dir))
@@ -119,6 +122,8 @@ class Job:
             "broadcast": self.broadcast or "",
             "serial": self.serial,
             "debug_mode": self.debug_mode,
+            # only where set: the records of VMs without one stay current
+            **({"country": self.country} if self.country else {}),
             "tables": hashlib.sha256(rows.encode()).hexdigest()[:16],
         }
 
@@ -258,6 +263,7 @@ def _make(job, new, say):
         job.fw_name,
         broadcast=job.broadcast,
         debug_mode=job.debug_mode,
+        country=job.country or None,
     )
     record = {"eeprom_note": chip.note}
     # the panel's refresh (viewer and beanjar-vnc output rate, vm-info.toml's panel_hz): the

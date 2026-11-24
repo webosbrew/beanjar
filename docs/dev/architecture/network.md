@@ -173,7 +173,9 @@ Enforcement is below mitmweb, in the inner namespace, beside the loopback and LA
   The answers are data, `host/helpers/network/lg_answers.py`: an ordered list of routes, each a
   host class, methods and a path pattern, with a status, a JSON body and headers. `${now_ms}`,
   `${country}`, `${country3}` and `${ric}` are filled in per request (the country from the TV's
-  `X-Device-Country`, else the host's prefix, else US). Every 2xx answer carries `X-Server-Time`
+  `X-Device-Country` where the table has it, else the VM's `country` setting, which the launcher
+  passes as `lg_mock.py --country`, as LG's server answers from the TV's address, else the host's
+  prefix, else US). Every 2xx answer carries `X-Server-Time`
   (Unix milliseconds, the host's clock), from which sdx sets the TV's clock (`clock/setTime`,
   source `sdp`). The shapes are the firmware clients' (sdx, uploadd, pmlogd, firstuse; WT1H, W19P,
   W21A, W22O number1, W24P and queue read statically, and LG's own mock data in W22O's rootfs):

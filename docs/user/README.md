@@ -18,7 +18,8 @@ Topics:
 
 - [Inspect emulator traffic](inspect-emulator-traffic.md): the traffic inspector of a `mode=mitm`
   VM and its password.
-- [Boot a global firmware as another region's model](board-profiles.md): the `broadcast` setting.
+- [Boot a global firmware as another region's model](board-profiles.md): the `broadcast` and
+  `country` settings.
 - [Configure secure-store items](sestore.md): a VM's model key and other secure-store values.
 - [Run Beanjar on Windows with WSL](wsl.md): KVM, the groups, the GPU through Mesa's d3d12 and
   windows through WSLg.

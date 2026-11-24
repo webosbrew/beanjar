@@ -95,6 +95,7 @@ every key):
 ```sh
 beanjar config set tv1 mem=1536 layers=normal,gl,devmode
 beanjar config unset tv1 broadcast
+beanjar config set tv1 country=CAN    # a country of the board's group (board-profiles.md)
 ```
 
 The layers add to the stock firmware; the first listed wins where two have the same file:

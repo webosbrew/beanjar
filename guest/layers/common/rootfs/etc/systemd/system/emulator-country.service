@@ -1,0 +1,15 @@
+# Emulator: the VM's country (vm.toml firmware.country, the per-VM layer's etc/emulator/country),
+# set through LG's settings once per value (usr/libexec/beanjar/emulator-country). Pulled in by
+# settings-service.service (settings-service.service.wants); webOS 5 on, where the setting is
+# allowed. Without the file it ends at once.
+[Unit]
+Description=Emulator: the VM's country
+After=settings-service.service
+ConditionPathExists=/etc/emulator/country
+
+[Service]
+Type=oneshot
+# waits for settings and devicereset's country by itself; nothing waits for it
+TimeoutStartSec=infinity
+# W22 on ship Python 3 only, W20 and W21 Python 2.7; the script runs on both
+ExecStart=/bin/sh -c 'if command -v python3 >/dev/null 2>&1; then exec python3 /usr/libexec/beanjar/emulator-country; else exec python2 /usr/libexec/beanjar/emulator-country; fi'

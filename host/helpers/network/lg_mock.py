@@ -237,9 +237,19 @@ def main(argv=None):
     p.add_argument("--https-port", type=int, default=443)
     p.add_argument("--ca", help="the interception CA's directory (ca.pem, ca.key): HTTPS on")
     p.add_argument("--certs", help="where the minted certificates are kept (with --ca)")
+    p.add_argument(
+        "--country",
+        help="where the TV is, ALPHA3,ALPHA2,RMM-GROUP (the VM's country): what the SDP answers "
+        "tell a TV whose request names no country of their table (lg_sdp.LOCATION)",
+    )
     a = p.parse_args(argv)
     if a.ca and not a.certs:
         p.error("--ca needs --certs")
+    if a.country:
+        try:
+            lg_sdp.LOCATION = lg_sdp.location(a.country)
+        except ValueError as e:
+            p.error(str(e))
     mock = Mock(a.listen, a.upstream)
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp.bind((a.listen, a.dns_port))

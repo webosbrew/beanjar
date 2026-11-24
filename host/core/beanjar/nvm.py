@@ -495,13 +495,15 @@ def new_chip(
     fw_name=None,
     broadcast=None,
     debug_mode=None,
+    country=None,
 ):
     """The Chip a blank EEPROM of the VM gets: the firmware's own default records programmed as a
-    factory would (program; on a release whose chip lowlevelstorage owns, Nvm.lls, LLS's own
-    records, beanjar/lls.py), with the board's values, serial (the VM's own, else board.cmdline's
-    serialNum=) and debug status (debug_mode: DEBUG_MODES' number of the VM's setting, else the
-    board's debugMode=). Reads the firmware; Error if LLS's records cannot be made. A firmware
-    without tvservice's records gives no image, and note says why."""
+        factory would (program; on a release whose chip lowlevelstorage owns, Nvm.lls, LLS's own
+        records, beanjar/lls.py), with the board's values, serial (the VM's own, else board.cmdline's
+        serialNum=) and debug status (debug_mode: DEBUG_MODES' number of the VM's setting, else the
+        board's debugMode=); on an LLS chip the factory countryName country (the VM's, where it has
+    one: lls.py). Reads the firmware; Error if LLS's records cannot be made. A firmware
+        without tvservice's records gives no image, and note says why."""
     nvm = targets.release(target).nvm
     if nvm.lls:
         from . import lls
@@ -516,6 +518,7 @@ def new_chip(
                 serial=serial,
                 broadcast=broadcast,
                 debug_mode=debug_mode,
+                country=country,
             )
             with open(os.path.join(cdir, "eeprom.img"), "rb") as f:
                 image = f.read()

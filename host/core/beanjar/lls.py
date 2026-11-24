@@ -37,6 +37,11 @@ board's command line (the soc layer's board.cmdline):
   6. the system DB's instop_completed true (FACTORY_DONE), as the factory's In-Stop leaves every
      set: LLS's own convertJsonToBinary of a JSON boolean, as devicereset's setInstopCompleted
      writes it.
+  7. with the VM's country (vm.toml firmware.country, countries.py), the factory DB's countryName
+     item, a string as devicereset's setFactoryLLSData writes it on a change of country: the
+     country a set of that country leaves the factory with (a live webOS 6 set's
+     factorydb.countryName.selector holds its USA), from which devicereset sets settings' country
+     on every boot. Without one, LLS's default record's (its group's default country).
 
 The programs run under qemu-arm in bwrap, in a root of the files they read, extracted from the
 firmware's paks with unsquashfs as the VM stacks them (the release's pak lowers over the
@@ -772,7 +777,12 @@ FACTORY_STRINGS = (("modelName", "modelname"), ("serialNum", "serialnumber"))
 FACTORY_DONE = (("bool", "system", "instop_completed", "true"),)
 
 
-def _board_items(cmdline):
+def _country_items(country):
+    """The probe's arguments for the factory DB's countryName (7. above), none without a country."""
+    return ["string", "factory", "countryName", country] if country else []
+
+
+def _board_items(cmdline, country=None):
     """Arguments for the firmware's item conversions, shared by both storage interfaces."""
     words = dict(w.split("=", 1) for w in cmdline.split() if "=" in w)
     mode = words.get("debugMode", "")
@@ -788,10 +798,10 @@ def _board_items(cmdline):
         args += ["string", "factory", f"toolOption{n}Value", str(int(value))]
     for done in FACTORY_DONE:
         args += list(done)
-    return args
+    return args + _country_items(country)
 
 
-def generate_nyx(fw, target, cmdline, work, tree=paths.TREE, say=print):
+def generate_nyx(fw, target, cmdline, work, tree=paths.TREE, say=print, country=None):
     """Stock NYX LLS initializes an erased EEPROM through the existing guest I2C driver.
 
     The module probe enumerates and converts board items after stock initialization.
@@ -833,7 +843,11 @@ done
 cleanup
 trap - EXIT
 """
-    command += "bounded " + shlex.join(["/probe/lls-probe", NYX_LLS, *_board_items(cmdline)]) + "\n"
+    command += (
+        "bounded "
+        + shlex.join(["/probe/lls-probe", NYX_LLS, *_board_items(cmdline, country)])
+        + "\n"
+    )
     rc, out, err = _guest_request(sysroot, cmdfile, tmp, command, tree, eeprom=eeprom)
     if rc:
         raise Error(f"NYX preparation: exit {rc}: {err.strip()[-1500:]}")
@@ -854,9 +868,9 @@ trap - EXIT
     return place_items(image, records, parse_items(out)), out, jsons
 
 
-def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
+def generate(fw, target, cmdline, work, tree=paths.TREE, say=print, country=None):
     """Run the generators and the probe in work (a scratch directory); (image, probe output, the
-    tvconfig JSONs {name: text})."""
+    tvconfig JSONs {name: text}). country: the factory DB's countryName (_country_items)."""
     sysroot = os.path.join(work, "root")
     tmp = os.path.join(work, "tmp")
     os.makedirs(os.path.join(tmp, TVCONFIG.removeprefix("/tmp/")), exist_ok=True)
@@ -902,6 +916,7 @@ def generate(fw, target, cmdline, work, tree=paths.TREE, say=print):
         strings += ["string", "factory", f"toolOption{n}Value", str(int(value))]
     for done in FACTORY_DONE:
         strings += list(done)
+    strings += _country_items(country)
     rc, out, err = _run(
         sysroot,
         cmdfile,
@@ -1013,7 +1028,15 @@ def tvconfig(fw, target, cmdlines, tree=paths.TREE, jobs=8, groups=False):
 
 
 def image(
-    fw, fw_name, target, tree=paths.TREE, say=print, serial=None, broadcast=None, debug_mode=None
+    fw,
+    fw_name,
+    target,
+    tree=paths.TREE,
+    say=print,
+    serial=None,
+    broadcast=None,
+    debug_mode=None,
+    country=None,
 ):
     """The programmed 32 KiB image (bytes) for a new chip of target's board on the firmware fw
     (fw_name its name, the cache's directory): build/lls/<fw_name>/<key>/eeprom.img, made if
@@ -1029,6 +1052,7 @@ def image(
                 serial=serial,
                 broadcast=broadcast,
                 debug_mode=debug_mode,
+                country=country,
             ),
             "eeprom.img",
         ),
@@ -1233,11 +1257,20 @@ def panel_rate(cdir):
 
 
 def cache_dir(
-    fw, fw_name, target, tree=paths.TREE, say=print, serial=None, broadcast=None, debug_mode=None
+    fw,
+    fw_name,
+    target,
+    tree=paths.TREE,
+    say=print,
+    serial=None,
+    broadcast=None,
+    debug_mode=None,
+    country=None,
 ):
     """build/lls/<fw_name>/<key>, with eeprom.img, records.txt, the command line and the JSONs,
     made if missing; the board is the one for the broadcast standard broadcast
-    (targets.board_broadcast), its debugMode= the number debug_mode when given."""
+    (targets.board_broadcast), its debugMode= the number debug_mode when given, its factory
+    countryName country (the VM's, an alpha-3 code) when given."""
     cmdline = board_cmdline(target, tree, broadcast, debug_mode)
     if serial:
         cmdline = (
@@ -1276,6 +1309,8 @@ def cache_dir(
                 with open(path, "rb") as f:
                     digests["beanjar/" + name] = hashlib.sha256(f.read()).hexdigest()
         h = hashlib.sha256(f"{VERSION}\n{cmdline}\n".encode())
+        if country:
+            h.update(f"countryName {country}\n".encode())
         for p in sorted(digests):
             h.update(f"{p} {digests[p]}\n".encode())
         key = h.hexdigest()[:16]
@@ -1290,7 +1325,7 @@ def cache_dir(
                 f"EEPROM: LLS's default records from {fw_name} (firmware generators), cached in {os.path.relpath(cdir, tree.top)}"
             )
             data, out, jsons = (generate_nyx if nyx else generate)(
-                fw, target, cmdline, work, tree, say
+                fw, target, cmdline, work, tree, say, country
             )
             shutil.rmtree(cdir + ".new", ignore_errors=True)
             os.makedirs(cdir + ".new")

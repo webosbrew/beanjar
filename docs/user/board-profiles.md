@@ -54,6 +54,56 @@ set of this build. The VM starts again by itself, and the second boot keeps the 
 normally. Spacebuns' `getSystemInfo` `boardType` is empty on the US
 board, where the European board gives `O22N2_DVB_EU`.
 
+## Choose the TV's country
+
+A board is a model of one country group: its `countryGrp=` is the `grpCode` of one RMM group of
+the firmware's configd tables (`etc/configd/data/rmm/<group>/<country>/tv.rmm.json`), US 2, EU 4,
+JP 18. Without a choice the TV takes the group's default country (US: USA; EU: GBR). The `country`
+setting picks another country of the same group, while the VM is off:
+
+```sh
+beanjar config set tv1 country=CAN
+beanjar config unset tv1 country
+```
+
+The value is the country's ISO 3166 alpha-3 code. The choices come from the firmware: the
+countries of the board's group in `etc/configd/data/rmmCountryGroup.json` (W22O 13.30's US board:
+`CAN`, `MEX`, `USA`; its European board 37 countries). A country of another group is refused, with
+the board's countries and the group the country is in; one of the other broadcast standard (the
+file's `groupDVB` or `groupATSC` block) says so, and needs that standard's board first
+(`broadcast=dvb country=DEU`). `beanjar config set` checks the value against the firmware before
+it saves anything, and every start checks it again.
+
+webOS 5 (W20) and later only. Older firmwares' RMM records have no `grpCode` (W16R to W19P), or
+there are no RMM tables at all (WT1H, W15M), so nothing in the firmware ties the board to a group,
+and `country` is refused there: `the country setting needs webOS 5 or later`.
+
+What the VM does with it is what a set of that country has:
+
+- A new TV state (a new VM, or after `beanjar wipe`) gets the country in the EEPROM, the
+  lowlevelstorage factory DB's `countryName`, as a factory programs it. devicereset copies it into
+  the settings country at every boot, and the normal layer's first-use replay takes the smart
+  service country and the time zone from it.
+- A state that has another country gets it at the next start through LG's settings, as the
+  settings app changes it (`emulator-country`): the settings country, which devicereset writes
+  back to lowlevelstorage, the smart service country where first use has stored one, and the time
+  zone. This happens once per value: a later change in the TV's own settings stays until the
+  setting changes again.
+- With LG's services mocked, the mock tells the TV it is in that country, as LG's server does from
+  the TV's address, so the TV raises no "Changing the country will cause your TV to restart"
+  prompt.
+
+`unset` leaves a TV state's country as it is; `beanjar wipe` gives the board's default back. The
+sources of the country lists and the stores each release line keeps the country in are in
+[the country setting's research record](../research/country-setting.md).
+
+Measured with W22O number1 13.30.56.01 on an x86-64 host (x86-64 guest kernel, host GPU) on
+2026-11-25: a new VM with `country=CAN` booted with lowlevelstorage `countryName` CAN, settings
+country CAN, smart service country CA/CAN and time zone America/Toronto, and showed Home with no
+prompt; the same state set to `MEX` came up MEX in settings, lowlevelstorage, the smart service
+country (MX/MEX) and the time zone (America/Mexico_City), in one boot with no prompt, and kept MEX
+after another restart.
+
 ## Boards
 
 | Chip | Firmware | `atsc` (default) | `dvb` | `arib` |

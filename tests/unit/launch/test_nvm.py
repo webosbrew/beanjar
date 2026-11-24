@@ -461,6 +461,12 @@ class LlsTest(unittest.TestCase):
                 lls._board_items(lls.board_cmdline(target, debug_mode=number))[:2],
                 ["debugstatus", str(number)],
             )
+        # the VM's country (vm.toml firmware.country): the factory DB's countryName, last
+        line = lls.board_cmdline(target)
+        self.assertEqual(
+            lls._board_items(line, "CAN")[-4:], ["string", "factory", "countryName", "CAN"]
+        )
+        self.assertNotIn("countryName", lls._board_items(line))
         with self.assertRaisesRegex(nvm.Error, "debugMode"):
             nvm.with_debug_mode(["a=b"], 5)
         # placing the item: only the system DB's debugstatus bytes change

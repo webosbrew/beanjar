@@ -270,6 +270,7 @@ DEFAULT_DEBUG_MODE = "debug"
 SETTINGS = {
     "fw": "FW",
     "broadcast": "BROADCAST",
+    "country": "COUNTRY",
     "mem": "MEM",
     "smp": "SMP",
     "free_page_reporting": "FREE_PAGE_REPORTING",
@@ -310,6 +311,15 @@ SETTING_HELP = {
         "the firmware's own, else the chip's default (US where it ships on US models)",
         "boot a global firmware as that broadcast standard's model",
         "the firmware's own, else the chip's default",
+    ),
+    "country": (
+        "CODE",
+        "the board's own (its country group's default; what the TV state holds)",
+        "the TV's country, an ISO 3166 alpha-3 code of the board's own country group in the "
+        "firmware's configd RMM tables (US board: USA, CAN, MEX); refused where it is not one, "
+        "naming them, and before webOS 5; applied at the next start through LG's settings, which "
+        "lowlevelstorage and the smart service country follow",
+        "the board's own for a new TV state; a state keeps the country it has (wipe for the board's)",
     ),
     "mem": (
         "MIB",

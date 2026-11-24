@@ -1528,6 +1528,61 @@ class ArgvTest(unittest.TestCase):
         with self.assertRaisesRegex(qemu.Error, "1D492999"):
             launch()
 
+    def test_guest_layer_country(self):
+        """COUNTRY: checked against the board's country group (countries.check, here a stand-in)
+        and put in the per-VM layer as etc/emulator/country (0644), upper-cased; a refusal or a
+        value that is not three letters stops the launch; none, no file."""
+        from beanjar import countries
+
+        ident = os.path.join(self.tmp, "vm", "identity")
+        run = os.path.join(self.tmp, "vm", "run")
+        os.makedirs(ident, mode=0o700)
+        env = dict(
+            FW=self.fw,
+            STATE=self.state,
+            **net("direct"),
+            NET_LG_SERVICES="real",
+            SLOT="1",
+            IDENTITY_DIR=ident,
+            RUN_DIR=run,
+        )
+        country = os.path.join(run, "share", "vm", "etc", "emulator", "country")
+        checked = []
+
+        def check(fw, target, code, tree=None, broadcast=None):
+            checked.append(code)
+            if code != "CAN":
+                raise countries.Error(f"country {code!r} is not one of this board's: CAN, USA")
+
+        def launch(**more):
+            with (
+                mock.patch.object(
+                    partmap, "build", fake_partmap_build(os.path.join(self.tmp, "partinfo.img"))
+                ),
+                mock.patch.object(countries, "check", check),
+            ):
+                p = qemu.plan(
+                    dict(env, **more),
+                    [],
+                    accel="tcg",
+                    tree=paths.Tree(self.top),
+                    say=lambda _: None,
+                )
+            qemu.guest_layer(p)
+            return p
+
+        launch()
+        self.assertFalse(os.path.exists(country))
+        self.assertEqual(launch(COUNTRY="can").country, "CAN")
+        with open(country) as f:
+            self.assertEqual(f.read(), "CAN\n")
+        self.assertEqual(os.stat(country).st_mode & 0o777, 0o644)
+        with self.assertRaisesRegex(qemu.Error, "COUNTRY: country 'GBR' is not one of"):
+            launch(COUNTRY="GBR")
+        with self.assertRaisesRegex(qemu.Error, "COUNTRY: country 'US': an ISO 3166 alpha-3"):
+            launch(COUNTRY="US")
+        self.assertEqual(checked, ["CAN", "GBR"])
+
     def test_guest_layer(self):
         """The per-VM layer (the guest's share "vm"), made afresh from the identity directory at
         each launch: the kernel-store bundle, and for rootssh and devmode in

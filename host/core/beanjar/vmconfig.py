@@ -14,6 +14,7 @@ from collections.abc import Mapping
 FIELDS = {
     "fw": ("firmware", "directory"),
     "broadcast": ("firmware", "broadcast"),
+    "country": ("firmware", "country"),
     "debug_mode": ("firmware", "debug_mode"),
     "updatable": ("firmware", "updatable"),
     "mem": ("hardware", "memory_mib"),
@@ -131,6 +132,7 @@ def decode(doc):
         "mitm_flow_bytes",
         "created",
         "broadcast",
+        "country",
     ):
         if key in cfg and not isinstance(cfg[key], str):
             section, field = FIELDS[key]
@@ -141,6 +143,15 @@ def decode(doc):
         _fail(
             f"firmware.broadcast {cfg['broadcast']!r}: one of {', '.join(BROADCASTS)}", "broadcast"
         )
+    if "country" in cfg:
+        from .countries import CODE
+
+        if not CODE.fullmatch(cfg["country"]):
+            _fail(
+                f"firmware.country {cfg['country']!r}: an ISO 3166 alpha-3 code in upper case "
+                "(USA, GBR)",
+                "country",
+            )
     env = doc.get("advanced", {}).get("env", {})
     if not isinstance(env, Mapping):
         _fail("advanced.env must be a table")

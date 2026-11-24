@@ -181,6 +181,23 @@ def test_country_from_the_request():
     assert lg_sdp.country({}, "")[0] == lg_answers.DEFAULT_COUNTRY
 
 
+def test_country_where_the_tv_is(monkeypatch):
+    """lg_mock.py --country (the VM's country): a request that names no country of the table (a
+    TV whose service country is still its group's Others row, at us7.lgtvsdp.com) is told the
+    VM's, as LG's server answers from the TV's address; one the table knows still answers itself.
+    The ric is the table's, else the RMM group's."""
+    monkeypatch.setattr(lg_sdp, "LOCATION", lg_sdp.location("can,ca,US"))
+    assert lg_sdp.country({"X-Device-Country": "US7"}, "us7.lgtvsdp.com") == ("CA", "CAN", "AIC")
+    assert lg_sdp.country({}, "us7.lgtvsdp.com") == ("CA", "CAN", "AIC")
+    assert lg_sdp.country({"X-Device-Country": "DEU"}, "x") == ("DE", "DEU", "EIC")
+    monkeypatch.setattr(lg_sdp, "LOCATION", lg_sdp.location("AUT,AT,EU"))
+    assert lg_sdp.country({"X-Device-Country": "AUT"}, "EU7.lgtvsdp.com") == ("AT", "AUT", "EIC")
+    assert lg_sdp.location("SGP,SG,AJ") == ("SG", "SGP", "KIC")
+    for bad in ("CAN", "CA,CAN,US", "CAN,CA"):
+        with pytest.raises(ValueError, match="ALPHA3,ALPHA2,GROUP"):
+            lg_sdp.location(bad)
+
+
 def test_render_substitutes_and_times():
     a = {
         "status": 200,

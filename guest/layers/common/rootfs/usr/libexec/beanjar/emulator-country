@@ -1,0 +1,198 @@
+#!/usr/bin/python
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The VM's country (vm.toml firmware.country): the per-VM layer's etc/emulator/country, an
+# alpha-3 code the launcher checked against the board's RMM country group
+# (host/core/beanjar/countries.py). Set once per value, as the settings app's change of country
+# sets it (W23P com.palm.app.settings main.js: setSystemSettings option country), through LG's
+# settings service; devicereset (webOS 5 on) sees the change ("country is updated to ...") and
+# writes lowlevelstorage's factory countryName, from which it restores settings' country on every
+# boot, so the two agree. The smart service country (option smartServiceCountryCode2/3, sdx's)
+# follows where FirstUse's has been stored already (not "other": a set past FirstUse), and so
+# does the time zone, as the settings app's change of country sets it (its JR: settings category
+# time timeZone, the country's default zone from time defaultTimeZone, else its first; kept where
+# the current zone is one of the country's); before that the normal layer's emulator-firstuse
+# stores this country's of both. A later change of country
+# in the TV's own settings is the user's and stays until the setting changes: the mark holds the
+# value applied.
+# Waits for devicereset's first answer (settings' country is "other" until then), then checks a
+# few seconds later that settings and LLS both hold the country (devicereset's first-boot pass may
+# put LLS's back over an early write), and sets it again if not. Run by etc/systemd/system/
+# emulator-country.service (systemd releases, webOS 5 on: the setting is refused before).
+import json
+import subprocess
+import sys
+import syslog
+import time
+
+FILE = "/etc/emulator/country"
+MARK = "/var/luna/preferences/emulator-country"
+LISTS = ("/etc/palm/countryList.json", "/etc/configd/data/rmmCountryGroup.json")
+SETTINGS = "luna://com.webos.settingsservice"
+LLS = "luna://com.webos.service.lowlevelstorage"
+TRIES = 6
+SETTLE = 10
+
+
+def log(msg):
+    syslog.syslog("emulator-country: " + msg)
+    sys.stdout.write("emulator-country: " + msg + "\n")
+    sys.stdout.flush()
+
+
+def call(uri, payload):
+    out = subprocess.check_output(["luna-send", "-n", "1", uri, json.dumps(payload)])
+    reply = json.loads(out)
+    if not reply.get("returnValue", False):
+        raise RuntimeError("%s %s: %s" % (uri, json.dumps(payload), out.strip()))
+    return reply
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except IOError:
+        return ""
+
+
+def option(keys):
+    return call(SETTINGS + "/getSystemSettings", {"category": "option", "keys": keys})["settings"]
+
+
+def set_option(values):
+    log("setSystemSettings option %s" % json.dumps(values))
+    call(SETTINGS + "/setSystemSettings", {"category": "option", "settings": values})
+
+
+def wait_country():
+    # devicereset's first pass: settings' country stays "other" until it has the board's or LLS's
+    proc = subprocess.Popen(
+        [
+            "luna-send",
+            "-i",
+            SETTINGS + "/getSystemSettings",
+            json.dumps({"category": "option", "keys": ["country"], "subscribe": True}),
+        ],
+        stdout=subprocess.PIPE,
+    )
+    try:
+        for line in iter(proc.stdout.readline, b""):
+            reply = json.loads(line)
+            if reply.get("settings", {}).get("country", "other") != "other":
+                return
+    finally:
+        proc.kill()
+        proc.wait()
+    raise RuntimeError("settings ended before the set had a country")
+
+
+def alpha2(country3):
+    # the country's alpha-2 (shortName) in the firmware's lists, any group
+    for path in LISTS:
+        try:
+            with open(path) as f:
+                doc = json.load(f)
+        except (IOError, ValueError):
+            continue
+        stack = [doc]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                code = node.get("alpha3", node.get("codeName"))
+                if code == country3 and node.get("shortName"):
+                    return node["shortName"]
+                stack.extend(node.values())
+            elif isinstance(node, list):
+                stack.extend(node)
+    raise RuntimeError("no alpha-2 for %s in %s" % (country3, ", ".join(LISTS)))
+
+
+def time_zone(short):
+    # the settings app's zone for a country (header): the current one where it is the country's,
+    # else its defaultTimeZone's defaultZoneId, else its first; to systemservice and settings
+    zones = [
+        z
+        for z in call("luna://com.palm.systemservice/getPreferenceValues", {"key": "timeZone"})[
+            "timeZone"
+        ]
+        if z.get("CountryCode") == short
+    ]
+    if not zones:
+        log("no time zone for %s" % short)
+        return
+    current = call("luna://com.palm.systemservice/getPreferences", {"keys": ["timeZone"]}).get(
+        "timeZone", {}
+    )
+    if any(z.get("ZoneID") == current.get("ZoneID") for z in zones):
+        return
+    reply = call(
+        SETTINGS + "/getSystemSettingValues", {"category": "time", "key": "defaultTimeZone"}
+    )
+    defaults = reply.get("defaultTimeZones", reply.get("values", {}).get("defaultTimeZones")) or []
+    zone_id = next(
+        (d.get("defaultZoneId", "") for d in defaults if d.get("countryCode") == short), ""
+    )
+    city = zone_id.split("/")[-1]
+    zone = next((z for z in zones if city and city in z.get("ZoneID", "")), zones[0])
+    log("setPreferences timeZone %s" % json.dumps(zone))
+    call("luna://com.palm.systemservice/setPreferences", {"timeZone": zone})
+    call(SETTINGS + "/setSystemSettings", {"category": "time", "settings": {"timeZone": zone}})
+
+
+def lls_country():
+    # LLS's factory countryName, or None where the service does not answer it
+    try:
+        reply = call(
+            LLS + "/getData", {"dbgroups": [{"dbid": "factory", "items": ["countryName"]}]}
+        )
+    except (RuntimeError, subprocess.CalledProcessError, ValueError):
+        return None
+    for group in reply.get("dbgroups", []):
+        if group.get("dbid") == "factory":
+            return group.get("items", {}).get("countryName")
+    return None
+
+
+def main():
+    want = read(FILE)
+    if not want:
+        return 0
+    if len(want) != 3 or not want.isalpha() or not want.isupper():
+        log("%s: %r is not an alpha-3 code" % (FILE, want))
+        return 1
+    if read(MARK) == want:
+        return 0
+    short = alpha2(want)
+    wait_country()
+    past_first_use = False
+    for _ in range(TRIES):
+        current = option(["country", "smartServiceCountryCode3"])
+        if current.get("country") != want:
+            set_option({"country": want})
+        if current.get("smartServiceCountryCode3", "other") != "other":
+            past_first_use = True
+        if current.get("smartServiceCountryCode3", "other") not in ("other", want):
+            set_option({"smartServiceCountryCode2": short, "smartServiceCountryCode3": want})
+        time.sleep(SETTLE)
+        now = option(["country"]).get("country")
+        lls = lls_country()
+        if now == want and lls in (None, want):
+            if past_first_use:
+                time_zone(short)
+            with open(MARK, "w") as f:
+                f.write(want + "\n")
+            subprocess.call(["sync"])
+            log("country %s (settings %s, LLS %s)" % (want, now, lls))
+            return 0
+        log("settings country %s, LLS %s; setting %s again" % (now, lls, want))
+    log("country %s did not hold; left for the next boot" % want)
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:
+        log(str(e))
+        sys.exit(1)

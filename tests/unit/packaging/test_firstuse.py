@@ -119,8 +119,9 @@ def test_default_zone_of_several():
         helper.default_zone("AU", AU)
 
 
-def run_main(current, tmp_path):
-    """main() on an AU set whose current zone is current; the zone it writes."""
+def run_main(current, tmp_path, country=None, written=None):
+    """main() on an AU set whose current zone is current, the VM's country (etc/emulator/country)
+    country; the zone it writes."""
     replies = {
         "getSystemSettings": {
             "settings": {
@@ -137,7 +138,7 @@ def run_main(current, tmp_path):
         "setSystemSettings": {},
         "setPreferences": {},
     }
-    written = {}
+    written = {} if written is None else written
 
     def call(uri, payload):
         method = uri.rsplit("/", 1)[1]
@@ -151,12 +152,21 @@ def run_main(current, tmp_path):
 
     tmp_path.mkdir()
     temporary = str(tmp_path)
+    if country:
+        Path(temporary, "country").write_text(country + "\n")
+    # the firmware's full list (/etc/palm/countryList.json), of which settings answers the board's group
+    Path(temporary, "countryList.json").write_text(
+        '{"countryList": [{"groupCode": "AJ", "countries": [{"alpha3": "AUS", "shortName": "AU"},'
+        ' {"alpha3": "NZL", "shortName": "NZ"}]}]}'
+    )
     with (
         mock.patch.multiple(
             helper,
             MARK=temporary + "/mark",
             LASTINPUT_MARK=temporary + "/lastinput",
             OOBE=temporary + "/no-oobe",
+            COUNTRY=temporary + "/country",
+            COUNTRY_LIST=temporary + "/countryList.json",
             call=call,
             first=mock.Mock(),
             log=mock.Mock(),
@@ -178,6 +188,18 @@ def test_first_use_of_several_zones(tmp_path):
     # one of the country's already chosen stands
     zone, prefs = run_main(AU[0], tmp_path / "b")
     assert (zone, prefs) == (AU[0], [])
+
+
+def test_first_use_of_the_vm_country(tmp_path):
+    # the VM's country (vm.toml firmware.country), which settings' list for the board's group does
+    # not name: FirstUse's smart service country and time zone are its, from the full list
+    written = {}
+    zone, _ = run_main({"ZoneID": "Etc/UTC"}, tmp_path / "a", country="NZL", written=written)
+    assert zone == {"CountryCode": "NZ", "ZoneID": "x"}
+    assert {
+        "category": "option",
+        "settings": {"smartServiceCountryCode2": "NZ", "smartServiceCountryCode3": "NZL"},
+    } in written["setSystemSettings"]
 
 
 def last_input(current, tmp_path, oobe=True, marked=False):

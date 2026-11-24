@@ -42,6 +42,9 @@ COUNTRIES = {
     "IN": ("IND", "KIC"),
 }
 DEFAULT_COUNTRY = "US"
+# LG's region code for a country the table above lacks, by the firmware's RMM group of it (the VM's
+# country, lg_mock.py --country): the Americas' groups AIC, Europe's and CIS's EIC, the rest KIC
+RIC_BY_GROUP = {"US": "AIC", "BR": "AIC", "EU": "EIC", "CS": "EIC"}
 
 # A path the table does not know: what LG's server answers to an unknown resource, without the
 # server time (LG sends X-Server-Time on success only).

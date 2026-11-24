@@ -7,7 +7,9 @@
 # screen's default with no network connected:
 #   location  the country selected is the set's own (settings' country in the list, W21P's
 #             main.js: the index of countryCode3 in countryList[0]'s countries; W20L's list has
-#             only it); one time zone for the country: onSelectTimeZone(0) by itself, which
+#             only it), or the VM's (etc/emulator/country, vm.toml firmware.country: a country
+#             of the board's RMM group, which settings' list for the board's group may not name;
+#             the common layer's emulator-country sets settings' country to it); one time zone for the country: onSelectTimeZone(0) by itself, which
 #             writes it when it is not the current one, to systemservice setPreferences and to
 #             settings' category time; of several, the user's: the list starts on the current
 #             zone, which stands, else the country's default zone (default_zone below, the
@@ -48,6 +50,8 @@ MARK = "/var/luna/preferences/emulator-firstuse"
 LASTINPUT_MARK = "/var/luna/preferences/emulator-firstuse-lastinput"
 OOBE = "/usr/palm/applications/com.webos.app.oobe"
 LIVETV = "com.webos.app.livetv"
+COUNTRY = "/etc/emulator/country"
+COUNTRY_LIST = "/etc/palm/countryList.json"
 
 
 def call(uri, payload):
@@ -111,6 +115,15 @@ def default_zone(short, zones):
     return next((z for z in zones if city and city in z.get("ZoneID", "")), zones[0])
 
 
+def vm_country():
+    # the VM's country (vm.toml firmware.country), or None
+    try:
+        with open(COUNTRY) as f:
+            return f.read().strip() or None
+    except IOError:
+        return None
+
+
 def last_input():
     # oobe's write on FirstUse's default finish (header), once
     if os.path.exists(LASTINPUT_MARK):
@@ -135,12 +148,17 @@ def main():
         lambda r: r.get("settings", {}).get("country", "other") != "other",
     )
     option = settings("option", ["country", "localeCountryGroup", "japanCitySelection"])
-    country3 = option["country"]
+    country3 = vm_country() or option["country"]
     group = option["localeCountryGroup"][-2:]
     countries = call(
         "luna://com.webos.settingsservice/getSystemSettingValues",
         {"category": "option", "key": "country"},
     )["countryList"][0]["countries"]
+    if vm_country() and not [c for c in countries if c["alpha3"] == country3]:
+        # the VM's country, outside the list of the board's own group: its entry in the full list
+        with open(COUNTRY_LIST) as f:
+            countries = [c for g in json.load(f)["countryList"] for c in g["countries"]]
+        countries = [c for c in countries if c["alpha3"] == country3][:1]
     country = [c for c in countries if c["alpha3"] == country3]
     if len(country) != 1:
         raise RuntimeError(
