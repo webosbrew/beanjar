@@ -47,6 +47,7 @@ W17H, W18R = "06.10.65.01-HE_DTV_W17H_AFADABAA", "05.50.70.01-HE_DTV_W18R_AFAAAB
 W19P, W20L = "05.40.97.01-HE_DTV_W19P_AFADABAA", "04.63.25.01-HE_DTV_W20L_AFAAJAAA"
 W21P = "03.70.25.01-HE_DTV_W21P_AFADATAA"
 W15U = "04.06.25.01-HE_DTV_W15U_AFADABAA"
+W15L = "03.31.00.01-HE_DTV_W15L_AFAAABAA"
 W19R = "05.40.97.01-HE_DTV_W19R_AFAAATAA"
 W17R = "06.10.60.01-HE_DTV_W17R_AFAAATAA"
 W17M = "06.10.55.01-HE_DTV_W17M_AFADATAA"
@@ -65,6 +66,7 @@ FOUND = {
     "h13-afro": fws(WT1H_OLD, WT1H),
     "m14-beehive": fws(W15M),
     "lm15u-beehive": fws(W15U),
+    "mtka5lr-beehive": fws(W15L),
     "m2-dreadlocks": fws(W16R),
     "m16p-dreadlocks2": fws(W17H),
     "m16plite-dreadlocks2": fws(W17M),
