@@ -5,8 +5,8 @@
 # userland is put together. W18R's jobs
 # that dreadlocks overrides and that are the same here (mount-bsp's logic, lginit_app byte for
 # byte, the state formatter's mkfs options) are dreadlocks' files, taken from
-# guest/layers/webos/dreadlocks/rootfs one by one (3 of its 8: dreadlocks is not this release's base):
-#   mount-bsp.override, lginit_app.override, emulator-format-state.conf
+# guest/layers/webos/dreadlocks/rootfs one by one (4 of its 9: dreadlocks is not this release's base):
+#   mount-bsp.override, lginit_app.override, emulator-format-state.conf, emulator-service-country.conf
 # and this release's own, in rootfs/etc/init:
 #   mount-readonly-volatile.d/00-partinfo.squashfs.fstab
 #                                         the paks (no smartkey), which init mounts
@@ -15,10 +15,6 @@
 #   PmLogDaemon.override                  the stock job's script, $PMLOG_PRELOAD after its
 #                                         libsystrim: PmLog mode "preload-env" (targets.py), with
 #   usr/lib/libpmlog-keep-all.so          the PmLog preload (guest/layers/webos/src/pmlogd)
-#   emulator-service-country.conf         in Normal, the smart service country (sdx's offline
-#                                         value, the "Others" row of country_codes_v5.xml's group)
-#                                         set from tvservice's start, before tv-ready, when W18R's
-#                                         sam loads its country's launch points
 #   sam.override.in (not in rootfs/)      the stock job's script with the jail hooks after its
 #                                         libsystrim, as sam_override_in for the common and gl
 #                                         layers to fill in
@@ -36,7 +32,8 @@ dile_gal_capability_bytes = 76
 sam_override_in = files('sam.override.in')
 
 goldilocks_shared = []
-foreach f : ['mount-bsp.override', 'lginit_app.override', 'emulator-format-state.conf']
+foreach f : ['mount-bsp.override', 'lginit_app.override', 'emulator-format-state.conf',
+                      'emulator-service-country.conf']
   goldilocks_shared += ['--file', meson.current_source_dir() / '..' / 'dreadlocks' / 'rootfs' / 'etc' / 'init' / f,
                         'etc/init' / f, '644']
 endforeach

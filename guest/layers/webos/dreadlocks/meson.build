@@ -11,6 +11,8 @@
 #                                         pak's bsp/ as a lower layer (targets.py, PAK_LOWERS)
 #   emulator-format-state.conf            formats a blank state disk before mount-readwrite, with
 #                                         this release's mkfs options (as webOS 2's)
+#   emulator-service-country.conf         in Normal, the board's own smart service country (US, USA)
+#                                         where the stock default is "other", as FirstUse's Next writes it
 #   mount-readonly-volatile.d/00-partinfo.squashfs.fstab
 #                                         the paks, which init mounts (license at /mnt/license)
 #   lginit_app.override                   as webOS 2's
