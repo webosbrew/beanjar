@@ -29,7 +29,8 @@ own files did.
 
 The questions come from the build. A guest build writes the ones it asked to
 firmware-questions.txt in its build directory (guest/targets/meson.build), and stops when the
-facts file does not answer one. generate() answers them from an extracted firmware: the path, version
+facts file does not answer one. generate() answers them from a firmware's paks, read in place (the
+rootfs image mounted with squashfuse, single files with unsquashfs -cat): the path, version
 and lib questions are the build directory's (else the facts file's own); the symbols are the global
 names of the object files of the build's links against a firmware library, and of their outputs once
 linked (an executable's own _init or _end, exported where the library defines them too), that the
@@ -38,9 +39,11 @@ library defines (else the facts file's own symbols, looked up again).
 from what the firmware answers.
 """
 
+import contextlib
 import os
 import re
 import subprocess
+import tempfile
 
 FACTS_DIR = ("guest", "targets", "facts")
 QUESTIONS = "firmware-questions.txt"
@@ -360,13 +363,46 @@ def used_symbols(build_dir, libs):
 # ---------------------------------------------------------------- answering from a firmware ---
 
 
-def lib_root(fw_dir):
-    """The extracted root the facts' rootfs paths are read in: rootfs/ (webOS), else
-    root.pak.unsquashfs/ (SimpleSmart)."""
-    for d in ("rootfs", "root.pak.unsquashfs"):
-        if os.path.isdir(os.path.join(fw_dir, d)):
-            return os.path.join(fw_dir, d)
-    raise Error(f"{fw_dir}: no extracted rootfs/ (the firmware's libraries are read there)")
+def _image(fw_dir, image):
+    """(path, offset) of fw_dir's stock image (rootfs or bsppart): <image>.pak (root.pak for
+    SimpleSmart's rootfs), or super.pak's logical image. Error without it."""
+    from . import paths, superpak
+
+    try:
+        logical = superpak.images(fw_dir)
+    except ValueError as e:
+        raise Error(str(e)) from None
+    if image in logical:
+        return logical[image][:2]
+    src = paths.root_pak(fw_dir) if image == "rootfs" else None
+    src = src or os.path.join(fw_dir, image + ".pak")
+    if not os.path.isfile(src):
+        raise Error(f"{fw_dir}: no {image}.pak or super.pak {image}")
+    return src, 0
+
+
+@contextlib.contextmanager
+def mounted_root(fw_dir):
+    """The firmware's rootfs image mounted read-only with squashfuse for the with block, so the
+    facts' rootfs paths are read in place without extracting it; unmounted after."""
+    src, offset = _image(fw_dir, "rootfs")
+    mnt = tempfile.mkdtemp(prefix="beanjar-fwfacts-")
+    try:
+        r = subprocess.run(
+            ["squashfuse", "-o", f"ro,offset={offset}", src, mnt],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if r.returncode != 0:
+            raise Error(f"{src}: squashfuse cannot mount it: {r.stderr.strip()}")
+        try:
+            yield mnt
+        finally:
+            subprocess.run(["fusermount3", "-u", mnt], check=True)
+    finally:
+        os.rmdir(mnt)
 
 
 def _in_root(root, path):
@@ -406,18 +442,7 @@ def image_file(fw_dir, image, path):
     """The bytes of path in fw_dir's stock image (rootfs or bsppart: <image>.pak, or super.pak's
     logical image), its symlinks followed by unsquashfs; None where the image has no such file.
     Error without the image."""
-    from . import superpak
-
-    try:
-        logical = superpak.images(fw_dir)
-    except ValueError as e:
-        raise Error(str(e)) from None
-    if image in logical:
-        src, offset, _size = logical[image]
-    else:
-        src, offset = os.path.join(fw_dir, image + ".pak"), 0
-    if not os.path.isfile(src):
-        raise Error(f"{fw_dir}: no {image}.pak or super.pak {image}")
+    src, offset = _image(fw_dir, image)
     r = subprocess.run(
         ["unsquashfs", "-cat", "-no-wildcards", "-o", str(offset), src, path.lstrip("/")],
         stdout=subprocess.PIPE,
@@ -428,8 +453,6 @@ def image_file(fw_dir, image, path):
 
 def answer_defines(fw_dir, q):
     """A defines question's answer: whether the library of q (IMAGE:PATH:NAME) defines NAME."""
-    import tempfile
-
     image, path, name = q.split(":")
     data = image_file(fw_dir, image, path)
     if data is None:
@@ -459,22 +482,27 @@ def answer(fw_dir, questions, symbols, entries=None):
         have = set(entries)
         facts["path"] = {p: p in have for p in questions["path"]}
     if questions["version"] or questions["lib"]:
-        root = lib_root(fw_dir)
-        for p in questions["version"]:
-            facts["version"][p] = answer_version(root, p)
-        for lib in questions["lib"]:
-            full = _in_root(root, lib)
-            if not os.path.isfile(full):
-                raise Error(f"the firmware has no {lib}, which the build links against")
-            name = soname(_readelf(["-d", full]))
-            if not name:
-                raise Error(f"{lib} has no SONAME")
-            facts["lib"][lib] = name
-            defined = exports(_readelf(["--dyn-syms", full]))
-            used = {n: defined[n] for n in symbols.get(lib, ()) if n in defined}
-            if used:
-                facts["sym"][lib] = used
+        with mounted_root(fw_dir) as root:
+            _answer_libs(root, questions, symbols, facts)
     return facts
+
+
+def _answer_libs(root, questions, symbols, facts):
+    """The version, lib and sym facts, read in root (the mounted rootfs image)."""
+    for p in questions["version"]:
+        facts["version"][p] = answer_version(root, p)
+    for lib in questions["lib"]:
+        full = _in_root(root, lib)
+        if not os.path.isfile(full):
+            raise Error(f"the firmware has no {lib}, which the build links against")
+        name = soname(_readelf(["-d", full]))
+        if not name:
+            raise Error(f"{lib} has no SONAME")
+        facts["lib"][lib] = name
+        defined = exports(_readelf(["--dyn-syms", full]))
+        used = {n: defined[n] for n in symbols.get(lib, ()) if n in defined}
+        if used:
+            facts["sym"][lib] = used
 
 
 def facts_path(top, target):
@@ -520,7 +548,8 @@ def main(argv=None):
 def add_arguments(p):
     p.add_argument("target", help="<chip>-<release>")
     p.add_argument(
-        "--firmware", help="the extracted firmware (default: the target's, config FW --target)"
+        "--firmware",
+        help="the firmware directory, its paks read in place (default: the target's, config FW --target)",
     )
     p.add_argument(
         "--build",

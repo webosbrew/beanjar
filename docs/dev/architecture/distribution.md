@@ -241,9 +241,10 @@ replica checkout tree or writable files below `/usr`.
   and sparse state offline and retains the originals; runtime defaults no longer
   create identity files in the source checkout. Firmware lives in the host's
   firmware collections (`firmware_dirs` in the machine's `config.toml`, default
-  `/srv/beanjar/firmware`, possibly a read-only share), used in place; temporary
-  experiments under `scratch/firmware/` or explicit external paths; no
-  checkout-root `firmware/` directory is part of the runtime layout.
+  `/srv/beanjar/firmware`, possibly a read-only share), used in place, or an
+  explicit external directory of paks (an EPK mounted with `epkfs`); nothing is
+  extracted, and no checkout-root `firmware/` directory is part of the runtime
+  layout.
 - Generated LLS data uses `$XDG_CACHE_HOME/beanjar/lls` (normally
   `~/.cache/beanjar/lls`). No firmware-derived cache is packaged.
 - Per-VM temporary runtime files remain in the existing VM runtime directory.

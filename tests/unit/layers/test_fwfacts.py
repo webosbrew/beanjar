@@ -174,14 +174,19 @@ CC = shutil.which("cc")
 
 
 @unittest.skipUnless(CC and shutil.which("readelf"), "no host C compiler or readelf")
+@unittest.skipUnless(
+    shutil.which("mksquashfs") and shutil.which("squashfuse") and os.path.exists("/dev/fuse"),
+    "no mksquashfs, squashfuse or FUSE",
+)
 class Firmware(unittest.TestCase):
-    """A firmware with one versioned library, a build that links against it, and the stub."""
+    """A firmware (its rootfs.pak) with one versioned library, a build that links against it, and
+    the stub."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp)
         t = Path(self.tmp)
-        lib = t / "fw/rootfs/usr/lib"
+        lib = t / "rootfs/usr/lib"
         lib.mkdir(parents=True)
         (t / "demo.c").write_text(
             "int demo_var[2] = {1, 2};\n"
@@ -221,7 +226,16 @@ class Firmware(unittest.TestCase):
         (build / fwfacts.QUESTIONS).write_text(
             "lib usr/lib/libdemo.so.1\nversion usr/lib/libdemo.so\nversion usr/lib/libnone.so.0\n"
         )
+        (t / "fw").mkdir()
+        self.squash(t / "rootfs", t / "fw/rootfs.pak")
         self.t, self.build = t, build
+
+    def squash(self, tree, pak):
+        subprocess.run(
+            ["mksquashfs", str(tree), str(pak), "-quiet", "-noappend"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
 
     def cc(self, *argv):
         subprocess.run([CC, *argv], check=True)
@@ -290,19 +304,14 @@ class Firmware(unittest.TestCase):
         with self.assertRaisesRegex(fwfacts.Error, "no usr/lib/libmissing.so.1"):
             fwfacts.answer(str(self.t / "fw"), q, {})
 
-    @unittest.skipUnless(shutil.which("mksquashfs"), "no mksquashfs")
     def test_defines(self):
         """A defines question is answered from the image itself (bsppart.pak here), through the
         library's symlinks; a library the image has not is a no."""
         bsp = self.t / "bsp-tree/bsp/usr/lib"
         bsp.mkdir(parents=True)
-        shutil.copy(self.t / "fw/rootfs/usr/lib/libdemo.so.1.2.3", bsp)
+        shutil.copy(self.t / "rootfs/usr/lib/libdemo.so.1.2.3", bsp)
         os.symlink("libdemo.so.1.2.3", bsp / "libdemo.so")
-        subprocess.run(
-            ["mksquashfs", str(self.t / "bsp-tree"), str(self.t / "fw/bsppart.pak"), "-quiet"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-        )
+        self.squash(self.t / "bsp-tree", self.t / "fw/bsppart.pak")
         q = {
             "path": [],
             "version": [],
@@ -323,8 +332,26 @@ class Firmware(unittest.TestCase):
             },
         )
         q["defines"] = ["rootfs:usr/lib/libdemo.so:demo_f"]
+        self.assertEqual(
+            fwfacts.answer(str(self.t / "fw"), q, {})["defines"], {q["defines"][0]: True}
+        )
+        os.remove(self.t / "fw/rootfs.pak")
         with self.assertRaisesRegex(fwfacts.Error, "no rootfs.pak or super.pak rootfs"):
             fwfacts.answer(str(self.t / "fw"), q, {})
+
+    def test_mount_cleaned_up(self):
+        """The rootfs image is mounted for the answers only: no mount or mount point is left, also
+        when answering fails."""
+        q = {"path": [], "version": ["usr/lib/libdemo.so"], "lib": ["usr/lib/libmissing.so.1"]}
+        before = set(os.listdir(tempfile.gettempdir()))
+        with self.assertRaisesRegex(fwfacts.Error, "no usr/lib/libmissing.so.1"):
+            fwfacts.answer(str(self.t / "fw"), q, {})
+        left = {
+            n
+            for n in set(os.listdir(tempfile.gettempdir())) - before
+            if n.startswith("beanjar-fwfacts-")
+        }
+        self.assertEqual(left, set())
 
     def test_no_questions(self):
         with self.assertRaisesRegex(fwfacts.Error, "no .* and no firmware-questions.txt"):

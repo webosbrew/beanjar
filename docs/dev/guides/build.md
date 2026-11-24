@@ -61,8 +61,9 @@ symbols and version needs as a link against the firmware's own file did.
 Each rule adds its question to `fw_questions` before it reads the answer; the setup writes them to
 `firmware-questions.txt` in the build directory and stops, naming them, when the facts file does not
 answer one. `host/scripts/vm-launcher firmware-facts <target>` answers them from the target's
-extracted firmware (its paks for paths, the extracted `rootfs/` or `root.pak.unsquashfs/` for
-libraries; `--firmware DIR` for another):
+paks, read in place: paths with `unsquashfs -ls`, libraries in the rootfs image mounted read-only
+with `squashfuse` for the run (`--firmware DIR` for another firmware directory: a collection entry,
+or an EPK mounted with `epkfs`). Nothing is extracted:
 
 ```sh
 host/scripts/vm-launcher firmware-facts k8hp-ombre --build build/guest-k8hp-ombre   # write
@@ -216,9 +217,10 @@ uses managed directories. Published guest artifacts remain under `build/`.
 
 Firmware is looked up by name in the host's firmware collections, `firmware_dirs` in
 `~/.config/beanjar/config.toml` (`beanjar host config set firmware_dirs=DIR[:DIR...]`; default
-`/srv/beanjar/firmware`). Keep temporary firmware experiments under `scratch/firmware/` (list it
-there to find them by name) or another scratch directory, and pass an explicit `FW=PATH` (or the
-host build's `-Dfirmware=PATH`) for other locations. The checkout root has no `firmware/` directory.
+`/srv/beanjar/firmware`). Firmware is read in place and never extracted into the checkout: for a
+firmware not in a collection, mount its EPK read-only with `epkfs EPK DIR` (a directory of its
+paks) and pass `FW=DIR` (or the host build's `-Dfirmware=DIR`; the guest build takes no firmware).
+The checkout root has no `firmware/` directory.
 
 ## Regression runs
 
@@ -811,7 +813,7 @@ firmware exclusion concerns LG binaries and paks, not those images; raw captures
 |---|---|---|
 | Legacy checkout migration backups | `local/`: `model-secret`, `ca/` (the proxy CA's key), `*_host_key`, `devmode_rsa`, `id_ed25519`, `authorized_keys`, `known_hosts` | secrets, and the user's keys |
 | A library | `~/.local/share/beanjar` (or `BEANJAR_LIBRARY`): `vms/<name>/{identity,state,logs,run,firmware}`, `ca/` | per-VM keys and model keys, TV state, the user's firmware (each VM's own) |
-| The user's firmware and what is made from it | the host's firmware collections (`firmware_dirs`), `scratch/firmware/` in the checkout (ignored), `build/firmware-cache` (uncompressed images, partition maps), a library VM's `vms/<name>/firmware/{*.pak,cache}` (or `vms/<name>/firmware-cache` for an external `fw`) | LG's files |
+| The user's firmware and what is made from it | the host's firmware collections (`firmware_dirs`), `build/firmware-cache` (uncompressed images, partition maps), a library VM's `vms/<name>/firmware/{*.pak,cache}` (or `vms/<name>/firmware-cache` for an external `fw`) | LG's files |
 | The checkout VM's state and logs | `build/state`, `build/logs`, `build/share` (its runtime tree: the per-VM layer with its keys, and what the guest wrote), `build/console.log`, `build/webos.log`, `build/qemu.out`, `build/*.log` | TV state (NDUID, accounts, db8), keys, and logs that quote them |
 | Captures | `*.pcap` (`build/intercept-*.pcap`, `build/net-tcg.pcap`), `build/netstub*.log`, `build/tvsvc-observe`, `build/localstorage.db`, `build/sdp-source-review` | LG's traffic, a real TV's, apps' data |
 | Raw screenshots and recordings | `build/*.png`, `*.jpg`, `*.ppm`, `*.wav`, `*.bin` (input recordings), `build/tmp`, `build/vm-osd`, `build/walk`, `build/media-check`, `build/video-app` | unreviewed captures of the firmware's screens and sounds |
