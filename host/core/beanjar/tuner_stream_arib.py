@@ -28,7 +28,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .tuner_stream import PACKET, Error, crc32_mpeg
 
 MUX_RATE = 5_000_000  # bits a second
-VERSION = 5  # of the generator: part of a stream's key (stream_key)
+VERSION = 7  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 LOOP_SECONDS = 5  # of the A/V loop
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
@@ -78,7 +78,10 @@ def startup_bml():
     from the default CLUT. A BML document shows the video only through a video object whose data
     names the video component (/00: component tag 0x00 of this service); LG's NetFront reports a
     video object without one as not visible and the set mutes the video while the page shows. The
-    object sits in a div: NetFront lays out only the div elements among the body's children."""
+    object sits in a div: NetFront lays out only the div elements among the body's children. The d
+    button hides and shows the panel, as broadcast pages do it: the set sends the document a
+    DataButtonPressed event. The page's window gets the d key only with data-button in the
+    used-key-list; without it the key goes to Live TV, which does nothing with it."""
     doc = f"""<?xml version="1.0" encoding="EUC-JP" ?>
 <!DOCTYPE bml PUBLIC "+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA" "http://www.arib.or.jp/B24/DTD/bml_1_0.dtd">
 <?bml bml-version="100.0" ?>
@@ -89,12 +92,19 @@ def startup_bml():
 body {{ resolution: 960x540; display-aspect-ratio: 16v9; used-key-list: basic data-button; background-color-index: 8; }}
 p {{ font-family: 丸ゴシック; font-size: 36px; line-height: 48px; color-index: 7; }}
 ]]></style>
+<script><![CDATA[
+function toggle() {{
+  var panel = document.getElementById("panel");
+  panel.normalStyle.visibility = panel.normalStyle.visibility == "hidden" ? "visible" : "hidden";
+}}
+]]></script>
+<bevent><beitem id="d" type="DataButtonPressed" subscribe="subscribe" onoccur="toggle();"/></bevent>
 </head>
 <body>
 <div style="left:0px;top:0px;width:960px;height:540px;">
 <object type="video/X-arib-mpeg2" data="/{TAG_VIDEO:02x}" streamstatus="play" style="left:0px;top:0px;width:960px;height:540px;"/>
 </div>
-<div style="left:0px;top:360px;width:960px;height:180px;background-color-index:4;">
+<div id="panel" style="left:0px;top:360px;width:960px;height:180px;background-color-index:4;">
 <p style="left:48px;top:30px;width:864px;height:48px;">{PAGE_TEXT}</p>
 <p style="left:48px;top:96px;width:864px;height:48px;font-size:28px;">{PAGE_TEXT_2}</p>
 </div>
