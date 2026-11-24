@@ -80,6 +80,15 @@ MODULE_PARM_DESC(amst_se,
                  "AUD_MASTER_IOW_SET_SE_FN's number (H13 and M14 16, M16P 60): the sound engine's "
                  "OSD volume (function 9) goes to lgemu's playback gain; 0: not decoded");
 
+/* The S/PDIF output's mode: KADP_AUDIO_SetSpdifOutput's _IOW(AUD_MASTER_MAGIC, 3, int) on WT1H
+ * (HAL_AUDIO_SPDIF_SetOutputType passes it; tvservice sets HAL mode 1 for pcm, 2 for auto). The
+ * int is kept as the sound output's "AMST SpdifOutput" in lgemu's /proc/lgemu/sound_out, beside
+ * the mutes of the outputs other than the speaker ("AMST Mute N"). */
+static unsigned int amst_spdif;
+module_param(amst_spdif, uint, 0444);
+MODULE_PARM_DESC(amst_spdif, "KADP_AUDIO_SetSpdifOutput's number (H13 3): the S/PDIF mode is kept "
+                             "in lgemu's sound output values; 0: not decoded");
+
 static u32 aud_kdrv_nr, aud_event_nr, aud_master_dev;
 /* the settings kept as set, for their queries: the numbers, the value (zero before) */
 static struct {
@@ -145,8 +154,20 @@ static long aud_master_ioctl(struct file *file, unsigned int cmd, unsigned long 
 
         if (copy_from_user(&m, uarg, sizeof(m)))
             return -EFAULT;
-        if (m.output == AUD_OUT_SPEAKER)
+        if (m.output == AUD_OUT_SPEAKER) {
             lgemu_snd_speaker_mute(m.mute != 0);
+        } else {
+            char name[24];
+
+            snprintf(name, sizeof(name), "AMST Mute %u", m.output);
+            lgemu_snd_out_set(name, (long[]){m.mute}, 1);
+        }
+    } else if (amst_spdif && cmd == _IOW(AUD_MASTER_MAGIC, amst_spdif, int)) {
+        int mode;
+
+        if (get_user(mode, (int __user *)uarg))
+            return -EFAULT;
+        lgemu_snd_out_set("AMST SpdifOutput", (long[]){mode}, 1);
     }
     if (cmd == _IOR(AUD_MASTER_MAGIC, aud_kdrv_nr, u32))
         return put_user(aud_master_dev, (u32 __user *)uarg);

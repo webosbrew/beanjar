@@ -22,7 +22,8 @@ board_cmdline = "/etc/emulator/board.cmdline"
 # Its audio master (/dev/lg/amst0, KADP_AUDIO_OpenMaster): the 2014 audio_kapi_master.h's
 # GET_KDRV_HANDLE nr 17 and GET_EVENT nr 41 (0x80044d11 and 0xc0084d29 in WT1H's KADP),
 # the handle LX_AUD_DEV_MAS0, 20; SET_SE_FN nr 16 (amst_se), whose sound-engine function 9
-# is the OSD volume lg115x.ko passes to lgemu's playback gain.
+# is the OSD volume lg115x.ko passes to lgemu's playback gain; SetSpdifOutput nr 3 (amst_spdif,
+# 0x40044d03), the S/PDIF mode, which it keeps in lgemu's /proc/lgemu/sound_out.
 # Its back end (/dev/lg/be0): the 2014 be_kapi.h's GET_FIRMWARE_INFO_ADDR nr 21 and
 # REG_ACCESS nr 19 (0x80084415, 0xc0104413 in WT1H's KADP).
 # Its SP804 timers at 0xfd100000 (/dev/mem), clocked by the AMBA bus at 198 MHz
@@ -40,6 +41,7 @@ params = [
     "gpio_pins=144",
     "amst=17:41:20",
     "amst_se=16",
+    "amst_spdif=3",
     "be=21:19",
     "timer_hz=198000000",
 ]
