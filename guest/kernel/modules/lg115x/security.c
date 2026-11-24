@@ -17,6 +17,9 @@
 #include <linux/math64.h>
 #include <linux/mm.h>
 #include <linux/timekeeping.h>
+#include <linux/netlink.h>
+#include <net/net_namespace.h>
+#include <net/sock.h>
 #include "lgemu-drv.h"
 #include "lgemu-i2c.h"
 
@@ -42,6 +45,15 @@ MODULE_PARM_DESC(se_mem,
                  "the SE memory region, base:size (gMemCfgSE of the chip); unset: no /dev/lg/se0");
 module_param(se_tzfw, charp, 0444);
 MODULE_PARM_DESC(se_tzfw, "the TZ firmware's region, base:size (gMemCfgSE_TZFW), reported only");
+/* Later kadpd (W18H's) forks an "se-kadpd" child that serves the secure world's requests over a
+ * netlink family of the kernel's SE driver: it starts its SE thread, which takes KADP's SE lock
+ * (sem.kadp-se-sema), then opens socket(AF_NETLINK, SOCK_RAW, family), binds and sends its
+ * registration. Without the family the child exits with its thread still holding the lock, which
+ * no other process then gets (tvservice's first KADP_SE call waits forever), and kadpd forks it
+ * again. With it, the child registers and waits for requests, of which none come. */
+static int se_netlink;
+module_param(se_netlink, int, 0444);
+MODULE_PARM_DESC(se_netlink, "the SE driver's netlink family for kadpd's se-kadpd; 0: none");
 
 /* LX_MEMCFG_T of a 32-bit kernel: name (a pointer, 0 here), base, size */
 struct lx_memcfg32 {
@@ -57,6 +69,7 @@ static struct lx_memcfg32 se_cfg[2]; /* the SE region, the TZ firmware's */
 static void *se_buf;                 /* the SE region's memory */
 static DEFINE_MUTEX(se_lock);        /* the stock driver's operation lock */
 static u32 se_seen[SE_SEEN_MAX][2];
+static struct lx_seen se_ioc_seen = LX_SEEN_INIT(se_ioc_seen); /* the commands not answered */
 static unsigned int se_seen_count;
 
 static int se_parse(const char *text, struct lx_memcfg32 *cfg)
@@ -116,6 +129,8 @@ static long se_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         break;
     }
     mutex_unlock(&se_lock);
+    if (ret == -ENOTTY)
+        return lx_seen_log(&se_ioc_seen, "se", cmd, -ENOTTY);
     return ret;
 }
 
@@ -149,11 +164,20 @@ static const struct file_operations se_fops = {
 };
 
 static struct lgemu_cdev se_cdev;
+static struct sock *se_nl;
+
+static void se_nl_input(struct sk_buff *skb)
+{
+    /* se-kadpd's registration (its port id): no secure world will ever send it a request */
+}
 
 void lx_se_remove(void)
 {
     if (!se_cdev.added)
         return;
+    if (se_nl)
+        netlink_kernel_release(se_nl);
+    se_nl = NULL;
     lgemu_cdev_del(&se_cdev);
     vfree(se_buf);
 }
@@ -171,11 +195,30 @@ int lx_se_add(void)
     se_buf = vmalloc_user(se_cfg[0].size);
     if (!se_buf)
         return -ENOMEM;
+    if (se_netlink) {
+        struct netlink_kernel_cfg cfg = {.input = se_nl_input};
+
+        if (se_netlink <= NETLINK_SMC || se_netlink >= MAX_LINKS) {
+            pr_err("se: se_netlink=%d is not a vendor netlink family\n", se_netlink);
+            vfree(se_buf);
+            return -EINVAL;
+        }
+        se_nl = netlink_kernel_create(&init_net, se_netlink, &cfg);
+        if (!se_nl) {
+            vfree(se_buf);
+            return -ENOMEM;
+        }
+    }
     err = lgemu_cdev_add(&se_cdev, SE_MAJOR, 0, 1, "se", &se_fops);
     if (err) {
+        if (se_nl)
+            netlink_kernel_release(se_nl);
+        se_nl = NULL;
         vfree(se_buf);
         return err;
     }
+    if (se_nl)
+        pr_info("se: netlink family %d for se-kadpd\n", se_netlink);
     pr_info("se: se0, SE memory %#x+%#x, TZ firmware %#x+%#x, no secure world\n", se_cfg[0].base,
             se_cfg[0].size, se_cfg[1].base, se_cfg[1].size);
     return 0;

@@ -6,7 +6,7 @@
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip= and modelName=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W16R on M2, W17H
-# on M16P, W17M on M16P lite (a 43UJ6300-UA), W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -84,6 +84,19 @@ M2[AB]*) model=W16R ota=AFAAABAA fw=05.70.50 platform=msd93f2g sound_bad_type=SO
 # ATSC build: a 43UJ6300-UA (US), RELEASE.cfg's SJ85 defaults: edge LED, camera ready, a headphone
 # output, 2D only; row 1 of the input table, AV, component, HDMI x4. tvSystemName is atsc. The rest
 # as W17H's.
+# W18H (M16PP: lxboot's chip=M16P with the C0 revision, M16PC0, so matched by its board's model,
+# before M16P), webOS 4.4 on LG's own SoC, the ATSC build: a 55SK8000PUA (US), RELEASE.cfg's SK85
+# defaults with the model's: direct LED, no camera, a headphone output; tvservice lists HDMI x4
+# (row 3 of video_external_input_adjust). tvSystemName is atsc, platformName lg1313c. As W18R's: no
+# contiLockRatingAU, NZ or SG, reset3DStatus true without 3D, the hub's "Denied method call", and
+# VIDEO without video CAPTURE_ERROR_01 headless. GRAPHIC captures work over lg115x.ko's de0 (with
+# the DE firmware version its HAL_VT checks on C0).
+M16P*/55SK8000*) model=W18H ota=AFADATAA fw=05.50.70 platform=lg1313c sound_bad_type=SOUND_ERROR_013
+	capture_no_video='CAPTURE_ERROR_01 CAPTURE_ERROR_09' max_devices= calibration= inputs=4
+	private_answer='Denied method call' tv_system=atsc
+	no_keys='contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
+	tool_options='"panelInch":"55","backlightType":"directL","cameraReady":"off","headphone":"true"'
+	reset3d='"returnValue":true' ;;
 M16P*/43UJ6300*) model=W17M ota=AFADATAA fw=06.10.55 platform=lg1313 sound_bad_type=SOUND_ERROR_013
 	capture_no_video=CAPTURE_ERROR_09 calibration= max_devices= inputs=6 tv_system=atsc
 	tool_options='"panelInch":"43","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"'

@@ -1,0 +1,45 @@
+# Board parameters the LG bootloader (lxboot) puts on the kernel command line, as on M16P
+# (guest/layers/soc/m16p/rootfs/etc/emulator/board.cmdline says who reads them). W18H's lxboot
+# (lxboot.pak 05.50.70, V4.03.78) has W17H's format ("%s ethaddr=%s rev=1 ... chip=%s", bver=,
+# modelopt=, hwopt=, ToolOpt=, countryGrp=, debugMode=, modelName=, serialNum=, cmdEnd); its chip
+# table has no M16PP: it prints M16P and the revision. W18H's kernel (4.4.84-150.glacier.2) maps
+# M16P to id 0x19 and takes its C0 paths (>= 0x19c0) throughout, so chip=M16PC0, CHIP_REV 0x19c0
+# (guest/targets/soc/m16pp.toml).
+#
+# The values describe a 55SK8000PUA, a US model the models DB lists for this firmware's OTA ID
+# (HE_DTV_W18H_AFADATAA: US, CA_EN), proposed by host/tools/research/model-config.py from W18H
+# 05.50.70's own tables with szCountryGroupCode=US continent=10 eLanguageCountry=LANG_COUNTRY_US
+# eHWSettingGroup=HWSETTING_US tuner=none; they are not read from a real set. This ATSC
+# firmware's RELEASE.cfg is the factory default of a Korean SK85 (BOARD_M16PP_ATSC_KR): the
+# region values here are the US group's of the same tables.
+ethaddr=a8:23:fe:12:34:56 rev=1 chip=M16PC0 bver=4.03.78 devtmpfs.mount=1
+# 7.5 GB eMMC, as the others (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# 16 straps, as W18H's lxboot reads them from its SAR ADC (m16pp_sadc_get_data): each a level,
+# '0' to '3', not a GPIO bit as on W17H. Strap 2 is the DDR size ('1' 1.5 GB; '0' and '3' 2 GB,
+# '2' 3 GB), straps 4 and 5 the row of its 16-row panel table ("01": UD, FRC, V-by-One), the
+# others 0, the default. Strap 0 (country) and strap 1 (tuner) stay 0: the userland reads the
+# country and the tuner from hwopt. model-config.py's lxboot reader does not parse this
+# lxboot (AArch64, no strap tables it knows), so this line is derived from the strap meanings
+# above, read from the bootloader by hand, not from that tool. The M16PP kernel's BASE_PLT_Probe
+# reads the panel from straps 6-9 (STB and OLED patterns; else LCD, BOARD_OPT 0x20).
+modelopt=0010010000000000
+# 18 digits, as W18H's tvconfig-gen decodes them: US (d0 4, gmodelopt_country_type), V-by-One (d2 2),
+# UD panel (d3 2), FRC (d4 1: RELEASE.cfg's FRC_CHIP_LG1154 on a UD panel), panel V18 (d5 7), no
+# DVB tuner (d8 0: the ATSC demodulator is ToolOpt4's), DDR 1.5 GB (d11 3: the straps' DDR),
+# graphic resolution 1920x1080 (d14 2)
+hwopt=002217001003002000
+# 9 tool option words (TOOL_OPTIONn_T of W18H's tvservice), RELEASE.cfg's SK85 defaults with the
+# model's inch and tool type: ToolOpt1 65806 = INCH_55 14, TOOL_SK80 8, LGD, LVDS bit; ToolOpt2
+# row 3 of video_external_input_adjust (HDMI x4), direct LED, three USB ports; ToolOpt3
+# AMP_NTP7518_2AMP ("[i2c]NTP2AMP_M:1:0x54" and "_W:1:0x56", iic0), headphone, DVR ready, ISF, local
+# dimming, the one-key local key; ToolOpt4 ATSC_LGDT3307 with the SI2178B analog demodulator;
+# ToolOpt5 the MTK 11ac combo, the motion remote, TV link, Dolby Atmos, WOL; ToolOpt9 HDR, Dolby
+# Vision.
+ToolOpt=65806:119603299:385363:64818:117029:134027:942731:0:2236550
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=55SK8000PUA serialNum=805RAXX00001
+cmdEnd

@@ -1,0 +1,66 @@
+models = ["W18H"]
+# tv.capture's video frames: lg115x.ko's de0 fills the frozen VT frame from the viewer, as on W17H
+viewer_capture = true
+
+# W18H goldilocks (05.50.70, "goldilocks-gorongosa" 4.4.3, HE_DTV_W18H_AFADATAA, the ATSC build):
+# goldilocks' paks (named -atsc, which the release's -dvb names resolve to; no smartkey) and EEPROM
+# layout, on LG's own board rather than W18R's MStar one. Its partition table (the `partinfo`
+# object of tvservice-atsc's lginit_app2, 55 partitions, partinfo p2: W17H's without smartkey,
+# with efs at p48) and its fstabs pin p29 tvservice, p31 otncabi, p32 otycabi, p33 fonts, p35
+# license, the state partitions p52 db8, p53 cmn_data, p54 appstore, and uhdcp p46, which
+# mount-readwrite mounts: so goldilocks' state disks and partitions with uhdcp, as dreadlocks2's.
+# The NVM records are tvservice-atsc's (DWARF as W18R's: ModelInfoDB 0x924, 56 bytes, mark
+# 0x20160630; ToolOptionDB 0x4E4, 76 bytes, mark 0x20150625, the input ports at +48; continent
+# 0x1C54, last input 0x1BC8, factory 0x294, the debug status's 32 bytes at 0x1C6). Its kernel's
+# USB and filesystem drivers (modules.builtin and modules.order of 4.4.84-150.glacier.2) are
+# W17H's: no ipw, joydev, nls_cp949 or nls_iso8859-1; hid-axff, hid-pl and ftdi_sio.
+[release]
+base = "goldilocks"
+state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G", uhdcp = "16M" }
+peripherals = [
+    "sit",
+    "usbhid", "hid-axff", "hid-dr", "hid-logitech", "hid-pl", "hid-sony", "hid-zpff", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "snd-usb-audio", "cdc-acm", "uhid", "input-leds",
+    "hid-playstation", "ftdi_sio", "pl2303", "option", "sierra", "lgfs",
+]
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+factory_offset = 0x294
+local_key = { word = 3, offset = 18, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_block_offset = 0x1C6
+
+[release.partitions]
+partinfo = "partinfo"
+mapbak = "partinfo"
+authcxt = "authcxt"
+nvram = "nvram"
+sestore = "sestore"
+sedata = "sedata"
+rootfs = "rootfs"
+tvservice = "tvservice"
+otncabi = "otncabi"
+otycabi = "otycabi"
+fonts = "fonts"
+db8 = "db8"
+data = "cmn_data"
+apps = "appstore"
+bsppart = "bsppart"
+license = "license"
+wossestore = "wossestore"
+uhdcp = "uhdcp"

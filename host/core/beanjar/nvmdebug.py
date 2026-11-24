@@ -8,6 +8,9 @@ clear block, which this module makes in the firmware's own encoding (DIL_NVM_Sto
 
   32 random bytes R (RAND_bytes), the status at R[R[31] mod 31], then the fold R[16..31] ^= R[0..15]
 
+W18H's tvservice (05.50.70, LG's M16PP board) has no cipher there: its Load copies the block it
+read and folds and indexes the copy, so its EEPROM holds the same clear block on the set too.
+
 Load undoes it: the fold (an involution), then the status is B[B[31] mod 31]. The index is never
 31, so B[31] survives the placement. Statuses are tvservice's 3 DEBUG, 4 EVENT, 5 RELEASE (the
 debugMode= numbers, nvm.DEBUG_MODES); OSA_MD_GetDebugStatus reads any other value as 5.
@@ -36,16 +39,18 @@ INDEX = 31  # the byte whose value mod 31 is the status's index
 MODULUS = 31
 STATUSES = (3, 4, 5)
 
-# the fold and index of Load, in this order, after the decrypt (Thumb-2 halfword pairs): the
-# reciprocal of 31 (movw/movt r0, 0x08421085), veor q8, q8, q9 (the fold of the two halves),
-# umull r0, r1, r3, r0 and rsb r2, r2, r2, lsl #5 (B[31] mod 31)
+# the fold and index of Load, in this order, after the decrypt (Thumb-2 halfword pairs, each as
+# (mask1, value1, mask2, value2): the registers are the build's own): the reciprocal of 31
+# (movw/movt rX, 0x08421085), veor q8, q8, q9 (the fold of the two halves), umull and
+# rsb rd, rn, rn, lsl #5 (B[31] mod 31). W18R's and W19P's use r0 to r3, W18H's ip and r4.
 FOLD_CODE = (
-    (0xF241, 0x0085),
-    (0xF6C0, 0x0042),
-    (0xFF40, 0x01F2),
-    (0xFBA3, 0x0100),
-    (0xEBC2, 0x1242),
+    (0xFFFF, 0xF241, 0xF0FF, 0x0085),
+    (0xFFFF, 0xF6C0, 0xF0FF, 0x0042),
+    (0xFFFF, 0xFF40, 0xFFFF, 0x01F2),
+    (0xFFF0, 0xFBA0, 0x00F0, 0x0000),
+    (0xFFF0, 0xEBC0, 0xF0F0, 0x1040),
 )
+VEOR, UMULL = 2, 3
 # W19P's check of the plain byte: and.w r3, r3, #15
 PLAIN_MASK_CODE = (0xF003, 0x030F)
 
@@ -190,27 +195,47 @@ def fields(data):
         for pc, t, r in c
         if pc > first_pc and t != read and r.get(0) == buf and isinstance(r.get(1), tuple)
     ]
-    if not isinstance(buf, tuple) or not decrypt:
-        raise Error(f"{LOAD}: no call that takes the block it read into another buffer")
-    decrypt_pc, clear = decrypt[0][0], decrypt[0][1][1][1]
-    # the fold and the index, over the clear buffer
-    after = [(pc, a, b) for pc, a, b in steps if pc > decrypt_pc and b is not None]
-    words = [(a, b) for _, a, b in after]
-    at = 0
-    for want in FOLD_CODE:
-        try:
-            at = words.index(want, at) + 1
-        except ValueError:
-            raise Error(f"{LOAD}: no fold and index by {MODULUS} after the decrypt") from None
+    if not isinstance(buf, tuple):
+        raise Error(f"{LOAD}: its {READ} is not into a stack buffer")
+    # the fold and the index, after the decrypt (or, without one, after the read)
+    start = decrypt[0][0] if decrypt else first_pc
+    words = [(a, b) for pc, a, b in steps if pc > start and b is not None]
+    marks, at = [], 0
+    for m1, v1, m2, v2 in FOLD_CODE:
+        found = next(
+            (i for i in range(at, len(words)) if words[i][0] & m1 == v1 and words[i][1] & m2 == v2),
+            None,
+        )
+        if found is None:
+            raise Error(f"{LOAD}: no fold and index by {MODULUS} after the decrypt")
+        marks.append(found)
+        at = found + 1
     span = words[:at]
     vldr = {
         (b >> 12 & 0xF) + 16: (b & 0xFF) * 4 for a, b in span if a == 0xEDDD and b & 0xF00 == 0xB00
     }
+    if decrypt:
+        clear = decrypt[0][1][1][1]
+    else:
+        # W18H: no call between the read and the fold, the fold over a copy of the block (the
+        # copy's source, the read buffer, is taken into a register: add rd, sp, #buf)
+        veor_pc = [pc for pc, a, b in steps if pc > first_pc and b is not None][marks[VEOR]]
+        if any(first_pc < pc < veor_pc for pc, _, _ in c) or 18 not in vldr:
+            raise Error(f"{LOAD}: no call that takes the block it read into another buffer")
+        if not any(
+            first_pc < pc < veor_pc
+            and b is None
+            and a & 0xF800 == 0xA800
+            and (a & 0xFF) * 4 == buf[1]
+            for pc, a, b in steps
+        ):
+            raise Error(f"{LOAD}: its fold is not over a copy of the block it read")
+        clear = vldr[18]
     halves = {16: clear + HALF, 17: clear + HALF + 8, 18: clear, 19: clear + 8}
     if any(vldr.get(d) != off for d, off in halves.items()):
         raise Error(f"{LOAD}: its fold is not of the clear block's two halves")
     # ldrb.w rt, [sp, #imm] between the fold (veor) and the division (umull)
-    veor, umull = words.index(FOLD_CODE[2]), words.index(FOLD_CODE[3], words.index(FOLD_CODE[2]))
+    veor, umull = marks[VEOR], marks[UMULL]
     index_loads = [b & 0xFFF for a, b in words[veor:umull] if a == 0xF89D]
     if index_loads != [clear + INDEX]:
         raise Error(f"{LOAD}: its index is not the clear block's byte {INDEX}")

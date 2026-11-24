@@ -1,0 +1,81 @@
+# The LG M16PP (the firmware's machine name m16pp; lxboot's chip=M16P, LG1313's C0 revision), W18H's
+# SoC: M16P's platform (guest/targets/soc/m16p.toml says where each of its values comes from) on
+# W18H 05.50.70's 4.4.84 kernel (4.4.84-150.glacier.2) and goldilocks userland, with its own board,
+# a 55SK8000PUA (board.cmdline). What differs from M16P, each from W18H's own files:
+# - CHIP_REV 0x19c0: the kernel's chip_list maps M16P to 0x19 and its drivers take the C0 paths
+#   (>= 0x19c0); ACE_REV the same. BASE_PLT_Probe: BOARD_OPT 0x2000000 | DDR 1.5 GB STD
+#   0x208000 | 120 Hz panel 0x800000 | FRC internal 0x4 | panel LCD 0x20 (modelopt straps 6-9
+#   not STB or OLED): 0x2A08024; CHIP_PLT 0x2000 (UHD), GFX_RES a constant 1920x1080.
+# - I2C and GPIO: W18H's KADP opens /dev/lg/iic<n> only when /proc/lg/iic/sw_cfg says so
+#   (lx_i2c_cfg's bit 0; absent, 0) and /dev/i2c-<n> otherwise, with the same channel n
+#   (KADP_I2C_Open's "%s%d"); its GPIO likewise goes to /sys/class/gpio without
+#   /proc/lg/gpio/sw_cfg. So lg115x.ko gives no iic or gpio0 device here: lgemu's Linux adapters
+#   carry the RELEASE.cfg map, KADP's channel being RELEASE.cfg's less one as on M16P
+#   ("[i2c]MICOM:2:0x52", "[i2c]NVM:5:0xA0", the 55SK8000PUA's AMP_NTP7518_2AMP
+#   "[i2c]NTP2AMP_M:1:0x54" and "_W:1:0x56"), at 7-bit addresses; lg115x's /sys/class/gpio
+#   chip has M17's 144 lines.
+# - The security engine's regions, the kernel's gMemCfgSE 0x7e900000:0x500000 and
+#   gMemCfgSE_TZFW 0x7ee00000:0x1200000; the emulator's de_mem and pe_hdr below them.
+# - The display engine: de_capacity as M16P's but input de-interlacing (W18H's
+#   DE_REG_M17_GetCapacity at C0). W18H's KADP has the later kdrivers' structures: SET_VTM
+#   0x40806158, GET_VTM 0x80806159 and GET_VTM_BUFFER 0x4080615a take a 128-byte
+#   LX_DE_VTM_FRAME_INFO_T (MAX_VTG_BUFFER 5, as O22's de_kapi.h; M16P's 3, 112 bytes), and
+#   GET_SOURCE_STATUS 0x8038611a a 56-byte LX_DE_SRC_STATUS_T (M16P's 32, O22's with its
+#   vdecInfo). Its HAL_VT on C0 needs the DE firmware's version (GET_FIRMWARE_INFO, nr 1) above
+#   753 or keeps its VT device closed and every capture fails: 754, the lowest it takes (the
+#   firmware's own number is in the kernel's DE driver, not read here).
+# - The audio master: GET_KDRV_HANDLE nr 27, GET_EVENT nr 76 (W18H's KADP: 0xc0084d4c), the
+#   audio processing status 66 and its query 67 as M16P's. The BE: GET_FIRMWARE_INFO_ADDR nr 30
+#   and REG_ACCESS nr 28; the LED register block as M16P's.
+# - KADP's logm objects are 84 bytes, as M16P's.
+# - kadpd's se-kadpd child (_SE_RB202: "Start NetLink", socket(AF_NETLINK, SOCK_RAW, 31)) needs the
+#   SE driver's netlink family 31, which W18H's kernel has built in (no module of its creates it).
+
+base = "m16p"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 55SK8000PUA's area, a US set's (board.cmdline): W18H's _aDefineContinent entry 10 ("US", in
+# the RMM country list of the US group), LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, EXT_VIDEO_INPUT_ADJ and EXT_AUDIO_INPUT_ADJ of tvservice's gToolOptionDB, from
+# W18H's RELEASE.cfg (SK85 defaults), read by host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+# W18H's KADP's Linux I2C adapters (above): micom on 1, the NVM on 4, the two amplifiers on 0
+lgemu = ["i2c_buses=0,1,2,3,4,5", "i2c_dev=micom:1:0x29,nvm:4:0x50,amp:0:0x2a,amp:0:0x2b"]
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x19c0",
+    "ace_rev=0x19c0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x2a08024",
+    "spi_cs=2",
+    "se_mem=0x7e900000:0x500000",
+    "se_tzfw=0x7ee00000:0x1200000",
+    "se_netlink=31",
+    "logm_obj=84",
+    "de_mem=0x7d900000:0x1000000",
+    "de_capacity=6:4:4:3840:2160:3840:2160:0:60:2:1:1920:1080:0:1:1:1:3840:2160:1:320:240:2",
+    "de_panel=4",
+    "de_vtm_buffers=5",
+    "de_src_status=56",
+    "de_fw_version=754",
+    "gpio_lines=144",
+    "pe_hdr=0x7d700000",
+    "amst=27:76:23:66:67",
+    "be=30:28",
+    "be_led=0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
+]
+
+# W18H's tuners, unlike W17H's, are DVBv5's: its webos-tv job loads webos_tv.ko and tvservice's
+# DIL_TU reaches it through bsppart's libdvbfrontend (HAL_DVBV5_*), W18R's library: GetLIBVersion,
+# CheckLockState and TunePostJob read 0xc0, 0xae and 0xb0, as on M3 (guest/targets/soc/m3.toml).
+# Without it FE_SetFEConfig fails and RootInit waits for the FE task's access signal for good.
+[[modules]]
+name = "webos_tv"
+params = [
+    "version_cmd=0xc0",
+    "lock_cmd=0xae",
+    "postjob_cmd=0xb0",
+]

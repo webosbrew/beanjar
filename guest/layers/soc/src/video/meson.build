@@ -7,7 +7,8 @@
 #   vdecsink (H13, M14: GStreamer 1.2.4, GLib 2.34; video milestones 1 and 2)
 #     <gst_plugin_dir>/libgstlxvdecbin-1.0.so     "vdecsink"                       src/vdecsink.c
 #     <gst_plugin_dir>/libgstadecsink-1.0.so      "adecsink"                       src/adecsink.c
-#   lx (M16P: GStreamer 1.8.0, GLib 2.40; "Implemented: W17H's media elements")
+#   lx (M16P: GStreamer 1.8.0, GLib 2.40; "Implemented: W17H's media elements"), lx-m16pp (M16PP:
+#   the same over W18H's GStreamer 1.12.0, GLib 2.48)
 #     <gst_plugin_dir>/libgstlxvideodec-1.0.so    "omx_lxvideodec", "lxvideodec"   src/lxvideodec.c
 #     <gst_plugin_dir>/libgstlxvideosink-1.0.so   "omx_lxvideosink", "lxvideosink" src/lxvideosink.c
 #     <gst_plugin_dir>/libgstaudiodec-1.0.so      "audio_dec"                      src/audiodec.c
@@ -50,6 +51,8 @@ gst_set = {
     'gstaudiodec-1.0': ['audiodec.c', 'esdec.c', 'mediaport.c'],
     'gstaudiosink-1.0': ['audiosink.c', 'essink.c', 'esdec.c', 'streaminfo.c', 'mediaport.c']}},
 }
+# M16PP (W18H): M16P's elements over W18H's GStreamer 1.12.0, GLib 2.48
+gst_set += {'lx-m16pp': {'wrap': 'gstreamer112', 'glib': '2_48', 'args': [], 'plugins': gst_set['lx']['plugins']}}
 mstar_plugins = {
   'gstomx': ['omx.c', 'omxconf.c', 'essink.c', 'esdec.c', 'streaminfo.c', 'mediaport.c'],
   'gstmvsink': ['mvsink.c', 'essink.c', 'esdec.c', 'streaminfo.c', 'mediaport.c'],

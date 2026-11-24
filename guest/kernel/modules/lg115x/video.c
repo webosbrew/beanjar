@@ -29,7 +29,8 @@
 #define DE_MINORS      4 /* de0-de3 in the device_table; the stock driver serves 2 */
 #define DE_IOC_MAGIC   'a'
 #define DE_WINS        2 /* windows with a VTM slot pair */
-#define DE_VTM_BUFFERS 3 /* MAX_VTG_BUFFER */
+#define DE_VTM_BUFFERS 3 /* the frame buffers the emulator fills (M16P's MAX_VTG_BUFFER) */
+#define DE_VTM_MAX     5 /* MAX_VTG_BUFFER of the later kdrivers (M16PP, O22) */
 #define DE_SEEN_MAX    64
 
 /* LX_DE_RECT_T */
@@ -61,12 +62,16 @@ struct lx_de_fr_rate {
     u16 fr_rate;
 };
 
-/* LX_DE_VTM_FRAME_INFO_T with _USE_VT_EXTENTION_, 112 bytes: the VTM's shared-memory slot */
+/* LX_DE_VTM_FRAME_INFO_T with _USE_VT_EXTENTION_: the VTM's shared-memory slot. Its frame
+ * address arrays have MAX_VTG_BUFFER entries, 3 in M16P's kdriver (112 bytes) and 5 in M16PP's
+ * (W18H's KADP: SET_VTM 0x40806158, 128 bytes) and O22's de_kapi.h; the rest is the same. This is
+ * the 5-entry layout; the chip's (de_vtm_buffers) is what crosses the ioctls and the VTM page
+ * (de_vtm_pack, de_vtm_unpack). */
 struct lx_de_vtm {
     u32 win_id, address, enable, rate;
     u8 frz, secure, location, reserved;
     u32 stride, sampling;
-    u32 y_frame[DE_VTM_BUFFERS], c_frame[DE_VTM_BUFFERS];
+    u32 y_frame[DE_VTM_MAX], c_frame[DE_VTM_MAX];
     u32 r_idx, mute;
     struct lx_de_rect src_size, win_size;
     u16 mirror, scan;
@@ -77,7 +82,9 @@ struct lx_de_vtm {
     u32 ext_rate;
     u8 ext_frz, ext_secure, ext_reserved[2];
 };
-static_assert(sizeof(struct lx_de_vtm) == 112);
+static_assert(sizeof(struct lx_de_vtm) == 128);
+#define DE_VTM_HEAD offsetof(struct lx_de_vtm, y_frame)
+#define DE_VTM_TAIL (sizeof(struct lx_de_vtm) - offsetof(struct lx_de_vtm, r_idx))
 
 /* LX_DE_SOURCE_SIZE_WIN_T, 20 bytes */
 struct lx_de_src_size {
@@ -90,13 +97,25 @@ struct lx_de_vtm_block {
     u32 win_id, cmd, block, reserved;
 };
 
-#define DE_IOR_GET_CAPACITY         _IOR(DE_IOC_MAGIC, 4, struct lx_de_capacity)
-#define DE_IOR_GET_OUT_FR_RATE      _IOR(DE_IOC_MAGIC, 8, struct lx_de_fr_rate)
-#define DE_IOR_GET_SYS_STATUS       _IOR(DE_IOC_MAGIC, 10, struct lx_de_sys_status)
-#define DE_IOR_GET_SRC_STATUS       _IOC(_IOC_READ, DE_IOC_MAGIC, 26, 32)
-#define DE_IOW_SET_VTM              _IOW(DE_IOC_MAGIC, 88, struct lx_de_vtm)
-#define DE_IOR_GET_VTM              _IOR(DE_IOC_MAGIC, 89, struct lx_de_vtm)
-#define DE_IOW_GET_VTM_BUFFER       _IOW(DE_IOC_MAGIC, 90, struct lx_de_vtm)
+/* LX_DE_FIRMWARE_INFO_T: the DE firmware's version, its date, the IPC test counter */
+struct lx_de_fw_info {
+    u32 version;
+    u16 year, month, day, pad;
+    u32 ipc_count;
+};
+static_assert(sizeof(struct lx_de_fw_info) == 16);
+
+#define DE_IOR_GET_FIRMWARE_INFO _IOR(DE_IOC_MAGIC, 1, struct lx_de_fw_info)
+#define DE_IOR_GET_CAPACITY      _IOR(DE_IOC_MAGIC, 4, struct lx_de_capacity)
+#define DE_IOR_GET_OUT_FR_RATE   _IOR(DE_IOC_MAGIC, 8, struct lx_de_fr_rate)
+#define DE_IOR_GET_SYS_STATUS    _IOR(DE_IOC_MAGIC, 10, struct lx_de_sys_status)
+/* M16P's sizes: LX_DE_SRC_STATUS_T 32 bytes, the VTM slot 112 (de_canonical maps the chip's) */
+#define DE_SRC_STATUS_M16P          32
+#define DE_VTM_M16P                 112
+#define DE_IOR_GET_SRC_STATUS       _IOC(_IOC_READ, DE_IOC_MAGIC, 26, DE_SRC_STATUS_M16P)
+#define DE_IOW_SET_VTM              _IOC(_IOC_WRITE, DE_IOC_MAGIC, 88, DE_VTM_M16P)
+#define DE_IOR_GET_VTM              _IOC(_IOC_READ, DE_IOC_MAGIC, 89, DE_VTM_M16P)
+#define DE_IOW_GET_VTM_BUFFER       _IOC(_IOC_WRITE, DE_IOC_MAGIC, 90, DE_VTM_M16P)
 #define DE_IOWR_SET_VTM_BLOCK_STATE _IOWR(DE_IOC_MAGIC, 92, struct lx_de_vtm_block)
 #define DE_IOW_SET_SUB_MODE         _IOW(DE_IOC_MAGIC, 52, u32)
 #define DE_IOW_GET_SUB_MODE         _IOR(DE_IOC_MAGIC, 53, u32) /* sic: an _IOR */
@@ -104,7 +123,7 @@ struct lx_de_vtm_block {
 #define DE_IOR_GET_SRC_SIZE         _IOR(DE_IOC_MAGIC, 56, struct lx_de_src_size)
 
 static char *de_mem, *de_capacity, *de_abi;
-static unsigned int de_panel;
+static unsigned int de_panel, de_vtm_buffers = 3, de_src_status = DE_SRC_STATUS_M16P;
 module_param(de_mem, charp, 0444);
 MODULE_PARM_DESC(de_mem, "the display engine's memory, base:size: the VTM page at base, the "
                          "captured frames' addresses after it; unset: no /dev/lg/de0");
@@ -119,10 +138,22 @@ MODULE_PARM_DESC(de_abi, "the DE's ioctl numbers set_vtm:get_vtm:vtm_block:sys_s
                          "with its sub-window mode, source sizes and GET_VTM_BUFFER");
 module_param(de_panel, uint, 0444);
 MODULE_PARM_DESC(de_panel, "LX_DE_PANEL_TYPE_T, the system status's display size (0 1920, 4 3840)");
+module_param(de_vtm_buffers, uint, 0444);
+MODULE_PARM_DESC(de_vtm_buffers, "MAX_VTG_BUFFER, the VTM slot's frame addresses: 3 (M14, M16P, "
+                                 "112-byte slots) or 5 (M16PP, 128 bytes)");
+module_param(de_src_status, uint, 0444);
+MODULE_PARM_DESC(de_src_status, "LX_DE_SRC_STATUS_T's size, GET_SRC_STATUS's (M16P 32, M16PP 56)");
+/* M16PP's HAL_VT (libhal_vt, and libhal_lg115x's copy) on a C0 chip (lx_chip_rev() >= 0x19c0)
+ * reads the DE firmware's version (KADP_DE_GetFirmWareInfo) and keeps its VT device closed below
+ * 754, so every tv.capture fails ("Cannot allocate memory", HAL_VT_GetDeviceCapability's -1) */
+static unsigned int de_fw_version;
+module_param(de_fw_version, uint, 0444);
+MODULE_PARM_DESC(de_fw_version, "GET_FIRMWARE_INFO's version (0: the command is not answered)");
 
 static struct lx_de_capacity de_capa;
 static u32 de_base, de_size, de_frame_size;
-static struct lx_de_vtm *de_vtm; /* the VTM page: per window, the request and the reply */
+static u8 *de_vtm;               /* the VTM page: per window, the request and the reply */
+static unsigned int de_vtm_size; /* a slot's bytes in the chip's layout */
 static u8 *de_frames;            /* the VT frame buffers, after the page */
 static u8 *de_rgba;              /* a viewer capture, converted into a frame buffer */
 static bool de_filled[DE_WINS];  /* the frozen frame was filled since the freeze */
@@ -143,14 +174,33 @@ static bool de_abi_given;
 
 /* cmd as M16P numbers it: a moved command at the chip's number, or M16P's own commands without
  * de_abi; 0 for anything else, whose number means something else on the chip */
+static unsigned int de_canonical(unsigned int cmd)
+{
+    unsigned int nr = _IOC_NR(cmd), size = _IOC_SIZE(cmd);
+
+    if (_IOC_TYPE(cmd) != DE_IOC_MAGIC)
+        return cmd;
+    if (size == de_vtm_size &&
+        (nr == de_nr[0] || nr == de_nr[1] || nr == _IOC_NR(DE_IOW_GET_VTM_BUFFER)))
+        size = DE_VTM_M16P;
+    else if (size == de_src_status && nr == de_nr[4])
+        size = DE_SRC_STATUS_M16P;
+    else
+        return cmd;
+    return (cmd & ~(_IOC_SIZEMASK << _IOC_SIZESHIFT)) | size << _IOC_SIZESHIFT;
+}
+
 static unsigned int de_command(unsigned int cmd)
 {
+    cmd = de_canonical(cmd);
     for (unsigned int i = 0; i < ARRAY_SIZE(de_moved); i++)
         if (cmd == ((de_moved[i] & ~_IOC_NRMASK) | de_nr[i] << _IOC_NRSHIFT))
             return de_moved[i];
     switch (cmd) {
     case DE_IOR_GET_CAPACITY:
         return cmd;
+    case DE_IOR_GET_FIRMWARE_INFO:
+        return de_fw_version ? cmd : 0;
     case DE_IOW_GET_VTM_BUFFER:
     case DE_IOW_SET_SUB_MODE:
     case DE_IOW_GET_SUB_MODE:
@@ -172,9 +222,36 @@ static u32 de_c_frame(unsigned int i)
     return de_y_frame(i) + de_frame_size / 2;
 }
 
+/* a slot in the chip's layout (de_vtm_size bytes at wire) from and to the 5-entry struct */
+static void de_vtm_unpack(struct lx_de_vtm *v, const u8 *wire)
+{
+    unsigned int n = de_vtm_buffers * sizeof(u32);
+
+    memset(v, 0, sizeof(*v));
+    memcpy(v, wire, DE_VTM_HEAD);
+    memcpy(v->y_frame, wire + DE_VTM_HEAD, n);
+    memcpy(v->c_frame, wire + DE_VTM_HEAD + n, n);
+    memcpy(&v->r_idx, wire + DE_VTM_HEAD + 2 * n, DE_VTM_TAIL);
+}
+
+static void de_vtm_pack(u8 *wire, const struct lx_de_vtm *v)
+{
+    unsigned int n = de_vtm_buffers * sizeof(u32);
+
+    memcpy(wire, v, DE_VTM_HEAD);
+    memcpy(wire + DE_VTM_HEAD, v->y_frame, n);
+    memcpy(wire + DE_VTM_HEAD + n, v->c_frame, n);
+    memcpy(wire + DE_VTM_HEAD + 2 * n, &v->r_idx, DE_VTM_TAIL);
+}
+
+static u8 *de_slot(unsigned int i)
+{
+    return de_vtm + i * de_vtm_size;
+}
+
 /* DE_IO_SetVTM: the stock driver keeps a copy of the request in its firmware's shared memory
  * ("webOS"), next to the one the DE firmware answers in (the "MCU" copy, which it waits up to
- * 1 s to fill), and returns the page's address, which KADP maps (448 bytes: two windows' pairs;
+ * 1 s to fill), and returns the page's address, which KADP maps (four slots: two windows' pairs;
  * on M17, chip_id > 4, KADP reads window w's state from slot 2w + 1, the reply). M14's KADP
  * (chip_id 2) maps the page through /dev/mem and reads window w's state from slot w, one 112-byte
  * record a window (KADP_DE_SetVTM, KADP_DE_CmdVTM): the reply alone, no request copy. Here the
@@ -186,55 +263,65 @@ static u32 de_c_frame(unsigned int i)
  * an unsupported pixel format, CAPTURE_ERROR_01. */
 static long de_set_vtm(void __user *uarg)
 {
-    struct lx_de_vtm r, *req, *reply;
+    struct lx_de_vtm r, req, reply;
+    u8 wire[sizeof(struct lx_de_vtm)];
+    int req_slot = -1, reply_slot;
     u16 w, h;
 
-    if (copy_from_user(&r, uarg, sizeof(r)))
+    if (copy_from_user(wire, uarg, de_vtm_size))
         return -EFAULT;
+    de_vtm_unpack(&r, wire);
     if (r.win_id >= DE_WINS)
         return -EINVAL;
     if (de_capa.chip_id > 4) {
-        req = &de_vtm[2 * r.win_id];
-        reply = req + 1;
+        req_slot = 2 * r.win_id;
+        reply_slot = req_slot + 1;
     } else {
-        req = NULL;
-        reply = &de_vtm[r.win_id];
+        reply_slot = r.win_id;
     }
     if (r.enable) {
         w = clamp_t(u16, r.w_out_size.w ?: de_capa.vtm_max.w, de_capa.down_w, de_capa.vtm_max.w);
         h = clamp_t(u16, r.w_out_size.h ?: de_capa.vtm_max.h, de_capa.down_h, de_capa.vtm_max.h);
-        if (req) {
-            *req = r;
-            req->secure = 0xff;
-            req->y_frame[0] = de_y_frame(0);
+        if (req_slot >= 0) {
+            req = r;
+            req.secure = 0xff;
+            req.y_frame[0] = de_y_frame(0);
+            de_vtm_pack(de_slot(req_slot), &req);
         }
-        *reply = r;
-        reply->address = de_base;
-        reply->stride = ALIGN(w, 16);
-        reply->sampling = 1; /* LX_DE_SCALER_CSAMPLE_T 4:2:2 */
+        reply = r;
+        reply.address = de_base;
+        reply.stride = ALIGN(w, 16);
+        reply.sampling = 1; /* LX_DE_SCALER_CSAMPLE_T 4:2:2 */
         for (unsigned int i = 0; i < DE_VTM_BUFFERS; i++) {
-            reply->y_frame[i] = de_y_frame(i);
-            reply->c_frame[i] = de_c_frame(i);
+            reply.y_frame[i] = de_y_frame(i);
+            reply.c_frame[i] = de_c_frame(i);
         }
-        reply->r_idx = 0;
-        reply->mute = 0;
-        reply->secure = 0;
-        reply->w_out_size = (struct lx_de_rect){.w = w, .h = h};
-        reply->win_size = reply->w_out_size;
+        reply.r_idx = 0;
+        reply.mute = 0;
+        reply.secure = 0;
+        reply.w_out_size = (struct lx_de_rect){.w = w, .h = h};
+        reply.win_size = reply.w_out_size;
         /* M14's KADP_DE_GetVTMStatus gives a panel of 1920 or less the frame's size from
          * src_size (HAL_VT_GetAllVideoFrameBufferProperty's width and height) */
-        if (!req)
-            reply->src_size = reply->w_out_size;
-        reply->ext_secure = 0;
-        reply->mem_fd = 0;
+        if (req_slot < 0)
+            reply.src_size = reply.w_out_size;
+        reply.ext_secure = 0;
+        reply.mem_fd = 0;
+        de_vtm_pack(de_slot(reply_slot), &reply);
         r.y_frame[0] = de_y_frame(0);
     } else {
-        if (req)
-            req->enable = 0;
-        reply->enable = 0;
+        if (req_slot >= 0) {
+            de_vtm_unpack(&req, de_slot(req_slot));
+            req.enable = 0;
+            de_vtm_pack(de_slot(req_slot), &req);
+        }
+        de_vtm_unpack(&reply, de_slot(reply_slot));
+        reply.enable = 0;
+        de_vtm_pack(de_slot(reply_slot), &reply);
     }
     r.address = de_base;
-    return copy_to_user(uarg, &r, sizeof(r)) ? -EFAULT : 0;
+    de_vtm_pack(wire, &r);
+    return copy_to_user(uarg, wire, de_vtm_size) ? -EFAULT : 0;
 }
 
 /* M17's DE firmware (chip_id > 4) answers what KADP writes into a window's request slot (2w)
@@ -248,24 +335,28 @@ static long de_set_vtm(void __user *uarg)
  * one. */
 static void de_apply_request(unsigned int w)
 {
-    struct lx_de_vtm *req = &de_vtm[2 * w], *reply = req + 1;
-    struct lx_de_rect out = READ_ONCE(req->w_out_size);
+    struct lx_de_vtm req, reply;
+    struct lx_de_rect out;
 
-    reply->frz = READ_ONCE(req->frz);
-    reply->ext_frz = READ_ONCE(req->ext_frz);
-    reply->rate = READ_ONCE(req->rate);
-    reply->ext_rate = READ_ONCE(req->ext_rate);
-    if (!out.w || !out.h)
-        return;
-    out.w = clamp_t(u16, out.w, de_capa.down_w, de_capa.vtm_max.w);
-    out.h = clamp_t(u16, out.h, de_capa.down_h, de_capa.vtm_max.h);
-    if (!memcmp(&out, &reply->w_out_size, sizeof(out)) &&
-        reply->ext_location == READ_ONCE(req->ext_location))
-        return;
-    reply->ext_location = READ_ONCE(req->ext_location);
-    reply->stride = ALIGN(out.w, 16);
-    reply->w_out_size = out;
-    reply->win_size = out;
+    de_vtm_unpack(&req, de_slot(2 * w));
+    de_vtm_unpack(&reply, de_slot(2 * w + 1));
+    out = req.w_out_size;
+    reply.frz = req.frz;
+    reply.ext_frz = req.ext_frz;
+    reply.rate = req.rate;
+    reply.ext_rate = req.ext_rate;
+    if (out.w && out.h) {
+        out.w = clamp_t(u16, out.w, de_capa.down_w, de_capa.vtm_max.w);
+        out.h = clamp_t(u16, out.h, de_capa.down_h, de_capa.vtm_max.h);
+        if (memcmp(&out, &reply.w_out_size, sizeof(out)) ||
+            reply.ext_location != req.ext_location) {
+            reply.ext_location = req.ext_location;
+            reply.stride = ALIGN(out.w, 16);
+            reply.w_out_size = out;
+            reply.win_size = out;
+        }
+    }
+    de_vtm_pack(de_slot(2 * w + 1), &reply);
 }
 
 /* The VT's capture of the video plane: on the TV the DE writes the scaled video into the frame
@@ -279,18 +370,22 @@ static void de_apply_request(unsigned int w)
 static void de_fill_frozen(void)
 {
     for (unsigned int w = 0; w < DE_WINS; w++) {
-        struct lx_de_vtm *slot = &de_vtm[de_capa.chip_id > 4 ? 2 * w + 1 : w];
+        unsigned int at = de_capa.chip_id > 4 ? 2 * w + 1 : w;
+        struct lx_de_vtm slot;
         u32 i, width, height, stride;
         u8 *y;
         int err;
 
-        if (de_capa.chip_id > 4 && slot->enable)
+        de_vtm_unpack(&slot, de_slot(at));
+        if (de_capa.chip_id > 4 && slot.enable) {
             de_apply_request(w);
-        i = READ_ONCE(slot->r_idx);
-        width = slot->w_out_size.w & ~1u;
-        height = slot->w_out_size.h & ~1u;
-        stride = slot->stride;
-        if (!READ_ONCE(slot->frz) || !slot->enable) {
+            de_vtm_unpack(&slot, de_slot(at));
+        }
+        i = slot.r_idx;
+        width = slot.w_out_size.w & ~1u;
+        height = slot.w_out_size.h & ~1u;
+        stride = slot.stride;
+        if (!slot.frz || !slot.enable) {
             de_filled[w] = false;
             continue;
         }
@@ -317,6 +412,7 @@ static long de_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     struct lx_de_fr_rate fr = {.fr_rate = de_capa.max_out_fr_rate};
     struct lx_de_vtm_block blk;
     struct lx_de_vtm vtm = {0};
+    u8 wire[sizeof(struct lx_de_vtm)];
     long ret;
     unsigned int i;
 
@@ -326,6 +422,12 @@ static long de_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case DE_IOR_GET_CAPACITY:
         ret = copy_to_user(uarg, &de_capa, sizeof(de_capa)) ? -EFAULT : 0;
         break;
+    case DE_IOR_GET_FIRMWARE_INFO: { /* no date, no IPC loop test */
+        struct lx_de_fw_info fw = {.version = de_fw_version};
+
+        ret = copy_to_user(uarg, &fw, sizeof(fw)) ? -EFAULT : 0;
+        break;
+    }
     case DE_IOR_GET_SYS_STATUS: /* LCD, no mirror, internal FRC, 3D off */
         ret = copy_to_user(uarg, &sys, sizeof(sys)) ? -EFAULT : 0;
         break;
@@ -341,7 +443,8 @@ static long de_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case DE_IOR_GET_VTM: /* DE_HAL_GetVTM: the frame memory's address */
     case DE_IOW_GET_VTM_BUFFER:
         vtm.address = de_y_frame(0);
-        ret = copy_to_user(uarg, &vtm, sizeof(vtm)) ? -EFAULT : 0;
+        de_vtm_pack(wire, &vtm);
+        ret = copy_to_user(uarg, wire, de_vtm_size) ? -EFAULT : 0;
         break;
     case DE_IOW_SET_SUB_MODE:
         ret = get_user(de_sub_mode, (u32 __user *)uarg);
@@ -481,6 +584,15 @@ int lx_de_add(void)
             }
         de_abi_given = true;
     }
+    if (de_vtm_buffers != 3 && de_vtm_buffers != DE_VTM_MAX) {
+        pr_err("de: de_vtm_buffers is 3 or %u\n", DE_VTM_MAX);
+        return -EINVAL;
+    }
+    de_vtm_size = sizeof(struct lx_de_vtm) - (DE_VTM_MAX - de_vtm_buffers) * 2 * sizeof(u32);
+    if (de_src_status < DE_SRC_STATUS_M16P || de_src_status > _IOC_SIZEMASK) {
+        pr_err("de: de_src_status is a size of %u bytes or more\n", DE_SRC_STATUS_M16P);
+        return -EINVAL;
+    }
     de_base = mem[0];
     de_size = mem[1];
     /* a frame at the VT's largest size, luma and 4:2:2 chroma, each whole pages */
@@ -506,8 +618,9 @@ int lx_de_add(void)
         memset(de_frames + i * de_frame_size + de_frame_size / 2, 128, de_frame_size / 2);
     for (unsigned int i = 0; i < DE_VTM_BUFFERS; i++)
         memset(de_frames + i * de_frame_size, 16, de_frame_size / 2);
-    pr_info("de: de0-%u, chip %u, VTM page %#x, %u frames of %ux%u from %#x\n", DE_MINORS - 1,
-            de_capa.chip_id, de_base, DE_VTM_BUFFERS, c[11], c[12], de_y_frame(0));
+    pr_info("de: de0-%u, chip %u, VTM page %#x (%u-byte slots), %u frames of %ux%u from %#x\n",
+            DE_MINORS - 1, de_capa.chip_id, de_base, de_vtm_size, DE_VTM_BUFFERS, c[11], c[12],
+            de_y_frame(0));
     return 0;
 }
 

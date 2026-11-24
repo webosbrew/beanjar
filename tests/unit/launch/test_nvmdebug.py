@@ -3,8 +3,8 @@
 """The webOS 4.x debug status block (nvmdebug.py) and its sync (nvm.sync_debug_block).
 
 A made-up ELF file holds DIL_NVM_Load_DebugStatus's reads, decrypt call, fold and index as W18R's
-05.50.70 and W19P's 05.40.97 tvservice have them, instruction for instruction (Thumb-2), with
-none of the rest; variants whose code differs must be refused."""
+05.50.70 and W19P's 05.40.97 tvservice have them, and W18H's 05.50.70 copy without a decrypt,
+instruction for instruction (Thumb-2), with none of the rest; variants whose code differs must be refused."""
 
 import ctypes
 import os
@@ -63,6 +63,38 @@ def load(size=32, index_at=87, plain=False, mask=True, fold=True):
     add(0xFBA3, 0x0100, 0x1A5A, 0xEB01, 0x0252, 0x0912, 0xEBC2, 0x1242)  # umull ... rsb
     if plain and mask:
         add(0xF003, 0x030F)  # and.w r3, r3, #15
+    add(0x4770)  # bx lr
+    return out
+
+
+def load_copy(copy=True, call_between=False):
+    """W18H's Load (05.50.70): the block read into sp+88 and copied, without a cipher, to sp+56
+    (add r4, sp, #88; add.w lr, sp, #56; ldmia/stmia), the fold and index over the copy in ip and
+    r4 rather than r0 to r3."""
+    out = []
+
+    def add(*hws):
+        out.extend(hws)
+
+    add(0xAA16, 0x2120)  # add r2, sp, #88; movs r1, #32
+    add(0xF44F, 0x70E3)  # mov.w r0, #0x1c6
+    out.extend(bl(LOAD + 2 * len(out), READ))
+    add(0x4605, 0x2800, 0xD13C)  # mov r5, r0; cmp r0, #0; bne
+    if call_between:
+        out.extend(bl(LOAD + 2 * len(out), DECRYPT))
+    if copy:
+        add(0xAC16)  # add r4, sp, #88
+    add(0xF10D, 0x0E38, 0xCC0F)  # add.w lr, sp, #56; ldmia r4!, {r0-r3}
+    add(0xF241, 0x0C85, 0xF6C0, 0x0C42)  # movw ip, #0x1085; movt ip, #0x842
+    add(0xE8AE, 0x000F)  # stmia.w lr!, {r0-r3}
+    add(0xEDDD, 0x2B0E, 0xEDDD, 0x3B10)  # vldr d18, [sp, #56]; vldr d19, [sp, #64]
+    add(0xE894, 0x000F, 0xE88E, 0x000F)  # ldmia.w r4; stmia.w lr
+    add(0xAA1E)  # add r2, sp, #120
+    add(0xEDDD, 0x0B12, 0xEDDD, 0x1B14)  # vldr d16, [sp, #72]; vldr d17, [sp, #80]
+    add(0xFF40, 0x01F2)  # veor q8, q8, q9
+    add(0xEDCD, 0x0B12, 0xEDCD, 0x1B14)  # vstr d16, d17
+    add(0xF89D, 0x4057)  # ldrb.w r4, [sp, #87]
+    add(0xFBA4, 0x010C, 0x1A63, 0xEB01, 0x0353, 0x091B, 0xEBC3, 0x1343)  # umull ... rsb
     add(0x4770)  # bx lr
     return out
 
@@ -150,6 +182,8 @@ class FieldsTest(unittest.TestCase):
         self.assertEqual(
             nvmdebug.fields(tvservice(load(plain=True))), {"offset": 0x1C6, "plain": 0x1A8}
         )
+        # W18H: no cipher, the fold over a copy of the block read, in other registers
+        self.assertEqual(nvmdebug.fields(tvservice(load_copy())), {"offset": 0x1C6, "plain": None})
 
     def test_refused(self):
         """A build whose Load reads, folds or indexes otherwise is refused."""
@@ -158,6 +192,8 @@ class FieldsTest(unittest.TestCase):
             load(index_at=86),  # the index from byte 30
             load(fold=False),  # no fold
             load(plain=True, mask=False),  # the plain byte compared otherwise
+            load_copy(copy=False),  # W18H's fold over a buffer the block was not copied from
+            load_copy(call_between=True),  # a call between its read and its fold
         ):
             with self.assertRaises(nvmdebug.Error):
                 nvmdebug.fields(tvservice(code))
