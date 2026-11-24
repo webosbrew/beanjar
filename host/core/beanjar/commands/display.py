@@ -90,9 +90,7 @@ def cmd_elements(_lib, a):
         raise Usage("elements takes NAME or --from-png PNG, exactly one")
     binary = elements.executable()
     if a.from_png:
-        data = elements.read(a.from_png, binary, out=progress)
-        with open(a.from_png, "rb") as f:
-            source = framing.png_source(f.read())
+        data = elements.read_screen(a.from_png, binary, out=progress)
     else:
         library = []
 
@@ -114,11 +112,8 @@ def cmd_elements(_lib, a):
                     f.write(png)
             else:
                 local_library().screenshot(name, image, out=progress)
-            data = elements.read(image, binary, out=progress)
-            with open(image, "rb") as f:
-                source = framing.png_source(f.read())
-    # the display the picture shows (a beanjar screenshot records it), for callers' logs
-    data |= framing.frame_geometry((data["width"], data["height"]), source)
+            # with the display the picture shows (a beanjar screenshot records it), for callers' logs
+            data = elements.read_screen(image, binary, out=progress)
     return emit(a, data, elements.snapshot(data))
 
 

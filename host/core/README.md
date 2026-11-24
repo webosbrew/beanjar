@@ -473,7 +473,8 @@ Go 1.24 can download 1.26 automatically with `GOTOOLCHAIN=auto` during the user'
 install; Meson never downloads a toolchain or builds Go code. No Go toolchain is
 needed to run an already built `textshot`.
 
-Beanjar invokes `textshot -json -threads 4 PNG`, inheriting its environment.
+Beanjar reads a frame through the recognition server when there is one (below), else invokes
+`textshot -json -threads 4 PNG`, inheriting its environment; both give the same elements.
 The runtime and models normally download on first use to go-textshot's own
 user cache (`$XDG_CACHE_HOME/textshot`, normally `~/.cache/textshot` on Linux).
 Set `TEXTSHOT_CACHE_DIR` to override that directory. Beanjar supplies no cache
@@ -486,7 +487,45 @@ CPU is the default and requires no GPU package. For optional CUDA, set
 `LD_LIBRARY_PATH` for its providers, CUDA/cuDNN and driver libraries (see the
 study). These variables pass through; relative cache/library/loader paths are resolved
 against the caller's working directory before inference runs in disposable scratch. Upstream can fall back to CPU;
-OCR remains on CPU. Beanjar adds no GPU dependency.
+OCR remains on CPU. Beanjar adds no GPU dependency. When `TEXTSHOT_ONNXRUNTIME_LIB` is the
+library of a pip `onnxruntime-gpu` wheel (`site-packages/onnxruntime/capi/`), beanjar adds the
+wheel's own `site-packages/nvidia/*/lib` to `LD_LIBRARY_PATH`, so a venv with the wheel and its
+CUDA and cuDNN wheels is all the setup:
+
+```sh
+python3 -m venv ~/.cache/textshot/ort-gpu   # any place outside the checkout
+~/.cache/textshot/ort-gpu/bin/pip install onnxruntime-gpu==1.30.0 nvidia-cudnn-cu13 nvidia-cublas \
+  nvidia-cuda-runtime nvidia-cufft nvidia-curand nvidia-cuda-nvrtc
+export TEXTSHOT_ONNXRUNTIME_LIB=$(echo ~/.cache/textshot/ort-gpu/lib/python3*/site-packages/onnxruntime/capi/libonnxruntime.so.1.30.0)
+```
+
+#### The recognition server
+
+The textshot CLI loads its models for every image, which is most of a reading's time with
+CUDA. `textshot-serve` (`host/tools/textshot-serve/`, built on the same go-textshot v0.2.0 with
+no changes to it) keeps them loaded: it runs the CLI's own `-json` code (its element type and
+image loading, copied unchanged) with the CLI's options and defaults, so its elements are the
+CLI's, byte for byte, and answers on a unix socket. `beanjar elements` and the viewer's
+Elements layer (host/viewer/README.md) start it on first use and share it; it exits after 5
+minutes without a request. There is one per configuration (the server, `TEXTSHOT_ONNXRUNTIME_LIB`,
+`TEXTSHOT_CACHE_DIR`, `LD_LIBRARY_PATH`), at `$XDG_RUNTIME_DIR/beanjar-textshot-UID/`, with its
+log beside its socket. With a CUDA runtime its element detector is on the GPU, else on the CPU
+(upstream's own fallback). When there is no server, or it cannot start, beanjar runs the CLI
+per frame as before; the CLI is still required.
+
+It is found as `BEANJAR_TEXTSHOT_SERVE` (a path or name; `none` never uses a server), else
+`textshot-serve` on `PATH`, else the checkout's `build/textshot-serve`. Meson does not build it;
+with Go (as for textshot above):
+
+```sh
+go -C host/tools/textshot-serve build -o ../../../build/textshot-serve .
+```
+
+Measured on the x86 PC with Home and a Settings page at 1280x720, models loaded: about 3.5 to
+4 s a frame on the CPU, 0.7 to 1.2 s with the element detector on CUDA (OCR stays on the CPU and
+is then the limit), against 6 to 7 s and 4 to 5 s with a process per frame
+([study](../../docs/research/textshot.md#a-server-that-keeps-the-models-loaded-2026-11-25)).
+While reading frame after frame it keeps about five CPU cores busy (ONNX Runtime's threads).
 
 Default output is a flat YAML-like sequence, in go-textshot's reading order:
 
