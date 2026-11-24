@@ -28,7 +28,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .tuner_stream import PACKET, Error, crc32_mpeg
 
 MUX_RATE = 5_000_000  # bits a second
-VERSION = 7  # of the generator: part of a stream's key (stream_key)
+VERSION = 8  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 LOOP_SECONDS = 5  # of the A/V loop
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
@@ -70,6 +70,30 @@ SERVICE = {
 
 PAGE_TEXT = "ビーンジャー データ放送テスト"
 PAGE_TEXT_2 = "Beanjar ARIB BML test page"
+MENU_TEXT = "データ放送メニュー"
+MENU_TEXT_2 = "青ボタンで戻る"
+# The second document's video window, in the page's 960x540 (x2 on a 1920x1080 plane): a quarter
+# of the screen near the top left, as broadcasters' menu pages place the picture
+WINDOW = (48, 36, 480, 270)
+KEY_BLUE = 21  # ARIB STD-B24 vol. 2, A2 table 5-9 (TR-B14 vol. 2 table 5-5)
+
+_PROLOG = """<?xml version="1.0" encoding="EUC-JP" ?>
+<!DOCTYPE bml PUBLIC "+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA" "http://www.arib.or.jp/B24/DTD/bml_1_0.dtd">
+<?bml bml-version="100.0" ?>
+"""
+
+# a blue key handler for the element that has the focus: the key goes to the focused element's
+# onkeydown (STD-B24 vol. 2, 5.4.2.3), so each document focuses one with a nav-index on load. The
+# document's name is in the function: LG's NetFront passed a string argument given in the
+# onkeydown attribute (key('...')) to the function as undefined, and launchDocument("undefined")
+# ended the page as an unavailable document.
+_KEY_SCRIPT = """function key() {{
+  if (document.currentEvent.keyCode == {blue}) browser.launchDocument("{to}", "cut");
+}}"""
+
+
+def _doc(text):
+    return (_PROLOG + text).replace("\n", "\r\n").encode("euc_jp")
 
 
 def startup_bml():
@@ -81,11 +105,10 @@ def startup_bml():
     object sits in a div: NetFront lays out only the div elements among the body's children. The d
     button hides and shows the panel, as broadcast pages do it: the set sends the document a
     DataButtonPressed event. The page's window gets the d key only with data-button in the
-    used-key-list; without it the key goes to Live TV, which does nothing with it."""
-    doc = f"""<?xml version="1.0" encoding="EUC-JP" ?>
-<!DOCTYPE bml PUBLIC "+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA" "http://www.arib.or.jp/B24/DTD/bml_1_0.dtd">
-<?bml bml-version="100.0" ?>
-<bml>
+    used-key-list; without it the key goes to Live TV, which does nothing with it. The blue key
+    (also in data-button) opens menu.bml (menu_bml), the video in a small window."""
+    script = _KEY_SCRIPT.format(blue=KEY_BLUE, to=f"/{TAG_DATA:02x}/{MODULE_ID:04x}/menu.bml")
+    return _doc(f"""<bml>
 <head>
 <title>{PAGE_TEXT_2}</title>
 <style><![CDATA[
@@ -97,11 +120,12 @@ function toggle() {{
   var panel = document.getElementById("panel");
   panel.normalStyle.visibility = panel.normalStyle.visibility == "hidden" ? "visible" : "hidden";
 }}
+{script}
 ]]></script>
 <bevent><beitem id="d" type="DataButtonPressed" subscribe="subscribe" onoccur="toggle();"/></bevent>
 </head>
-<body>
-<div style="left:0px;top:0px;width:960px;height:540px;">
+<body onload="document.getElementById('video').focus();">
+<div id="video" style="left:0px;top:0px;width:960px;height:540px;nav-index:0;" onkeydown="key();">
 <object type="video/X-arib-mpeg2" data="/{TAG_VIDEO:02x}" streamstatus="play" style="left:0px;top:0px;width:960px;height:540px;"/>
 </div>
 <div id="panel" style="left:0px;top:360px;width:960px;height:180px;background-color-index:4;">
@@ -110,9 +134,47 @@ function toggle() {{
 </div>
 </body>
 </bml>
-"""
-    return doc.replace("\n", "\r\n").encode("euc_jp")
+""")
 
+
+def menu_bml():
+    """The second document, as broadcasters' data pages lay out their menus: the video in a
+    quarter-screen window (WINDOW) near the top left and the page around it, a navy background
+    (default CLUT 19) with white text to the right of the window and under it. The video object
+    has the window's size in a div at the window's place (NetFront lays out only the body's divs);
+    the set scales the picture into it. The blue key goes back to startup.bml."""
+    x, y, w, h = WINDOW
+    script = _KEY_SCRIPT.format(blue=KEY_BLUE, to=f"/{TAG_DATA:02x}/{MODULE_ID:04x}/startup.bml")
+    right = x + w + 32
+    return _doc(f"""<bml>
+<head>
+<title>{MENU_TEXT}</title>
+<style><![CDATA[
+body {{ resolution: 960x540; display-aspect-ratio: 16v9; used-key-list: basic data-button; background-color-index: 19; }}
+p {{ font-family: 丸ゴシック; font-size: 28px; line-height: 40px; color-index: 7; }}
+]]></style>
+<script><![CDATA[
+{script}
+]]></script>
+</head>
+<body onload="document.getElementById('video').focus();">
+<div id="video" style="left:{x}px;top:{y}px;width:{w}px;height:{h}px;nav-index:0;" onkeydown="key();">
+<object type="video/X-arib-mpeg2" data="/{TAG_VIDEO:02x}" streamstatus="play" style="left:0px;top:0px;width:{w}px;height:{h}px;"/>
+</div>
+<div style="left:{right}px;top:{y}px;width:{960 - 48 - right}px;height:{h}px;">
+<p style="left:0px;top:0px;width:{960 - 48 - right}px;height:40px;">{MENU_TEXT}</p>
+<p style="left:0px;top:56px;width:{960 - 48 - right}px;height:40px;font-size:24px;">Beanjar BML menu</p>
+</div>
+<div style="left:{x}px;top:{y + h + 40}px;width:{960 - 2 * x}px;height:{540 - y - h - 80}px;">
+<p style="left:0px;top:0px;width:{960 - 2 * x}px;height:40px;">{PAGE_TEXT}</p>
+<p style="left:0px;top:56px;width:{960 - 2 * x}px;height:40px;font-size:24px;">{MENU_TEXT_2}</p>
+</div>
+</body>
+</bml>
+""")
+
+
+DOCUMENTS = (("startup.bml", startup_bml), ("menu.bml", menu_bml))
 
 RESOURCE_LIST_TYPE = "application/x-arib-resourcelist"
 
@@ -139,29 +201,42 @@ def resource_list(entries):
 
 def module():
     """Module 0: a multipart/mixed entity (ARIB STD-B24 vol. 2, 9.3) with a resource list first and
-    startup.bml. The boundary is quoted: the sets' NetFront BML browser reads an unquoted one wrong
-    (it repeats its first character) and then finds no part. Without the resource list it finds
-    the module but not startup.bml in it; both end in "unavailable document"."""
+    the documents (DOCUMENTS). The boundary is quoted: the sets' NetFront BML browser reads an
+    unquoted one wrong (it repeats its first character) and then finds no part. Without the
+    resource list it finds the module but not startup.bml in it; both end in "unavailable
+    document"."""
     top = f'Content-Type: multipart/mixed; boundary="{BOUNDARY}"\r\n\r\n'.encode()
     delim = f"--{BOUNDARY}\r\n".encode()
     list_head = f"Content-Type: {RESOURCE_LIST_TYPE}\r\n\r\n".encode()
-    doc_head = b"Content-Type: text/X-arib-bml; charset=euc-jp\r\nContent-Location: startup.bml\r\n"
-    doc = startup_bml()
-    list_len = len(resource_list([("startup.bml", 0, 0, 0)]))
-    # the document's header lines start after the list part and the next delimiter
-    doc_at = len(top) + len(delim) + len(list_head) + list_len + 2 + len(delim)
-    rlist = resource_list([("startup.bml", doc_at, len(doc_head), len(doc))])
+    docs = [
+        (
+            name,
+            b"Content-Type: text/X-arib-bml; charset=euc-jp\r\nContent-Location: "
+            + name.encode()
+            + b"\r\n",
+            render(),
+        )
+        for name, render in DOCUMENTS
+    ]
+    list_len = len(resource_list([(name, 0, 0, 0) for name, _, _ in docs]))
+    # each document's header lines start after the list part (or the document before) and the
+    # next delimiter
+    at = len(top) + len(delim) + len(list_head) + list_len + 2 + len(delim)
+    entries, parts = [], b""
+    for name, head, doc in docs:
+        entries.append((name, at, len(head), len(doc)))
+        parts += head + b"\r\n" + doc + b"\r\n" + delim
+        at += len(head) + 2 + len(doc) + 2 + len(delim)
+    parts = parts[: -len(delim)]
     return (
         top
         + delim
         + list_head
-        + rlist
+        + resource_list(entries)
         + b"\r\n"
         + delim
-        + doc_head
-        + b"\r\n"
-        + doc
-        + f"\r\n--{BOUNDARY}--\r\n".encode()
+        + parts
+        + f"--{BOUNDARY}--\r\n".encode()
     )
 
 
@@ -444,7 +519,7 @@ def stream_key(now):
     """What the stream depends on: the generator, the service, its page and the present and
     following events (EIT p/f), so it is made again when the present event ends."""
     text = json.dumps(
-        [VERSION, SERVICE, startup_bml().hex(), [e[:2] for e in events(now)]], sort_keys=True
+        [VERSION, SERVICE, module().hex(), [e[:2] for e in events(now)]], sort_keys=True
     )
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 

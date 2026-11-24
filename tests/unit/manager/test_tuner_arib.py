@@ -86,36 +86,66 @@ def multipart(entity):
 
 class CarouselTest(unittest.TestCase):
     def test_page(self):
-        page = arib.startup_bml()
-        text = page.decode("euc_jp")
-        self.assertTrue(text.startswith('<?xml version="1.0" encoding="EUC-JP" ?>'))
-        self.assertIn("+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA", text)
-        self.assertIn("resolution: 960x540", text)
-        self.assertIn("used-key-list:", text)
-        self.assertIn(arib.PAGE_TEXT, text)
-        ET.fromstring(text[text.index("<bml>") :])  # well-formed past the prolog
+        for render, words in (
+            (arib.startup_bml, (arib.PAGE_TEXT, "menu.bml")),
+            (arib.menu_bml, (arib.MENU_TEXT, "startup.bml")),
+        ):
+            text = render().decode("euc_jp")
+            self.assertTrue(text.startswith('<?xml version="1.0" encoding="EUC-JP" ?>'))
+            self.assertIn("+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA", text)
+            self.assertIn("resolution: 960x540", text)
+            self.assertIn("used-key-list: basic data-button", text)
+            for w in words:
+                self.assertIn(w, text)
+            root = ET.fromstring(text[text.index("<bml>") :])  # well-formed past the prolog
+            # the video object is in a div of the body (NetFront lays out only those)
+            (div,) = [d for d in root.find("body") if d.find("object") is not None]
+            self.assertEqual(div.tag, "div")
+            self.assertEqual(div.find("object").get("type"), "video/X-arib-mpeg2")
+
+    def test_menu_window(self):
+        text = arib.menu_bml().decode("euc_jp")
+        root = ET.fromstring(text[text.index("<bml>") :])
+        div = root.find("body").find("div")
+        style = dict(kv.strip().split(":") for kv in div.get("style").split(";") if ":" in kv)
+        x, y, w, h = arib.WINDOW
+        self.assertEqual(
+            [style[k] for k in ("left", "top", "width", "height")],
+            [f"{x}px", f"{y}px", f"{w}px", f"{h}px"],
+        )
+        obj = div.find("object").get("style")
+        self.assertIn(f"width:{w}px;height:{h}px", obj)
 
     def test_module(self):
         # the sets' BML browser parses only a quoted boundary right
         head = arib.module().split(b"\r\n\r\n")[0]
         self.assertTrue(head.endswith(f'boundary="{arib.BOUNDARY}"'.encode()))
         mod = arib.module()
-        ((list_headers, rlist), (headers, body)) = multipart(mod)
+        ((list_headers, rlist), *docs) = multipart(mod)
         self.assertEqual(list_headers[b"content-type"], arib.RESOURCE_LIST_TYPE.encode())
-        self.assertEqual(headers[b"content-location"], b"startup.bml")
-        self.assertTrue(headers[b"content-type"].startswith(b"text/X-arib-bml"))
-        self.assertEqual(body, arib.startup_bml())
+        self.assertEqual(
+            [(h[b"content-location"], b) for h, b in docs],
+            [(n.encode(), render()) for n, render in arib.DOCUMENTS],
+        )
+        for h, _ in docs:
+            self.assertTrue(h[b"content-type"].startswith(b"text/X-arib-bml"))
         # the list as the set's NetFront reads it: the body is at offset + header + 2 (the blank
         # line), and the header lines are the part's
-        self.assertEqual(rlist[0], 1)
-        size, offset, header, length = rlist[1], *struct.unpack(">IHI", rlist[2:12])
-        namelen = rlist[14] & 0x7F
-        self.assertEqual(size, 13 + namelen)
-        self.assertEqual(len(rlist), 2 + size)
-        self.assertEqual(rlist[15 : 15 + namelen], b"startup.bml")
-        self.assertEqual(mod[offset + header + 2 : offset + header + 2 + length], body)
-        self.assertTrue(mod[offset:].startswith(b"Content-Type: text/X-arib-bml"))
-        self.assertEqual(mod[offset + header : offset + header + 2], b"\r\n")
+        self.assertEqual(rlist[0], len(docs))
+        at = 1
+        for (_, body), (name, _) in zip(docs, arib.DOCUMENTS):
+            size, offset, header, length = (
+                rlist[at],
+                *struct.unpack(">IHI", rlist[at + 1 : at + 11]),
+            )
+            namelen = rlist[at + 13] & 0x7F
+            self.assertEqual(size, 13 + namelen)
+            self.assertEqual(rlist[at + 14 : at + 14 + namelen], name.encode())
+            self.assertEqual(mod[offset + header + 2 : offset + header + 2 + length], body)
+            self.assertTrue(mod[offset:].startswith(b"Content-Type: text/X-arib-bml"))
+            self.assertEqual(mod[offset + header : offset + header + 2], b"\r\n")
+            at += 1 + size
+        self.assertEqual(at, len(rlist))
 
     def test_dii(self):
         mod = arib.module()
@@ -252,7 +282,7 @@ class StreamTest(unittest.TestCase):
         mod = b"".join(blocks[n] for n in sorted(blocks))
         self.assertEqual(len(mod), size)
         self.assertEqual(mod, arib.module())
-        (_rlist, (headers, body)) = multipart(mod)
+        (_rlist, (headers, body), *_menu) = multipart(mod)
         self.assertEqual(headers[b"content-location"], b"startup.bml")
         self.assertEqual(body, arib.startup_bml())
 
