@@ -1110,6 +1110,35 @@ removes when it stops, whether by a stop, a crash or the host's reboot. Nothing 
 new start has none. A VM without a unit (the setsid fallback without a user systemd) cannot have
 one: `start --reason` is refused there before anything starts.
 
+### What the TV sends out as audio
+
+`status show NAME` on a running VM also reports its audio, as `audio` in `--json` (`null` when it
+is off). It is read when asked, over the VM's shell port: the guest's `/proc/lgemu/sound_out`, the
+table where the emulated hardware keeps what the firmware selected for its sound outputs, and the
+TV's own `soundOutput` and `soundOutputDigital` settings; the streams come from the media helper's
+`media-streams` file in the VM's run directory. `beanjar/soundout.py` decodes the table per line of
+firmware ([docs/research/tv-sound-outputs.md](../../docs/research/tv-sound-outputs.md) has the
+numbers).
+
+| Key | Value |
+|---|---|
+| `selected` | the TV's setting: `{"output": "external_optical", "digital": "passThrough"}`, or `null` |
+| `outputs` | the outputs the hardware has open, each `{"name", "id", "codec", "channels", "bypass", "derived"}`; `null` where the hardware does not say (W18R, whose HAL keeps the connections to itself; webOS 5 and 6) |
+| `mode` | `pcm`, `auto`, `forced-ac3`, `forced-eac3` or `passthrough`, as far as the hardware's values tell, else `null` |
+| `arc` | whether ARC is on, `null` where the line has no such value |
+| `path` | which kind of table it was: `outputtype` (webOS 7 and later), `spdif-outputtype` (webOS 5 and 6), `realtek`, `mstar` or `lx` |
+| `streams` | the audio streams the TV's player sends to the host: `{"port", "kind", "element", "caps", "codec", "channels", "rate"}` |
+| `generation`, `writes`, `values` | the table's change and write counts and its raw values |
+| `error` | why the guest did not answer (still starting, no shell relay), else `null` |
+
+An output's `codec` is the one the firmware writes for it on webOS 7 and later (`derived` false).
+On the older lines it is `derived` from the mode: `pcm` for PCM, the forced codec, or for a
+passthrough the codec and channels of the one open audio stream. In `auto` it stays `null` there,
+since what auto sends for each input codec is the sound processor's choice. On webOS 7 and later
+PCM, auto and passthrough write the same values until a compressed stream plays, so `mode` is
+`null` until then; `selected` still shows the setting. The channel count is `null` where the
+firmware writes none.
+
 ### Tags
 
 Tags are short labels on a VM, kept with its settings in `vm.toml` (`metadata.tags`) so they last

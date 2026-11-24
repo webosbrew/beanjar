@@ -315,7 +315,14 @@ def cmd_status(lib, a):
         vm.set_reason("", None)
     data = status_data(vm)
     reason = data["reason"]
-    return emit(a, data, f"{vm.name}: " + (vmunits.reason_line(reason) if reason else "no reason"))
+    text = [f"{vm.name}: " + (vmunits.reason_line(reason) if reason else "no reason")]
+    if a.verb == "show":
+        # what the TV sends out as audio, read from the running guest (soundout.py)
+        from .. import soundout
+
+        data["audio"] = soundout.read(vm) if vm.pid() else None
+        text += soundout.lines(data["audio"])
+    return emit(a, data, "\n".join(text))
 
 
 def cmd_prepare(lib, a):
@@ -593,10 +600,17 @@ def register_vm(cli):
     g = group(
         "status",
         "a running VM's status, which lasts as long as its systemd unit (gone when the VM stops, "
-        "crashes or the host reboots): reason, why it runs, which stop refuses without --force",
+        "crashes or the host reboots): reason, why it runs, which stop refuses without --force; "
+        "show adds what the TV sends out as audio",
         dest="verb",
     )
-    s = command(g, "show", "the VM's status: its reason", cmd_status)
+    s = command(
+        g,
+        "show",
+        "the VM's status: its reason and, while it runs, its audio: the sound output the TV "
+        "selected, the outputs open, the digital mode, and the codec and channels sent",
+        cmd_status,
+    )
     vm_name(s)
     s.set_defaults(items=[])
     s = command(

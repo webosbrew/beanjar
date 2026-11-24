@@ -440,9 +440,10 @@ class Session:
             return LOST
         return None
 
-    def run(self, wake=None, timeout=10.0):
+    def run(self, wake=None, timeout=10.0, deadline=None):
         """Opens the session and runs it to its end: its exit status. wake, a file descriptor that
-        signal.set_wakeup_fd writes signal numbers to."""
+        signal.set_wakeup_fd writes signal numbers to; deadline, a time.monotonic() past which
+        the session is given up (LOST)."""
         why = self.wait_hello(timeout)
         if why:
             self.err(why)
@@ -450,12 +451,19 @@ class Session:
         rows, cols = terminal_size() if self.tty else (0, 0)
         term = os.environ.get("TERM") or "vt100"
         self.send(OPEN, open_payload(self.argv, self.tty, rows, cols, term))
+        if not self.stdin_open and not self.tty:
+            self.send(STDIN)  # no stdin: its end now
         while True:
             rd = [self.sock] + ([wake] if wake is not None else [])
             if self.stdin_open and self.credit > 0:
                 rd.append(self.stdin)
+            left = None if deadline is None else deadline - time.monotonic()
+            if left is not None and left <= 0:
+                self.send(CLOSE)
+                self.err("the command did not end in time")
+                return LOST
             try:
-                r = select.select(rd, [], [])[0]
+                r = select.select(rd, [], [], left)[0]
             except InterruptedError:
                 continue
             if wake is not None and wake in r:
@@ -491,6 +499,35 @@ class Session:
                     self.stdin_open = False
                     if not self.tty:
                         self.send(STDIN)  # its end
+
+
+class Capture(Session):
+    """A session whose stdout is kept (stdout) and whose stderr goes to notes, stdin empty."""
+
+    def __init__(self, sock, argv):
+        super().__init__(sock, argv, False, stdin=-1)
+        self.stdin_open = False
+        self.stdout = bytearray()
+
+    def on_frame(self, kind, payload):
+        if kind in (STDOUT, STDERR):
+            if kind == STDOUT:
+                self.stdout += payload
+            self.send(ACK, word(len(payload)))
+            return None
+        return super().on_frame(kind, payload)
+
+
+def output(sock, argv, timeout=10.0):
+    """(exit status, stdout as text) of argv run without a terminal on sock, a connection to a
+    relay; LOST when it did not end within timeout seconds (the hello's wait included)."""
+    session = Capture(sock, argv)
+    deadline = time.monotonic() + timeout
+    try:
+        status = session.run(timeout=timeout, deadline=deadline)
+    except (BrokenPipeError, ConnectionError):
+        return LOST, session.stdout.decode(errors="replace")
+    return status, session.stdout.decode(errors="replace")
 
 
 HANDLED = (signal.SIGINT, signal.SIGQUIT, signal.SIGTERM, signal.SIGHUP, signal.SIGWINCH)

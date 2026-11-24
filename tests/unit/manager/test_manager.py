@@ -1921,7 +1921,11 @@ class ManagerTest(unittest.TestCase):
         self.assertIn("--force", out)
         self.assertEqual(self.listing()["a"]["state"], "Running")
         # changed, then cleared: stop needs no --force then
-        self.assertEqual(self.cli_json("status", "show", "a"), {"name": "a", "reason": reason})
+        status = self.cli_json("status", "show", "a")
+        self.assertEqual((status["name"], status["reason"]), ("a", reason))
+        # its audio, read from the guest: this one has no shell relay, so the error says so
+        self.assertIn("shell relay", status["audio"]["error"])
+        self.assertIsNone(status["audio"]["outputs"])
         self.assertIn("a: keep (set ", self.cli("status", "set", "a", "reason=  keep\n "))
         self.assertIsNone(self.cli_json("status", "unset", "a", "reason")["reason"])
         self.assertIn("a: no reason", self.cli("status", "show", "a"))

@@ -73,6 +73,10 @@ beanjar stop tv1
   max_running=N` caps them).
 - `list --local` shows this machine's VMs and their state; `show NAME` one VM's settings, address,
   ports and SSH command.
+- `status show NAME` says, while the VM runs, what the TV sends out as audio: the sound output
+  and digital mode chosen in its settings, the outputs the emulated hardware has open, the mode
+  (PCM, auto, passthrough) and the codec and channel count each output sends, and the streams the
+  TV's player plays ([manager README](../../host/core/README.md#what-the-tv-sends-out-as-audio)).
 - `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
   synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
 - `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the

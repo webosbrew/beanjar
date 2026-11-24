@@ -341,3 +341,24 @@ def test_run_remote_not_running(monkeypatch):
     monkeypatch.setattr(remote, "call_json", lambda h, u, argv: {"pid": None, "dir": "/x"})
     with pytest.raises(Error, match="not running"):
         gs.run_remote("pi", "tv", [], True)
+
+
+def test_output_keeps_stdout_and_ends_stdin(relay):
+    """output(): no stdin (its end is sent at once), stdout kept, stderr dropped, the status."""
+    path, _, r = relay
+    wait_for(lambda: r.ready)
+    with client(path) as sock:
+        sock.settimeout(None)
+        assert gs.output(sock, ["0"], timeout=5) == (0, "")
+    with client(path) as sock:
+        sock.settimeout(None)
+        assert gs.output(sock, [], timeout=5) == (3, "")
+
+
+def test_output_gives_up_at_its_deadline():
+    a, b = socket.socketpair()
+    b.sendall(gs.hello(0))  # a relay that answers, then a command that never ends
+    status, text = gs.output(a, ["cat"], timeout=0.3)
+    assert (status, text) == (gs.LOST, "")
+    a.close()
+    b.close()
