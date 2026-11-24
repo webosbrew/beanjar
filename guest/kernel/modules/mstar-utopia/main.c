@@ -135,6 +135,8 @@ static int __init mstar_utopia_init(void)
     if (!err)
         err = audio_info_parse();
     if (!err)
+        err = snd_out_parse();
+    if (!err)
         err = gpio_parse();
     /* XC's windows are in the panel's pixels */
     utopia_screen_init();

@@ -47,6 +47,9 @@
 # outputs, USB2_OCD 50 and USB1_OCD 177, 1 (active low: PDM's OCD task turns VBUS off on 0).
 # adv_fn009: the OSD volume, kernel-mode AUDIO (module 48 here) command 91, whose ADVSOUND
 # parameter is the string LGSE_FN_009_VARIABLES, passed to lgemu's playback gain.
+# snd_*: the digital sound outputs' kernel-mode calls (libhal_msd94bcg over libkadaptor): AUDIO's
+# SPDIF_SetMode (70), SYSTEM_Control (191) and SetAudioParam2 (160, types 160 and 161), and
+# XC's ARC pin control (490, the enable byte at +4), kept in lgemu's /proc/lgemu/sound_out.
 
 board_cmdline = "/etc/emulator/board.cmdline"
 # The 32LK6100PLB's area, a German set's: W18R's RELEASE.cfg nContinentIdx 50 ("DE" in its
@@ -89,6 +92,10 @@ params = [
     "pnl_area=70,71,72,73",
     "xc_r2bytemsk=202",
     "adv_fn009=48:91:LGSE_FN_009_VARIABLES",
+    "snd_spdif_mode=48:70",
+    "snd_system_control=48:191",
+    "snd_param2=48:160:160,161",
+    "snd_arc=8:490:4",
     """reg_init=0x1f200000:0x10cc0:0x78d5,0x1f200000:0x10cc2:0x29,0x1f000000:0x1424:0x1000,\
         0x1f200000:0x3448:0xc00""",
     "reg_autoclear=0x1f000000:0x2050:0x2000,0x1f000000:0x132382:0x100,0x1f000000:0x13a382:0x100",

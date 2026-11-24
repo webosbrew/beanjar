@@ -97,6 +97,112 @@ static void adv_fn009_decode(u32 parg)
         lgemu_snd_osd_level(level & 0xffff);
 }
 
+/* The digital sound outputs: what libhal's HAL_AUDIO_SPDIF_SetOutputType, ARC_SetOutputType and
+ * HDMI_SetPortAudioReturnChannel send in kernel mode, kept in lgemu's /proc/lgemu/sound_out (lgemu
+ * snd.c). The numbers are the Utopia build's, hence parameters (W18R's libkadaptor and
+ * libhal_msd94bcg; W16R's: AUDIO 45, the same SetMode, SetAudioParam2 159, no SYSTEM_Control,
+ * ARC by AUDIO's ARC_HWEN_BY_PORT 164 {u32 port, u8 enable}):
+ *   - snd_spdif_mode, MApi_AUDIO_SPDIF_SetMode (W18R 48:70): AUDIO_ST_SPDIF_OP {u32 eType, u8
+ *     bHWEN, u8 bMute, u8 mode at +6}, eType 2 the set; mode 0 PCM, 3 transcode (auto AAC),
+ *     4 non-PCM (auto, half auto, forced AC-3). The S/PDIF and the ARC calls both send it, so it
+ *     is the last of the two; "SPDIF SetMode";
+ *   - snd_system_control, MApi_AUDIO_SYSTEM_Control (W18R 48:191): {u32 length, u32 return, a
+ *     user pointer to "KEY=VALUE"}: SetSpdifOutputType and SetHdmiArcOutputType, kept under
+ *     their key with the value 0 NONE, 1 AC3, 2 AC3P, 3 AAC (-1 another);
+ *   - snd_param2, MApi_AUDIO_SetAudioParam2 (W18R 48:160:160,161): {u32 ret, u32 decoder, u32
+ *     type at +8, u32 value at +12}, only the types listed (160 the optical half auto, 161 LGSE
+ *     no processing with ARC); "SetAudioParam2 TYPE";
+ *   - snd_arc, ARC on or off, module:command:offset of its enable byte (W18R XC's
+ *     MDrv_HDMI_ARC_PINControl 8:490:4, {u32 port 0x50, u8 enable, u8 driving high}; W16R
+ *     45:164:4); "ARC Enable". */
+static char *snd_spdif_mode, *snd_system_control, *snd_param2, *snd_arc;
+module_param(snd_spdif_mode, charp, 0444);
+MODULE_PARM_DESC(snd_spdif_mode, "AUDIO's SPDIF_SetMode, module:command (W18R 48:70)");
+module_param(snd_system_control, charp, 0444);
+MODULE_PARM_DESC(snd_system_control, "AUDIO's SYSTEM_Control, module:command (W18R 48:191)");
+module_param(snd_param2, charp, 0444);
+MODULE_PARM_DESC(snd_param2,
+                 "AUDIO's SetAudioParam2, module:command:type,... (W18R 48:160:160,161)");
+module_param(snd_arc, charp, 0444);
+MODULE_PARM_DESC(snd_arc, "the ARC enable, module:command:offset (W18R 8:490:4, W16R 45:164:4)");
+#define SND_PARAM2_TYPES 4
+static u32 spdif_mode_mc[2] = {~0u}, system_control_mc[2] = {~0u}, param2_mc[2] = {~0u},
+           arc_mc[3] = {~0u}, param2_types[SND_PARAM2_TYPES];
+static int param2_type_count;
+
+int snd_out_parse(void)
+{
+    char rest[48], *p, *tok;
+    int n;
+
+    if ((snd_spdif_mode && lgemu_parse_u32s(snd_spdif_mode, 0, spdif_mode_mc, 2)) ||
+        (snd_system_control && lgemu_parse_u32s(snd_system_control, 0, system_control_mc, 2)) ||
+        (snd_arc && lgemu_parse_u32s(snd_arc, 0, arc_mc, 3)))
+        return -EINVAL;
+    if (!snd_param2)
+        return 0;
+    if (sscanf(snd_param2, "%u:%u:%n", &param2_mc[0], &param2_mc[1], &n) != 2 ||
+        strscpy(rest, snd_param2 + n, sizeof(rest)) < 0)
+        return -EINVAL;
+    p = rest;
+    while ((tok = strsep(&p, ",")) && *tok) {
+        if (param2_type_count == SND_PARAM2_TYPES ||
+            kstrtou32(tok, 0, &param2_types[param2_type_count++]))
+            return -EINVAL;
+    }
+    return 0;
+}
+
+static void snd_out_decode(u32 module, u32 cmd, u32 parg)
+{
+    void __user *u = compat_ptr(parg);
+    u8 st[16];
+    long v;
+
+    if (module == spdif_mode_mc[0] && cmd == spdif_mode_mc[1]) {
+        if (!copy_from_user(st, u, 8) && get_unaligned_le32(st) == 2) {
+            v = st[6];
+            lgemu_snd_out_set("SPDIF SetMode", &v, 1);
+        }
+    } else if (module == system_control_mc[0] && cmd == system_control_mc[1]) {
+        static const char *const values[] = {"NONE", "AC3", "AC3P", "AAC"};
+        char text[48], *eq;
+
+        if (copy_from_user(st, u, 12) ||
+            strncpy_from_user(text, compat_ptr(get_unaligned_le32(st + 8)), sizeof(text)) <= 0)
+            return;
+        text[sizeof(text) - 1] = 0;
+        eq = strchr(text, '=');
+        if (!eq)
+            return;
+        *eq++ = 0;
+        v = -1;
+        for (size_t i = 0; i < ARRAY_SIZE(values); i++)
+            if (!strcmp(eq, values[i]))
+                v = i;
+        lgemu_snd_out_set(text, &v, 1);
+    } else if (module == param2_mc[0] && cmd == param2_mc[1]) {
+        char name[32];
+        u32 type;
+
+        if (copy_from_user(st, u, 16))
+            return;
+        type = get_unaligned_le32(st + 8);
+        for (int i = 0; i < param2_type_count; i++) {
+            if (param2_types[i] != type)
+                continue;
+            v = get_unaligned_le32(st + 12);
+            snprintf(name, sizeof(name), "SetAudioParam2 %u", type);
+            lgemu_snd_out_set(name, &v, 1);
+        }
+    } else if (module == arc_mc[0] && cmd == arc_mc[1] && arc_mc[2] < sizeof(st)) {
+        if (!copy_from_user(st, u, arc_mc[2] + 1)) {
+            v = st[arc_mc[2]];
+            lgemu_snd_out_set("ARC Enable", &v, 1);
+        }
+    }
+}
+
 /* AUDIO's DSP memory, where MStar's kernel-mode AUDIO answers from what it was given (W15U's
  * kdrv_lm15u.ko): MApi_AUDIO_SetDspBaseAddr (command 2: {u8 dsp, u32 0 at +4, u32 PA at +8}; KADP's
  * MAdp_MAD_InitializeModule passes DSP 2 and mmapger record 11's PA) sets HAL_AUDIO's base, and
@@ -630,6 +736,7 @@ static long utopia_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             msleep_interruptible(1000);
             return UTOPIA_STATUS_SUCCESS;
         }
+        snd_out_decode(module, w[0], w[1]);
         if (module == UTOPIA_MODULE_XC)
             return xc_ioctl(w[0], w[1]);
         if (module == UTOPIA_MODULE_PNL)

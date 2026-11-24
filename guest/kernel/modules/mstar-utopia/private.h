@@ -93,6 +93,7 @@ bool gpio_enabled(void);
 long gpio_ioctl(u32 cmd, u32 uarg);
 int audio_info_parse(void);
 int adv_fn009_parse(void);
+int snd_out_parse(void);
 bool utopia_has_pmlog(void);
 bool utopia_has_xc_riu(void);
 void xc_riu_tick(void);
