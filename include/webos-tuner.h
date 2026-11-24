@@ -23,11 +23,13 @@
  *                    tuned near freq_hz with that delivery system locks: an ATSC (8VSB) stream
  *                    does not lock a cable (QAM) tune on the same frequency
  *   WEBOS_TUNER_TS   transport stream packets of freq_hz, len a multiple of 188 (at most
- *                    WEBOS_TUNER_TS_MAX): fed to the demuxes while frontend 0 is tuned to freq_hz
+ *                    WEBOS_TUNER_TS_MAX): fed to the demuxes while the set is tuned to freq_hz
  * guest -> host:
- *   WEBOS_TUNER_TUNE frontend 0 is tuned to freq_hz (0: to nothing yet); payload one word, the
+ *   WEBOS_TUNER_TUNE the set is tuned to freq_hz (0: to nothing yet); payload one word, the
  *                    delivery system (enum fe_delivery_system). Sent at each tune and after each
- *                    WEBOS_TUNER_MAP, so a host that (re)connects and sends its map learns it. */
+ *                    WEBOS_TUNER_MAP, so a host that (re)connects and sends its map learns it.
+ *                    With two frontends it is the latest tune with a signal (dtv_soc's soc_tuned):
+ *                    the host sends one stream. */
 #define WEBOS_TUNER_MAGIC   0x4e555457u /* "WTUN" */
 #define WEBOS_TUNER_MAP     1u
 #define WEBOS_TUNER_TS      2u
