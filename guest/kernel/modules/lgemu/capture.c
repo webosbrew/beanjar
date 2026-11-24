@@ -204,5 +204,6 @@ int lgemu_capture_init(void)
 }
 void lgemu_capture_exit(void)
 {
+    lgemu_capture_histogram_exit();
     misc_deregister(&device);
 }

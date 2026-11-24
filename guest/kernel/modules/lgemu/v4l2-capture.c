@@ -9,7 +9,8 @@
  * The O22N2 client maps QUERYBUF offsets through video60 (queryBuffer,
  * 0x10f62..0x10f6c), not /dev/mem. These offsets name vmalloc-backed planes;
  * physical-address export is deliberately unsupported.
- * Frames come only from a fresh, successful viewer readback. */
+ * Frames come only from a fresh, successful viewer readback. The histogram controls
+ * (0x982a14..17) are capture-histogram.c's. */
 #define pr_fmt(fmt) "capture: " fmt
 #include <linux/compat.h>
 #include <linux/fs.h>
@@ -26,6 +27,7 @@
 #include <linux/videodev2.h>
 #include <linux/version.h>
 #include <linux/vmalloc.h>
+#include "lgemu.h"
 #include "lgemu-drv.h"
 #include "../../../../include/webos-capture.h"
 
@@ -76,7 +78,7 @@ struct capture_file {
     u32 width, height, format, location, requested, count, next, sequence;
     ktime_t next_frame;
     int frozen;
-    bool streaming;
+    bool streaming, histogram;
 };
 
 static bool charge(size_t bytes)
@@ -300,6 +302,8 @@ static int extended(struct file *file, unsigned int cmd, void __user *arg)
     id = control[0];
     size = control[1];
     ptr = compat_ptr(control[3]);
+    if (id >= LGEMU_HIST_START && id <= LGEMU_HIST_STOP)
+        return lgemu_capture_histogram(&f->histogram, get, id, size, control[3]);
     switch (id) {
     case CAP_BASE:
         size = 40;
@@ -620,6 +624,7 @@ static int capture_open(struct inode *inode, struct file *file)
 static int capture_release(struct inode *inode, struct file *file)
 {
     struct capture_file *f = file->private_data;
+    lgemu_capture_histogram_stop(&f->histogram);
     release_buffers(f);
     kfree(f);
     return 0;
