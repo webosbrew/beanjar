@@ -1,0 +1,38 @@
+# Board parameters the bootloader (MStar's MBoot, LG's build for M3R) puts on the kernel command
+# line, as on M3 (guest/layers/soc/m3/rootfs/etc/emulator/board.cmdline says who reads them). The
+# order is W19R's MBoot's (boot.pak 05.40.97, its format strings): ethaddr, modelopt, hwopt,
+# ToolOpt (9 words), modelName, serialNum, countryGrp, debugMode, devtmpfs.mount, chip, emmc_size,
+# cmdEnd; modelName and serialNum now come before countryGrp and debugMode.
+#
+# The values describe a 43LM5700PUA, a US model the models DB lists for this firmware's OTA ID
+# (HE_DTV_W19R_AFAAATAA: US, CA_EN and MX), proposed by host/tools/research/model-config.py from
+# W19R 05.40.97's own tables with szCountryGroupCode=US continent=10 tuner=internal
+# ddr_size=DDR_SIZE_1_5G micom_type=MODELOPT_MICOM_EXTERNAL; they are not read from a real set.
+# This ATSC firmware's RELEASE.cfg is the factory default of a Korean LM63 (szCountryGroupCode KR,
+# BOARD_M3R_ATSC_KR): the region values here are the US group's of the same tables.
+#
+# chip=M3RA0 is a constant in this MBoot.
+ethaddr=a8:23:fe:12:34:56
+# 15 model-option straps, as W19R's U-Boot reads its pins 81 83 0 0 59 62 63 64 75 76 77 78 79 80
+# 25: all 0 but pins 75/79 high (DDR 1.5 GB, as M3's board: the MIU layout of bsppart's
+# tee/mmap.ini is M3's, two 512 MiB MIUs) and pin 25 high (the external micom, hwopt digit 15 0:
+# RELEASE.cfg's eMICOMType MICOM_NEC, lgemu's I2C micom).
+modelopt=000000001000101
+# 18 digits, as this U-Boot prints them for those straps: US (d0 0, gmodelopt_country_type
+# {US, KR, BR, KR}), LVDS FHD (d2, d3 1), the tuner column 0 of
+# gmodelopt_MSD94BEXM8_tuner_comb[US], the internal demodulator (d8 0), DDR 1.5 GB (d11 3),
+# U-Boot's graphic resolution 6 (d14), external micom (d15 0)
+hwopt=001100000003006000
+# 9 tool option words (TOOL_OPTIONn_T of W19R's tvconfig-gen), RELEASE.cfg's LM63 defaults with the
+# model's inch and tool type: ToolOpt1 554 = INCH_43 10, TOOL_LM57 17 (bits 5-10); ToolOpt3's
+# amplifier AMP_WA15_6828B_1AMP 7; ToolOpt9 QUICK_START_PLUS, instant boot on, HDR.
+ToolOpt=554:16406:7616:65:59282465:1101624:0:0:1292288
+modelName=43LM5700PUA serialNum=905RAXX00001
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+devtmpfs.mount=1 chip=M3RA0
+# 7.5 GB eMMC, as M3's (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+cmdEnd

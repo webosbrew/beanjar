@@ -1,0 +1,78 @@
+# The MStar M3R (board chip MSD94BEXM8; MBoot's chip=M3RA0), W19R's SoC: M3's platform
+# (guest/targets/soc/m3.toml says where each of its values comes from), with W19R 05.40.97's own
+# values where its firmware differs (docs/research/m3r-lm18a-groundwork.md).
+# W19R's bsppart libkadaptor: the same Utopia module table, XC window commands, MPool ids (1, 67)
+# and 95 memory-map records as W18R's; two XC commands move by one: MApi_XC_S_Disp_Ctrl 0x159,
+# MApi_XC_HDR_Control 0x143 (their wrappers' UtopiaIoctl numbers; the window commands, the PNL
+# getters and R2BYTEMSK keep M3's). VDEC_FRAMEBUFFER (record 42 of the kernel's mmapger names,
+# the same list as W18R's, SECURE_SHM still 7) is 0x6300000, 99 MiB (bsppart's bsp/tee/mmap.ini,
+# E_MMAP_ID_VDEC_FRAMEBUFFER_LEN; the MIU layout is M3's).
+# The AUDIO module (48) has its command table renumbered: MApi_AUDIO_ADVSOUND_SetParam2, the
+# string parameter LGSE_FN_009_VARIABLES goes through, is 227 (M3: 91).
+# The PM51 strap: MAdp_SYS_UsePM51 reads pad 25 (M3: 48), whose input in KADP's user-mode HAL
+# gpio_table (the same table as W18R's) is bit 2 of PM 0xF16; high, as on M3, the board's micom
+# is the external one (RELEASE.cfg's MICOM_NEC). The CPU clock, the efuse trigger and the PQ SRAM
+# strobes are M3's (HAL_CPU_QueryClock, HAL_SYS_ReadEfuseHDCPKey and Hal_PQ_set_c_sram_table are
+# the same code in W19R's libkadaptor).
+# The I2C map (libdile_i2c 180514) keeps M3's MICOM 4/0x52, NVM 6/0xA0 and DTA2010AM 0/0x54, the
+# row tvservice's AMP_WA15_6828B_1AMP (ToolOpt3's amplifier) writes through (DIL_AUDIO_I2C_Write
+# index 21). The GPIO map (libdile_gpio 180626) keeps M3's lines (the highest 178, USB2_OCD 50,
+# USB1_OCD 177), adding three HDMI device-detect inputs (87, 81, 129) left at 0.
+
+base = "m3"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43LM5700PUA's area, a US set's (board.cmdline): W19R's _aDefineContinent entry 10 ("US", in
+# the RMM country list of the US group), LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, EXT_VIDEO_INPUT_ADJ and EXT_AUDIO_INPUT_ADJ of tvservice's gToolOptionDB, from
+# W19R's RELEASE.cfg (LM63 defaults), read by host/tools/research/model-config.py. As on M3, the
+# board's video and audio input index 1 selects row 1 of tvservice's tables, so they are programmed
+# but unread.
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6", "i2c_dev=micom:4:0x29,nvm:6:0x50,amp:0:0x2a,amp:0:0x2b",
+]
+
+[[modules]]
+name = "mstar-utopia"
+params = [
+    "miu_interval=0x80000000",
+    "miu_len=0x20000000",
+    "miu0_bus=0x20000000",
+    "miu1_bus=0xa0000000",
+    "mmap_ids=95",
+    "mmap_slot=0x400000",
+    "mmap_len=42:0x6300000",
+    "lx_mem_id=1",
+    "lx_mem2_id=67",
+    "lx_mem2_bias=0",
+    "secure_shm_id=7",
+    "msos_pmlog=1",
+    "xc_disp_ctrl=0x159",
+    "xc_hdr_control=0x143",
+    "xc_window=20,50,48,236,238,185",
+    "pnl_area=70,71,72,73",
+    "xc_r2bytemsk=202",
+    "adv_fn009=48:227:LGSE_FN_009_VARIABLES",
+    """reg_init=0x1f200000:0x10cc0:0x78d5,0x1f200000:0x10cc2:0x29,0x1f000000:0xf16:0x4,\
+        0x1f200000:0x3448:0xc00""",
+    "reg_autoclear=0x1f000000:0x2050:0x2000,0x1f000000:0x132382:0x100,0x1f000000:0x13a382:0x100",
+    "gpio_lines=179",
+    "gpio_level=50:1,177:1",
+]
+
+# W19R's btmtk_usb.ko and webos-bluetooth-service: netlink family 29
+[[modules]]
+name = "btmtk_usb"
+params = [
+    "family=29",
+]
+
+# W19R's libdvbfrontend: GetLIBVersion, CheckLockState, TunePostJob read 0xc1, 0xaf, 0xb1
+[[modules]]
+name = "webos_tv"
+params = [
+    "version_cmd=0xc1",
+    "lock_cmd=0xaf",
+    "postjob_cmd=0xb1",
+]

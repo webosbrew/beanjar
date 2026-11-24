@@ -93,6 +93,8 @@ StanbyMEs, no US model, so each keeps one board; each line comes from its own fi
 graphicResolution=1920x1080`), and the two give the same values. W21U, the chip's 2021 OLED and NANO/QNED TV
 line, is not the StanbyME's firmware and has no board here.
 
+M3R's board (`m3r-goldilocks2`, W19R 05.40.97) is a 43LM5700PUA, a US set (ATSC, countryGrp 2, continent 10): W19R's only OTA ID in the collection is the ATSC build (AFAAATAA), which ships on US, Canadian and Mexican models, so it has one board. Its RELEASE.cfg is a Korean LM63, so the region values are the US group's of the same tables (`host/tools/research/model-config.py` with `--set szCountryGroupCode=US`).
+
 LM15U's board (`lm15u-beehive`, W15U 04.06.25) is a 65UF850V as a German set (DVB, the
 nContinentIdx 50 area): W15U's only OTA ID is the European DVB one (AFADABAA), so it has no US
 or ARIB board. Its fields come from that firmware's MBoot and tvservice tables, each named in the

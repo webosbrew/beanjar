@@ -1,0 +1,61 @@
+models = ["W19R"]
+
+# W19R goldilocks2 (05.40.97, HE_DTV_W19R_AFAAATAA, the ATSC build): goldilocks2's paks (named
+# -atsc, which the release's -dvb names resolve to) and EEPROM layout, with two differences of
+# MStar's M3R board from W19P's Realtek one. Its partition table (lginit_app2, 54 partitions)
+# has no uhdcp, so its state disks and partitions are goldilocks' (mount-readwrite looks uhdcp
+# up in /proc/partinfo and skips it). Its MBoot copies all 9 ToolOpt words onto the command line
+# (boot.pak's "ToolOpt=%u:...:%u", 9 fields), not Realtek U-Boot's 6.
+[release]
+base = "goldilocks2"
+state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G" }
+# Its kernel (4.4.84-433, MStar's) builds in what W18R's does (modules.builtin and modules.order
+# of the same names: ipw, no exFAT, no hid-microsoft), so the peripherals are goldilocks' list,
+# not W19P's (Realtek's) goldilocks2 one; bsppart ships LG's tfat.ko and tntfs.ko (lgfs).
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "hid-dr", "hid-logitech", "hid-sony", "hid-zpff", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "nls_iso8859-1", "nls_cp949", "snd-usb-audio", "cdc-acm", "input-leds",
+    "hid-playstation", "ipw", "pl2303", "option", "sierra", "lgfs",
+]
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+factory_offset = 0x294
+local_key = { word = 4, offset = 0, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_block_offset = 0x1C6
+debug_status_offset = 0x1A8
+
+[release.partitions]
+partinfo = "partinfo"
+mapbak = "partinfo"
+authcxt = "authcxt"
+nvram = "nvram"
+sestore = "sestore"
+sedata = "sedata"
+rootfs = "rootfs"
+tvservice = "tvservice"
+otncabi = "otncabi"
+otycabi = "otycabi"
+fonts = "fonts"
+db8 = "db8"
+data = "cmn_data"
+apps = "appstore"
+bsppart = "bsppart"
+license = "license"
+wossestore = "wossestore"

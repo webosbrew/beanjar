@@ -6,7 +6,7 @@
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W16R on M2, W17H
-# on M16P, W18R on M3 and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -87,6 +87,17 @@ M16P*)  model=W17H ota=AFADABAA fw=06.10.65 platform=lg1313 sound_bad_type=SOUND
 # 1920x1080 (xc_disp_ctrl); a zero window was a SIGFPE that had dbgfrwk restart the set. GRAPHIC
 # captures work; VIDEO without video answers CAPTURE_ERROR_01 headless (no video window) and
 # CAPTURE_ERROR_09 ("no signal state") with Live TV's no-signal screen in front.
+# W19R (msd94bexm8 is M3R's name, MBoot's chip=M3RA0; matched before M3), webOS 4.10, the ATSC
+# build: a 43LM5700PUA (US), direct LED, no camera, no headphone; tvservice lists AV, component and
+# HDMI x3 (row 1 of video_external_input_adjust, as W18R), counted from the deviceList entries as
+# W19P's (no totalDeviceNumber). tvSystemName is atsc. Its tvservice knows neither clearPlus nor
+# W18R's three rating keys. The rest as W18R's.
+M3R*)   model=W19R ota=AFAAATAA fw=05.40.97 platform=msd94bexm8 sound_bad_type=SOUND_ERROR_013
+	capture_no_video='CAPTURE_ERROR_01 CAPTURE_ERROR_09' max_devices= calibration= inputs=5
+	input_count=deviceid private_answer='Denied method call' tv_system=atsc
+	no_keys='clearPlus contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
+	tool_options='"panelInch":"43","backlightType":"directL","cameraReady":"off","headphone":"false"'
+	reset3d='"returnValue":true' ;;
 M3*)    model=W18R ota=AFAAABAA fw=05.50.70 platform=msd94bcg sound_bad_type=SOUND_ERROR_013
 	capture_no_video='CAPTURE_ERROR_01 CAPTURE_ERROR_09' max_devices= calibration= inputs=5 private_answer='Denied method call'
 	no_keys='contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
@@ -181,7 +192,7 @@ if [ "$webos5" ]; then
 	fi
 else
 	check "board strings" $S/getSystemInfo '{"keys":["modelName","serialNumber","tvSystemName","platformName"]}' \
-		"$board"'"tvSystemName":"dvb","platformName":"'$platform'"'
+		"$board"'"tvSystemName":"'${tv_system:-dvb}'","platformName":"'$platform'"'
 fi
 check "sdx identity keys" $S/getProperties \
 	'{"keys":["hardwareVersion","contiLangCountry","otaId","firmwareVersion","modelName","displayType","wifi","motionRemoconType","cameraReady","contiEtcChinaCP"]}' \
