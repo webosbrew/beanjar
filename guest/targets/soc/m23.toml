@@ -1,0 +1,44 @@
+# The LG M23 (LG1315; lxboot's chip table names M23), W23M's SoC: O22's platform (soc/o22.toml) on an
+# LCD board (docs/research/m16-kid24u-m23-groundwork.md). Its kernels (5.4.96 to 6.12.44) build only
+# the platform m23_webos_udtv; LG's GPL kdriver source for it (platform/m23_pioneer/platform_init.c)
+# and the kernels' chip table give the BASE values:
+# - CHIP_REV 0x27a0: M23 is chip 0x27 (base_drv.c parses chip=%c%d%c%d), A0 a virtual revision;
+#   ACE_REV the same.
+# - CHIP_PLT 0x2000 (hwopt digit 3 not 0 or 1: UHD); GFX_RES 1920x1080, a constant.
+# - BOARD_OPT 0x02510144, the 55UR9000PUA board's (hwopt digits 3, 4, 11, 14, 17): system 0x2000000,
+#   60 Hz 0x400000, ADV 0x100000, DDR 1.5 GB 0x10000 (digit 11 neither '1' nor '4'), 2K graphics
+#   0x100, the internal FRC 0x4, and the panel bit OLED 0x40: M23's BASE_PLT_Probe reads no panel
+#   from the bootloader (its modelopt parse is compiled out) and keeps its static default
+#   MODEL_OPT_PANEL_OLED unless the cmdline says pioneer.board=LCD, which W23M's lxboot never
+#   passes. The userland reads only bit 1 (external FRC: HAL_GAL_Init).
+# GPIO: W23M's libdile_gpio (number1 to ponytail) and nyxGpio (queue) have one table, highest line
+# 31; the device tree has 18 controllers of 8 lines (gpio_lines 144, as O22's). The inputs at 1 are
+# USB1_OCD 18 and USB2_OCD 10 (active low, the USB PHYs' ocd-gpios); no OLED refresh line (O22's
+# line 16 is HDMI1_DEV_DET here).
+# I2C: libdile_i2c and nyxI2c's table keeps O22's NVM on channel 7 (0xA0) and LIGHT_SENSOR_1/2 on 1;
+# no TMF882X time-of-flight sensor, no micom, OLED or microphone rows. W23M has no far-field
+# microphone (supportFarFieldVoice off, no wake-on-voice rows).
+# Its global firmware (AFADATAA) ships on US and European models; no Japanese W23M model is in the
+# models DB, so no ARIB board.
+
+# Not based on soc/o22.toml: its time-of-flight sensor (tof_bus), Japanese board and microphone are
+# the C2's, which W23M has not.
+board_cmdline = "/etc/emulator/board-atsc.cmdline"
+broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emulator/board-dvb.cmdline" }
+lgemu = ["i2c_buses=0,1,2,3,4,5,6,7,8,9", "i2c_dev=nvm:7:0x50", "cec=1", "snd_ctls=1"]
+light_bus = 1
+# fancontroller.service is in every W23M release, as O22's
+thermal = true
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x27a0",
+    "ace_rev=0x27a0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x02510144",
+    "ucom=1",
+    "gpio_lines=144",
+    "gpio_level=18:1,10:1",
+]

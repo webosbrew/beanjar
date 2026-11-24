@@ -50,6 +50,7 @@ W15U = "04.06.25.01-HE_DTV_W15U_AFADABAA"
 W19R = "05.40.97.01-HE_DTV_W19R_AFAAATAA"
 W17R = "06.10.60.01-HE_DTV_W17R_AFAAATAA"
 W17M = "06.10.55.01-HE_DTV_W17M_AFADATAA"
+W23M = ("13.40.97", "23.25.55", "33.31.61", "43.22.75")
 W23L = "13.50.75.01-HE_DTV_W23L_AFAAATAA"
 N21D6, N21D = "04.44.16.01-HE_DTV_N21D_AFAAATAA", "23.22.86.01-HE_DTV_N21D_AFAAATAA"
 
@@ -66,6 +67,10 @@ FOUND = {
     "m2-dreadlocks": fws(W16R),
     "m16p-dreadlocks2": fws(W17H),
     "m16plite-dreadlocks2": fws(W17M),
+    "m23-number1": fws(W23M[0] + ".01-HE_DTV_W23M_AFADATAA"),
+    "m23-ombre": fws(W23M[1] + ".01-HE_DTV_W23M_AFADATAA"),
+    "m23-ponytail": fws(W23M[2] + ".01-HE_DTV_W23M_AFADATAA"),
+    "m23-queue": fws(W23M[3] + ".01-HE_DTV_W23M_AFADATAA"),
     "m2r-dreadlocks2": fws(W17R),
     "m3-goldilocks": fws(W18R),
     "m3r-goldilocks2": fws(W19R),

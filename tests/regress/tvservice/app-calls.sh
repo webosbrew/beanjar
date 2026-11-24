@@ -54,7 +54,7 @@ M14*)   model=W15M ota=AFAAABAA fw=04.06.75 platform=lg1311 sound_bad_type=SOUND
 LM15U*) model=W15U ota=AFADABAA fw=04.06.25 platform=lm15u sound_bad_type=SOUND_ERROR_013
 	capture_no_video=CAPTURE_ERROR_01 max_devices= inputs=6 reset3d='"returnValue":true'
 	tool_options='"panelInch":"65","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"' ;;
-# W16R (msd93f2g is M2's name): tvservice reads the board's EEPROM over MStar's HWI2C
+# W16R (msd93f2g is M2's name; MBoot's chip=M2A0, M2A1, M2B0 or M2B1, not LG's M23 of the webOS 5 boards): tvservice reads the board's EEPROM over MStar's HWI2C
 # (mstar-utopia.ko). The board is a 43LH604V: non-UHD table row 7, AV, component, HDMI x3, no
 # SCART; no camera, no 3D, a headphone output (W16R's RELEASE.cfg, the LH60's ToolOpt3). Its
 # getMaximumExternalDeviceNumber is not called either, as W15M's. tv.capture's VIDEO gets its
@@ -70,7 +70,7 @@ M2R*)   model=W17R ota=AFAAATAA fw=06.10.60 platform=msd93xbg sound_bad_type=SOU
 	capture_no_video=CAPTURE_ERROR_09 max_devices= calibration= inputs=4 tv_system=atsc
 	tool_options='"panelInch":"43","backlightType":"directM","cameraReady":"ready","headphone":"true"'
 	reset3d='"returnValue":true' ;;
-M2*)    model=W16R ota=AFAAABAA fw=05.70.50 platform=msd93f2g sound_bad_type=SOUND_ERROR_013
+M2[AB]*) model=W16R ota=AFAAABAA fw=05.70.50 platform=msd93f2g sound_bad_type=SOUND_ERROR_013
 	capture_no_video=CAPTURE_ERROR_09 max_devices= inputs=5
 	tool_options='"panelInch":"43","backlightType":"directM","cameraReady":"off","headphone":"true"'
 	reset3d='"errorCode":"DISPLAY_ERROR_1002"' ;;

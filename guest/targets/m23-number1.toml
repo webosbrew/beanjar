@@ -1,0 +1,21 @@
+models = ["W23M"]
+lg_scaler = [3840, 2160]
+v4l2_capture = true
+
+# W23M number1-namtok (13.40.97, the global build): W22O number1's paks (fonts.pak, -global
+# otncabi/otycabi) and fstab and jail pins, the state partitions two slots later (p56-p58:
+# partmap/m23-mullet.toml). No libdil_tu_plugin or dil_config.json, as W22O number1: no tuner here.
+# The O22 display values (lg_scaler, v4l2_capture) are W22O's; W23M's libpqeca and nyxVscaler were
+# not compared.
+[release]
+base = "number1"
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",
+    "hid-microsoft", "hid-pl", "hid-sony", "hid-playstation", "hid-zpff", "xpad", "uvcvideo",
+    "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii", "nls_utf8",
+    "nls_iso8859-1", "nls_cp949", "exfat", "snd-usb-audio", "cdc-acm", "ftdi_sio", "pl2303",
+    "option", "sierra", "lgfs",
+]
+nvm_disks = { nvram = "8M", eeprom = "32K" }
+partmap = "m23-mullet"

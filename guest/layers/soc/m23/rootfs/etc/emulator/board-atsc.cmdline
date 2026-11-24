@@ -1,0 +1,21 @@
+# 55UR9000PUA, the US 55-inch UR90: the models DB lists it for this firmware's OTA ID
+# (HE_DTV_W23M_AFADATAA, the global build; US and CA_EN). The default board (board_cmdline in
+# guest/targets/soc/m23.toml), from host/tools/research/model-config.py over W23M's own generators
+# (the same line on 13.40.97, 23.25.55, 33.31.61 and 43.22.75): hwopt digit 0 5 (countryType US,
+# ATSC), digit 3 2 (UD panel), digit 11 3 (DDR 1.5G: devices.json's TV_2023_m23_W23M_LCD_1.5G),
+# digit 12 0 (LCD), digit 14 2 (graphic plane 1920x1080), 60 Hz without FRC. countryGrp 2: configd's
+# USA RMM grpCode. ToolOpt: lowlevelstorage's defaults with panelInch 55 and toolType UR90. chip=M23A0:
+# lxboot's chip table names M23; A0 is a virtual revision. Identity placeholders are replaced per VM.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=2
+modelopt=000000000
+hwopt=500200000003002000
+ToolOpt=34755918:1323030:1050624:65:12068150:55626939
+modelName=55UR9000PUA
+debugMode=3
+serialNum=000RAXX00001
+chip=M23A0
+tvregion=ATSC
+emmc_size=0x1d2000000
+cmdEnd

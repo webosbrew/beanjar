@@ -1,0 +1,19 @@
+models = ["W23M"]
+lg_scaler = [3840, 2160]
+v4l2_capture = true
+
+# W23M ombre-okapi.pine (23.25.55, the global build): number1's paks and pins, as W22O ombre's
+# (partmap/m23-mullet.toml). Its libdil_tu_plugin wants frontend 2.1 as the later releases', but the
+# O22 ombre row has no tuner either, and none is modelled here yet.
+[release]
+base = "ombre"
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",
+    "hid-microsoft", "hid-pl", "hid-sony", "hid-playstation", "hid-zpff", "xpad", "uvcvideo",
+    "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii", "nls_utf8",
+    "nls_iso8859-1", "nls_cp949", "exfat", "snd-usb-audio", "cdc-acm", "ftdi_sio", "pl2303",
+    "option", "sierra", "lgfs",
+]
+nvm_disks = { nvram = "8M", eeprom = "32K" }
+partmap = "m23-mullet"

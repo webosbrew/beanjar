@@ -79,7 +79,7 @@ class BootConfTest(unittest.TestCase):
         for target in targets.all_targets():
             chip = target[0]
             want = (
-                chip.startswith("o2")
+                chip.startswith(("o2", "m23"))
                 or (chip.startswith("k") and chip != "k5lp")
                 or chip.startswith("lm21")
                 or targets.name(target) == "m2-dreadlocks"
@@ -597,6 +597,10 @@ class BootConfTest(unittest.TestCase):
             "lm21ann-ponytail": base | {"ipw"},
             "lm21ann-queue": base | {"ipw", "ftdi_sio", "ch341", "cp210x"},
             "lm21u-ombre": base | {"ipw"},
+            "m23-number1": base | {"ftdi_sio"},
+            "m23-ombre": base | {"ftdi_sio"},
+            "m23-ponytail": base | {"ftdi_sio"},
+            "m23-queue": base | {"ftdi_sio", "ch341", "cp210x"},
             "o22-mullet": base | {"ftdi_sio"},
             "o22-number1": base | {"ftdi_sio"},
             "o22n-number1": base | {"ftdi_sio"},
@@ -1066,11 +1070,11 @@ class BootConfTest(unittest.TestCase):
 
     def test_thermalinfo(self):
         """/proc/thermalinfo where the firmware has fancontroller (lm21*, k7, k8*, kf23f, k24*, k25*,
-        the O22 family o2*),
+        m23, the O22 family o2*),
         with the IDDQ files from webOS 23 (number1) on; not on older chips."""
         for target in targets.all_targets():
             words = targets.module_params(target).get("lgemu", ())
-            fan = target[0].startswith(("lm21", "k7", "k8", "kf23f", "k24", "k25", "o2"))
+            fan = target[0].startswith(("lm21", "k7", "k8", "kf23f", "k24", "k25", "m23", "o2"))
             iddq = fan and targets.WEBOS_ORDER.index(target[1]) >= targets.WEBOS_ORDER.index(
                 "number1"
             )
@@ -1199,6 +1203,7 @@ class BootConfTest(unittest.TestCase):
             "k24": "55QNED85TUA",
             "k24n": "55QNED85AUA",
             "lm21an": "70UQ8000AUB",
+            "m23": "55UR9000PUA",
             "o22": "OLED55C2PUA",
             "o22n": "OLED77C3PUA",
             "o22n2": "OLED55C4PUA",
@@ -1346,6 +1351,10 @@ class BootConfTest(unittest.TestCase):
                 "m16plite-dreadlocks2",
                 "m2-dreadlocks",
                 "m2-simplesmart",
+                "m23-number1",
+                "m23-ombre",
+                "m23-ponytail",
+                "m23-queue",
                 "m2r-dreadlocks2",
                 "m3-goldilocks",
                 "m3r-goldilocks2",
@@ -1426,6 +1435,10 @@ class BootConfTest(unittest.TestCase):
                 "lm21ann-number1": 1536,
                 "lm21u-kisscurl": 2048,
                 "lm21u-ombre": 2048,
+                "m23-number1": 1536,
+                "m23-ombre": 1536,
+                "m23-ponytail": 1536,
+                "m23-queue": 1536,
                 "o22-mullet": 2560,
                 "o22-number1": 2560,
                 "o22-ponytail": 2560,
