@@ -25,7 +25,8 @@
  * video decoder streams; an audio filter's while it is started (the audio decoder, LG's ALSA
  * "Adec" controls, is not ours: the stream says its codec).
  *
- * /proc/dtv_soc says the map, the tune and what came: frames, packets fed, packets dropped (not
+ * /proc/dtv_soc says the map, the tune, the frontends' tunes counted (a scan that counts none did
+ * not run) and what came: frames, packets fed, packets dropped (not
  * of the tuned frequency, or no signal there) and header resyncs; the decoders' records. */
 #include <linux/kfifo.h>
 #include <linux/miscdevice.h>
@@ -200,6 +201,7 @@ static u32 tuned_freq, tuned_delsys;
 static bool pending; /* a WEBOS_TUNER_TUNE frame for the host */
 static DECLARE_WAIT_QUEUE_HEAD(pending_wait);
 static unsigned long fed, dropped, frames, resyncs;
+static unsigned long tunes; /* the frontends' tunes, all of them */
 static atomic_t feeds = ATOMIC_INIT(0);
 static unsigned long started; /* feeds (section filters, PES or TS) started */
 static u16 started_pids[8];   /* the PIDs of the last ones */
@@ -231,6 +233,7 @@ static void soc_tuned(unsigned int fe, u32 freq, u32 delsys)
     unsigned long flags;
 
     spin_lock_irqsave(&state_lock, flags);
+    tunes++;
     if (fe != fed_fe && !tuner_mapped(map, nmap, freq, delsys)) {
         spin_unlock_irqrestore(&state_lock, flags);
         return;
@@ -384,6 +387,7 @@ static int stats_show(struct seq_file *m, void *v)
         seq_printf(m, " %u/%u", map[i].freq_hz, map[i].delsys);
     seq_printf(m, "\ntuned %u delsys %u signal %d\n", tuned_freq, tuned_delsys,
                tuner_mapped(map, nmap, tuned_freq, tuned_delsys));
+    seq_printf(m, "tunes %lu (all frontends)\n", tunes);
     seq_printf(m, "packets fed %lu dropped %lu\nframes %lu resyncs %lu (closed files)\n", fed,
                dropped, frames, resyncs);
     seq_printf(m, "started %lu, the last PIDs", started);

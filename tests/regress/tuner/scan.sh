@@ -52,17 +52,24 @@ open_scan() {
 	done
 	return 1
 }
-# a scan has started when its first pass is pushed (getAutoScanSourceOrderStatus): one started
-# while utp-atsc is still coming up (the open above launches it) answers startAutoScan and then
-# stays at autoScanning true with no pass. Such a start is stopped and made again.
+# a scan has started when its first pass is pushed (getAutoScanSourceOrderStatus) and the frontends
+# tune (dtv_soc counts their tunes): one started while utp-atsc is still coming up (the open above
+# launches it) answers startAutoScan and then stays at autoScanning true with no pass; on a new VM's
+# first boot legacy-broadcast-arib, still setting up its database, fails the start ("interface call
+# error") after utp has answered it and pushed the pass, which then ends with no tune and no channel.
+# Such a start is stopped and made again.
+tunes() { sed -n 's/^tunes \([0-9]*\).*/\1/p' /proc/dtv_soc; }
 source_type() {
 	tr -d '\n ' < /tmp/scan-source.out | grep -o '"currentScanSourceType":"[A-Z_]*"' | tail -1 |
 		sed 's/.*:"\(.*\)"/\1/'
 }
 # Live TV in front keeps the tuner: a Japanese set's scan then runs for minutes and tunes nothing
 # (W22O queue's ARIB board, a set that already had a channel), as if the stock channel settings app,
-# which takes the front, had not. Closed for the scan; it is launched again for the watch below.
-$L luna://com.webos.service.applicationmanager/closeByAppId '{"id":"com.webos.app.livetv"}' </dev/null >/dev/null 2>&1
+# which takes the front, had not. Closed before each start: the boot launches it while the service
+# is still coming up, after a close made at the beginning. It is launched again for the watch below.
+close_livetv() {
+	$L luna://com.webos.service.applicationmanager/closeByAppId '{"id":"com.webos.app.livetv"}' </dev/null >/dev/null 2>&1
+}
 tries=0
 START=
 while :; do
@@ -73,20 +80,23 @@ while :; do
 		</dev/null > /tmp/scan-source.out 2>&1 &
 	SOURCE=$!
 	tries=$((tries + 1))
+	close_livetv
+	tunes0=$(tunes)
 	START=$($L $U/startAutoScan "$B" </dev/null 2>&1 | tr -d '\n ')
 	scan_start=$(mono)
 	if echo "$START" | grep -q '"returnValue":true'; then
-		while [ -z "$(source_type)" ] && [ $(($(mono) - scan_start)) -lt "${PASS_WAIT:-90}" ]; do
+		while { [ -z "$(source_type)" ] || [ "$(tunes)" = "$tunes0" ]; } &&
+			[ $(($(mono) - scan_start)) -lt "${PASS_WAIT:-90}" ]; do
 			sleep 2
 		done
-		[ -n "$(source_type)" ] && break
+		[ -n "$(source_type)" ] && [ "$(tunes)" != "$tunes0" ] && break
 		$L $U/stopAutoScan "$B" </dev/null >/dev/null 2>&1
 	fi
 	kill $SOURCE $OPEN 2>/dev/null
 	if [ $(($(mono) - t0)) -ge "$READY_WAIT" ]; then
 		echo "ready_s=$(($(mono) - t0))"
 		echo "start_tries=$tries"
-		echo "error=no scan pass started in $READY_WAIT s: $START"
+		echo "error=no scan pass started, or no tune, in $READY_WAIT s: $START"
 		exit 1
 	fi
 	sleep 10
