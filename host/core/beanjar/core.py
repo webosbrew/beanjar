@@ -50,6 +50,7 @@ import time
 
 from . import (
     base,
+    capture_relay,
     cpus,
     dbus,
     nvm,
@@ -294,6 +295,9 @@ class VM:
         self.viewer_pidfile = os.path.join(self.run_dir, "viewer.pid")
         self.vnc_pidfile = os.path.join(self.run_dir, "vnc.pid")  # beanjar-vnc (Library.vnc)
         self.vnc_file = os.path.join(self.run_dir, "vnc.json")  # where it listens (VM.vnc_info)
+        # the capture relay's on-demand render sink, a headless viewer (capture_relay.py)
+        self.capture_sink_pidfile = os.path.join(self.run_dir, capture_relay.SINK_PIDFILE)
+        self.capture_sink_hold = os.path.join(self.run_dir, capture_relay.SINK_HOLD)
         # beanjar-vnc's RFB without authentication, owner-only (0600): beanjar vnc pipe's
         self.vnc_local_sock = os.path.join(self.run_dir, "rfb-local.sock")
         # beanjar-vnc's mixed audio, owner-only (0600): beanjar vnc audio-pipe's
@@ -484,6 +488,11 @@ class VM:
 
     def vnc_pid(self):
         return self._frontend_pid(self.vnc_pidfile, "beanjar-vnc")
+
+    def capture_sink_pid(self):
+        """The capture relay's sink's pid while it runs (the relay keeps its pidfile)."""
+        pid = read_pid(self.capture_sink_pidfile)
+        return pid if proc_alive(pid, "viewer-headless") else None
 
     def vnc_info(self):
         """beanjar-vnc while it serves this VM, else None: {pid, url, password_file}, the url with
@@ -1463,7 +1472,11 @@ class Library:
                 if out:
                     out(f"no viewer or beanjar-vnc for {name}: running a headless viewer once")
                 who = "headless"
-                self._screenshot_headless(vm, ppm, width, height, timeout)
+                self._stop_capture_sink(vm)
+                try:
+                    self._screenshot_headless(vm, ppm, width, height, timeout)
+                finally:
+                    self._release_capture_sink(vm)
             with open(ppm, "rb") as f:
                 png = framing.ppm_to_png(f.read(), self._display_size(vm))
             part = os.path.join(tmp, "shot.png")
@@ -1657,7 +1670,38 @@ class Library:
         vpid = vm.vnc_pid()
         if vpid:
             raise Error(f"beanjar-vnc is already serving {name} (pid {vpid})")
+        self._stop_capture_sink(vm)
         return vm
+
+    @staticmethod
+    def _stop_capture_sink(vm, wait=6.0):
+        """Stops the capture relay's sink before a front end takes the display: it holds the
+        display's one-client sockets (capture_relay.py). Until _release_capture_sink, or this
+        process's end, the relay starts no other (the hold names this pid); then only when a
+        capture comes with no front end."""
+        try:
+            with open(vm.capture_sink_hold, "w") as f:
+                f.write(f"{os.getpid()}\n")
+        except OSError:
+            pass
+        pid = vm.capture_sink_pid()
+        if not pid:
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        end = time.monotonic() + wait
+        while time.monotonic() < end and proc_alive(pid, "viewer-headless"):
+            time.sleep(0.05)
+
+    @staticmethod
+    def _release_capture_sink(vm):
+        """The front end has its pidfile (or is done): the relay's own check takes over."""
+        try:
+            os.unlink(vm.capture_sink_hold)
+        except OSError:
+            pass
 
     def _frontend_open(self, vm, program, kind, pidfile, argv, env=None, on_big=False):
         if not os.access(program, os.X_OK):
@@ -1676,6 +1720,7 @@ class Library:
             )
         with open(pidfile, "w") as f:
             f.write(f"{p.pid}\n")
+        self._release_capture_sink(vm)
         return p.pid
 
     def unview(self, name, wait=6.0):

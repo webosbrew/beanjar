@@ -5,7 +5,11 @@
  * (--headless, --replay, --screenshot; README "Headless validation"). SDL's offscreen video
  * driver provides the EGL/GLES context; the scene, the sources and the input are the core's
  * (core.h). The desktop viewer is the GTK front end (beanjar_ui.viewer); beanjar-viewer runs this
- * program for the options above. */
+ * program for the options above.
+ * --capture-sink: the on-demand render sink of a VM with no front end (beanjar's capture relay,
+ * host/core/beanjar/capture_relay.py, starts and stops it): it serves the guest's captures on the
+ * capture socket and nothing else. Idle (wv_idle: QEMU's updates are only noted, a capture brings
+ * the picture up to date), no output drawn, no audio heard, no IR socket. */
 #include "core.h"
 #include "ir.h"
 #include <SDL.h>
@@ -193,7 +197,7 @@ static const char usage[] =
     "[--media-volume 0..2] [--media-mute]\n"
     "  [--no-audio] [--audio-wav OUT.wav] [--sdl-audio] [--media-silent] [--replay FILE]\n"
     "  [--screenshot OUT.ppm [--screenshot-every MS | --screenshot-after MS] [--osd-alpha]] "
-    "[--capture-control FILE "
+    "[--capture-sink] [--capture-control FILE "
     "--screenshot-every MS] [--no-osd] [--no-cursor] [--hide-planes video,ui,cursor]";
 int main(int argc, char **argv)
 {
@@ -202,6 +206,7 @@ int main(int argc, char **argv)
     unsigned shot_every = 0;
     long shot_after = -1; /* --screenshot-after MS */
     const char *shot = NULL, *replay_path = NULL, *ctl = NULL;
+    int sink = 0;
     wv_signals();
     struct wv *v = wv_new();
     wv_option(v, "headless", NULL);
@@ -217,6 +222,10 @@ int main(int argc, char **argv)
         int done = 0;
         if (!strcmp(a, "--headless"))
             continue;
+        if (!strcmp(a, "--capture-sink")) {
+            sink = 1;
+            continue;
+        }
         if (!strcmp(a, "--seconds") && i + 1 < argc) {
             seconds = g_ascii_strtod(argv[++i], NULL);
             continue;
@@ -269,6 +278,13 @@ int main(int argc, char **argv)
     }
     if (!addr || seconds < 0)
         die(usage);
+    if (sink && (shot || replay_path || ctl))
+        die("--capture-sink takes no --screenshot, --replay or --capture-control");
+    if (sink) {
+        wv_option(v, "no-ir", NULL);
+        wv_option(v, "no-audio", NULL);
+        wv_option(v, "media-silent", NULL);
+    }
     if (shot_every && !shot && !ctl)
         die("--screenshot-every needs --screenshot OUT.ppm or --capture-control FILE");
     wv_option(v, "address", addr);
@@ -294,6 +310,8 @@ int main(int argc, char **argv)
     GArray *replay = replay_path ? load_replay(replay_path) : NULL;
     wv_view(v, w, h);
     wv_start(v);
+    if (sink)
+        wv_idle(v, 1);
     gint64 start = g_get_monotonic_time(), first = 0;
     guint next = 0;
     unsigned shot_next = 0, ctl_next = 0;
@@ -402,7 +420,7 @@ int main(int argc, char **argv)
                 }
                 next++;
             }
-        if (r & 1) {
+        if ((r & 1) && !sink) {
             wv_render(v, dw, dh);
             SDL_GL_SwapWindow(window);
         }
@@ -412,7 +430,7 @@ int main(int argc, char **argv)
                 quit = 1;
         if (seconds > 0 && (now - start) / 1000000.0 >= seconds)
             break;
-        SDL_Delay(2);
+        SDL_Delay(sink ? 5 : 2);
     }
     SDL_GetWindowSize(window, &w, &h);
     SDL_GL_GetDrawableSize(window, &dw, &dh);

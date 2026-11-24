@@ -32,7 +32,8 @@ build/viewer/beanjar-viewer "unix:path=$PWD/build/dbus.sock" --remote
 Run the last command in the host desktop session (Wayland or X11). The VM itself remains
 headless. The guest needs the updated initramfs and soc layer and the shared launcher
 arguments, which attach a virtio keyboard, an absolute tablet and the remote's `webos.ir` port. `beanjar-viewer` runs `viewer-headless` in its place for
-`--headless`, `--replay`, `--screenshot`, `--screenshot-every`, `--osd-alpha` and `--no-osd`
+`--headless`, `--replay`, `--screenshot`, `--screenshot-every`, `--osd-alpha`, `--no-osd` and
+`--capture-sink` (the capture relay's on-demand viewer, `host/core/beanjar/capture_relay.py`)
 (below), before anything imports GTK, so hosts without GTK run every test.
 
 The window is a libadwaita window in the dark style: a compact header bar with the VM's name and

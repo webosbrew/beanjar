@@ -296,6 +296,42 @@ def start_media_helper(p):
             pool.close()
 
 
+def start_capture_relay(p):
+    """The capture relay (capture_relay.py) on p.capture_relay's capture.sock, the owner's alone, a
+    child that ends with this pid."""
+    path, qemu_sock, sink = p.capture_relay
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    sock.bind(path)
+    os.chmod(path, 0o600)  # the owner's, as QEMU's own socket was
+    sock.listen(8)
+    try:
+        with open(os.path.join(p.run_dir, "capture-relay.log"), "ab") as out:
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "beanjar.capture_relay",
+                    str(os.getpid()),
+                    str(sock.fileno()),
+                    qemu_sock,
+                    p.run_dir,
+                    *(sink or ()),
+                ],
+                env=helper_environment(p.env),
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=out,
+                close_fds=True,
+                pass_fds=(sock.fileno(),),
+            )
+    finally:
+        sock.close()
+
+
 def start_shell_relay(p):
     """The shell relay (guestshell.py) on p.shell_relay's shell.sock, the owner's alone (whoever
     opens it is root in the VM), a child that ends with this pid."""
@@ -468,6 +504,11 @@ def run(words, env=None):
                 pass_fds=(ir.fileno(),),
             )
         ir.close()
+    if p.capture_relay:
+        # the capture relay (capture_relay.py): capture.sock listens before QEMU starts, and the
+        # child, which outlives the exec below and ends with this pid, serves QEMU's webos.capture
+        # port from the front ends or its on-demand sink
+        start_capture_relay(p)
     if p.shell_relay:
         # `beanjar shell`'s relay (guestshell.py): shell.sock listens before QEMU starts, and the
         # child, which outlives the exec below and ends with this pid, serves it on QEMU's

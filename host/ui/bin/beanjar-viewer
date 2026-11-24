@@ -5,7 +5,7 @@
 
 The GTK 4 window (beanjar_ui.viewer, published beside this file in build/viewer, over the
 checkout's core package beanjar in host/core), or, for --headless, --replay,
---screenshot, --screenshot-every, --osd-alpha and --no-osd, the headless program
+--screenshot, --screenshot-every, --osd-alpha, --no-osd and --capture-sink, the headless program
 viewer-headless, exec'd in place (same pid) before anything imports GTK, so hosts without
 GTK 4 for Python run every test.
 """
@@ -21,6 +21,7 @@ HEADLESS = (
     "--screenshot-every",
     "--osd-alpha",
     "--no-osd",
+    "--capture-sink",
 )
 
 

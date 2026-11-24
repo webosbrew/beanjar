@@ -114,6 +114,7 @@ struct wv {
     /* no-cursor: the front end shows LG's cursor itself (wv_cursor); cursor_key is what
      * cursor_serial last counted */
     int no_cursor;
+    int no_ir;   /* no-ir: the IR socket is not opened (the capture sink sends no keys) */
     int standby; /* wv_standby: the TV is in standby, LG's cursor is not shown */
     /* the output rate (docs/dev/architecture/viewer.md, "Output rate"): panel_hz the board's panel
      * (vm-info.toml's panel_hz, else 60), output_hz the pictures a second the front end makes
@@ -303,11 +304,17 @@ int wv_option(struct wv *v, const char *name, const char *value)
         const char *name;
         int *field;
     } flags[] = {
-        {"straight-alpha", &v->straight}, {"no-media", &v->no_media},
-        {"no-audio", &v->no_audio},       {"sdl-audio", &v->sdl_audio},
-        {"headless", &v->headless},       {"osd-alpha", &v->osd_dump},
-        {"no-osd", &v->no_osd},           {"media-silent", &v->media_silent},
-        {"media-mute", &v->media_mute},   {"no-cursor", &v->no_cursor},
+        {"straight-alpha", &v->straight},
+        {"no-media", &v->no_media},
+        {"no-audio", &v->no_audio},
+        {"sdl-audio", &v->sdl_audio},
+        {"headless", &v->headless},
+        {"osd-alpha", &v->osd_dump},
+        {"no-osd", &v->no_osd},
+        {"media-silent", &v->media_silent},
+        {"media-mute", &v->media_mute},
+        {"no-cursor", &v->no_cursor},
+        {"no-ir", &v->no_ir},
     };
     for (size_t i = 0; i < G_N_ELEMENTS(strings); i++)
         if (!strcmp(name, strings[i].name)) {
@@ -1526,7 +1533,7 @@ void wv_start(struct wv *v)
             v->output_hz ? "" : " (unpaced)");
     cursor_init(&v->cursor, v->cursor_path ? v->cursor_path : default_cursor);
     video_init(&v->video, v->video_path ? v->video_path : default_video);
-    ir_init(&v->ir, v->ir_path ? v->ir_path : default_ir);
+    ir_init(&v->ir, v->no_ir ? NULL : v->ir_path ? v->ir_path : default_ir);
     /* The media streams (media.c): decoded pictures in the video windows, media audio through a
      * second SDL device (or, headless without sdl-audio or with media-silent, a clock thread and
      * media-wav: the media audio recorded, never heard). */

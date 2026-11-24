@@ -122,8 +122,11 @@ vms/<name>/identity/   the VM's own files, mode 0700: its SSH keys and known_hos
 vms/<name>/run/        qemu.pid qmp.sock viewer-qmp.sock console.sock dbus.sock cursor.sock video.sock ir.sock
                        (the micom's IR receiver, beanjar/ir_relay.py: ir-relay.log; QEMU's port is
                        ir-qemu.sock) shell.sock (beanjar shell's relay, beanjar/guestshell.py:
-                       shell-relay.log; QEMU's port is shell-qemu.sock) media-<n>.sock dbus-daemon.pid
-                       viewer.pid unit; share/ (what the guest sees, below)
+                       shell-relay.log; QEMU's port is shell-qemu.sock) capture.sock (the guest's
+                       captures, beanjar/capture_relay.py: capture-relay.log; QEMU's port is
+                       capture-qemu.sock; its on-demand headless viewer capture-sink.pid,
+                       capture-sink.log) media-<n>.sock dbus-daemon.pid viewer.pid unit; share/ (what
+                       the guest sees, below)
 vms/<name>/logs/       console.log webos.log qemu.out netstub.log viewer.log; saved/<time>-stop/
 ```
 

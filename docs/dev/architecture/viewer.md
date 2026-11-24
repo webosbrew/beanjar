@@ -169,7 +169,7 @@ The GTK window was not measured at a real display's refresh (Xvfb has no vblank)
 
 ```
 beanjar-viewer (Python launcher, build/viewer/beanjar-viewer)
- ├─ --headless / --replay / --screenshot* / --osd-alpha / --no-osd  →  exec viewer-headless
+ ├─ --headless / --replay / --screenshot* / --osd-alpha / --no-osd / --capture-sink  →  exec viewer-headless
  └─ otherwise  →  beanjar_ui.viewer (GTK 4)
       ├─ main.py     options, Gtk.Application, signals
       ├─ window.py   ViewerWindow (+ ViewerPane/RemoteWindow re-exports)
@@ -196,7 +196,8 @@ viewer-headless (C, SDL offscreen): core/headless.c (+ SDL scancode names for --
 - **Setup.** `wv_new`, `wv_option(name, value)` takes the CLI names: `size`, `straight-alpha`,
   `cursor-socket`, `video-socket`, `capture-socket`, `media-socket`, `no-media`, `hwdec`, `media-wav`,
   `media-latency`, `media-volume` (0 to 2, 1.0 standard), `media-mute`,
-  `no-audio`, `audio-wav`, `sdl-audio`, `headless`, `osd-alpha`, `no-osd`, `no-cursor`, `output-hz`
+  `no-audio`, `audio-wav`, `sdl-audio`, `headless`, `osd-alpha`, `no-osd`, `no-cursor`, `no-ir`,
+  `output-hz`
   ([Output rate](#output-rate)).
   `wv_callbacks(make_current, redraw, quit, data)`. `wv_start()` needs the GL context current. It
   creates the GL objects, connects the display, and opens the cursor, video, media and audio
@@ -256,7 +257,12 @@ viewer-headless (C, SDL offscreen): core/headless.c (+ SDL scancode names for --
   `webos.capture` for its video60 driver. Requests render the real TV scene on the GL owner
   thread and return bounded RGBA pixels, excluding GTK controls. The guest
   converts these to its mapped capture format. Disconnects and timeouts fail
-  capture; no screenshot file or retained-frame fallback is used.
+  capture; no screenshot file or retained-frame fallback is used. `capture.sock` is the capture
+  relay's (`host/core/beanjar/capture_relay.py`), which holds QEMU's port and passes each request
+  to the front end that is there. With none, it starts a headless viewer for the captures alone
+  (`viewer-headless --capture-sink`: idle, no output drawn, no audio, no IR) and stops it 10 s
+  after the last request, or as soon as the GTK viewer or beanjar-vnc connects; `beanjar view`,
+  `vnc start` and `screenshot` stop it first, since it holds the display's one-client sockets.
 - **Input.** `wv_key_evdev(code, down)` uses the PC keyboard map: the remote's own functions
   (Super/Home, Escape, the volume keys) go as the remote's IR buttons, the rest to QEMU's keyboard.
   `wv_ir(code, down)` sends a remote button, LG's IR data code, over `ir.sock` (the `webos.ir` port,
@@ -362,8 +368,9 @@ launch's `vm-info.toml`, which the viewer core reads beside the D-Bus socket and
 Decoder diagnostics and counters are in the VM's `media-helper.log` (`decode` reports; rotated
 to `media-helper.log.1` at 4 MiB).
 Presentation counts, shown PTS span, audio timing and viewer CPU belong to `viewer.log`
-(`present` reports). Tests retain both sources. VIDEO/BLENDED capture still reads the active
-viewer's composed surfaces and fails when no viewer is available.
+(`present` reports). Tests retain both sources. VIDEO/BLENDED capture reads a front end's
+composed surfaces; with no viewer or beanjar-vnc, the capture relay's on-demand headless viewer
+composes them (Guest capture, above).
 
 ## Audio
 
@@ -604,8 +611,8 @@ its `.ui` files, or its `.blp` files compiled at start with blueprint-compiler, 
 
 - **`viewer-headless`.** This is today's `viewer.c` main loop minus the windowed parts, using
   the core. It covers `--headless`, `--replay` (SDL scancode names, as before), `--screenshot`,
-  `--screenshot-every`, `--osd-alpha`, `--no-osd`, `--seconds` and `--sdl-audio`. SDL's offscreen
-  driver still provides the EGL context.
+  `--screenshot-every`, `--osd-alpha`, `--no-osd`, `--seconds`, `--sdl-audio` and
+  `--capture-sink` (Guest capture, above). SDL's offscreen driver still provides the EGL context.
   - The Python launcher execs it, keeping the same pid, for any of these options. It does this
     before importing `gi`, so hosts without GTK (the Pi today) run every test unchanged.
   - Screenshots use `wv_screenshot`, which renders offscreen at the drawable size and gives the

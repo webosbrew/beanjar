@@ -188,6 +188,7 @@ import sys
 from pathlib import Path
 
 from . import (
+    capture_relay,
     fwcache,
     guestshell,
     hostswap,
@@ -358,6 +359,10 @@ class Plan:
         # the micom's IR receiver (ir_relay.py), which the launcher starts on ir.sock before QEMU:
         # (ir.sock, QEMU's socket for the webos.ir port, the QMP socket it wakes the guest on)
         self.ir_relay = None
+        # the capture relay (capture_relay.py), which the launcher starts on capture.sock before
+        # QEMU: (capture.sock, QEMU's socket for the webos.capture port, (viewer, display bus
+        # address) for its sink or None); None without the port
+        self.capture_relay = None
         # `beanjar shell`'s relay (guestshell.py), which the launcher starts on shell.sock before
         # QEMU: (shell.sock, QEMU's socket for the webos.shell port)
         self.shell_relay = None
@@ -1074,15 +1079,19 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             "virtserialport,chardev=tuner,name=webos.tuner",
         ]
     # the vendor module's video60 (targets.v4l2_capture) and the other capture models
-    # (targets.viewer_capture) read the active viewer's composed TV frame on demand over
-    # webos.capture; the guest's init starts its bridge (virtio-capture) where it is
+    # (targets.viewer_capture) read the composed TV frame on demand over webos.capture; the guest's
+    # init starts its bridge (virtio-capture) where it is. The front ends answer on capture.sock
+    # through the capture relay (capture_relay.py, started by the launcher), which holds QEMU's
+    # socket and runs a headless viewer on demand when no front end is there
     if targets.viewer_capture(p.target):
+        qemu_capture = capture_relay.qemu_path(socks["CAPTURE_SOCK"])
         devices += [
             "-chardev",
-            f"socket,id=capture,path={socks['CAPTURE_SOCK']},server=on,wait=off",
+            f"socket,id=capture,path={qemu_capture},server=on,wait=off",
             "-device",
             "virtserialport,chardev=capture,name=webos.capture",
         ]
+        p.capture_relay = (socks["CAPTURE_SOCK"], qemu_capture, None)
     # the micom's standby (Quick Start+): the guest's IR pump holds webos.standby open while it
     # lasts, the host reads it as the chardev's frontend-open in QMP query-chardev
     devices += [
@@ -1299,6 +1308,10 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             display = ["-display", f"dbus,gl=on,rendernode={node},addr={dbus_addr}"]
         else:
             raise Error(f"unknown DISPLAY_BACKEND={display_backend} (none, egl-headless or dbus)")
+    if p.capture_relay and display_backend == "dbus":
+        # the relay's sink: the headless viewer on the display's bus
+        viewer = env.get("BEANJAR_VIEWER") or tree.build("viewer", "beanjar-viewer")
+        p.capture_relay = (*p.capture_relay[:2], (viewer, dbus_addr))
     if gpu and render_driver(node) in INTEGER_INPUT_DRIVERS:
         p.env.setdefault("VIRGL_USE_INTEGER", "1")
     machine = "q35" if guest_kernel == "x86-64" else "virt"
