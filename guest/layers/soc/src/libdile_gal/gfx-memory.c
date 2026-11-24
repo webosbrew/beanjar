@@ -541,6 +541,9 @@ EXPORT int webos_gfx_osd(struct webos_gfx_osd *out)
     out->comp_alpha = c.comp_alpha;
     out->under = out->comp_window >= 0 ? c.under : 0;
     out->engine = regs->display_pid;
+    resolution_t panel = gfx_resolution(RES_OUTPUT);
+    out->out_width = panel.width;
+    out->out_height = panel.height;
     return 0;
 }
 

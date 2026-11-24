@@ -54,6 +54,9 @@ struct webos_gfx_osd {
     uint32_t comp_alpha;                      /* 255, or the merge's constant alpha */
     uint32_t under; /* offset of what lies below it (frame buffer geometry), 0 none */
     int32_t engine; /* the display engine's process (gm): its windows are new if it changes */
+    /* the space of disp: the panel, as gm gave it to DILE_GAL_SetGraphicOutputResolution (W18M's
+     * 3840x2160 for its UD panel), 0x0 before that (1920x1080) */
+    uint32_t out_width, out_height;
 };
 /* the compositor window slot's two GM surfaces (their offsets) */
 typedef int webos_gfx_compositor_window_fn(unsigned slot, uint32_t front, uint32_t back);

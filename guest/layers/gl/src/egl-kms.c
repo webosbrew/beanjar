@@ -380,8 +380,10 @@ typedef EGLImageKHR (*create_image_fn)(EGLDisplay, EGLContext, EGLenum, EGLClien
 typedef EGLBoolean (*destroy_image_fn)(EGLDisplay, EGLImageKHR);
 typedef void (*image_target_fn)(GLenum, GLeglImageOES);
 
-/* The OSD panel's coordinates: gm's display rectangles are on the 1920x1080 panel (DILE_BOARDINFO;
- * board.cmdline's hwopt of H13 and M14 alike). */
+/* The OSD panel's coordinates: gm's display rectangles are on the panel, the graphic output
+ * resolution gm sets (webos_gfx_osd's out_width/out_height: a UD panel's 3840x2160 on W18M), else
+ * 1920x1080 (DILE_BOARDINFO; board.cmdline's hwopt of H13 and M14 alike). The screen shows the
+ * whole panel. */
 #define PANEL_W 1920
 #define PANEL_H 1080
 #define IMAGES  8
@@ -412,7 +414,7 @@ static struct {
     GLuint prog, tex[2]; /* the merge buffer, what is below the compositor */
     uint32_t tex_w[2], tex_h[2], tex_offset[2], tex_updates[2];
     GLint u_top, u_under, u_comp, u_has, u_disp, u_view, u_top_size, u_csrc, u_cdst, u_csize,
-        u_calpha, u_screen;
+        u_calpha, u_screen, u_panel;
     struct {
         struct gbm_bo *bo;
         struct win *w;
@@ -456,7 +458,7 @@ static const char *fs_src = "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
                             "uniform sampler2D top, under, comp;\n"
                             "uniform vec3 has;\n" /* top, under, comp present */
                             "uniform vec4 disp, view, csrc, cdst;\n"
-                            "uniform vec2 top_size, csize, screen;\n"
+                            "uniform vec2 top_size, csize, screen, panel;\n"
                             "uniform float calpha;\n"
                             "vec4 layer(sampler2D t, vec2 uv) {\n"
                             "   vec4 c = texture2D(t, uv).bgra;\n"
@@ -465,9 +467,8 @@ static const char *fs_src = "#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
                             "bool inside(vec2 p, vec4 r) { return p.x >= r.x && p.y >= r.y && p.x "
                             "< r.x + r.z && p.y < r.y + r.w; }\n"
                             "void main() {\n"
-                            "   vec2 p = vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) * vec2("
-                            "1920.0, 1080.0"
-                            ") / screen;\n"
+                            "   vec2 p = vec2(gl_FragCoord.x, screen.y - gl_FragCoord.y) * panel / "
+                            "screen;\n"
                             "   vec4 o = vec4(0.0);\n"
                             "   if (has.x > 0.0 && inside(p, disp)) {\n"
                             "      vec2 q = view.xy + (p - disp.xy) * view.zw / disp.zw;\n"
@@ -546,6 +547,7 @@ static int composite_begin(void)
         D.u_csize = glGetUniformLocation(D.prog, "csize");
         D.u_calpha = glGetUniformLocation(D.prog, "calpha");
         D.u_screen = glGetUniformLocation(D.prog, "screen");
+        D.u_panel = glGetUniformLocation(D.prog, "panel");
         glGenTextures(2, D.tex);
         for (int i = 0; i < 2; i++) {
             glBindTexture(GL_TEXTURE_2D, D.tex[i]);
@@ -654,7 +656,10 @@ static void composite(const struct webos_gfx_osd *o, struct win *cw, struct gbm_
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, ctex);
         glUniform3f(D.u_has, 1, under, ctex != 0);
-        rect4(D.u_disp, o->disp, PANEL_W, PANEL_H);
+        float pw = o->out_width && o->out_height ? (float)o->out_width : PANEL_W;
+        float ph = o->out_width && o->out_height ? (float)o->out_height : PANEL_H;
+        rect4(D.u_disp, o->disp, pw, ph);
+        glUniform2f(D.u_panel, pw, ph);
         rect4(D.u_view, o->view, o->width, o->height);
         glUniform2f(D.u_top_size, (float)(o->pitch / 4), (float)o->height);
         rect4(D.u_csrc, o->comp_src, S.w, S.h);
