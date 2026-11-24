@@ -1,0 +1,8 @@
+models = ["W23L"]
+v4l2_capture = true
+
+# W23L number1 (13.50.75): W23P's paks and fstab pins (p14 cert to p59 appstore) and the same stale
+# see-init table, so W23P's partition map; the global build's paks are named -global.
+[release]
+base = "number1"
+partmap = "kisscurl"

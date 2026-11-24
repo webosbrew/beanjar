@@ -1,0 +1,18 @@
+# The DVB board of the same hardware (vm.toml's firmware.broadcast "dvb"), as K8AP's: 32LR570B6LA,
+# the LR57/32" of this OTA ID (the models DB lists it for IN; no European W23L model was found),
+# decoded by host/tools/research/model-config.py with countryType EU: hwopt digit 0 2 (DVB),
+# countryGrp 4 (configd's EU RMM group), the US board's panel, graphic plane and DDR digits, and
+# LLS's factory default record with the LR57 toolType. Identity placeholders are replaced per VM.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=4
+modelopt=000000000
+hwopt=201000000003006000
+ToolOpt=33576134:1310742:38912:65:3671095:55627521
+modelName=32LR570B6LA
+debugMode=3
+serialNum=000RAXX00001
+chip=KF23FA0
+tvregion=DVB
+emmc_size=0x1d2000000
+cmdEnd

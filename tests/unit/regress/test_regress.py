@@ -49,6 +49,7 @@ W21P = "03.70.25.01-HE_DTV_W21P_AFADATAA"
 W15U = "04.06.25.01-HE_DTV_W15U_AFADABAA"
 W19R = "05.40.97.01-HE_DTV_W19R_AFAAATAA"
 W17R = "06.10.60.01-HE_DTV_W17R_AFAAATAA"
+W23L = "13.50.75.01-HE_DTV_W23L_AFAAATAA"
 N21D6, N21D = "04.44.16.01-HE_DTV_N21D_AFAAATAA", "23.22.86.01-HE_DTV_N21D_AFAAATAA"
 
 
@@ -69,6 +70,7 @@ FOUND = {
     "k5lp-goldilocks2": fws(W19P),
     "k6lp-jhericurl": fws(W20L),
     "k7lp-kisscurl": fws(W21P),
+    "kf23f-number1": fws(W23L),
     "lm21u-kisscurl": fws(N21D6),
     "lm21u-ombre": fws(N21D),
 }

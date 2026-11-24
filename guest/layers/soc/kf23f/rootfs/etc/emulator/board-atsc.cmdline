@@ -1,0 +1,21 @@
+# 32LR655BPUA, the US 32-inch LR65: the models DB lists it for this OTA ID (W23L 13.50.75.01, markets
+# US and CA_EN). The default board (board_cmdline in guest/targets/soc/), from
+# host/tools/research/model-config.py: hwopt digit 0 5 (countryType US, nyx-option-gen ATSC), LVDS,
+# HD, graphic plane 1280x720 (U-Boot's default panel KF23F_1366x768_LVDS_60Hz), DDR 1.5G (the board's
+# own is not in the firmware; W23P's and W22L's). countryGrp 2: configd's USA RMM grpCode (the
+# all-zero line's group is 1). tvregion ATSC: the broadcast system. ToolOpt: LLS's factory default
+# record of this line, with the LR65/32" panelInch and toolType of the firmware's factory tables.
+# Identity placeholders are replaced per VM.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=2
+modelopt=000000000
+hwopt=501000000003006000
+ToolOpt=33577862:1310742:38912:65:3671095:55627521
+modelName=32LR655BPUA
+debugMode=3
+serialNum=000RAXX00001
+chip=KF23FA0
+tvregion=ATSC
+emmc_size=0x1d2000000
+cmdEnd

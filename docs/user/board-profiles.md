@@ -65,6 +65,7 @@ board, where the European board gives `O22N2_DVB_EU`.
 | k8hpp | W23H | 86QNED80URA | 86UR80006LA | |
 | k8lpn | W23P | 75UR8000AUA | 43UR8050PSB (Australia) | |
 | k8lpn2 | W24P | 43UT8000AUA | 43UT80006LA | |
+| kf23f | W23L | 32LR655BPUA | 32LR570B6LA (India) | |
 | k24 | W24H | 55QNED85TUA | 55QNED85T6C | |
 | k24n | W25H | 55QNED85AUA | 55QNED85A6C | OLED55B5PJA, by the firmware (queue) |
 | k25lp | W25P | 43UA7500ZUA | 43UA75006LA | |
@@ -117,4 +118,4 @@ European board's line with three region values changed, each read from that firm
 
 `tvregion=ATSC` where the bootloader prints one. The US model is one the models DB lists for the
 OTA ID whose series the firmware's tables name.
-The W21P, W22L and W22P US boards were reproduced field for field from their firmware's tables.
+The W21P, W22L, W22P and W23L US boards were reproduced field for field from their firmware's tables.

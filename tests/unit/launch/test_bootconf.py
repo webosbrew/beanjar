@@ -293,6 +293,7 @@ class BootConfTest(unittest.TestCase):
                 "k8hp-queue": "rtk",
                 "k8hpp-number1": "rtk",
                 "k8lpn-number1": "rtk",
+                "kf23f-number1": "rtk",
                 "k8lpn2-ombre": "rtk",
                 "k8hpp-ombre": "rtk",
                 "k8hpp-ponytail": "rtk",
@@ -1063,12 +1064,12 @@ class BootConfTest(unittest.TestCase):
         self.assertEqual(devs, ["i2c_dev=nvm:7:0x50,light2:1:0x10,tof:1:0x41"])
 
     def test_thermalinfo(self):
-        """/proc/thermalinfo where the firmware has fancontroller (lm21*, k7, k8*, k24*, k25*, the O22
-        family o2*),
+        """/proc/thermalinfo where the firmware has fancontroller (lm21*, k7, k8*, kf23f, k24*, k25*,
+        the O22 family o2*),
         with the IDDQ files from webOS 23 (number1) on; not on older chips."""
         for target in targets.all_targets():
             words = targets.module_params(target).get("lgemu", ())
-            fan = target[0].startswith(("lm21", "k7", "k8", "k24", "k25", "o2"))
+            fan = target[0].startswith(("lm21", "k7", "k8", "kf23f", "k24", "k25", "o2"))
             iddq = fan and targets.WEBOS_ORDER.index(target[1]) >= targets.WEBOS_ORDER.index(
                 "number1"
             )
@@ -1192,6 +1193,7 @@ class BootConfTest(unittest.TestCase):
             "k8hpp": "86QNED80URA",
             "k8lpn": "75UR8000AUA",
             "k8lpn2": "43UT8000AUA",
+            "kf23f": "32LR655BPUA",
             "k25lp": "43UA7500ZUA",
             "k24": "55QNED85TUA",
             "k24n": "55QNED85AUA",
@@ -1327,6 +1329,7 @@ class BootConfTest(unittest.TestCase):
                 "k8lpn2-ombre",
                 "k8lpn2-ponytail",
                 "k8lpn2-queue",
+                "kf23f-number1",
                 "lm14-netcast45",
                 "lm15u-beehive",
                 "lm21a-kisscurl",
@@ -1411,6 +1414,7 @@ class BootConfTest(unittest.TestCase):
                 "k8hp-queue": 2048,
                 "k8hpp-number1": 2048,
                 "k8lpn-number1": 1536,
+                "kf23f-number1": 1536,
                 "k8lpn2-ombre": 1536,
                 "m2-simplesmart": 1024,
                 "lm14-netcast45": 1024,
