@@ -30,7 +30,7 @@ for w in $what; do
 	guest)
 		target=$("$TOP/host/scripts/vm-launcher" config TARGET)
 		# NetCast 4.5 builds with the NetCast "lgtv" SDK, as scripts/build-packages.sh
-		case $target in *-netcast45) cross=lgtv-sdk.ini ;; *) cross=webos-sdk.ini ;; esac
+		case $target in *-netcast45|*-netcast4) cross=lgtv-sdk.ini ;; *) cross=webos-sdk.ini ;; esac
 		build "guest-$target" --cross-file "$TOP/meson/cross/$cross" -Dsoc="${target%-*}" -Dwebos="${target#*-}" ;;
 	host) build host ;;
 	host-arm64) build host-arm64 --cross-file "$TOP/meson/cross/debian-arm64.ini" ;;

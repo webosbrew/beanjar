@@ -109,6 +109,7 @@ class SelectTest(unittest.TestCase):
         self.assertEqual(
             regress.bring_up_targets(),
             [
+                "h13-netcast4",
                 "k24-ombre",
                 "k24-ponytail",
                 "k24-queue",

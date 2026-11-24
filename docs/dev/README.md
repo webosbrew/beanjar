@@ -42,8 +42,8 @@ The guest and the firmware:
   to the host decoder.
 - [Quick Start+ and suspend](architecture/suspend.md): instant on as suspend-to-RAM.
 - [Systemd-era webOS targets](architecture/webos5.md): webOS 5 and 6.
-- [NetCast 4.5](architecture/netcast45.md) and [SimpleSmart](architecture/simplesmart.md): the
-  legacy platforms.
+- [NetCast 4.5](architecture/netcast45.md), [NetCast 4](architecture/netcast4.md) and
+  [SimpleSmart](architecture/simplesmart.md): the legacy platforms.
 - [The open test guest](architecture/test-guest.md): a Buildroot userland of ours that CI boots
   without LG firmware, its checks and the CI job.
 - [The 32-bit userland under qemu-user](architecture/qemu-user-bridge.md): the compat bridge, for

@@ -128,10 +128,11 @@ are explicit bring-up profiles. W22H also has `k8hp-number1` (webOS 23) and
 initramfs are the same for every target (none of them takes the target) and are published to the same
 `build/` paths; each target's build makes them anew from the same inputs.
 
-The legacy targets are `m2-simplesmart` (SS1A) and `lm14-netcast45` (NC5U), with their own
-always-used layers instead of the webOS soc/release layers. Their glibc ceilings are 2.19
-and 2.16 respectively. See [SimpleSmart](../architecture/simplesmart.md) and
-[NetCast 4.5](../architecture/netcast45.md) for their graphics and service boundaries. The webOS
+The legacy targets are `m2-simplesmart` (SS1A), `lm14-netcast45` (NC5U) and `h13-netcast4`
+(NC4H, `-Dsoc=h13 -Dwebos=netcast4` with the lgtv cross file), with their own always-used layers
+instead of the webOS soc/release layers. Their glibc ceilings are 2.19, 2.16 and 2.14.1. See
+[SimpleSmart](../architecture/simplesmart.md), [NetCast 4.5](../architecture/netcast45.md) and
+[NetCast 4](../architecture/netcast4.md) for their graphics and service boundaries. The webOS
 regression runner's Luna/bootd checks do not apply to these legacy targets.
 
 The build needs Meson 1.7 (`meson_version`; the newest feature it uses is from 1.6, Mesa 26.2

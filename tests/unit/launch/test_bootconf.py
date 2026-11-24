@@ -505,7 +505,7 @@ class BootConfTest(unittest.TestCase):
             )
             init = (
                 "sysvinit"
-                if target[1] in ("simplesmart", "netcast45", "testguest")
+                if target[1] in ("simplesmart", "netcast45", "netcast4", "testguest")
                 else "systemd"
                 if systemd
                 else "upstart"
@@ -591,6 +591,7 @@ class BootConfTest(unittest.TestCase):
             "lm18a-goldilocks": base | {"ipw"},
             "m2-simplesmart": base,
             "lm14-netcast45": set(),
+            "h13-netcast4": set(),
             "lm15u-beehive": base | {"ftdi_sio"},
             "mtka5lr-beehive": {"pl2303", "option", "ipw"},
             "lm21a-kisscurl": base | {"ipw"},
@@ -667,6 +668,7 @@ class BootConfTest(unittest.TestCase):
             mods = targets.release(target).peripherals
             if targets.platform(target) == "Test" or name in (
                 "h13-afro",
+                "h13-netcast4",
                 "lm14-netcast45",
                 "m2-simplesmart",
                 "mtka5lr-beehive",
@@ -699,7 +701,7 @@ class BootConfTest(unittest.TestCase):
         """Every webOS release the targets use is in WEBOS_ORDER, each after the release it is _after,
         and config RELEASES prints the order (meson.build's webos_reached)."""
         for target in targets.all_targets():
-            if target[1] not in ("simplesmart", "netcast45", "testguest"):
+            if target[1] not in ("simplesmart", "netcast45", "netcast4", "testguest"):
                 self.assertIn(target[1], targets.WEBOS_ORDER)
         order = targets.WEBOS_ORDER
         for older, newer in (("ombre", "spacebuns"), ("ponytail", "queue"), ("queue", "spacebuns")):
@@ -1316,6 +1318,7 @@ class BootConfTest(unittest.TestCase):
             [
                 "e60n-kisscurl",
                 "h13-afro",
+                "h13-netcast4",
                 "k24-ombre",
                 "k24-ponytail",
                 "k24-queue",
@@ -1401,6 +1404,7 @@ class BootConfTest(unittest.TestCase):
         self.assertEqual(targets.release(("o22n2", "spacebuns")).version, "12")
         self.assertEqual(targets.of_firmware("SS1A", "simplesmart"), ("m2", "simplesmart"))
         self.assertEqual(targets.of_firmware("NC5U", "netcast45"), ("lm14", "netcast45"))
+        self.assertEqual(targets.of_firmware("NC4H", "netcast4"), ("h13", "netcast4"))
         self.assertEqual(targets.by_name("m2-dreadlocks"), ("m2", "dreadlocks"))
         self.assertIsNone(targets.by_name("h13-beehive"))
         self.assertTrue(targets.supported(("k5lp", "goldilocks2")))
@@ -1449,6 +1453,7 @@ class BootConfTest(unittest.TestCase):
                 "k8lpn2-ombre": 1536,
                 "m2-simplesmart": 1024,
                 "lm14-netcast45": 1024,
+                "h13-netcast4": 1024,
                 "lm21a-kisscurl": 1536,
                 "lm21an-mullet": 1536,
                 "lm21ann-number1": 1536,
@@ -1532,6 +1537,12 @@ class BootConfTest(unittest.TestCase):
                 self.assertEqual(paths.firmware_release(fw)[0], "netcast45")
                 vend.clear()
                 self.assertIsNone(paths.firmware_release(fw)[0])
+                # NetCast 4 (H13): no vendor pak, GAL_GX's libgal.so in the lglib pak
+                os.unlink(os.path.join(fw, "vend.pak"))
+                self.assertIsNone(paths.firmware_release(fw)[0])
+                open(os.path.join(fw, "lgli.pak"), "wb").close()
+                vend.update({"/libgal.so", "/libkadaptor.so"})
+                self.assertEqual(paths.firmware_release(fw)[0], "netcast4")
                 del cats[("mode.pak", "RELEASE.cfg")]
                 self.assertIsNone(paths.firmware_release(fw)[0])
             self.assertEqual(paths.root_pak(fw), os.path.join(fw, "root.pak"))

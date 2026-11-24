@@ -1,0 +1,78 @@
+# netcast4: LG's NetCast 4 (H13's EU 04.28.15, "HE_DTV_NC4H_AFAAABAA"; docs/dev/architecture/netcast4.md),
+# not webOS, stated whole. glibc 2.14.1 on LG's 3.4 kernel, whose CONFIG_LG_INIT mounts the lginit
+# partition at /mnt/lg/lginit and runs its lginit as PID 1 (init/main.c: before /sbin/init; the
+# BusyBox rcS of root.pak runs only for a stand-alone "autorun" boot); lginit's lginit_app mounts the
+# paks from /dev/mmcblk0pN and starts procmgr. init mounts the root, lginit, and two paks a layer
+# lies over or that our kernel cannot mount from a node: lgapp, an LZ4P-wrapped XIP cramfs (RELEASE;
+# lginit_app's "lgapp_xip" filesystem, which is LG's kernel's), as the launcher's SquashFS image of
+# it (lz4p.py: epk2extract and mksquashfs, once per firmware), lglib (/mnt/lg/res/lglib), and base and patch, the union's (below). Their
+# partitions have no node, so
+# lginit_app's own mounts of them fail as for the partitions the firmware leaves absent. The
+# partition map is lginit_app's partinfo (64 entries, part.pak byte for byte). The read-write
+# partitions RELEASE mounts (system_app p61, data p62; apps p63) at the map's sizes; the eMMC NVM
+# (nvram p15) and the I2C EEPROM start blank.
+
+platform = "NetCast"
+version = "4"
+always_layers = ["netcast4"]
+init_system = "sysvinit"
+# LG's kernel runs the lginit partition's lginit as PID 1 (CONFIG_LG_INIT)
+init = "/mnt/lg/lginit/lginit"
+# LG's 3.4 kernel (kern.pak, 3.4.10): CAP_LAST_CAP CAP_WAKE_ALARM
+cap_last_cap = 35
+ddr_sizes = []
+dram = 1024
+board_in_kernel = true
+screen = [1920, 1080]
+peripherals = ["vfat", "nls_iso8859-1", "lgfs"]
+paks = [
+    { file = "root", serial = "rootfs", mount = "/" },
+    { file = "lgin", serial = "lginit", mount = "/mnt/lg/lginit" },
+    { file = "lgap", serial = "lgapp", mount = "/mnt/lg/lgapp" },
+    { file = "lgli", serial = "lglib", mount = "/mnt/lg/res/lglib" },
+    { file = "lgre", serial = "lgres" },
+    { file = "lgfo", serial = "lgfont" },
+    { file = "open", serial = "opensrc" },
+    { file = "eman", serial = "emanual" },
+    { file = "base", serial = "base", mount = "/mnt/nsu/base" },
+    { file = "patc", serial = "patch", mount = "/mnt/nsu/patch" },
+    { file = "pqld", serial = "pqldb" },
+    { file = "extr", serial = "extra" },
+    { file = "estr", serial = "estreamer" },
+    { file = "mode", serial = "model" },
+    { file = "swue", serial = "swue" },
+    { file = "tpli", serial = "tplist", optional = true },
+]
+state_disks = { system_app = "130M", data = "290M", apps = "1728M" }
+nvm_disks = { nvram = "6M", eeprom = "32K" }
+emmc_disks = ["partinfo", "authcxt", "sestore", "sedata"]
+partmap = { pak = "lgin", path = "/lginit_app" }
+# lginit's "unionfs" of the update's patch pak over the base pak, which init makes (Release.unions);
+# init mounts both paks, and their partitions have no node
+unions = { "/mnt/nsu/union" = ["/mnt/nsu/patch", "/mnt/nsu/base"] }
+
+[nvm]
+eeprom = "eeprom"
+
+[partitions]
+partinfo = "partinfo"
+mapbak = "partinfo"
+swue = "swue"
+sestore = "sestore"
+authcxt = "authcxt"
+nvram = "nvram"
+rootfs = "rootfs"
+lginit = "lginit"
+model = "model"
+lgres = "lgres"
+lgfont = "lgfont"
+opensrc = "opensrc"
+emanual = "emanual"
+sedata = "sedata"
+pqldb = "pqldb"
+tplist = "tplist"
+extra = "extra"
+estreamer = "estreamer"
+system_app = "system_app"
+data = "data"
+apps = "apps"

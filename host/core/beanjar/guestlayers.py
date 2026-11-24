@@ -11,7 +11,7 @@ def component(target, name):
         return f"soc/{target[0]}"
     if name == "webos":
         return f"release/{target[1]}"
-    if name in ("netcast45", "simplesmart", "testguest"):
+    if name in ("netcast45", "netcast4", "simplesmart", "testguest"):
         return f"release/{target[1]}"
     return name
 

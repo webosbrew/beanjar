@@ -118,7 +118,7 @@ def component_path(name, soc, release):
     NAME/versions/VERSION for NAME@VERSION, else its name."""
     if name == "soc":
         return f"soc/{soc}"
-    if name in ("webos", "netcast45", "simplesmart", "testguest"):
+    if name in ("webos", "netcast45", "netcast4", "simplesmart", "testguest"):
         return f"release/{release}"
     base, at, version = name.partition("@")
     return f"{base}/versions/{version}" if at else name

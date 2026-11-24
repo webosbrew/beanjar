@@ -271,10 +271,11 @@ def release_cfg_model(fw_dir):
 def firmware_release(fw_dir):
     """(the release family, where it was read) of the firmware in fw_dir, read with
     unsquashfs; (None, why) without one. webOS: the codename of
-    the first of targets.RELEASE_FILES its rootfs.pak has. SimpleSmart ("simplesmart") and NetCast 4.5
-    ("netcast45"), which have no rootfs.pak and no release file: a sysvinit root.pak (etc/inittab)
-    and a model pak, mode.pak, whose RELEASE.cfg names the firmware's OTA ID (szOtaid), told apart
-    by the vendor pak's graphics library."""
+    the first of targets.RELEASE_FILES its rootfs.pak has. SimpleSmart ("simplesmart"), NetCast 4.5
+    ("netcast45") and NetCast 4 ("netcast4"), which have no rootfs.pak and no release file: a sysvinit
+    root.pak (etc/inittab) and a model pak, mode.pak, whose RELEASE.cfg names the firmware's OTA ID
+    (szOtaid), told apart by the vendor pak's graphics library, or NetCast 4's lglib pak's where it
+    has no vendor pak."""
     from . import targets, superpak
 
     src = os.path.join(fw_dir, "rootfs.pak")
@@ -313,6 +314,15 @@ def firmware_release(fw_dir):
             "netcast45",
             f"root.pak's etc/inittab, vend.pak's libgal.so and mode.pak's RELEASE.cfg (OTA ID {ota.group(1)})",
         )
+    if not os.path.isfile(vend):
+        # NetCast 4 (H13) ships no vendor pak: its GAL_GX libgal.so is in the lglib pak
+        lgli = os.path.join(fw_dir, "lgli.pak")
+        if os.path.isfile(lgli) and "/libgal.so" in _squashfs_names(lgli):
+            return (
+                "netcast4",
+                f"root.pak's etc/inittab, no vend.pak, lgli.pak's libgal.so and mode.pak's RELEASE.cfg (OTA ID {ota.group(1)})",
+            )
+        return None, "root.pak and mode.pak, but no vend.pak and no libgal.so in lgli.pak"
     return None, "root.pak and mode.pak, but vend.pak has neither libhalgal.so nor libgal.so"
 
 

@@ -60,8 +60,11 @@ PLATFORMS = ("webOS", "NetCast", "SimpleSmart", "Test")
 WEBOS_LAYERS = ("webos", "soc", "common")
 SIMPLESMART_LAYERS = ("simplesmart",)
 NETCAST45_LAYERS = ("netcast45",)
+NETCAST4_LAYERS = ("netcast4",)
 TESTGUEST_LAYERS = ("testguest",)
-ALWAYS_LAYERS = WEBOS_LAYERS + SIMPLESMART_LAYERS + NETCAST45_LAYERS + TESTGUEST_LAYERS
+ALWAYS_LAYERS = (
+    WEBOS_LAYERS + SIMPLESMART_LAYERS + NETCAST45_LAYERS + NETCAST4_LAYERS + TESTGUEST_LAYERS
+)
 VM_LAYER = "vm"
 
 # serial: the virtio-blk serial the guest finds the disk by; mount: where init mounts it in the
@@ -143,9 +146,15 @@ Release = namedtuple(
     "Release",
     "paks pak_lowers state_disks nvm_disks nvm init_system pmlog_mode pmlog_job trust_bundles "
     "trust_hash_dir ddr_sizes cap_last_cap partmap partitions emmc_disks platform version always_layers dram "
-    "board_in_kernel screen pointer_wakeup ssg_key peripherals",
-    defaults=(WEBOS_LAYERS, None, False, "graphic", False, False, ()),
+    "board_in_kernel screen pointer_wakeup ssg_key peripherals init unions",
+    defaults=(WEBOS_LAYERS, None, False, "graphic", False, False, (), "/sbin/init", ()),
 )
+# unions: ((mount point, (lower, ...)), ...), read-only unions of directories in the firmware's root,
+# the highest first, which init makes with overlayfs once the paks are mounted: NetCast 4's lginit
+# mounts "unionfs" (dirs=/mnt/nsu/patch:/mnt/nsu/base=ro), which LG's kernel has and ours has not,
+# and then binds directories of the union where its programs look (/mnt/addon, /mnt/lg/res/xml).
+# init: the program webos-start runs as PID 1 of the firmware's namespace: /sbin/init, or NetCast
+# 4's lginit, which LG's kernel runs itself (CONFIG_LG_INIT, before /sbin/init).
 # peripherals: the guest kernel's own modules (its =m drivers, /lib/modules/<release> in the
 # initramfs) that init loads with `modprobe -a` before the firmware starts, their dependencies from
 # modules.dep: the USB class drivers and filesystems the release's stock kernel has, built in or as
@@ -508,6 +517,8 @@ RELEASE_KEYS = {
     "version": _str,
     "always_layers": _strs,
     "init_system": _one_of(INIT_SYSTEMS),
+    "init": _str,
+    "unions": _pairs_of(lambda w, x: tuple(_strs(w, x))),
     "pmlog_mode": _str,
     "pmlog_job": _str,
     "cap_last_cap": _int,
@@ -1636,6 +1647,22 @@ def boot_conf(
             "INIT_SYSTEM",
             _words([r.init_system]),
             "the firmware's init: upstart, systemd or sysvinit (SimpleSmart)",
+        ),
+        *(
+            (("INIT", _words([r.init]), "the firmware's PID 1 where it is not /sbin/init"),)
+            if r.init != "/sbin/init"
+            else ()
+        ),
+        *(
+            (
+                (
+                    "UNIONS",
+                    _words(f"{mp}={':'.join(lowers)}" for mp, lowers in r.unions),
+                    "read-only unions in the webOS root, mount point=lower:..., highest first",
+                ),
+            )
+            if r.unions
+            else ()
         ),
         (
             "CAP_LAST_CAP",

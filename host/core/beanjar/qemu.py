@@ -194,6 +194,7 @@ from pathlib import Path
 from . import (
     capture_relay,
     fwcache,
+    lz4p,
     guestshell,
     hostswap,
     ir_relay,
@@ -579,6 +580,18 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             except (fwcache.Error, subprocess.CalledProcessError, OSError) as e:
                 raise Error(str(e)) from None
             say(f"pak {file}: uncompressed copy {img}")
+        elif mount and lz4p.is_lz4p(img):
+            # LG's LZ4P-wrapped XIP cramfs (NetCast 4's lgapp), which init mounts: its SquashFS
+            # image, made once per firmware with epk2extract and mksquashfs (lz4p.py)
+            try:
+                img = (
+                    lz4p.image_path(fw, cache, file, record=False)
+                    if dry
+                    else lz4p.build(fw, cache, file)
+                )
+            except (lz4p.Error, fwcache.Error, subprocess.CalledProcessError, OSError) as e:
+                raise Error(f"pak {file}: {e}") from None
+            say(f"pak {file}: SquashFS image {img}")
         access = "snapshot=on" if mount is None and serial not in lowers else "readonly=on"
         devices += [
             "-drive",

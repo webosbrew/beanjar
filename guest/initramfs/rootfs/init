@@ -351,6 +351,18 @@ for p in $PAKS; do
 		log "pak ${p%%:*} -> $mp, under $over"
 done
 
+# --- read-only unions (boot.conf's UNIONS, mount point=lower:..., highest first): NetCast 4's
+# lginit mounts a "unionfs" of its patch pak over its base pak, which this kernel has not ---
+for u in ${UNIONS:-}; do
+	mp=${u%%=*} lower=
+	for l in $(echo "${u#*=}" | tr : ' '); do
+		lower="${lower:+$lower:}/webos$l"
+	done
+	mkdir -p "/webos$mp"
+	mount -t overlay -o "lowerdir=$lower" union "/webos$mp" && log "union $mp: ${u#*=}" ||
+		log "union $mp: cannot mount"
+done
+
 # --- pseudo filesystems (proc is mounted by /run/webos-init inside the new PID namespace) ---
 mount -t sysfs sysfs /webos/sys
 mount -t devtmpfs devtmpfs /webos/dev
@@ -626,6 +638,10 @@ echo "$(cat /proc/cmdline) $board" | tr -s ' ' > /run/cmdline
 log "board: $(grep -o ' ethaddr=[^ ]*' /run/cmdline | tail -n 1) $(grep -o 'serialNum=[^ ]*' /run/cmdline)"
 
 # --- start the firmware's init in its own namespaces (see /bin/webos-start) ---
+if [ "$TARGET" = h13-netcast4 ]; then
+	# devtmpfs hides the packed /dev/shm, where lginit mounts its ramfs
+	mkdir -p -m 0777 /webos/dev/shm || fail "NetCast: cannot create /dev/shm"
+fi
 if [ "$TARGET" = lm14-netcast45 ]; then
 	# devtmpfs hides the packed /dev/shm. Restore its mount point so stock
 	# mountvirtfs mounts its tmpfs before resmgr and fxui need shared locks.
@@ -681,6 +697,8 @@ for capture_name in /sys/class/virtio-ports/*/name; do
 	fi
 done
 echo "$WEBOS_CONSOLE" > /run/webos-console
+# the firmware's PID 1 (boot.conf's INIT: NetCast 4's lginit, which LG's kernel runs itself)
+echo "${INIT:-/sbin/init}" > /run/webos-init-path
 echo "$(arg webos.init_args "" | tr , ' ')" > /run/webos-init-args
 # the firmware's kernel's highest capability (boot.conf's CAP_LAST_CAP), which webos-start shows
 # as /proc/sys/kernel/cap_last_cap in the webOS namespace

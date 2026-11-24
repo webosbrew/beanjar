@@ -1,0 +1,4 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The netcast4 layer, always used on NetCast 4 (host/core/beanjar/layermeta.py reads this file).
+description = "NetCast 4's board parameters"

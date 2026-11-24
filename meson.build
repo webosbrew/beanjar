@@ -101,6 +101,9 @@ if guest_lane
   # guest/layers/netcast45, built with the NetCast SDK (meson/cross/lgtv-sdk.ini); it links nothing of
   # the firmware.
   netcast45 = webos == 'netcast45'
+  # LG's NetCast 4 (webos 'netcast4', docs/dev/architecture/netcast4.md): its one always-used layer is
+  # guest/layers/netcast4, built with the NetCast SDK as NetCast 4.5's.
+  netcast4 = webos == 'netcast4'
   # The open test guest (webos 'testguest', docs/dev/architecture/test-guest.md): its userland is
   # beanjar-vendor's, so this build makes its one layer, the checks of guest/testguest built against
   # the userland's sysroot, and the arm64 pieces every target shares, with Debian's armel cross
@@ -118,7 +121,7 @@ if guest_lane
   # order (targets.WEBOS_ORDER), so a rule only a release can decide is "'queue' in webos_reached" and
   # later releases inherit it.
   webos_reached = []
-  if not simplesmart and not netcast45 and not testguest
+  if not simplesmart and not netcast45 and not netcast4 and not testguest
     foreach r : run_command(files('host/scripts/vm-launcher'), 'config', 'RELEASES',
                             check: true).stdout().strip().split('\n')
       if webos not in webos_reached
@@ -134,7 +137,7 @@ if guest_lane
   # and files in the layer), then the directory's own, which set what differs and add or replace
   # files. soc_dirs and webos_dirs: the chain, the base first.
   axis_dirs = {}
-  foreach axis, leaf : (simplesmart or netcast45 or testguest) ? {} : {'soc': soc, 'webos': webos}
+  foreach axis, leaf : (simplesmart or netcast45 or netcast4 or testguest) ? {} : {'soc': soc, 'webos': webos}
     chain = ['guest/layers' / axis / leaf]
     foreach i : range(8)
       if fs.is_file(top / chain[0] / 'base')
@@ -160,7 +163,7 @@ if guest_lane
   glibc_max = {'afro': '2.14.1', 'beehive': '2.19', 'dreadlocks': '2.19', 'dreadlocks2': '2.19',
                'goldilocks': '2.24', 'goldilocks2': '2.24', 'jhericurl': '2.28',
                'kisscurl': '2.28', 'mullet': '2.31', 'number1': '2.31', 'ombre': '2.35',
-               'ponytail': '2.35', 'queue': '2.39', 'spacebuns': '2.39', 'simplesmart': '2.19', 'netcast45': '2.16',
+               'ponytail': '2.35', 'queue': '2.39', 'spacebuns': '2.39', 'simplesmart': '2.19', 'netcast45': '2.16', 'netcast4': '2.14.1',
                'testguest': '2.42'}[webos]
   # stage.py for 32-bit ARM trees: strip, and check the glibc ceiling.
   arm_stage = [python, stage_py, '--strip', strip, '--readelf', readelf, '--glibc-max', glibc_max]
@@ -218,6 +221,8 @@ if guest_lane
     guest_modules = ['guest/layers/simplesmart', 'guest/kernel', 'guest/initramfs']
   elif netcast45
     guest_modules = ['guest/layers/gl/mesa', 'guest/layers/netcast45', 'guest/kernel', 'guest/initramfs']
+  elif netcast4
+    guest_modules = ['guest/layers/netcast4', 'guest/kernel', 'guest/initramfs']
   elif testguest
     guest_modules = ['guest/testguest', 'guest/kernel', 'guest/initramfs']
   endif

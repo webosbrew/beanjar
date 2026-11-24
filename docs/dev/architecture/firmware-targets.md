@@ -100,9 +100,9 @@ are `guest/layers/common`, `guest/layers/soc/<chip>`, and `guest/layers/webos/<r
 them, followed by the per-VM layer and the writable overlay. Base files let a chip or release
 reuse another's layer content; see [layer bases](build-and-boot.md#layer-bases).
 
-SimpleSmart and NetCast use their own always-used layers, `simplesmart` and `netcast45`.
-Their stock services and graphics boundaries are described in [SimpleSmart](simplesmart.md)
-and [NetCast 4.5](netcast45.md). Optional webOS layers are not a promise of legacy support.
+SimpleSmart and NetCast use their own always-used layers, `simplesmart`, `netcast45` and
+`netcast4`. Their stock services and graphics boundaries are described in
+[SimpleSmart](simplesmart.md), [NetCast 4.5](netcast45.md) and [NetCast 4](netcast4.md). Optional webOS layers are not a promise of legacy support.
 
 ### Layer metadata (`layer.toml`)
 

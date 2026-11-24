@@ -34,7 +34,7 @@ ulimit -q $((2 * 819200 * 4))
 mount -t proc proc /webos/proc
 mount --bind /run/cmdline /webos/proc/cmdline
 [ ! -s /run/cap_last_cap ] || mount --bind /run/cap_last_cap /webos/proc/sys/kernel/cap_last_cap
-exec chroot /webos /sbin/init $(cat /run/webos-init-args)
+exec chroot /webos $(cat /run/webos-init-path 2>/dev/null || echo /sbin/init) $(cat /run/webos-init-args)
 EOS
 chmod +x /run/webos-init
 (

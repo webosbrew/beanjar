@@ -1,0 +1,26 @@
+# LG's NetCast 4 on H13 (LG1154): "..._DTV_NC4H_..." (HE_DTV_NC4H_AFAAABAA), RELEASE.cfg's DVB-LG115X,
+# kern.pak's CONFIG_MACH_LG1154 (docs/dev/architecture/netcast4.md)
+models = ["NC4H"]
+# NetCast 4 lacks the webOS checks regress makes; its stock GUI is measured instead
+bring_up = ["NC4H"]
+
+# NetCast 4 on H13: LG's kdrivers under KADP (libkadaptor), lg115x.ko as for webOS 1 on H13
+# (guest/targets/soc/h13.toml), with the values of this firmware: chip_rev, LX_CHIP_REV(H13, B0)
+# (the EPK's "lg115x_B0", kern.pak's CONFIG_LG1154_A0 build for A0 and B0); graphic_res, RELEASE.cfg's
+# eOSDResolution plane at its FHD panel's eDispResolution 0x780438. The I2C devices of RELEASE.cfg,
+# device:bus:slave with bus = the HAL's channel - 1 (KADP_I2C_Open): "[i2c]MICOM:2:0x52:0",
+# "[i2c]NVM:5:0xA0:1" and eAMPChipType's AMP_TAS5733 at "[i2c]TAS5733:1:0x54:1".
+[soc]
+board_cmdline = "/etc/emulator/board.cmdline"
+board_src = "guest/layers/netcast4/rootfs"
+
+[[soc.modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x13b0",
+    "ace_rev=0x13b0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "i2c=micom:1:0x52,nvm:4:0xa0,amp:0:0x54",
+    "gpio_pins=144",
+]
