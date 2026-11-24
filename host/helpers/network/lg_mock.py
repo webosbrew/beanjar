@@ -138,6 +138,11 @@ class Mock:
         if cls["mock"] == "refuse":
             self.note("refused", lg_hosts.normal(name), cls["class"])
             return reply(msg, end, NXDOMAIN)
+        if cls["class"] == "sdp" and lg_sdp.first_use_pending({}, name):
+            # the SDP host of a TV with no smart service country yet (us7.nextlgsdp.com): a
+            # resolver failure, as on a set without a network, not a cached "no such name"
+            self.note("withheld", lg_hosts.normal(name), cls["class"])
+            return reply(msg, end, SERVFAIL)
         # the online check and the answered classes (lg_sdp.py): this address for A, no record of
         # other types (no IPv6 here)
         self.note("answered", lg_hosts.normal(name), cls["class"])

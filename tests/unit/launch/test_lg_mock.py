@@ -162,7 +162,7 @@ def test_refused_names_are_nxdomain_and_not_forwarded(resolver):
 
 @pytest.mark.parametrize(
     "name",
-    ["lgtvonline.lge.com", "us.lgtvsdp.com", "US7.nextlgsdp.com", "aic.cdpsvc.lgtvcommon.com"],
+    ["lgtvonline.lge.com", "us.lgtvsdp.com", "US.nextlgsdp.com", "aic.cdpsvc.lgtvcommon.com"],
 )
 def test_online_check_and_answered_names_resolve_to_the_mock(resolver, name):
     m, up = resolver
@@ -172,6 +172,20 @@ def test_online_check_and_answered_names_resolve_to_the_mock(resolver, name):
     aaaa = m.answer(query(name, 28))
     assert rcode(aaaa) == lg_mock.NOERROR and counts(aaaa) == (1, 0, 0, 0)
     assert up.asked == []
+
+
+@pytest.mark.parametrize("name", ["US7.nextlgsdp.com", "eu7.lgtvsdp.com", "qt2-aj7.lgtvsdp.com"])
+def test_sdp_host_of_an_others_row_is_withheld(resolver, name):
+    """The SDP host of a TV whose service country is still its group's Others row (FirstUse's
+    country not stored yet) does not resolve: SERVFAIL, as without a network, not a cached
+    NXDOMAIN, and not forwarded. Another class's name with such a label is not affected."""
+    m, up = resolver
+    for qtype in (1, 28):
+        out = m.answer(query(name, qtype))
+        assert rcode(out) == lg_mock.SERVFAIL and counts(out) == (1, 0, 0, 0)
+    assert up.asked == []
+    assert rcode(m.answer(query("us7.info.lgsmartad.com"))) == lg_mock.NXDOMAIN  # ads: refused
+    assert rcode(m.answer(query("us.nextlgsdp.com"))) == lg_mock.NOERROR
 
 
 def test_other_names_are_forwarded_unchanged_from_the_listen_address(resolver):

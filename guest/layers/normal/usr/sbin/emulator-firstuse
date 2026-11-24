@@ -45,6 +45,7 @@ import re
 import subprocess
 import sys
 import syslog
+import time
 
 MARK = "/var/luna/preferences/emulator-firstuse"
 LASTINPUT_MARK = "/var/luna/preferences/emulator-firstuse-lastinput"
@@ -136,10 +137,150 @@ def last_input():
     subprocess.call(["sync"])
 
 
+def lls_country():
+    # LLS's factory countryName, or None (no answer; "---" on a new EEPROM without one)
+    try:
+        reply = call(
+            "luna://com.webos.service.lowlevelstorage/getData",
+            {"dbgroups": [{"dbid": "factory", "items": ["countryName"]}]},
+        )
+    except (RuntimeError, subprocess.CalledProcessError, ValueError):
+        return None
+    for group in reply.get("dbgroups", []):
+        if group.get("dbid") == "factory":
+            return group.get("items", {}).get("countryName")
+    return None
+
+
+def default_country():
+    # configd's system.defaultCountry (the board's group's default), or None
+    try:
+        reply = call(
+            "luna://com.webos.service.config/getConfigs",
+            {"configNames": ["system.defaultCountry"]},
+        )
+    except (RuntimeError, subprocess.CalledProcessError, ValueError):
+        return None
+    return reply.get("configs", {}).get("system.defaultCountry")
+
+
+def list_entry(country3):
+    # the country's entry in the firmware's full list (/etc/palm/countryList.json), or None
+    try:
+        with open(COUNTRY_LIST) as f:
+            groups = json.load(f)["countryList"]
+    except (IOError, ValueError, KeyError):
+        return None
+    for group in groups:
+        for c in group.get("countries", []):
+            if c.get("alpha3") == country3 and c.get("shortName"):
+                return c
+    return None
+
+
+OTHERS_ROW = re.compile(r"^[A-Z]{2}7$")
+
+
+def service_country_first():
+    # FirstUse's location step stores the smart service country before its network step, so on a
+    # set sdx has the country before it first reaches LG's server; this state starts past FirstUse
+    # with its network up. sdx compares the server's country with its own and, outside FirstUse
+    # mode, raises "Changing the country will cause your TV to restart" when they differ
+    # (CountryManager::changeCountry_by_serverResponse, W23M 13.40 to 43.22); at its start it
+    # makes the stock "other" its group's Others row (US7). So the country is stored as early as
+    # settings takes it, from what devicereset will choose for settings' country: the VM's,
+    # else LLS's factory countryName, else configd's system.defaultCountry. The location step
+    # below stores it again where settings' own country differs or sdx's row landed over it,
+    # keep_service_country() after it, and LG's mock withholds its answers meanwhile.
+    current = settings("option", ["smartServiceCountryCode3"]).get("smartServiceCountryCode3")
+    if current != "other" and not (current and OTHERS_ROW.match(current)):
+        return
+    for source in (vm_country, lls_country, default_country):
+        country3 = source()
+        entry = list_entry(country3) if country3 else None
+        if entry:
+            set_settings(
+                "option",
+                {
+                    "smartServiceCountryCode2": entry["shortName"],
+                    "smartServiceCountryCode3": country3,
+                },
+            )
+            return
+    log("emulator-firstuse: no country before settings' own; the smart service country waits")
+
+
+FILE_CACHE = "/var/luna/preferences/option"
+KEEP_WAIT = 450  # s
+KEEP_POLL = 5  # s
+
+
+def uptime():
+    with open("/proc/uptime") as f:
+        return float(f.read().split()[0])
+
+
+def sdx_start():
+    # when sdx's running process started, seconds since boot, or None if it does not run
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open("/proc/%s/comm" % pid) as f:
+                if f.read().strip() != "sdx":
+                    continue
+            with open("/proc/%s/stat" % pid) as f:
+                fields = f.read().rsplit(")", 1)[1].split()
+        except (IOError, OSError, IndexError):
+            continue
+        # field 22, starttime, is the 20th after the command's closing parenthesis
+        return float(fields[19]) / os.sysconf("SC_CLK_TCK")
+    return None
+
+
+def cached_country():
+    # smartServiceCountryCode3 in settings' file cache of category option, which sdx reads at its
+    # start (getStringFromSettingCache), or None
+    try:
+        with open(FILE_CACHE) as f:
+            return json.load(f).get("smartServiceCountryCode3")
+    except (IOError, ValueError, AttributeError):
+        return None
+
+
+def keep_service_country(short, country3):
+    # sdx's first run reads the smart service country from settings' file cache and, finding the
+    # stock "other", stores its group's Others row (US7). Settings applies writes late in a first
+    # boot (15 to 40 s on the PC), so that row can land after the country stored here and stay.
+    # Until it does not, the country is stored again over an Others row: done once sdx has started
+    # after the file cache held the country (it read the country), or after storing it again, or
+    # after KEEP_WAIT. LG's mock answers no SDP request naming an Others row meanwhile (lg_sdp.py
+    # first_use_pending), as a set without a network gets none, so sdx never sees a "change".
+    deadline = time.time() + KEEP_WAIT
+    held = None  # uptime by which the file cache held the country
+    while time.time() < deadline:
+        stored = settings("option", ["smartServiceCountryCode3"]).get("smartServiceCountryCode3")
+        if stored and OTHERS_ROW.match(stored):
+            set_settings(
+                "option", {"smartServiceCountryCode2": short, "smartServiceCountryCode3": country3}
+            )
+            log("emulator-firstuse: sdx's %s replaced by %s" % (stored, country3))
+            return
+        if held is None and cached_country() == country3:
+            held = uptime()
+        if held is not None:
+            start = sdx_start()
+            if start is None or start > held:
+                return
+        time.sleep(KEEP_POLL)
+    log("emulator-firstuse: no Others row from sdx within %d s" % KEEP_WAIT)
+
+
 def main():
     if os.path.exists(MARK):
         last_input()
         return 0
+    service_country_first()
     # FirstUse starts once the set has its country: settings' default is "other" until the
     # set's own country reaches it (devicereset, from LLS's factory DB), a few seconds in
     first(
@@ -178,9 +319,14 @@ def main():
             raise RuntimeError(
                 "japanCitySelection %s not in its list" % option["japanCitySelection"]
             )
-    set_settings(
-        "option", {"smartServiceCountryCode2": short, "smartServiceCountryCode3": country3}
-    )
+    stored = settings("option", ["smartServiceCountryCode2", "smartServiceCountryCode3"])
+    if (stored.get("smartServiceCountryCode2"), stored.get("smartServiceCountryCode3")) != (
+        short,
+        country3,
+    ):
+        set_settings(
+            "option", {"smartServiceCountryCode2": short, "smartServiceCountryCode3": country3}
+        )
 
     # done: the device name with the model's series
     name = settings("network", ["deviceName"])["deviceName"]
@@ -226,6 +372,7 @@ def main():
 
     open(MARK, "a").close()
     subprocess.call(["sync"])
+    keep_service_country(short, country3)
     return 0
 
 

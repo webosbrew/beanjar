@@ -163,7 +163,7 @@ def country(headers, host):
     """(alpha-2, alpha-3, ric) of the requesting TV: X-Device-Country (alpha-3) looked up in
     lg_answers.COUNTRIES or naming the VM's own country, else where the TV is (LOCATION: the VM's
     country, as LG's server answers from the TV's address; a TV whose service country is still its
-    group's Others row, us7.lgtvsdp.com, is told that country, not US), else the SDP host's country
+    group's Others row gets no answer at all, first_use_pending), else the SDP host's country
     prefix (us.lgtvsdp.com), else the default."""
     three = (headers.get("X-Device-Country") or "").strip().upper()
     for two, (three_, ric) in lg_answers.COUNTRIES.items():
@@ -177,6 +177,30 @@ def country(headers, host):
         return (label,) + tuple(lg_answers.COUNTRIES[label])
     two = lg_answers.DEFAULT_COUNTRY
     return (two,) + tuple(lg_answers.COUNTRIES[two])
+
+
+# A smart service country that is an "Others" row of sdx's table (/usr/palm/sdx/country_codes_v5.xml:
+# fullname "Others", code2 = code3 = the group's two letters and 7: US7, EU7, KR7, AJ7...): what
+# sdx makes of settings' stock "other", i.e. a set whose FirstUse has not stored a country yet
+OTHERS_ROW = re.compile(r"^[A-Z]{2}7$")
+
+
+def first_use_pending(headers, host):
+    """Whether an SDP request comes from a TV that has no smart service country yet: its
+    X-Device-Country (else its SDP host's first label, us7.lgtvsdp.com) is an Others row.
+
+    A set has no network until its FirstUse has stored the country (FirstUse's location step comes
+    before its network step), so LG's server never sees such a request from one. A VM's state
+    starts past FirstUse with its network up, and the guest stores the country a little later
+    (the normal layer's emulator-firstuse); sdx, asking first, would be told the real country,
+    take it for a change from its Others row and raise "Changing the country will cause your TV to
+    restart" (W23M 23.25.55, changeCountry_by_serverResponse). So these requests go unanswered,
+    as without a network, until the country is stored; sdx asks again on that change."""
+    three = (headers.get("X-Device-Country") or "").strip().upper()
+    if three:
+        return bool(OTHERS_ROW.match(three))
+    label = re.sub(r"^(qt2|st2|dv2|qt3|qt4|qt5)-", "", (host or "").split(".")[0]).upper()
+    return bool(OTHERS_ROW.match(label))
 
 
 def _compile():
@@ -298,9 +322,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.server.tls and not host:
             host = lg_hosts.normal(getattr(self.connection, "lg_sni", ""))
+        path = self.path.split("?", 1)[0]
+        c = lg_hosts.lookup(host)
+        if c and c["class"] == "sdp" and first_use_pending(self.headers, host):
+            # no answer, as to a set without a network (first_use_pending)
+            self.server.note(
+                f"withheld {self.command} {'https' if self.server.tls else 'http'}://{host}{path}"
+                f" (service country {self.headers.get('X-Device-Country') or host.split('.')[0]})"
+            )
+            self.close_connection = True
+            return
         answer, known = lookup(self.command, host, self.path)
         status, headers, body = render(answer, self.headers, host)
-        path = self.path.split("?", 1)[0]
         query = self.path.split("?", 1)[1] if "?" in self.path else ""
         keys = ",".join(sorted({k for k, _ in urllib.parse.parse_qsl(query, True)}))
         self.server.note(

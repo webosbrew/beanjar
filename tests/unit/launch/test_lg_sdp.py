@@ -198,6 +198,43 @@ def test_country_where_the_tv_is(monkeypatch):
             lg_sdp.location(bad)
 
 
+def test_first_use_pending():
+    # an Others row of sdx's table (US7, EU7...) in X-Device-Country, else the SDP host's label
+    assert lg_sdp.first_use_pending({"X-Device-Country": "US7"}, "us.lgtvsdp.com")
+    assert lg_sdp.first_use_pending({}, "US7.nextlgsdp.com")
+    assert lg_sdp.first_use_pending({}, "qt2-eu7.lgtvsdp.com")
+    assert not lg_sdp.first_use_pending({"X-Device-Country": "USA"}, "us7.lgtvsdp.com")
+    assert not lg_sdp.first_use_pending({}, "us.nextlgsdp.com")
+    assert not lg_sdp.first_use_pending({"X-Device-Country": "US"}, "")
+
+
+def test_request_of_an_others_row_is_withheld(https):
+    """An SDP request naming an Others row gets no answer (the connection closes, as without a
+    network) and is logged as withheld; the same request with a country is answered."""
+    _server, lines, _client, _ca = https
+    with pytest.raises((http.client.RemoteDisconnected, ConnectionError)):
+        request(
+            https,
+            "us.nextlgsdp.com",
+            "POST",
+            "/init/9.0.0/initservices",
+            headers={"X-Device-Country": "US7"},
+        )
+    assert any(
+        ln.startswith("withheld POST https://us.nextlgsdp.com/init/9.0.0/initservices")
+        and "US7" in ln
+        for ln in lines
+    )
+    status, _h, _b, _c = request(
+        https,
+        "us.nextlgsdp.com",
+        "POST",
+        "/init/9.0.0/initservices",
+        headers={"X-Device-Country": "USA"},
+    )
+    assert status == 200
+
+
 def test_render_substitutes_and_times():
     a = {
         "status": 200,

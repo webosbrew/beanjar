@@ -170,6 +170,7 @@ def run_main(current, tmp_path, country=None, written=None):
             call=call,
             first=mock.Mock(),
             log=mock.Mock(),
+            keep_service_country=mock.Mock(),
         ),
         mock.patch.object(helper.subprocess, "call"),
     ):
@@ -200,6 +201,132 @@ def test_first_use_of_the_vm_country(tmp_path):
         "category": "option",
         "settings": {"smartServiceCountryCode2": "NZ", "smartServiceCountryCode3": "NZL"},
     } in written["setSystemSettings"]
+
+
+def service_country_first(stored, vm=None, lls=None, default=None, tmp_path=None):
+    """service_country_first() with smartServiceCountryCode3 stored, the VM's country vm, LLS's
+    countryName lls and configd's system.defaultCountry default; what it writes."""
+    written = []
+
+    def call(uri, payload):
+        method = uri.rsplit("/", 1)[1]
+        if method == "getSystemSettings":
+            return {"settings": {"smartServiceCountryCode3": stored}}
+        if method == "setSystemSettings":
+            written.append(payload["settings"])
+            return {}
+        if method == "getData":
+            return {"dbgroups": [{"dbid": "factory", "items": {"countryName": lls}}]}
+        if method == "getConfigs":
+            return {"configs": {"system.defaultCountry": default} if default else {}}
+        raise AssertionError(uri)
+
+    lst = tmp_path / "countryList.json"
+    lst.write_text(
+        '{"countryList": [{"groupCode": "US", "countries": [{"alpha3": "USA", "shortName": "US"},'
+        ' {"alpha3": "CAN", "shortName": "CA"}, {"alpha3": "MEX", "shortName": "MX"}]}]}'
+    )
+    with mock.patch.multiple(
+        helper,
+        call=call,
+        log=mock.Mock(),
+        vm_country=mock.Mock(return_value=vm),
+        COUNTRY_LIST=str(lst),
+    ):
+        helper.service_country_first()
+    return written
+
+
+def test_service_country_first(tmp_path):
+    # stored before settings' own country, from what devicereset will choose: the VM's, else
+    # LLS's factory countryName (not "---"), else configd's default
+    us = {"smartServiceCountryCode2": "US", "smartServiceCountryCode3": "USA"}
+    ca = {"smartServiceCountryCode2": "CA", "smartServiceCountryCode3": "CAN"}
+    mx = {"smartServiceCountryCode2": "MX", "smartServiceCountryCode3": "MEX"}
+    assert service_country_first("other", "CAN", "MEX", "USA", tmp_path=tmp_path) == [ca]
+    assert service_country_first("other", None, "MEX", "USA", tmp_path=tmp_path) == [mx]
+    assert service_country_first("other", None, "---", "USA", tmp_path=tmp_path) == [us]
+    # over sdx's Others row as over the stock "other"
+    assert service_country_first("US7", None, "---", "USA", tmp_path=tmp_path) == [us]
+    # a stored country stays; no country known yet: nothing
+    assert service_country_first("CAN", None, None, "USA", tmp_path=tmp_path) == []
+    assert service_country_first("other", None, "---", None, tmp_path=tmp_path) == []
+
+
+def keep(stored, cache, sdx, tmp_path, wait=30):
+    """keep_service_country("US", "USA") where settings answers the stored values in turn (the
+    last repeated), the file cache holds cache and sdx started at sdx (uptime, None: not
+    running; uptime is 100); what it writes and how many polls it made."""
+    written, polls = [], []
+    stored = list(stored)
+
+    def settings(category, keys):
+        polls.append(1)
+        value = stored.pop(0) if len(stored) > 1 else stored[0]
+        return {"smartServiceCountryCode3": value}
+
+    def set_settings(category, values):
+        written.append(values)
+
+    clock = [0.0]
+
+    def sleep(s):
+        clock[0] += s
+
+    with (
+        mock.patch.multiple(
+            helper,
+            settings=settings,
+            set_settings=set_settings,
+            log=mock.Mock(),
+            cached_country=mock.Mock(return_value=cache),
+            sdx_start=mock.Mock(return_value=sdx),
+            uptime=mock.Mock(return_value=100.0),
+            KEEP_WAIT=wait,
+        ),
+        mock.patch.object(helper.time, "sleep", sleep),
+        mock.patch.object(helper.time, "time", lambda: clock[0]),
+    ):
+        helper.keep_service_country("US", "USA")
+    return written, len(polls)
+
+
+def test_keep_service_country(tmp_path):
+    us = {"smartServiceCountryCode2": "US", "smartServiceCountryCode3": "USA"}
+    # sdx's first-run Others row landing after the country: stored again, once
+    assert keep(["USA", "USA", "US7"], "OTHER", 50.0, tmp_path) == ([us], 3)
+    # sdx started after the file cache held the country (it read it), or does not run yet: done
+    assert keep(["USA"], "USA", 150.0, tmp_path) == ([], 1)
+    assert keep(["USA"], "USA", None, tmp_path) == ([], 1)
+    # sdx started before: it may still store its row; waited for, up to KEEP_WAIT
+    assert keep(["USA"], "USA", 50.0, tmp_path, wait=30) == ([], 6)
+
+
+def test_sdx_start(tmp_path):
+    # field 22 of /proc/<pid>/stat over the clock tick; a command with ") " in its name is safe
+    proc = tmp_path / "proc"
+    for pid, comm, start in (("1", "init", 5), ("42", "sdx", 4200), ("7", "a) b", 9)):
+        (proc / pid).mkdir(parents=True)
+        (proc / pid / "comm").write_text(comm + "\n")
+        fields = ["S"] + ["0"] * 18 + [str(start)] + ["0"] * 10
+        (proc / pid / "stat").write_text("%s (%s) %s\n" % (pid, comm, " ".join(fields)))
+    (proc / "self").mkdir()
+    real_listdir, real_open = helper.os.listdir, open
+
+    def listdir(path):
+        return real_listdir(str(proc)) if path == "/proc" else real_listdir(path)
+
+    def fake_open(path, *a, **k):
+        if str(path).startswith("/proc/"):
+            path = str(proc) + str(path)[len("/proc") :]
+        return real_open(path, *a, **k)
+
+    with (
+        mock.patch.object(helper.os, "listdir", listdir),
+        mock.patch("builtins.open", fake_open),
+        mock.patch.object(helper.os, "sysconf", return_value=100),
+    ):
+        assert helper.sdx_start() == 42.0
 
 
 def last_input(current, tmp_path, oobe=True, marked=False):

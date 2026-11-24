@@ -180,6 +180,14 @@ Enforcement is below mitmweb, in the inner namespace, beside the loopback and LA
   source `sdp`). The shapes are the firmware clients' (sdx, uploadd, pmlogd, firstuse; WT1H, W19P,
   W21A, W22O number1, W24P and queue read statically, and LG's own mock data in W22O's rootfs):
 
+  A TV whose smart service country is still its group's "Others" row of sdx's table (`US7`,
+  `EU7`, ...: FirstUse has not stored its country yet) gets no answer: its SDP host
+  (`us7.nextlgsdp.com`) does not resolve (SERVFAIL) and a request naming such a country in
+  `X-Device-Country` is closed unanswered, both logged as `withheld`. A set has no network until
+  FirstUse has stored the country; sdx, answered earlier, takes the real country for a change and
+  raises LG's restart prompt (`lg_sdp.first_use_pending`, [country
+  setting](../../research/country-setting.md)). With `lg_services = "real"` nothing is withheld.
+
   | Path (per layout) | Answer |
   |---|---|
   | v5.1 (WT1H): `rest/sdp/v5.1/authentication` (GET, DELETE) | `authentication` with `deviceSecret`, `sessionID`, `deviceUniqueID`; `Set-Cookie` |
