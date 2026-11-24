@@ -9,8 +9,8 @@ delivery and TS information descriptors, SDT, EIT present/following, TOT and TDT
 Made like the ATSC streams (tuner_stream.py): ffmpeg encodes the A/V loop, tsp injects the tables
 (with --japan: ARIB STD-B24 strings, JST times). TSDuck's own DII model writes the moduleInfo of a
 DVB object carousel (BIOP timeouts and taps); ARIB's moduleInfo is descriptors only (STD-B24 vol. 3,
-TR-B14), so the DII and DDB messages are laid out here and given to TSDuck as generic long
-sections, which it frames, numbers, CRCs and repeats. Byte layout cross-checked against denpa's
+TR-B14), so the DII and DDB sections are made here (TSDuck's XML also caps them at the PSI size)
+and tsp only repeats them. Byte layout cross-checked against denpa's
 packages/arib synth.ts (MIT) and web-bml's server/decode_ts.ts (MIT); no code taken from either.
 
 The page is EUC-JP with the ARIB BML 1.0 DOCTYPE and `<?bml bml-version="100.0" ?>`, as terrestrial
@@ -28,7 +28,7 @@ from xml.sax.saxutils import escape, quoteattr
 from .tuner_stream import PACKET, Error, crc32_mpeg
 
 MUX_RATE = 5_000_000  # bits a second
-VERSION = 2  # of the generator: part of a stream's key (stream_key)
+VERSION = 5  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 LOOP_SECONDS = 5  # of the A/V loop
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
@@ -74,7 +74,11 @@ PAGE_TEXT_2 = "Beanjar ARIB BML test page"
 
 def startup_bml():
     """The startup document's bytes: EUC-JP, the layout terrestrial pages use (960x540, the body's
-    used-key-list) and two lines of text on a blue panel, colours from the default CLUT."""
+    used-key-list), the video full screen and two lines of text on a blue panel over it, colours
+    from the default CLUT. A BML document shows the video only through a video object whose data
+    names the video component (/00: component tag 0x00 of this service); LG's NetFront reports a
+    video object without one as not visible and the set mutes the video while the page shows. The
+    object sits in a div: NetFront lays out only the div elements among the body's children."""
     doc = f"""<?xml version="1.0" encoding="EUC-JP" ?>
 <!DOCTYPE bml PUBLIC "+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA" "http://www.arib.or.jp/B24/DTD/bml_1_0.dtd">
 <?bml bml-version="100.0" ?>
@@ -87,6 +91,9 @@ p {{ font-family: 丸ゴシック; font-size: 36px; line-height: 48px; color-ind
 ]]></style>
 </head>
 <body>
+<div style="left:0px;top:0px;width:960px;height:540px;">
+<object type="video/X-arib-mpeg2" data="/{TAG_VIDEO:02x}" streamstatus="play" style="left:0px;top:0px;width:960px;height:540px;"/>
+</div>
 <div style="left:0px;top:360px;width:960px;height:180px;background-color-index:4;">
 <p style="left:48px;top:30px;width:864px;height:48px;">{PAGE_TEXT}</p>
 <p style="left:48px;top:96px;width:864px;height:48px;font-size:28px;">{PAGE_TEXT_2}</p>
@@ -97,14 +104,55 @@ p {{ font-family: 丸ゴシック; font-size: 36px; line-height: 48px; color-ind
     return doc.replace("\n", "\r\n").encode("euc_jp")
 
 
+RESOURCE_LIST_TYPE = "application/x-arib-resourcelist"
+
+
+def resource_list(entries):
+    """The binary resource list part's body: a count, then one entry a resource (offset of the
+    part's header lines in the module, their length, the body's length, a 4+12 bit type field we
+    leave 0, the name). LG's NetFront finds a named resource of a multipart module (startup.bml)
+    only through this list, and hybridtv-manager's BML_MULTIPART_GetRscInfo reads the same layout."""
+    out = bytes([len(entries)])
+    for name, offset, header, length in entries:
+        name = name.encode()
+        out += (
+            bytes([13 + len(name)])  # the entry's length after this byte
+            + _be(offset, 4)
+            + _be(header, 2)
+            + _be(length, 4)
+            + _be(0, 2)  # type
+            + bytes([len(name)])
+            + name
+        )
+    return out
+
+
 def module():
-    """Module 0: a multipart/mixed entity with startup.bml (ARIB STD-B24 vol. 2, 9.3)."""
-    head = f"Content-Type: multipart/mixed; boundary={BOUNDARY}\r\n\r\n".encode()
-    part = (
-        f"--{BOUNDARY}\r\nContent-Type: text/X-arib-bml; charset=euc-jp\r\n"
-        "Content-Location: startup.bml\r\n\r\n"
-    ).encode()
-    return head + part + startup_bml() + f"\r\n--{BOUNDARY}--\r\n".encode()
+    """Module 0: a multipart/mixed entity (ARIB STD-B24 vol. 2, 9.3) with a resource list first and
+    startup.bml. The boundary is quoted: the sets' NetFront BML browser reads an unquoted one wrong
+    (it repeats its first character) and then finds no part. Without the resource list it finds
+    the module but not startup.bml in it; both end in "unavailable document"."""
+    top = f'Content-Type: multipart/mixed; boundary="{BOUNDARY}"\r\n\r\n'.encode()
+    delim = f"--{BOUNDARY}\r\n".encode()
+    list_head = f"Content-Type: {RESOURCE_LIST_TYPE}\r\n\r\n".encode()
+    doc_head = b"Content-Type: text/X-arib-bml; charset=euc-jp\r\nContent-Location: startup.bml\r\n"
+    doc = startup_bml()
+    list_len = len(resource_list([("startup.bml", 0, 0, 0)]))
+    # the document's header lines start after the list part and the next delimiter
+    doc_at = len(top) + len(delim) + len(list_head) + list_len + 2 + len(delim)
+    rlist = resource_list([("startup.bml", doc_at, len(doc_head), len(doc))])
+    return (
+        top
+        + delim
+        + list_head
+        + rlist
+        + b"\r\n"
+        + delim
+        + doc_head
+        + b"\r\n"
+        + doc
+        + f"\r\n--{BOUNDARY}--\r\n".encode()
+    )
 
 
 def data_component_info(auto_start=True):
@@ -262,18 +310,30 @@ def _tables(now):
     t["eit"] = eit + "</EIT>\n"
     t["tot"] = f'<TOT UTC_time="{_jst(now)}"/>\n'
     t["tdt"] = f'<TDT UTC_time="{_jst(now)}"/>\n'
-    mod = module()
-    t["dii"] = (
-        f'<generic_long_table table_id="0x3B" table_id_ext="0x{TRANSACTION_ID & 0xFFFF:04X}" '
-        f'version="0" private="false"><section>{_hex(dii_message(mod))}</section></generic_long_table>\n'
-    )
-    t["ddb"] = (
-        f'<generic_long_table table_id="0x3C" table_id_ext="0x{MODULE_ID:04X}" '
-        f'version="{MODULE_VERSION & 0x1F}" private="false">'
-        + "".join(f"<section>{_hex(m)}</section>" for m in ddb_messages(mod))
-        + "</generic_long_table>\n"
-    )
     return t
+
+
+def dsmcc_section(table_id, table_id_ext, version, number, last, payload):
+    """A DSM-CC section (ISO/IEC 13818-6 9.2.2): section syntax 1, private indicator 0, CRC_32.
+    Made here rather than by TSDuck, whose XML allows such a long section only 1024 bytes (the PSI
+    limit); a DDB with ARIB's 4066-byte blocks needs up to 4096."""
+    body = _be(table_id_ext, 2) + bytes([0xC1 | (version & 0x1F) << 1, number, last]) + payload
+    head = bytes([table_id]) + _be(0xB000 | (len(body) + 4), 2)
+    sec = head + body
+    return sec + _be(crc32_mpeg(sec), 4)
+
+
+def carousel():
+    """{name: sections} of the data PID: the DII and the DDBs of module 0."""
+    mod = module()
+    ddb = ddb_messages(mod)
+    return {
+        "dii": dsmcc_section(0x3B, TRANSACTION_ID & 0xFFFF, 0, 0, 0, dii_message(mod)),
+        "ddb": b"".join(
+            dsmcc_section(0x3C, MODULE_ID, MODULE_VERSION, n, len(ddb) - 1, m)
+            for n, m in enumerate(ddb)
+        ),
+    }
 
 
 def _run(cmd):
@@ -326,19 +386,19 @@ def _tsp(d, loop, out, now):
 
     def inject(pid, files):
         return ["-P", "inject", "--stuffing", "--pid", f"0x{pid:X}"] + [
-            f"{os.path.join(d, n)}.xml={ms}" for n, ms in files
+            f"{os.path.join(d, n)}={ms}" for n, ms in files
         ]
 
-    a += inject(PAT_PID, [("pat", 100)])
-    a += inject(PMT_PID, [("pmt", 100)])
-    a += inject(NIT_PID, [("nit", 1000)])
-    a += inject(SDT_PID, [("sdt", 1000)])
+    a += inject(PAT_PID, [("pat.xml", 100)])
+    a += inject(PMT_PID, [("pmt.xml", 100)])
+    a += inject(NIT_PID, [("nit.xml", 1000)])
+    a += inject(SDT_PID, [("sdt.xml", 1000)])
     # TSDuck puts both events in one section; ARIB, like DVB, has present in section 0 and
     # following in section 1, which the normalisation makes
     a += ["-P", "inject", "--stuffing", "--pid", f"0x{EIT_PID:X}", "--eit-normalization"]
     a += ["--eit-actual-pf", "--eit-base-date", _jst(now, "%Y/%m/%d %H:%M:%S"), f"{d}/eit.xml=500"]
-    a += inject(TOT_PID, [("tot", 1000), ("tdt", 1000)])
-    a += inject(DATA_PID, [("dii", 500), ("ddb", 250)])
+    a += inject(TOT_PID, [("tot.xml", 1000), ("tdt.xml", 1000)])
+    a += inject(DATA_PID, [("dii.bin", 500), ("ddb.bin", 250)])
     _run(a + ["-O", "file", out])
 
 
@@ -359,6 +419,9 @@ def make(path, now):
         for name, body in _tables(now).items():
             with open(os.path.join(work, name + ".xml"), "w", encoding="utf-8") as f:
                 f.write('<?xml version="1.0" encoding="UTF-8"?>\n<tsduck>\n' + body + "</tsduck>\n")
+        for name, sections in carousel().items():
+            with open(os.path.join(work, name + ".bin"), "wb") as f:
+                f.write(sections)
         _make_loop(os.path.join(work, "loop.ts"))
         _tsp(work, os.path.join(work, "loop.ts"), os.path.join(work, "out.ts"), now)
         os.replace(os.path.join(work, "out.ts"), path)

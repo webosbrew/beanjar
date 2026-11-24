@@ -11,6 +11,7 @@ from an ARIB carousel; the module is rebuilt here from the sections TSDuck demux
 
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -71,7 +72,7 @@ def parse_ddb(msg):
 def multipart(entity):
     """[(headers, body)] of a multipart/mixed entity, the boundary from its Content-Type."""
     head, _, rest = entity.partition(b"\r\n\r\n")
-    boundary = head.split(b"boundary=")[1].split(b";")[0].strip()
+    boundary = head.split(b"boundary=")[1].split(b";")[0].strip().strip(b'"')
     parts = []
     for chunk in rest.split(b"--" + boundary)[1:]:
         if chunk.startswith(b"--"):
@@ -95,10 +96,26 @@ class CarouselTest(unittest.TestCase):
         ET.fromstring(text[text.index("<bml>") :])  # well-formed past the prolog
 
     def test_module(self):
-        ((headers, body),) = multipart(arib.module())
+        # the sets' BML browser parses only a quoted boundary right
+        head = arib.module().split(b"\r\n\r\n")[0]
+        self.assertTrue(head.endswith(f'boundary="{arib.BOUNDARY}"'.encode()))
+        mod = arib.module()
+        ((list_headers, rlist), (headers, body)) = multipart(mod)
+        self.assertEqual(list_headers[b"content-type"], arib.RESOURCE_LIST_TYPE.encode())
         self.assertEqual(headers[b"content-location"], b"startup.bml")
         self.assertTrue(headers[b"content-type"].startswith(b"text/X-arib-bml"))
         self.assertEqual(body, arib.startup_bml())
+        # the list as the set's NetFront reads it: the body is at offset + header + 2 (the blank
+        # line), and the header lines are the part's
+        self.assertEqual(rlist[0], 1)
+        size, offset, header, length = rlist[1], *struct.unpack(">IHI", rlist[2:12])
+        namelen = rlist[14] & 0x7F
+        self.assertEqual(size, 13 + namelen)
+        self.assertEqual(len(rlist), 2 + size)
+        self.assertEqual(rlist[15 : 15 + namelen], b"startup.bml")
+        self.assertEqual(mod[offset + header + 2 : offset + header + 2 + length], body)
+        self.assertTrue(mod[offset:].startswith(b"Content-Type: text/X-arib-bml"))
+        self.assertEqual(mod[offset + header : offset + header + 2], b"\r\n")
 
     def test_dii(self):
         mod = arib.module()
@@ -235,7 +252,7 @@ class StreamTest(unittest.TestCase):
         mod = b"".join(blocks[n] for n in sorted(blocks))
         self.assertEqual(len(mod), size)
         self.assertEqual(mod, arib.module())
-        ((headers, body),) = multipart(mod)
+        (_rlist, (headers, body)) = multipart(mod)
         self.assertEqual(headers[b"content-location"], b"startup.bml")
         self.assertEqual(body, arib.startup_bml())
 
