@@ -30,8 +30,9 @@
 #include <unistd.h>
 #include "../../../include/mstar-gop.h"
 
-#define GOP_NODE "/dev/mstar-gop-fb"
-#define DRM_NODE "/dev/dri/card0"
+#define GOP_NODE    "/dev/mstar-gop-fb"
+#define LX_GOP_NODE "/dev/lg/lx-gop"
+#define DRM_NODE    "/dev/dri/card0"
 
 static int drm, gop;
 static uint8_t *pool;
@@ -372,6 +373,8 @@ int main(void)
     struct mstar_gop_pool pp;
     setvbuf(stdout, NULL, _IOLBF, 0);
     gop = open(GOP_NODE, O_RDWR | O_CLOEXEC);
+    if (gop < 0) /* lg115x.ko's OSD frame buffer (NetCast 4), the same contract */
+        gop = open(LX_GOP_NODE, O_RDWR | O_CLOEXEC);
     if (gop < 0 || ioctl(gop, MSTAR_GOP_IOC_GET_POOL, &pp) < 0) {
         printf("gop-present: %s: %s\n", GOP_NODE, strerror(errno));
         return 1;

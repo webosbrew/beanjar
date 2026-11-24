@@ -91,7 +91,9 @@
  * - /dev/lg/gfx0: the gfx driver (LG's kdriver/core/gfx, major 151; the firmware's device_table
  *   makes the node, its mknod job links /dev/gfx to it), as the graphics memory the soc layer's
  *   DILE_GAL maps (lgemu.ko's gfx.c); none of LG's gfx ioctls (KADP's 2D engine, which the shim
- *   replaces) is answered. */
+ *   replaces) is answered.
+ * - /dev/lg/lx-gop (parameter gop, NetCast 4): the OSD's frame buffer over the same memory, the
+ *   emulator's GOP contract (include/mstar-gop.h, gop.c); init binds it over the firmware's fb0. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/compat.h>
 #include <linux/devmem_window.h>
@@ -230,6 +232,7 @@ static const struct {
     {"sysfs-gpio", lx_sysfs_gpio_add, lx_sysfs_gpio_remove},
     {"pe", lx_pe_add, lx_pe_remove},
     {"gfx", lx_gfx_add, lx_gfx_remove},
+    {"gop", lx_gop_add, lx_gop_remove},
     {"amst", lx_aud_add, lx_aud_remove},
     {"audio", lx_aud_modules_add, lx_aud_modules_remove},
     {"kdevs", lx_kdevs_add, lx_kdevs_remove},

@@ -1,10 +1,12 @@
 # Board parameters for NetCast 4 on H13 (docs/dev/architecture/netcast4.md). The launcher puts them on
-# the kernel command line, first (Release.board_in_kernel), for lginit, lginit_app and RELEASE.
-# The partitions the bootloader hands over: the root, p17, and lginit, p18 (LG's kernel mounts
-# lginit= at /mnt/lg/lginit and runs its lginit; the emulator's init does both); chip=, which
-# rcS maps to the platform (H13: lg1154).
-console=ttyAMA0,115200 root=/dev/mmcblk0p17 rootfstype=squashfs lginit=/dev/mmcblk0p18 chip=H13
+# the kernel command line, first (Release.board_in_kernel), for lginit, lginit_app and RELEASE: the
+# parts of the bootloader's line (boot.pak's templates) the firmware reads. The root, p17, and
+# lginit, p18 (LG's kernel mounts lginit= at /mnt/lg/lginit and runs its lginit; the emulator's
+# init does both); chip=, LG's base driver's chip revision (H13 B0) and rcS's platform. No appxip=:
+# init mounts lgapp, which lginit_app would mount from that address.
+console=ttyAMA0,115200n81 root=/dev/mmcblk0p17 rootfstype=squashfs lginit=/dev/mmcblk0p18 chip=H13B0
 # 3 = DEBUG (the emulator's boards boot LG's debug mode)
 debugMode=3
-# The set's MAC address; the launcher replaces it with the VM's MAC.
-macadr=a8:23:fe:12:34:56
+# The set's MAC address (libafcommon's AF_UTIL_GetMacAddressFromCmdline); the launcher replaces it
+# with the VM's MAC.
+ethaddr=a8:23:fe:12:34:56

@@ -186,15 +186,16 @@ if guest_lane
 
   soc_layer_trees = []              # the chain's rootfs/ trees, stage.py ops (guest/layers/soc/<chip>)
   webos_layer_args = []             # the chain's rootfs/ trees and files (guest/layers/webos/<release>)
-  # NetCast 4.5's layer takes Mesa from the gl layer's stack (guest/layers/gl/mesa), without Wayland
-  if netcast45
+  # NetCast 4.5's and 4's layers take Mesa from the gl layer's stack (guest/layers/gl/mesa), without
+  # Wayland
+  if netcast45 or netcast4
     mesa_platforms = ''
     wayland_server_compat = false
     # The NetCast SDK's glibc carries 3.0 kernel headers, without SYS_kcmp, and Mesa's
     # os_same_file_description has no complete path without it: the ARM EABI number of the
     # syscall (the uapi headers' __NR_kcmp, 378), which the guest kernel has.
     mesa_extra_c_args = ['-DSYS_kcmp=378']
-    # Mesa's libEGL as libEGLmesa.so.1 (its own soname), which guest/layers/netcast45's libEGL loads:
+    # Mesa's libEGL as libEGLmesa.so.1 (its own soname), which the layer's libEGL loads:
     # a dlopen of libEGL.so.1 must never find Mesa's by its soname
     mesa_extra_args = ['-Degl-lib-suffix=mesa']
     # libdrm inside Mesa's libraries: chrome finds its own old libdrm.so.2 (/webbrowser/lib) first
@@ -222,7 +223,7 @@ if guest_lane
   elif netcast45
     guest_modules = ['guest/layers/gl/mesa', 'guest/layers/netcast45', 'guest/kernel', 'guest/initramfs']
   elif netcast4
-    guest_modules = ['guest/layers/netcast4', 'guest/kernel', 'guest/initramfs']
+    guest_modules = ['guest/layers/gl/mesa', 'guest/layers/netcast4', 'guest/kernel', 'guest/initramfs']
   elif testguest
     guest_modules = ['guest/testguest', 'guest/kernel', 'guest/initramfs']
   endif

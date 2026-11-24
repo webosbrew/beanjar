@@ -16,8 +16,11 @@ RELEASE (Nvm.factory: the pak and path of it), for a VM's new chip (nvm.new_chip
                          values up to its `cmp r0, #N` (above it reads as N, RELEASE)
 
 The functions are found by their symbols and their few instructions decoded (ARM: mov/movw/movt/
-mvn, add/sub with an immediate, str to [sp], bl); Error when a function is missing or its code is
-not of that shape, so a build whose layout differs is refused rather than given wrong bytes."""
+mvn, add/sub with an immediate, ldr of a literal, str to [sp], bl); Error when a function is missing
+or its code is not of that shape, so a build whose layout differs is refused rather than given wrong
+bytes. NetCast 4's RELEASE (H13) has the same fields in code of another shape: literal pools within
+the functions' sizes, a conditional mvn on the early return, the debug status's range checked as
+`sub r3, r0, #LOW; cmp r3, #N` (values LOW to LOW + N)."""
 
 import struct
 
@@ -84,17 +87,25 @@ def _rotated(op):
 def calls(data, loads, func, size):
     """[(target, {reg: value}, stack)]: the bl calls of the function at func (size bytes) in code
     order, with the registers r0-r4 known to hold a constant then (an address: base + offset) and
-    the word last stored at [sp]. Error on an instruction that writes r0-r4 otherwise."""
-    regs, stack, out = {13: "sp"}, None, []
+    the word last stored at [sp]; ("cmp", {"imm": N, "low": LOW}, stack) for a cmp rn, #N whose rn
+    is an unknown value minus LOW (0: the value itself). Error on a conditional instruction other
+    than a branch or a mvn (an early return's value)."""
+    regs, stack, out, pool = {13: "sp"}, None, [], set()
     code = _read(data, loads, func, size)
     for i in range(0, size, 4):
         op = struct.unpack_from("<I", code, i)[0]
         pc = func + i
-        if op & 0x0FF00000 == 0x03500000:  # cmp rn, #imm
-            out.append(("cmp", {"imm": _rotated(op)}, stack))
+        if pc in pool:  # a literal of an ldr above, not code
             continue
-        if op >> 28 != 0xE:  # conditional: a branch to a shared tail; nothing else is expected
-            if op & 0x0F000000 != 0x0A000000:
+        if op & 0x0FF00000 == 0x03500000:  # cmp rn, #imm
+            rn = regs.get(op >> 16 & 0xF)
+            low = -rn[2] if isinstance(rn, tuple) and rn[0] == "rel" else 0
+            out.append(("cmp", {"imm": _rotated(op), "low": low}, stack))
+            continue
+        if op >> 28 != 0xE:  # conditional: a branch to a shared tail, or an early return's value
+            if op & 0x0FF00000 == 0x03E00000:  # mvn<cond> rd, #imm
+                regs.pop(op >> 12 & 0xF, None)
+            elif op & 0x0F000000 != 0x0A000000:
                 raise Error(f"0x{pc:x}: a conditional instruction other than a branch")
             continue
         rd = op >> 12 & 0xF
@@ -124,6 +135,8 @@ def calls(data, loads, func, size):
                 regs[rd] = (base + sign * imm) & 0xFFFFFFFF
             elif base == "sp" or (isinstance(base, tuple) and base[0] == "sp"):
                 regs[rd] = ("sp", (0 if base == "sp" else base[1]) + sign * imm)
+            elif base is None and not op & (1 << 20):  # (not adds/subs) of an unknown value
+                regs[rd] = ("rel", rn, sign * imm)
             else:
                 regs.pop(rd, None)
         elif op & 0x0FE00FF0 == 0x00800000 and isinstance(regs.get(op >> 16 & 0xF), int):
@@ -139,6 +152,11 @@ def calls(data, loads, func, size):
                 regs[rd] = regs[op & 0xF]
             else:
                 regs.pop(rd, None)
+        elif op & 0x0F7F0000 == 0x051F0000:  # ldr rd, [pc, #+-imm]: a literal
+            at = pc + 8 + (op & 0xFFF if op & (1 << 23) else -(op & 0xFFF))
+            regs[rd] = struct.unpack("<I", _read(data, loads, at, 4))[0]
+            if func <= at < func + size:
+                pool.add(at)
         elif op & 0x0C000000 == 0x04000000 and op & (1 << 20):  # ldr rd, [...]
             regs.pop(rd, None)
         elif rd < 5 and op & 0x0C000000 == 0x00000000 and op & 0x01900000 != 0x01100000:
@@ -178,7 +196,7 @@ def fields(data):
     c = nvm_calls(DEBUG)
     if len(c) < 2 or c[0][0] != read or c[0][1].get(1) != 1 or c[1][0] != "cmp":
         raise Error(f"{DEBUG}: not a 1-byte DDI_NVM_Read and a compare with its highest value")
-    debug = (c[0][1][0], c[1][1]["imm"])
+    debug = (c[0][1][0], c[1][1]["low"] + c[1][1]["imm"])
     return {"marker": marker, "preserve": preserve, "debug": debug}
 
 

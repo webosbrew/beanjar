@@ -53,6 +53,18 @@ unions = { "/mnt/nsu/union" = ["/mnt/nsu/patch", "/mnt/nsu/base"] }
 
 [nvm]
 eeprom = "eeprom"
+# A new chip: 0xFF but what RELEASE's own code says a factory leaves (beanjar/nvmfactory.py), the
+# fields NetCast 4.5's are: the first-boot marker 0x20100118 at 0x10 and DDI_NVM_InitPreserveDB's
+# defaults (INSTOP_INFO 0x739 = 0). On a chip of 0xFF RELEASE detects its first boot up, takes
+# UI_SUMODE_DoPowerOnlyStartApp and the set powers itself off within seconds; with INSTOP_INFO 1
+# UI_SETUPWIZARD_IsAvailable would start the first-use wizard (its completion is NAND NVM registry
+# byte 0x521, in the eMMC nvram ring).
+factory = { pak = "lgap", path = "/RELEASE" }
+# OSA_MD_GetDebugStatus reads DDI_NVM_Read(0x18a, 1) and takes 3 to 5 (`sub r3, r0, #3;
+# cmp r3, #2`), anything else as 5, which it writes back; 3 keeps the prints on, 5 sets
+# kernel.panic 1 (OSA_MD_SetDbgMode): by NetCast 4.5's order 3 DEBUG, 4 EVENT, 5 RELEASE, the
+# default debug_status_values.
+debug_status_offset = 0x18A
 
 [partitions]
 partinfo = "partinfo"

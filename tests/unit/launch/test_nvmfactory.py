@@ -118,6 +118,117 @@ def debug(highest=2):
     return [bl(DEBUG + 4 * i, x[1]) if isinstance(x, tuple) else x for i, x in enumerate(w)]
 
 
+def ldr_pc(rd, pc, at):
+    """ldr rd, [pc, #at - pc - 8]"""
+    off = at - pc - 8
+    return (0xE59F0000 if off >= 0 else 0xE51F0000) | rd << 12 | abs(off)
+
+
+def finish_nc4():
+    """NetCast 4's (H13 04.28.15): the state's address from a literal, a conditional mvn."""
+    w = [
+        ("ldr", 2, 0x44),
+        0xE3A03F46,  # mov r3, #0x118
+        0xE52DE004,  # push {lr}
+        movt(3, 0x2010),
+        0xE24DD00C,  # sub sp, sp, #12
+        0xE58D3000,  # str r3, [sp]
+        0xE5923008,  # ldr r3, [r2, #8]
+        0xE3530000,  # cmp r3, #0
+        0x03E00000,  # mvneq r0, #0
+        0x0A000004,  # beq
+        0xE3A00010,  # mov r0, #16
+        0xE3A01004,  # mov r1, #4
+        0xE1A0200D,  # mov r2, sp
+        ("bl", WRITE),
+        0xE3A00000,
+        0xE28DD00C,
+        0xE8BD8000,  # ldmfd sp!, {pc}
+        0x019CEE38,  # the literal (orrseq as an instruction)
+    ]
+    return _place(FINISH, w)
+
+
+def preserve_nc4():
+    """NetCast 4's: r4 from a literal, the mark read into sp + 4, a literal pool at the end."""
+    w = [
+        0xE92D4010,
+        0xE3A01004,  # mov r1, #4
+        ("ldr", 4, 0xBC),
+        0xE24DD008,
+        0xE08D2001,  # add r2, sp, r1
+        movw(0, 0x734),
+        ("bl", READ),
+        0xE59425C4,  # ldr r2, [r4, #0x5c4]
+        0xE59D3004,  # ldr r3, [sp, #4]
+        0xE1520003,  # cmp r2, r3
+        0xE2842D17,  # add r2, r4, #0x5c0
+        0x0A000019,  # beq
+        0xE2822008,
+        0xE3A01001,
+        movw(0, 0x738),
+        ("bl", WRITE),
+        0xE2842D17,
+        0xE3A01001,
+        0xE2822009,
+        movw(0, 0x739),
+        ("bl", WRITE),
+        0xE2842D17,
+        0xE3A01004,
+        0xE282200C,
+        movw(0, 0x73C),
+        ("bl", WRITE),
+        0xE3A01001,
+        0xE2842E5D,  # add r2, r4, #0x5d0
+        0xE3A00D1D,  # mov r0, #0x740
+        ("bl", WRITE),
+        0xE2842D17,
+        movw(0, 0x734),
+        0xE2822004,  # add r2, r2, #4
+        0xE3A01004,
+        ("bl", WRITE),
+        0xE3A00000,
+        0xE28DD008,
+        0xE8BD8010,
+    ]
+    w += [0xE1A00000] * (0xBC // 4 - len(w)) + [R4]  # the pool: r4's literal
+    return _place(PRESERVE, w)
+
+
+def debug_nc4(low=3, n=2):
+    """NetCast 4's: the range checked as sub r3, r0, #low; cmp r3, #n."""
+    w = [
+        0xE92D4010,
+        0xE24DD008,
+        movw(0, 0x18A),
+        0xE28D2007,  # add r2, sp, #7
+        0xE3A01001,
+        ("bl", READ),
+        0xE5DD0007,  # ldrb r0, [sp, #7]
+        ("ldr", 4, 0x5C),
+        0xE2403000 | low,  # sub r3, r0, #low
+        0xE3530000 | n,  # cmp r3, #n
+        0xE5840160,  # str r0, [r4, #0x160]
+        0x9A000007,  # bls
+        0xE8BD8010,
+    ]
+    w += [0xE1A00000] * (0x5C // 4 - len(w)) + [0x0137B9F0]
+    return _place(DEBUG, w)
+
+
+def _place(func, w):
+    out = []
+    for i, x in enumerate(w):
+        pc = func + 4 * i
+        if isinstance(x, tuple) and x[0] == "bl":
+            out.append(bl(pc, x[1]))
+        elif isinstance(x, tuple):
+            out.append(ldr_pc(x[1], pc, func + x[2]))
+        else:
+            out.append(x)
+    return out
+
+
 def release(funcs=None, table=None):
     """The made-up RELEASE: one loadable segment from BASE with the code and the table, and a
     symbol table of the functions."""
@@ -212,6 +323,34 @@ class FactoryTest(unittest.TestCase):
             ],
             (0x18A, 3),
         )
+
+    def test_netcast4(self):
+        """NetCast 4's writers (H13): literals, a conditional mvn and a range from 3 decode to the
+        same fields, the debug status up to 5."""
+        funcs = {
+            "DDI_NVM_Read": (READ, [0xE12FFF1E]),
+            "DDI_NVM_Write": (WRITE, [0xE12FFF1E]),
+            "DDI_NVM_FinishFirstBootUp": (FINISH, finish_nc4()),
+            "DDI_NVM_InitPreserveDB": (PRESERVE, preserve_nc4()),
+            "OSA_MD_GetDebugStatus": (DEBUG, debug_nc4()),
+        }
+        f = nvmfactory.fields(release(funcs))
+        self.assertEqual(f["marker"], (0x10, bytes.fromhex("18011020")))
+        self.assertEqual([o for o, _ in f["preserve"]], [0x738, 0x739, 0x73C, 0x740, 0x734])
+        self.assertEqual(f["preserve"][-1][1], struct.pack("<I", 7))
+        self.assertEqual(f["debug"], (0x18A, 5))
+        n = targets.release(("h13", "netcast4")).nvm
+        self.assertEqual(
+            (n.factory, n.debug_status_offset, n.debug_status_values),
+            (("lgap", "/RELEASE"), 0x18A, (3, 4, 5)),
+        )
+        image = nvmfactory.image(release(funcs), nvm.SIZE, 3)
+        self.assertEqual((image[0x18A], image[0x739]), (3, 0))
+        # another conditional instruction is still refused
+        bad = list(funcs["DDI_NVM_FinishFirstBootUp"][1])
+        bad[8] = 0x03A00001  # moveq r0, #1
+        with self.assertRaises(nvmfactory.Error):
+            nvmfactory.fields(release(dict(funcs, DDI_NVM_FinishFirstBootUp=(FINISH, bad))))
 
     def test_release(self):
         """NetCast 4.5 keeps the debug status at 0x18A as 0 DEBUG, 1 EVENT, 2 RELEASE; every start

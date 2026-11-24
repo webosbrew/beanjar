@@ -264,6 +264,7 @@ def _make(job, new, say):
         broadcast=job.broadcast,
         debug_mode=job.debug_mode,
         country=job.country or None,
+        cache=job.cache,
     )
     record = {"eeprom_note": chip.note}
     # the panel's refresh (viewer and beanjar-vnc output rate, vm-info.toml's panel_hz): the

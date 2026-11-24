@@ -3,5 +3,5 @@
 # lg115x.ko: LG's own kernel drivers (LG115x kdrivers) under KADP. Its I2C buses call
 # lgemu.ko's devices (lgemu-i2c.h; kbuild.sh gives modpost lgemu's Module.symvers).
 obj-m := lg115x.o
-lg115x-y := lg115x_main.o bus.o ucom.o security.o logm.o de-histogram.o video.o audio.o platform.o
+lg115x-y := lg115x_main.o bus.o ucom.o security.o logm.o de-histogram.o video.o gop.o audio.o platform.o
 ccflags-y := -I$(src)/../lgemu

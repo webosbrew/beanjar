@@ -10,6 +10,8 @@ bring_up = ["NC4H"]
 # eOSDResolution plane at its FHD panel's eDispResolution 0x780438. The I2C devices of RELEASE.cfg,
 # device:bus:slave with bus = the HAL's channel - 1 (KADP_I2C_Open): "[i2c]MICOM:2:0x52:0",
 # "[i2c]NVM:5:0xA0:1" and eAMPChipType's AMP_TAS5733 at "[i2c]TAS5733:1:0x54:1".
+# gop: the OSD's frame buffer node lx-gop (include/mstar-gop.h), which the netcast4 layer's libgal
+# draws into and init binds over /dev/fb0 (docs/dev/architecture/netcast4.md, "Graphics").
 [soc]
 board_cmdline = "/etc/emulator/board.cmdline"
 board_src = "guest/layers/netcast4/rootfs"
@@ -23,4 +25,5 @@ params = [
     "graphic_res=0x07800438",
     "i2c=micom:1:0x52,nvm:4:0xa0,amp:0:0x54",
     "gpio_pins=144",
+    "gop=1",
 ]

@@ -496,6 +496,15 @@ if [ "$INIT_SYSTEM" = sysvinit ]; then
 	if [ -c /dev/mstar-gop-fb ]; then
 		[ -e /webos/dev/fb0 ] || : > /webos/dev/fb0
 		mount --bind /dev/mstar-gop-fb /webos/dev/fb0 && log "/dev/fb0: mstar-utopia's GOP frame buffer"
+	elif [ -c /dev/lg/lx-gop ]; then
+		# NetCast 4: lg115x.ko's OSD frame buffer, the same contract (its parameter gop). It is the
+		# firmware's /dev/gfx too (packed as a link to /dev/lg/gfx0, which devtmpfs hides): the
+		# HOA_GX clients' libafopenapi maps the graphics pool from it at its physical address, the
+		# window surfaces their EGL draws into
+		for n in fb0 gfx; do
+			[ -e /webos/dev/$n ] || : > /webos/dev/$n
+			mount --bind /dev/lg/lx-gop /webos/dev/$n
+		done && log "/dev/fb0, /dev/gfx: lg115x's OSD frame buffer"
 	else
 		log "no /dev/mstar-gop-fb: the firmware has no /dev/fb0 of its own"
 	fi
@@ -641,6 +650,21 @@ log "board: $(grep -o ' ethaddr=[^ ]*' /run/cmdline | tail -n 1) $(grep -o 'seri
 if [ "$TARGET" = h13-netcast4 ]; then
 	# devtmpfs hides the packed /dev/shm, where lginit mounts its ramfs
 	mkdir -p -m 0777 /webos/dev/shm || fail "NetCast: cannot create /dev/shm"
+	# lginit_app's terminal manager (tmanager, libdbgfrwk) gives every process it starts a pty of
+	# its own and forwards their output only to a terminal attached to it; the console shows its
+	# own first lines alone. LG's root login attaches one (lginit_app's /root/.profile runs
+	# `dbgfrwk elogin`): the same, for the console, once tmanager runs, so the firmware's output
+	# is in the webOS console's log.
+	(
+		i=0
+		until webos-enter sh -c 'pidof lginit_app && [ -x /usr/local/bin/dbgfrwk ]' >/dev/null 2>&1; do
+			i=$((i + 1)); [ $i -lt 300 ] || exit 0; sleep 0.2
+		done
+		log "console: attaching to lginit_app's terminal manager"
+		# the client stays (it relays the console's input); its terminal is its standard streams
+		exec webos-enter sh -c 'exec </dev/hvc0 >/dev/hvc0 2>&1
+			LD_LIBRARY_PATH=/mnt/lg/res/lglib exec /usr/local/bin/dbgfrwk elogin'
+	) &
 fi
 if [ "$TARGET" = lm14-netcast45 ]; then
 	# devtmpfs hides the packed /dev/shm. Restore its mount point so stock

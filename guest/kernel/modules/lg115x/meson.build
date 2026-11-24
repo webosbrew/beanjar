@@ -6,7 +6,7 @@
 # chip table, guest/targets/soc/). Published as build/lg115x.ko too.
 lg115x_dir = kernel_root / 'lg115x'
 lg115x_inputs = kbuild + [files('Kbuild', 'lg115x.h', 'lg115x_main.c', 'bus.c', 'security.c',
-                            'logm.c', 'de-histogram.c', 'video.c', 'audio.c', 'platform.c', 'ucom.c'), lgemu_h]
+                            'logm.c', 'de-histogram.c', 'video.c', 'gop.c', 'audio.c', 'platform.c', 'ucom.c'), lgemu_h]
 lg115x_ko = custom_target('lg115x',
   output: 'lg115x.ko',
   depfile: 'lg115x.ko.d',

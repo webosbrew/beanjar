@@ -26,9 +26,9 @@ fw_wayland = get_variable('firmware_wayland', '')
 fw_wl_src = ''
 fw_wl_stamp = []
 # The firmware's libwayland-client: the version suffix of the file its soname links to (fw_version,
-# guest/targets/meson.build), 20.0 for 1.20; none without one. NetCast 4.5's Mesa has no Wayland.
+# guest/targets/meson.build), 20.0 for 1.20; none without one. NetCast's Mesa has no Wayland.
 fw_wl_have = 'none'
-if not netcast45
+if not netcast45 and not netcast4
   fw_questions += 'version usr/lib/libwayland-client.so.0'
   fw_wl_have = fw_version.get('usr/lib/libwayland-client.so.0', 'none')
 endif

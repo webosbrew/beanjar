@@ -55,6 +55,9 @@ void lx_pe_remove(void);
 
 int lx_gfx_add(void);
 void lx_gfx_remove(void);
+/* gop.c: the OSD's frame buffer node lx-gop (the parameter gop, NetCast 4) */
+int lx_gop_add(void);
+void lx_gop_remove(void);
 
 int lx_aud_add(void);
 void lx_aud_remove(void);
