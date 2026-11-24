@@ -1,0 +1,27 @@
+models = ["W18A"]
+
+# W18A goldilocks (05.50.70, "goldilocks-gorongosa" 4.4.3, HE_DTV_W18A_AFADATAA, the ATSC build):
+# goldilocks' paks (named -atsc, which the release's -dvb names resolve to) and EEPROM layout, with
+# the records in tvservice-atsc.
+[release]
+base = "goldilocks"
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+factory_offset = 0x294
+local_key = { word = 3, offset = 18, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_block_offset = 0x1C6

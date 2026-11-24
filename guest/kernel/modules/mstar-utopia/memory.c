@@ -110,7 +110,7 @@ static struct mmapger_info miu_info;
 
 /* LG's names of the mmapger records, in id order, as its kernel's mmapger.c prints them in
  * /proc/mmapger/mmap.ini (MMAPGerTag[] of W18R's kernel, built with CONFIG_CMA: 95 names) */
-static const char *const mmapger_names[] = {
+static const char *const mmapger_names_m3[] = {
     "DUMMY_MEM",
     "LINUX_MEM",
     "EMAC_MEM",
@@ -208,6 +208,44 @@ static const char *const mmapger_names[] = {
     "CIPLUS_BUFFER",
 };
 
+/* MMAPGerTag[] of W18A's kernel (4.4.84-636.glacier.26, LM18A: 102 names): W18R's first 86 (to
+ * JPD_FRAMEBUFFER, SECURE_SHM still 7), then its own XC and FRC records */
+static const char *const mmapger_names_lm18a_tail[] = {
+    "E_MMAP_ID_VDEC_FRAMEBUFFER_BALANCE_BW",
+    "HWI2C_DMA",
+    "E_MMAP_ID_FRC_R2",
+    "E_MMAP_ID_XC_DOLBY_HDR",
+    "E_MMAP_ID_CFD_MLOAD",
+    "E_MMAP_ID_XC_MLOAD2",
+    "E_MMAP_ID_XC_DMA",
+    "E_MMAP_ID_XC_FRC_R",
+    "E_MMAP_ID_XC_FRC_L",
+    "E_MMAP_ID_XC_FRC_PQ",
+    "E_MMAP_ID_XC_AUTODOWNLOAD",
+    "E_MMAP_ID_XC_AUTODOWNLOAD_XVYCC",
+    "E_MMAP_ID_XC_AUTODOWNLOAD_ODGAMMA",
+    "E_MMAP_ID_XC_VIRTUAL_REGISTER",
+    "E_MMAP_ID_XC_DUMMY",
+    "CIPLUS_BUFFER",
+};
+
+static char *mmap_names = "m3";
+module_param(mmap_names, charp, 0444);
+MODULE_PARM_DESC(mmap_names, "whose MMAPGerTag[] names the records in mmap.ini: m3 (W18R's 95, the "
+                             "default) or lm18a (W18A's 102)");
+
+/* the name of record id under mmap_names, or NULL past the table's end */
+static const char *mmapger_name(u32 id)
+{
+    if (!strcmp(mmap_names, "lm18a")) {
+        if (id < 86)
+            return mmapger_names_m3[id];
+        id -= 86;
+        return id < ARRAY_SIZE(mmapger_names_lm18a_tail) ? mmapger_names_lm18a_tail[id] : NULL;
+    }
+    return id < ARRAY_SIZE(mmapger_names_m3) ? mmapger_names_m3[id] : NULL;
+}
+
 static int mmapger_file_layout(void)
 {
     struct file *file;
@@ -272,8 +310,10 @@ int mmapger_layout(void)
     if (mmap_file && (mmap_slot || mmap_len_count || mmap_in_count))
         return -EINVAL;
     /* with a TEE, mmap.ini names the records: SECURE_SHM must be the one LG's names say */
-    if (secure_shm_id >= 0 && (mmap_ids > ARRAY_SIZE(mmapger_names) || secure_shm_id >= mmap_ids ||
-                               strcmp(mmapger_names[secure_shm_id], "SECURE_SHM")))
+    if (strcmp(mmap_names, "m3") && strcmp(mmap_names, "lm18a"))
+        return -EINVAL;
+    if (secure_shm_id >= 0 && (!mmapger_name(mmap_ids - 1) || secure_shm_id >= mmap_ids ||
+                               strcmp(mmapger_name(secure_shm_id), "SECURE_SHM")))
         return -EINVAL;
     records = kcalloc(mmap_ids, sizeof(*records), GFP_KERNEL);
     nested = kcalloc(mmap_ids, sizeof(*nested), GFP_KERNEL); /* parent + 1, 0: none */
@@ -631,7 +671,7 @@ static int mmap_ini_show(struct seq_file *m, void *v)
                 "#define MIU2                    (0x000020)\n\n");
     for (u32 id = 0; id < mmap_ids; id++) {
         const struct mmapger_record *r = &records[id];
-        const char *name = mmapger_names[id];
+        const char *name = mmapger_name(id);
         u32 t = r->memory_type;
 
         seq_printf(m,

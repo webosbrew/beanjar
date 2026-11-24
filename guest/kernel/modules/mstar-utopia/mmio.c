@@ -594,10 +594,16 @@ int registers_preset(void)
 #define MIOMAP_IOC_CHIPINFO    _IOWR('I', 0x00, struct miomap_chipinfo)
 #define MIOMAP_IOC_SET_MAP     _IOW('I', 0x01, struct miomap_info32)
 #define MIOMAP_IOC_FLUSHDCACHE _IOR('I', 0x02, struct miomap_info32)
+/* W18A's KADP (MDrv_MMIO_Init): the same request with 64-bit fields */
+#define MIOMAP_IOC_SET_MAP64 _IOW('I', 0x01, struct miomap_info64)
 
 struct miomap_info32 { /* DrvMIOMap_Info_t without MP_NEW_UTOPIA_32BIT */
     u32 addr, size;
 };
+struct miomap_info64 {
+    u64 addr, size;
+};
+static_assert(MIOMAP_IOC_SET_MAP64 == 0x40104901);
 struct miomap_chipinfo {
     u16 chiptype, chipversion;
 };
@@ -628,6 +634,16 @@ static long miomap_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     switch (cmd) {
     case MIOMAP_IOC_SET_MAP: {
         struct miomap_info32 i;
+
+        if (copy_from_user(&i, uarg, sizeof(i)))
+            return -EFAULT;
+        mutex_lock(&f->lock);
+        f->addr = i.addr;
+        mutex_unlock(&f->lock);
+        return 0;
+    }
+    case MIOMAP_IOC_SET_MAP64: {
+        struct miomap_info64 i;
 
         if (copy_from_user(&i, uarg, sizeof(i)))
             return -EFAULT;

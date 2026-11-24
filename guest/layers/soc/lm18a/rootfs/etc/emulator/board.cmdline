@@ -1,0 +1,56 @@
+# Board parameters the bootloader (MStar's MBoot, LG's build for LM18A) puts on the kernel command
+# line, parsed by libdile_boardinfo, tvservice, tvconfig-gen, the Upstart jobs and (tee_mode, below)
+# the stock kdriver. The initramfs appends these to the real cmdline and bind-mounts the result over
+# /proc/cmdline inside webOS. Format and order follow W18A's MBoot (boot.pak's builder at 0x7f504;
+# M3's order, with four entries after emmc_size); the values describe a 43UK6300PUE, a US model that
+# runs W18A 05.50.70, in W18A's own encodings; they are not read from a real set. MBoot's kernel-only
+# parameters (root=, console=, LX_MEM*=, CMA*=, vmalloc=, ...) are left out as on M3: libkadaptor
+# reads the memory layout from /proc/mmapger.
+#
+# chip=LM18AA0 is a constant in this MBoot.
+# mknod.conf creates the /etc/device_table nodes only with devtmpfs.mount=1.
+ethaddr=a8:23:fe:12:34:56
+# 9 characters, %x each (MBoot's builder at 0x69ce8): six SAR ADC levels (channels 0-5, 0-3 each), then
+# GPIO pins 31, 32, 33. Not M3's 15 GPIO straps. Its decoder (get_hw_option, 0x6952c) takes the
+# country digit from level 0 (0: US, gmodelopt_country_type), the tuner column from level 1 (0:
+# the internal demodulator, gmodelopt_LM18A_tuner_comb[US][0]), the panel row from levels 2 and 3
+# (row 0 of its table at 0x1732ac: UD, V-by-One, panel type 0, module 1, bandwidth 0) and the micom
+# vendor from level 4; pin 31 high clears EWBS (hwopt digit 10), an ISDB-T alert a US set has not.
+modelopt=000000100
+# 18 digits, as this MBoot prints them for those levels (%x each) and W18A's tvconfig-gen decodes
+# them: US (d0 0), no PMIC (d1 0), V-by-One (d2 2), UD (d3 2), FRC 0 (d4: MBoot's constant), panel
+# type 0 (d5), no CP box, micom vendor 1 (d7), the internal demodulator (d8 0), bandwidth 0, no EWBS
+# (d10 0), DDR 1.5 GB (d11 3: MBoot's constant), graphic resolution 2 (d14: MBoot's constant;
+# M3's is 6), micom type 0, module type 1 (d16), FRC type 0.
+hwopt=002200010003002010
+# 9 tool option words (ToolOpt1..9), the NVM ToolOptionDB's 32-bit words, which the launcher programs
+# into a new EEPROM (host/core/beanjar/nvm.py): host/tools/research/model-config.py's for the
+# 43UK6300PUE on this firmware (W18A's tvconfig-gen DWARF and enums, RELEASE.cfg's UK75 65" values
+# where the model has none of its own): ToolOpt1 INCH_43, TOOL_UK63, MODULE_LGD, 10-bit LVDS;
+# ToolOpt2 input index 1 (row 1 of video_external_input_adjust: HDMI1-4, COMP1, AV1), edge LED, two
+# USB ports; ToolOpt3 AMP_DTA2010AM_1AMP (bus 0 / 0x2a: lgemu's amp), one-key local key; ToolOpt4
+# DTV_SOC, SI2178B, no satellite demodulator; ToolOpt5 WIFI_11AC_COMBO_MTK, motion remote, WOL;
+# ToolOpt6 backlight 100 (15 as the factory scales it), 13 V, 10 W; ToolOpt7 the MAC, ESN and
+# Widevine keys in the AP, no CI; ToolOpt9 MODE_SELECT_2, WCG LCD, TCON PMIC, HDR.
+ToolOpt=65898:29393953:426311:64774:34085:134703:918155:0:139408
+# 2 = US (libdile_boardinfo)
+countryGrp=2
+# 3 = DEBUG, 4 = EVENT, 5 = RELEASE (the lginit_app and tvservice jobs start the reboot job when
+# they end in RELEASE)
+debugMode=3
+# modelName, serialNum. The EEPROM's area (ContinentOptionDB) is the factory's, not MBoot's:
+# targets.py's Soc.continent.
+modelName=43UK6300PUE serialNum=805RAXX00001
+devtmpfs.mount=1 chip=LM18AA0
+# 0x + 9 hex digits (MBoot's 0x%01lx%08lx); parsers drop the last 2 digits and read KB. 7.5 GB
+# eMMC, as M3's (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# MBoot's get_TCON_Type (0x64f40): sar_hw_opt is the panel row (%d), tcontype the TCON panel type
+# libkadaptor reads (MApi_XC_Get_Tcon_Type); row 0 is a V-by-One panel with no TCON. enable_tcon_panel
+# is printed only where the bootloader's environment sets it.
+sar_hw_opt=0 tcontype=0
+# a constant of this MBoot: the stock kdriver (kdrv_msd93xbg.ko) reads it; the emulator's
+# mstar-utopia.ko stands in for that driver
+tee_mode=optee
+# MBoot ends with cmdEnd, and puts a space after every value.
+cmdEnd

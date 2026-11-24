@@ -1,0 +1,87 @@
+# The MStar LM18A (board chip MSD96ALVX; MBoot's chip=LM18AA0), W18A's SoC: M3's platform
+# (guest/targets/soc/m3.toml says where each of its values comes from), with W18A 05.50.70's own
+# values where its firmware differs (docs/research/m3r-lm18a-groundwork.md, "lm18a bring-up").
+# W18A's bsppart libkadaptor is a newer Utopia build: 70 module names (M3: 50; XC 8, PNL 12, DMX 29
+# and HWI2C 31 keep their ids, HDMIRX moves to 49, AUDIO to 51), the 64-bit MIOMAP_IOC_SET_MAP
+# (mmio.c), the semutex shared-memory size query (MsOS_SHM_Init asserts below 0x9F0000: the
+# 10 MiB UP7560's driver reports), and the kernel's 102 mmapger names (mmap_names=lm18a; ids 0-85
+# M3's, SECURE_SHM still 7). MAdp_SYS_GetMMAP takes ids 0-101; MAdp_MPool_Init's map ids are 1
+# and 67 with LX_MEM2 checked against SYS_INFO's plus 0x40000000 (as W16R's, not W18R's) and maps
+# a record above MIU_INTERVAL as MIU1, so 4 MiB slots need not all fit MIU0. VDEC_FRAMEBUFFER
+# (record 42) is bsppart's tee/mmap.ini length, 133 MiB; the MIU layout is M3's.
+# XC: MApi_XC_S_Disp_Ctrl 0x15e, MApi_XC_HDR_Control 0x146 (M3: 0x158, 0x142), and S_Disp_Ctrl's DE
+# window read (MApi_SC_get_disp_de_window, which libhal_vt divides by) is sub-command 0x22 (M3:
+# 0x21: a zero window was a SIGFPE in every tv.capture). The window commands,
+# the PNL getters and R2BYTEMSK keep M3's numbers and layouts.
+# The CPU clock: the registers are M3's, but HAL_CPU_QueryClock divides 0xd7fffd70 by them (M3:
+# 0xa2000008), so M3's power-on pair reads 1333 MHz here; the chip's real clock is not in the
+# firmware. MAdp_SYS_UsePM51 is "return 0" (no PM51 strap read: the micom is RELEASE.cfg's external
+# MICOM_NEC). The efuse trigger and the PQ SRAM strobes are M3's (same code).
+# Not set here: the AUDIO decoders M3 has (adv_fn009, snd_*). W18A's commands are 51:254 (ADVSOUND
+# SetParam2), 51:92 (SPDIF_SetMode), 51:226 (SYSTEM_Control), 51:203 (SetAudioParam2) and 8:496:4
+# (ARC), but ADVSOUND's and SetAudioParam2's arguments are packed differently (the parameter name
+# inline at +8, the type at +5), which the module's decoders do not read.
+# The I2C map (libdile_i2c, "170628" as M3's but 23 rows): MICOM 6/0x52, NVM 3/0xA0, the
+# amplifiers 3/0x54 and 0x56; DILE_I2C opens /dev/i2c-0 to -6. The GPIO map (libdile_gpio 170816):
+# the highest line 148 (PCM_RESET), the USB switches' overcurrent inputs USB2_OCD 85 and USB3_OCD 77
+# (active low); there is no USB1 line.
+# W18A's btmtk_usb.ko and webos-bluetooth-service: netlink family 30; libdvbfrontend: 0xc0, 0xae,
+# 0xb0, as M3's.
+
+base = "m3"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43UK6300PUE's area, a US set's (board.cmdline): W18A's _aDefineContinent entry 10 ("US", in
+# the RMM country list of the US group), LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, EXT_VIDEO_INPUT_ADJ and EXT_AUDIO_INPUT_ADJ of tvservice's gToolOptionDB, from
+# W18A's RELEASE.cfg (UK75 defaults), read by host/tools/research/model-config.py. As on M3, the
+# board's video and audio input index 1 selects row 1 of tvservice's tables, so they are programmed
+# but unread.
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6", "i2c_dev=micom:6:0x29,nvm:3:0x50,amp:3:0x2a,amp:3:0x2b",
+]
+
+[[modules]]
+name = "mstar-utopia"
+params = [
+    "miu_interval=0x80000000",
+    "miu_len=0x20000000",
+    "miu0_bus=0x20000000",
+    "miu1_bus=0xa0000000",
+    "mmap_ids=102",
+    "mmap_names=lm18a",
+    "mmap_slot=0x400000",
+    "mmap_len=42:0x8500000",
+    "lx_mem_id=1",
+    "lx_mem2_id=67",
+    "lx_mem2_bias=0x40000000",
+    "secure_shm_id=7",
+    "msos_pmlog=1",
+    "semutex_shm_capacity=0xa00000",
+    "hdmirx_module=49",
+    "xc_disp_ctrl=0x15e",
+    "xc_de_window=0x22",
+    "xc_hdr_control=0x146",
+    "xc_window=20,50,48,236,238,185",
+    "pnl_area=70,71,72,73",
+    "xc_r2bytemsk=202",
+    "reg_init=0x1f200000:0x10cc0:0x78d5,0x1f200000:0x10cc2:0x29,0x1f200000:0x3448:0xc00",
+    "reg_autoclear=0x1f000000:0x2050:0x2000,0x1f000000:0x132382:0x100,0x1f000000:0x13a382:0x100",
+    "gpio_lines=149",
+    "gpio_level=85:1,77:1",
+]
+
+[[modules]]
+name = "btmtk_usb"
+params = [
+    "family=30",
+]
+
+[[modules]]
+name = "webos_tv"
+params = [
+    "version_cmd=0xc0",
+    "lock_cmd=0xae",
+    "postjob_cmd=0xb0",
+]

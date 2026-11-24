@@ -15,6 +15,8 @@ import struct
 
 PAGE = 4096
 U32 = 0xFFFFFFFF
+# mstar-utopia.ko's mmap_names: the record names each of its kernel name tables has
+MMAP_NAMES = {"m3": 95, "lm18a": 102}
 
 
 def parameters(words):
@@ -43,6 +45,9 @@ def mstar(p, data=None):
     interval = number(p, "miu_interval", maximum=(1 << 64) - 1)
     length = number(p, "miu_len", maximum=(1 << 64) - 1)
     count = number(p, "mmap_ids")
+    names = p.get("mmap_names", "m3")
+    if names not in MMAP_NAMES:
+        raise ValueError(f"mmap_names: one of {', '.join(MMAP_NAMES)}")
     if not 0 < length <= interval <= U32 or 2 * length > U32 or interval + length > 1 << 32:
         raise ValueError("MIUs: lengths/interval must fit mmapger info.bin u32 fields")
     if not count or count > U32 // 20:
@@ -61,8 +66,8 @@ def mstar(p, data=None):
             continue
         if not 0 <= value < count:
             raise ValueError(f"{key}: record ID outside mmap_ids={count}")
-        if key == "secure_shm_id" and (value != 7 or count > 95):
-            # mmapger_names[] is the W18R table; SECURE_SHM is index 7.
+        if key == "secure_shm_id" and (value != 7 or count > MMAP_NAMES.get(names, 0)):
+            # mmapger_name(): W18R's table (95) or W18A's (102); SECURE_SHM is index 7 in both.
             raise ValueError("secure_shm_id: must name SECURE_SHM (7) in the kernel name table")
     if p.get("mmap_file"):
         if number(p, "mmap_slot") or p.get("mmap_len") or p.get("mmap_in"):

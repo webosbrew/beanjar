@@ -1,0 +1,6 @@
+# Emulator: no Mali kernel modules (bsppart's lib/modules/4.4.84-636.glacier.26/kernel: kds.ko,
+# ump.ko, mali_kbase.ko, built for LG's 4.4 kernel; the Mali-G51 userland is the gl layer's Mesa).
+# Kept as a no-op task because surface-manager starts on "stopped gpu-libs".
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: no Mali driver"
+end script

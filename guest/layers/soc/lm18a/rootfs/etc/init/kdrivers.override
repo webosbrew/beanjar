@@ -1,0 +1,10 @@
+# Emulator: no MStar kernel drivers to load (kdrv_msd93xbg.ko, the ALSA/MStar audio modules and the
+# local-dimming mdrv_ldm.ko, built for LG's 4.4 kernel; the emulator's are
+# guest/kernel/modules/mstar-utopia), and no OP-TEE: the stock job also starts tee-supplicant and
+# opens /dev/tee0 and /dev/teepriv0 to its users. KADP's secure paths read the TEE's version from
+# /proc/tz2_mstar/version, which the emulator does not have, and go on without one (no device keys:
+# the key checks stay as after a cold boot). Kept as a task: gm, gpu-libs and tvconfig-gen start on
+# "stopped kdrivers".
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: nothing to load"
+end script

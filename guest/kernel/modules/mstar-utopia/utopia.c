@@ -26,8 +26,12 @@
  * block in MStar's kernel */
 #define UTOPIA_MODULE_DMX         29
 #define MAPI_CMD_DMX_WAITTSPCBEVT 190 /* waits for a TSP interrupt */
-#define UTOPIA_MODULE_HDMIRX      43  /* W18R's HDMI receiver (new on m3) */
 #define MDRV_CMD_HDCP22_WAITEVENT 23  /* waits for an HDCP 2.2 interrupt */
+/* the HDMI receiver's module: W18R's 43 (new on m3); W18A's 70-name table puts it at 49 */
+static unsigned int hdmirx_module = 43;
+module_param(hdmirx_module, uint, 0444);
+MODULE_PARM_DESC(hdmirx_module, "Utopia's HDMIRX module id, whose HDCP 2.2 wait (command 23) "
+                                "times out (W18R 43, W18A 49)");
 
 /* XC (module 8), the scaler: W18R's KADP asks it two things in kernel mode that answer more than
  * a status (W18R's libkadaptor). MApi_XC_S_Disp_Ctrl (0x48c184) passes its command (0x158 on W18R)
@@ -292,16 +296,20 @@ static long audio_info_ioctl(u32 cmd, u32 uarg)
 static unsigned int xc_disp_ctrl;
 module_param(xc_disp_ctrl, uint, 0444);
 MODULE_PARM_DESC(xc_disp_ctrl, "XC's MApi_XC_S_Disp_Ctrl command (0: none)");
+/* MApi_SC_get_disp_de_window's sub-command: W18R's 0x21, W18A's 0x22 */
+static unsigned int xc_de_window = 0x21;
+module_param(xc_de_window, uint, 0444);
+MODULE_PARM_DESC(xc_de_window, "S_Disp_Ctrl's sub-command that reads the DE window (W18R 0x21, "
+                               "W18A 0x22)");
 static unsigned int xc_hdr_control;
 module_param(xc_hdr_control, uint, 0444);
 MODULE_PARM_DESC(xc_hdr_control, "XC's MApi_XC_HDR_Control command (0: none)");
 
-#define UTOPIA_MODULE_XC           8
-#define UTOPIA_MODULE_GPIO         42 /* gpio.c */
-#define XC_HDR_CTRL_CFD_CONTROL    9
-#define XC_DISP_CTRL_GET_DE_WINDOW 0x21
-#define XC_PANEL_WIDTH             1920 /* the m2 and m3 boards' FHD panels */
-#define XC_PANEL_HEIGHT            1080
+#define UTOPIA_MODULE_XC        8
+#define UTOPIA_MODULE_GPIO      42 /* gpio.c */
+#define XC_HDR_CTRL_CFD_CONTROL 9
+#define XC_PANEL_WIDTH          1920 /* the m2 and m3 boards' FHD panels */
+#define XC_PANEL_HEIGHT         1080
 
 struct xc_disp_ctrl32 {
     u32 cmd;
@@ -623,7 +631,7 @@ static long xc_ioctl(u32 cmd, u32 uarg)
 
         if (copy_from_user(&a, compat_ptr(uarg), sizeof(a)))
             return -EFAULT;
-        if (a.cmd != XC_DISP_CTRL_GET_DE_WINDOW || a.size < sizeof(de))
+        if (a.cmd != xc_de_window || a.size < sizeof(de))
             return UTOPIA_STATUS_SUCCESS;
         if (copy_to_user(compat_ptr(a.pbuf), de, sizeof(de)) ||
             copy_to_user(compat_ptr(uarg + offsetof(struct xc_disp_ctrl32, ret)), &ok, 1))
@@ -732,7 +740,7 @@ static long utopia_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
          * then cmd 22 for each event bit) into a spin at millions of calls a second. Success is
          * the timeout's answer: the event-bits byte the caller reads stays 0, as MStar's
          * mdrv_HDCP22_WaitEvent answers when nothing fired (no error print either). */
-        if (module == UTOPIA_MODULE_HDMIRX && w[0] == MDRV_CMD_HDCP22_WAITEVENT) {
+        if (module == hdmirx_module && w[0] == MDRV_CMD_HDCP22_WAITEVENT) {
             msleep_interruptible(1000);
             return UTOPIA_STATUS_SUCCESS;
         }

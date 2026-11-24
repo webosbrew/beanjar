@@ -112,6 +112,16 @@ def test_mstar_invalid(word):
         memory.validate(m.name, m.params + (word,))
 
 
+def test_mstar_name_tables():
+    """secure_shm_id needs SECURE_SHM in the kernel name table mmap_names selects: W18R's 95
+    names, W18A's 102."""
+    m = module(("lm18a", "goldilocks"))
+    memory.validate(m.name, m.params)
+    for word in ("mmap_names=m3", "mmap_names=lm21a"):
+        with pytest.raises(ValueError):
+            memory.validate(m.name, m.params + (word,))
+
+
 def test_effective_override_actionable():
     target = ("m2", "dreadlocks")
     with pytest.raises(targets.Error, match=r"m2-dreadlocks: mstar-utopia.ko.*mmap_slot"):

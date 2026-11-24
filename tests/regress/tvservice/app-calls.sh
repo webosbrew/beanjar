@@ -6,7 +6,7 @@
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip= and modelName=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W15L on mtka5lr (A5LR), W16R on M2, W17H
-# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W17R on M2R, W18R on M3, W18A on LM18A, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -136,6 +136,16 @@ M3R*)   model=W19R ota=AFAAATAA fw=05.40.97 platform=msd94bexm8 sound_bad_type=S
 	input_count=deviceid private_answer='Denied method call' tv_system=atsc
 	no_keys='clearPlus contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
 	tool_options='"panelInch":"43","backlightType":"directL","cameraReady":"off","headphone":"false"'
+	reset3d='"returnValue":true' ;;
+# W18A (msd96alvx is LM18A's name, MBoot's chip=LM18AA0), webOS 4.4, the ATSC build of W18R's
+# release: a 43UK6300PUE (US), RELEASE.cfg's UK75 defaults with the model's inch and tool type: edge
+# LED, no camera, no headphone; tvservice lists AV, component and HDMI x4 (row 1 of
+# video_external_input_adjust). tvSystemName is atsc. The rest as W18R's.
+LM18A*) model=W18A ota=AFADATAA fw=05.50.70 platform=msd96alvx sound_bad_type=SOUND_ERROR_013
+	capture_no_video='CAPTURE_ERROR_01 CAPTURE_ERROR_09' max_devices= calibration= inputs=6
+	private_answer='Denied method call' tv_system=atsc
+	no_keys='contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
+	tool_options='"panelInch":"43","backlightType":"edgeLed","cameraReady":"off","headphone":"false"'
 	reset3d='"returnValue":true' ;;
 M3*)    model=W18R ota=AFAAABAA fw=05.50.70 platform=msd94bcg sound_bad_type=SOUND_ERROR_013
 	capture_no_video='CAPTURE_ERROR_01 CAPTURE_ERROR_09' max_devices= calibration= inputs=5 private_answer='Denied method call'
