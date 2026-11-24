@@ -15,7 +15,15 @@ SOC = ROOT / "guest/layers/soc"
 PATCH = ROOT / "guest/layers/gl/patches/mesa/0005-mesa-gles-version-at-most-the-tv-s.patch"
 VERSIONS = ("2.0", "3.0", "3.1", "3.2")
 # The chips below ES 3.2: their firmware's GL library prints that version (the soc tables cite it)
-BELOW_32 = {"h13": "3.0", "lm15u": "3.0", "m14": "2.0", "m2": "2.0", "m3": "2.0", "m3r": "2.0"}
+BELOW_32 = {
+    "h13": "3.0",
+    "lm15u": "3.0",
+    "m14": "2.0",
+    "m2": "2.0",
+    "m2r": "2.0",
+    "m3": "2.0",
+    "m3r": "2.0",
+}
 
 
 def chip_versions():

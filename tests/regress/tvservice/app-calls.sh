@@ -6,7 +6,7 @@
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W16R on M2, W17H
-# on M16P, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -61,6 +61,15 @@ LM15U*) model=W15U ota=AFADABAA fw=04.06.25 platform=lm15u sound_bad_type=SOUND_
 # frame through the libkadaptor shim's XC status and DIP; without video it answers
 # CAPTURE_ERROR_09 ("no signal state"), as W15M and a set do (the same IsVideoOnScreen check,
 # here on the AV-block branch after the sync status).
+# W17R (msd93xbg is M2R's name, MBoot's chip=M2RA0; matched before M2), webOS 3.5, the ATSC
+# build: a 43LJ5500-UA (US), RELEASE.cfg's LJ61 defaults: direct LED, camera ready, a headphone
+# output, 3D (ToolOpt5's SUPPORT_3D_IN_2D3D, so reset3DStatus succeeds); tvservice lists HDMI x2,
+# component and AV (row 2 of video_external_input_adjust). tvSystemName is atsc. LG dropped
+# getCalibrationImageDrawingState from tv.display ("Unknown method"), as W17H's.
+M2R*)   model=W17R ota=AFAAATAA fw=06.10.60 platform=msd93xbg sound_bad_type=SOUND_ERROR_013
+	capture_no_video=CAPTURE_ERROR_09 max_devices= calibration= inputs=4 tv_system=atsc
+	tool_options='"panelInch":"43","backlightType":"directM","cameraReady":"ready","headphone":"true"'
+	reset3d='"returnValue":true' ;;
 M2*)    model=W16R ota=AFAAABAA fw=05.70.50 platform=msd93f2g sound_bad_type=SOUND_ERROR_013
 	capture_no_video=CAPTURE_ERROR_09 max_devices= inputs=5
 	tool_options='"panelInch":"43","backlightType":"directM","cameraReady":"off","headphone":"true"'

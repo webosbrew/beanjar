@@ -1,0 +1,64 @@
+# The MStar M2R (board chip MSD93XBG; MBoot's chip=M2RA0), W17R's SoC: M2's platform
+# (guest/targets/soc/m2.toml says where each of its values comes from), with W17R 06.10.60's own
+# values where its firmware differs (docs/research/m2r-kf23f-groundwork.md). W17R's bsppart
+# libkadaptor keeps W16R's ids and numbers: 89 memory-map records, MPool ids 1 and 67, the XC
+# window commands (XC still user-mode), AUDIO's ADVSOUND_SetParam2 (module 45, command 90, the
+# LGSEFN009_VARIABLES id 186), the CPU clock, the efuse triggers (0x2000 and 0x204c bit 0), the PQ
+# SRAM strobe (0x132382 bit 8, no _Main2 one) and the menu-load busy bit (0x131f04 bit 15).
+# What differs:
+# - MAdp_MPool_Init compares SYS_INFO's LX_MEM2_ADDR with record 67's bus address unbiased
+#   (lx_mem2_bias 0; W16R's adds 0x40000000 first): with the bias it printed "MMAP is not
+#   matched" forever and tvconfig-gen never ended.
+# - The records get 4 MiB each, as on M3, so that all 89 lie in MIU0: with 8 MiB XC's
+#   MApi_XC_MLG_Init_U2 got NULL from MsOS_PA2KSEG1 for its buffer in MIU1 (0x878c0000) and
+#   tvservice died in its memset. VDEC_FRAMEBUFFER (record 42, which libhal_photo's
+#   MAdp_MPool_GetBlockPa takes) has the firmware's length, 86 MiB (bsppart's bsp/tee/mmap.ini,
+#   E_MMAP_ID_VDEC_FRAMEBUFFER_LEN); 88 x 4 MiB + 86 MiB stays in MIU0.
+# - The PM51 strap: MAdp_SYS_UsePM51 is mdrv_gpio_get_level(43) == 0, which W17R's KADP asks
+#   the kernel-mode GPIO module (Utopia module 42, command 5: utopia_gpio). Pad 43 reads high, the
+#   board with an external micom (RELEASE.cfg's MICOM_NEC, hwopt digit 15 0): MAdp_IIC_Init
+#   then keeps the NVM on HWI2C port 2 (channel 0, as W16R's) and tvconfig-gen says "External
+#   MICOM". Low, KADP took the NVM to SWI2C bus 2 and tvconfig-gen read no EEPROM.
+# The I2C map is W16R's (RELEASE.cfg "[i2c]MICOM:1:0x52", "[i2c]NVM:2:0xA0", "[i2c]NTP7515:4:0x54";
+# _IIC_CheckPhyPort's table is the same).
+
+base = "m2"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43LJ5500-UA's area, a US set's (board.cmdline): W17R's _aDefineContinent entry 10 ("US", in
+# the RMM country list of the US group), LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, EXT_VIDEO_INPUT_ADJ and EXT_AUDIO_INPUT_ADJ of tvservice's gToolOptionDB, from
+# W17R's RELEASE.cfg (LJ61 defaults), read by host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+
+[[modules]]
+name = "mstar-utopia"
+params = [
+    "miu_interval=0x80000000",
+    "miu_len=0x20000000",
+    "miu0_bus=0x20000000",
+    "miu1_bus=0xa0000000",
+    "mmap_ids=89",
+    "mmap_slot=0x400000",
+    "mmap_len=42:0x5600000",
+    "lx_mem_id=1",
+    "lx_mem2_id=67",
+    "lx_mem2_bias=0",
+    "reg_init=0x1f200000:0x10cc0:0x78d5,0x1f200000:0x10cc2:0x29,0x1f200000:0x3448:0xc00",
+    """reg_autoclear=0x1f000000:0x2000:0x1,0x1f000000:0x204c:0x1,0x1f000000:0x132382:0x100,\
+        0x1f000000:0x131f04:0x8000""",
+    "i2c=micom:0x0452,nvm:0x00a0,amp:0x0054",
+    "adv_fn009=45:90:186",
+    "xc_window=19,52,50,245,247,193",
+    "xc_riu=0x1f000000:0x130000",
+    "utopia_gpio=1",
+    "gpio_pad_level=43:1",
+]
+
+# W17R's btmtk_usb.ko (btmtk_nl_init: __netlink_kernel_create unit 30) and btmngr's
+# BTMTK_USB_GetSystemPowerProcessState (socket(AF_NETLINK, SOCK_RAW, 30)): netlink family 30
+[[modules]]
+name = "btmtk_usb"
+params = [
+    "family=30",
+]

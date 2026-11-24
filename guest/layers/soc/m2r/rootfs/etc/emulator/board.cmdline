@@ -1,0 +1,42 @@
+# Board parameters the bootloader (MStar's MBoot, LG's build for M2R) puts on the kernel command
+# line, as on M2 (guest/layers/soc/m2/rootfs/etc/emulator/board.cmdline says who reads them). The
+# order is W17R's MBoot's (boot.pak 06.10.60, its format strings), the same as W16R's: ethaddr,
+# modelopt, hwopt, ToolOpt (9 words), countryGrp, debugMode, modelName, serialNum, devtmpfs.mount,
+# chip, emmc_size, cmdEnd.
+#
+# The values describe a 43LJ5500-UA, a US model the models DB lists for this firmware's OTA ID
+# (HE_DTV_W17R_AFAAATAA: US, CA_EN, MX, BR, PE, CL, PH and KR), proposed by
+# host/tools/research/model-config.py from W17R 06.10.60's own tables with szCountryGroupCode=US
+# continent=10 tuner=none ddr_size=DDR_SIZE_1_25G micom_type=MODELOPT_MICOM_EXTERNAL; they are not
+# read from a real set. This ATSC firmware's RELEASE.cfg is the factory default of a Korean LJ61
+# (szCountryGroupCode KR, BOARD_M2R_ATSC_KR): the region values here are the US group's of the
+# same tables.
+#
+# chip=M2RA0 is a constant in this MBoot.
+ethaddr=a8:23:fe:12:34:56
+# 15 model-option straps, as W17R's MBoot reads its pins 170 169 35 36 56 59 60 61 72 73 74 75 76
+# 77 43 (pins 24 and 25 instead of 170 and 169 when pad 43 reads high): all 0 but pin 76, DDR
+# 1.25 GB as M2's board (pins 72/76 "01"; bsppart's tee/mmap.ini still lays out two 512 MiB MIUs,
+# as W16R's), and pad 43 high, the external micom (hwopt digit 15 0: RELEASE.cfg's eMICOMType
+# MICOM_NEC and "[i2c]MICOM:1:0x52", lgemu's I2C micom). With the all-zero straps' 1 GB the PC's
+# x86-64 guest ran out of memory on the first boot (the OOM killer took ss.gateway at 106 s).
+modelopt=000000000000101
+# 18 digits, as this MBoot prints them for those straps: US (d0 0, gmodelopt_country_type
+# {US, KR, BR, KR}), LVDS FHD (d2, d3 1), the tuner column 0 of gmodelopt_MSD93XBG_tuner_comb[US]
+# (no DVB-T2 or -S tuner: the ATSC demodulator is ToolOpt4's DTV_SOC), DDR 1.25 GB (d11 2), MBoot's
+# graphic resolution 6 (d14), external micom (d15 0)
+hwopt=001100000002006000
+# 9 tool option words (TOOL_OPTIONn_T of W17R's tvconfig-gen), RELEASE.cfg's LJ61 defaults with the
+# model's inch and tool type: ToolOpt1 33674 = INCH_43 10, TOOL_LJ55 28 (bits 5-10), LVDS bit;
+# ToolOpt3's amplifier AMP_NTP7515 1 ("[i2c]NTP7515:4:0x54", MStar port 0); ToolOpt4 DTV_SOC with
+# the SI2178B analog demodulator; ToolOpt5 the MT7662 Wi-Fi combo, camera ready, MR15.
+ToolOpt=33674:16418:28017:64774:21581:2474:159883:0:2048
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=43LJ5500-UA serialNum=705RAXX00001
+devtmpfs.mount=1 chip=M2RA0
+# 7.5 GB eMMC, as M2's (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+cmdEnd

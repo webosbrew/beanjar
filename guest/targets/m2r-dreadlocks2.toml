@@ -1,0 +1,67 @@
+models = ["W17R"]
+
+# W17R dreadlocks2 (06.10.60, HE_DTV_W17R_AFAAATAA, the ATSC build): dreadlocks2's paks (named
+# -atsc, which the release's -dvb names resolve to) and EEPROM layout, with three differences of
+# MStar's M2R board from W17H's LG one. Its partition table (lginit_app2 of tvservice-atsc, 56
+# partitions, as its fstab: p29 rootfs, p30 tvservice, p31 bsppart, p34 fonts, p35 smartkey, p37
+# license, p53-p55 the state partitions) has no uhdcp, so its state disks and partitions are
+# dreadlocks2's without it (mount-readwrite looks uhdcp up in /proc/partinfo and skips it). Its
+# tvservice's ToolOptionDB (DWARF TOOL_OPTION_DB_T, 76 bytes) carries the input ports after the
+# area options as W18R's (stExtVideoInputADJ at +48, 15 bytes, stExtAudioInputADJ 11), which a
+# factory programs.
+# Its board is DDR 1.25 GB, M2's (board.cmdline's modelopt), so the VM gets 1280 MiB: with the
+# all-zero straps' 1 GB the PC's x86-64 guest ran out of memory on the first boot (the OOM killer
+# took LG's ss.gateway at 106 s), from qemu-user's per-process cost, not measured on the arm64 kernel.
+[release]
+base = "dreadlocks2"
+state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G" }
+# Its kernel (4.4.3-78.drd4tv.2, MStar's) builds in what W18R's does (modules.builtin: ipw, no
+# exFAT, no hid-microsoft, nls_cp949), so the peripherals are goldilocks' list, not W17H's (LG's
+# lg115x) dreadlocks2 one; bsppart ships LG's tfat.ko and tntfs.ko (lgfs) and snd-usb-audio.ko.
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "hid-dr", "hid-logitech", "hid-sony", "hid-zpff", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "nls_iso8859-1", "nls_cp949", "snd-usb-audio", "cdc-acm", "input-leds",
+    "hid-playstation", "ipw", "pl2303", "option", "sierra", "lgfs",
+]
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+factory_offset = 0x294
+local_key = { word = 3, offset = 18, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_status_offset = 0x1A1
+
+[release.partitions]
+partinfo = "partinfo"
+mapbak = "partinfo"
+authcxt = "authcxt"
+nvram = "nvram"
+sestore = "sestore"
+sedata = "sedata"
+rootfs = "rootfs"
+tvservice = "tvservice"
+otncabi = "otncabi"
+otycabi = "otycabi"
+fonts = "fonts"
+smartkey = "smartkey"
+db8 = "db8"
+data = "cmn_data"
+apps = "appstore"
+bsppart = "bsppart"
+license = "license"
+wossestore = "wossestore"
