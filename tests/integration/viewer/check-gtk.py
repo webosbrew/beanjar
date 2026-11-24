@@ -653,8 +653,10 @@ def steps(win, pane):
     )
 
     check(
-        [c.__class__.__name__ for c in children(pane)] == ["TvView", "StatusBar"],
-        f"the pane is the picture over the bar only ({[c.__class__.__name__ for c in children(pane)]})",
+        [c.__class__.__name__ for c in children(pane)] == ["Overlay", "StatusBar"]
+        and pane.picture_overlay.get_child() is view,
+        f"the pane is the picture (its layers over it) over the bar only "
+        f"({[c.__class__.__name__ for c in children(pane)]})",
     )
     keys = (win.back_button, win.home_button, win.settings_button)
     buttons = keys + (win.screenshot_button, win.fullscreen_button, toggle)
@@ -1813,6 +1815,73 @@ def steps(win, pane):
         a.change_state(GLib.Variant.new_boolean(True))
         planes_ok &= a.get_state().get_boolean() and core.planes() == 0
     check(planes_ok, "More's UI, Video and Cursor items hide and show their planes in the core")
+
+    # 9c. More's Elements layer: screen recognition (beanjar.elements, here a stand-in textshot that
+    # prints one button in the middle of the 1280x720 frame) boxed over the picture; off again, the
+    # layer is hidden and stops reading; without textshot it stays off and says why
+    from gi.repository import GdkPixbuf
+
+    from beanjar_ui.viewer import main as mainlib
+
+    fake = os.path.join(tmp, "textshot")
+    element = {"id": 0, "key": "button:OK", "kind": "button", "x0": 400, "y0": 180, "x1": 880,
+               "y1": 540, "score": 0.9, "text": "OK", "style": {}}  # fmt: skip
+    with open(fake, "w") as f:
+        f.write(f"#!/bin/sh\necho '{json.dumps([element])}'\n")
+    os.chmod(fake, 0o755)
+    os.environ["BEANJAR_TEXTSHOT"] = fake
+    os.environ["BEANJAR_TEXTSHOT_SERVE"] = "none"  # the stand-in CLI per frame, no server
+    layer = pane.elements
+    ea = win.lookup_action("layer-elements")
+    items = [c.get_label() for c in descendants(win.more_button.get_popover())
+             if isinstance(c, Gtk.CheckButton)]  # fmt: skip
+    check(
+        "Elements" in items and not ea.get_state().get_boolean() and not layer.get_visible(),
+        "More has an Elements item, off at start",
+    )
+    ea.change_state(GLib.Variant.new_boolean(True))
+    for _ in range(100):
+        if layer.last():
+            break
+        yield 50
+    yield 200
+    shown = layer.last()
+    check(
+        ea.get_state().get_boolean() and layer.get_visible() and not layer.get_can_target()
+        and shown is not None and shown["data"]["elements"][0]["text"] == "OK"
+        and shown["data"]["width"] == 1280 and shown["png"].startswith(b"\x89PNG"),
+        "Elements on: the layer reads a 1280x720 frame through beanjar.elements, takes no input",
+    )  # fmt: skip
+    grabbed = os.path.join(tmp, "elements.png")
+    ok = mainlib.grab(pane, grabbed)
+    edge = None
+    if ok:
+        pix = GdkPixbuf.Pixbuf.new_from_file(grabbed)
+        _valid, (px, py, pw, ph) = core.picture()
+        x, y = int(px + 400 * pw / 1280), int(py + 360 * ph / 720)  # the box's left edge, middle
+        row, n = pix.get_rowstride(), pix.get_n_channels()
+        data = pix.get_pixels()
+        edge = tuple(data[y * row + x * n : y * row + x * n + 3])
+    check(
+        edge is not None and edge[0] > 200 and 80 < edge[1] < 160 and edge[2] < 60,
+        f"the grab (--grab) has the button's box in the button colour over the picture (got {edge})",
+    )
+    ea.change_state(GLib.Variant.new_boolean(False))
+    yield 100
+    check(
+        not ea.get_state().get_boolean() and not layer.get_visible()
+        and layer.recognizer.tmp is None and not layer._ticks,
+        "Elements off: the layer is hidden and stops reading",
+    )  # fmt: skip
+    os.environ["BEANJAR_TEXTSHOT"] = os.path.join(tmp, "no-textshot")
+    said = len(pane.said)
+    ea.change_state(GLib.Variant.new_boolean(True))
+    check(
+        not ea.get_state().get_boolean() and not layer.get_visible()
+        and any("not installed" in s for s in pane.said[said:]),
+        "Elements without go-textshot stays off and says it is not installed",
+    )  # fmt: skip
+    del os.environ["BEANJAR_TEXTSHOT"], os.environ["BEANJAR_TEXTSHOT_SERVE"]
 
     # 10. a set turned to portrait (run/rotation, the guest's setting 90): the picture shown turned
     # 270 clockwise, the window's picture area turned with it, the pointer mapped back to the

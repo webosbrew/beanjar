@@ -21,6 +21,7 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import ui  # noqa: E402
 from .keys import HOME_KEYS  # noqa: E402
+from .elements_layer import ElementsLayer  # noqa: E402
 from .remote import LAYOUTS, NORMAL, RemotePanel, find  # noqa: E402
 from .remote_window import RemoteWindow  # noqa: E402
 from .stats import Stats, front_led, panel_off  # noqa: E402
@@ -97,7 +98,14 @@ class ViewerPane(Gtk.Box):
         self.home_code = self.system_layout.keys[find("HOME", self.system_layout)].code
         self.remote_ever_shown = False
         self.remote_window = None
-        self.append(self.view)
+        # the Elements layer (More > Show planes > Elements): screen recognition over the picture
+        self.elements = ElementsLayer(
+            core, self.view, say=self.say, turned=lambda: self.rotation != 0
+        )
+        self.picture_overlay = Gtk.Overlay(hexpand=True, vexpand=True)
+        self.picture_overlay.set_child(self.view)
+        self.picture_overlay.add_overlay(self.elements)
+        self.append(self.picture_overlay)
         self.standby = False  # the SoC suspended (QMP's standby chardev)
         self.picture_off = False  # the panel off: that, or the micom's warm standby
         self.stats = (
@@ -410,6 +418,7 @@ class ViewerPane(Gtk.Box):
         self.remote.release()
         if self.stats:
             self.stats.close()
+        self.elements.set_active(False)
         extra = f" keys={self.keys}"
         if self.remote_ever_shown:
             extra += f" remote_presses={self.remote.presses}"

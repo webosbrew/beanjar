@@ -618,6 +618,35 @@ The D-Bus interface contract is documented in the installed QEMU manual,
 `--headless --screenshot OUT.ppm --screenshot-after MS`, which takes the picture MS after the first
 scanout and exits.
 
+## Elements layer
+
+**More > Show planes > Elements** draws what screen recognition reads in the TV picture over it, a
+debugging aid for tests that read the screen: a box around each element in its kind's colour
+(button orange, icon blue, text green, progress purple) with its kind and text, and a line in the
+picture's corner with the number of elements, the measured reading rate and the age of the result
+shown. `--elements` switches it on at start. It is the window's own: beanjar-vnc and VNC clients
+never show it, and it is not in Save Screenshot or `beanjar screenshot`.
+
+The reading is `beanjar elements`'s own (`host/core/beanjar/elements.py`, `read_screen`: the
+user-installed go-textshot CLI, host/core/README.md "Reading screen elements"), on the frame that
+command reads, the picture at 1280x720 (the core's screenshot, as PNG), so the boxes are the
+elements a test gets from `beanjar elements NAME --json`. It runs in a thread
+(`beanjar_ui/viewer/recognition.py`): the window's frame loop never waits for it. A frame is taken
+only when the picture changed, at most 14 times a second, and only while no reading is in flight;
+frames that come meanwhile are dropped. The reading goes through the recognition server, which
+keeps the models loaded (host/core/README.md, "The recognition server"), else one textshot
+process per frame. Measured on the x86 PC (Home, 60 s, other work on the machine): about 1
+reading a second with the server's element detector on CUDA, 0.37 on the CPU, 0.21 with a
+process per frame. The picture is drawn as before, about 1.7 pictures per guest frame with the
+layer on or off; the layer took the viewer from 8 % to 24 % of a core (PNG encoding of each
+frame, the drawing), and the server's readings take about five cores, which slow the guest on a
+busy host. Boxes are not drawn while the picture is turned to portrait.
+
+`--grab OUT.png --grab-every MS` saves the picture as the window shows it, with the layer, as
+`OUT-<ms>.png` every MS; when a new reading is shown, also the frame it read
+(`OUT-<ms>.frame.png`) and the reading (`OUT-<ms>.elements.json`, as `beanjar elements --json`
+prints it), so `beanjar elements --from-png OUT-<ms>.frame.png --json` can be compared with it.
+
 ## Headless validation
 
 `viewer-headless` (run by `beanjar-viewer` for these options) has no window and no chrome;

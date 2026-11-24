@@ -153,6 +153,15 @@ class ViewerWindow(Adw.ApplicationWindow):
             )
             action.connect("change-state", self.plane_changed, bit)
             self.add_action(action)
+        # Elements (More): screen recognition over the picture, a debug layer of this window,
+        # off at start unless --elements (main.py)
+        self.elements_action = Gio.SimpleAction.new_stateful(
+            "layer-elements", None, GLib.Variant.new_boolean(False)
+        )
+        self.elements_action.connect(
+            "change-state", lambda a, v: self.set_elements(v.get_boolean())
+        )
+        self.add_action(self.elements_action)
         pane.on_turned = self.turned
         pane.on_rotation = self.rotation_reported
         # a model with a touch screen (vm-info.toml's touch): the Mouse toggle, pointer or finger
@@ -172,6 +181,12 @@ class ViewerWindow(Adw.ApplicationWindow):
         hidden = self.pane.core.planes()
         hidden = hidden & ~bit if value.get_boolean() else hidden | bit
         action.set_state(GLib.Variant.new_boolean(not self.pane.core.planes(hidden) & bit))
+
+    def set_elements(self, on):
+        """The Elements layer shown (on) or hidden; stays off when go-textshot is missing."""
+        on = self.pane.elements.set_active(on)
+        self.elements_action.set_state(GLib.Variant.new_boolean(on))
+        return on
 
     MOUSE_TIPS = {
         False: "Mouse: pointer (click to make it a finger on the touch screen)",

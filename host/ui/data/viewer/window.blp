@@ -164,7 +164,8 @@ template $ViewerWindow: Adw.ApplicationWindow {
       }
 
       // More: the planes this window shows (ViewerWindow.set_plane: the video windows, the UI and
-      // LG's cursor, for this window only), and on a rotatable model (vm-info.toml's portrait)
+      // LG's cursor, for this window only), the Elements debug layer (ViewerWindow.set_elements:
+      // screen recognition over the picture, elements_layer.py), and on a rotatable model (vm-info.toml's portrait)
       // Portrait, a check item (ViewerPane.rotate).
       [end]
       Gtk.MenuButton more_button {
@@ -210,6 +211,14 @@ template $ViewerWindow: Adw.ApplicationWindow {
               focusable: false;
               focus-on-click: false;
               tooltip-text: "LG's cursor";
+            }
+
+            Gtk.CheckButton plane_elements_button {
+              label: "Elements";
+              action-name: "win.layer-elements";
+              focusable: false;
+              focus-on-click: false;
+              tooltip-text: "Debug: what screen recognition (beanjar elements) reads, boxed over the picture; a few readings a second at most";
             }
 
             Gtk.Separator rotate_separator {

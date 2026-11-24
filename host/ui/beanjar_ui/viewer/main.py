@@ -15,6 +15,7 @@ USAGE = """usage: beanjar-viewer BUS_ADDRESS [--size WxH] [--remote] [--remote-l
   [--no-audio] [--audio-wav OUT.wav] [--sdl-audio] [--media-silent] [--ui-dir DIR]
   [--capture OUT.ppm --capture-every MS] [--capture-control FILE --capture-every MS]
   [--hide-planes video,ui,cursor] (planes left out at start; More shows or hides them)
+  [--elements] (the Elements layer on at start) [--grab OUT.png --grab-every MS]
 or: beanjar-viewer BUS_ADDRESS --headless [--seconds N] [--replay FILE] [--screenshot OUT.ppm
   [--screenshot-every MS] [--osd-alpha]] [--no-osd] ...   (viewer-headless)
 or: beanjar-viewer --remote-preview OUT.ppm [--remote-layout normal|netcast|simplesmart|japan|service] [--remote-press KEY]
@@ -51,6 +52,9 @@ def parse(args):
         "shot": None,
         "shot_every": 0,
         "ctl": None,
+        "elements": False,
+        "grab": None,
+        "grab_every": 0,
     }
     i = 0
     while i < len(args):
@@ -95,6 +99,18 @@ def parse(args):
             o["shot_every"] = int(value)
             i += 2
             continue
+        if name == "elements":
+            o["elements"] = True
+            i += 1
+            continue
+        if name == "grab" and value:
+            o["grab"] = value
+            i += 2
+            continue
+        if name == "grab-every" and value:
+            o["grab_every"] = int(value)
+            i += 2
+            continue
         if name == "no-statusbar":
             o["statusbar"] = False
             i += 1
@@ -131,7 +147,40 @@ def parse(args):
         raise SystemExit(
             "viewer: --capture-every needs --capture OUT.ppm or --capture-control FILE"
         )
+    if bool(o["grab"]) != bool(o["grab_every"]):
+        raise SystemExit("viewer: --grab OUT.png and --grab-every MS go together")
     return o
+
+
+def grab_name(grab, ms, suffix=".png"):
+    """--grab-every's files for ms after the window was shown: OUT-<ms>.png (the picture as the
+    window shows it, with the Elements layer), OUT-<ms>.frame.png and OUT-<ms>.elements.json (the
+    frame the layer's reading shown was taken from, and that reading, as `beanjar elements
+    --json` prints it)."""
+    base = grab[:-4] if grab.endswith(".png") else grab
+    return f"{base}-{ms:06d}{suffix}"
+
+
+def grab(pane, path):
+    """The pane's picture (the TV view and the layers over it, no status bar) as PNG; False when
+    it has not been drawn yet."""
+    import gi
+
+    gi.require_version("Graphene", "1.0")
+    from gi.repository import Graphene, Gtk
+
+    widget = pane.picture_overlay
+    w, h = widget.get_width(), widget.get_height()
+    native = widget.get_native()
+    if w <= 0 or h <= 0 or native is None:
+        return False
+    snapshot = Gtk.Snapshot()
+    Gtk.WidgetPaintable.new(widget).snapshot(snapshot, w, h)
+    node = snapshot.to_node()
+    if node is None:
+        return False
+    texture = native.get_renderer().render_texture(node, Graphene.Rect().init(0, 0, w, h))
+    return texture.save_to_png(path)
 
 
 def shot_name(shot, ms):
@@ -322,6 +371,28 @@ def run(o):
         GLib.unix_signal_add(
             GLib.PRIORITY_DEFAULT, signal.SIGUSR1, lambda: (win.present(), True)[1]
         )
+        if o["elements"]:
+            GLib.idle_add(lambda: (win.set_elements(True), False)[1])
+        if o["grab_every"]:
+            start = GLib.get_monotonic_time() // 1000
+            grabbed = {"taken": None}
+
+            def grab_tick():
+                ms = GLib.get_monotonic_time() // 1000 - start
+                if not grab(pane, grab_name(o["grab"], ms)):
+                    return True
+                shown = pane.elements.last()
+                if shown and shown["taken"] != grabbed["taken"]:
+                    import json
+
+                    grabbed["taken"] = shown["taken"]
+                    with open(grab_name(o["grab"], ms, ".frame.png"), "wb") as f:
+                        f.write(shown["png"])
+                    with open(grab_name(o["grab"], ms, ".elements.json"), "w") as f:
+                        json.dump(shown["data"], f, indent=2, ensure_ascii=False)
+                return True
+
+            GLib.timeout_add(o["grab_every"], grab_tick)
         if o["seconds"] > 0:
             GLib.timeout_add(int(o["seconds"] * 1000), lambda: (quit_requested(), False)[1])
         if o["shot_every"]:
