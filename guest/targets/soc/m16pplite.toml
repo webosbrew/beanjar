@@ -1,0 +1,53 @@
+# The LG M16PP lite (the firmware's machine name m16pplite; lxboot's chip=M16P, C0), W18M's SoC:
+# M16PP's platform (guest/targets/soc/m16pp.toml says where each value comes from). W18M 05.50.60's
+# kernel is W18H's version, its KADP takes the same ioctl numbers and structures and its RELEASE.cfg
+# has the same [i2c] map (docs/research/m16-kid24u-m23-groundwork.md and the W18H study of T08), so
+# M16PP's module rows hold; the board is W18M's own, a Japanese 43UK6300PJF (board.cmdline).
+# W18M's demodulators are ISDB-T/S parts (cxd2827r, a8303jp, rda5815m) behind the same
+# libdvbfrontend (HAL_DVBV5_*), so M16PP's webos_tv numbers.
+
+base = "m16pp"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43UK6300PJF's area, a Japanese set's: W18M's _aDefineContinent entry 5 ("JP", in the RMM
+# country list of the JP group), LANG_COUNTRY_JP 23, HWSETTING_JP 7
+continent = [5, 23, 7]
+# Its input ports, from W18M's RELEASE.cfg (SK85 defaults), read by host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x19c0",
+    "ace_rev=0x19c0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x2a08024",
+    "spi_cs=2",
+    "se_mem=0x7e900000:0x500000",
+    "se_tzfw=0x7ee00000:0x1200000",
+    "se_netlink=31",
+    "logm_obj=84",
+    "de_mem=0x7d900000:0x1000000",
+    "de_capacity=6:4:4:3840:2160:3840:2160:0:60:2:1:1920:1080:0:1:1:1:3840:2160:1:320:240:2",
+    "de_panel=4",
+    "de_vtm_buffers=5",
+    "de_src_status=56",
+    "de_fw_version=754",
+    "gpio_lines=144",
+    "pe_hdr=0x7d700000",
+    "amst=27:76:23:66:67",
+    "be=30:28",
+    "be_led=0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
+]
+
+# W18H's tuners, unlike W17H's, are DVBv5's: its webos-tv job loads webos_tv.ko and tvservice's
+# DIL_TU reaches it through bsppart's libdvbfrontend (HAL_DVBV5_*), W18R's library: GetLIBVersion,
+# CheckLockState and TunePostJob read 0xc0, 0xae and 0xb0, as on M3 (guest/targets/soc/m3.toml).
+# Without it FE_SetFEConfig fails and RootInit waits for the FE task's access signal for good.
+[[modules]]
+name = "webos_tv"
+params = [
+    "version_cmd=0xc0",
+    "lock_cmd=0xae",
+    "postjob_cmd=0xb0",
+]

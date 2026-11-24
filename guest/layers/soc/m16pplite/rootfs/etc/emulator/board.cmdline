@@ -1,0 +1,29 @@
+# Board parameters the LG bootloader (lxboot) puts on the kernel command line, as on M16PP
+# (guest/layers/soc/m16pp/rootfs/etc/emulator/board.cmdline says who reads them and which strap is
+# which). W18M's lxboot (V4.03.77) has W18H's format and chip table: chip=M16P with the C0 revision.
+#
+# The values describe a 43UK6300PJF, the Japanese 43" UK63 the models DB lists for this firmware's
+# OTA ID (HE_DTV_W18M_AFADJAAA, the ARIB build, the only W18M build held; market JP), proposed by
+# host/tools/research/model-config.py from W18M 05.50.60's own tables with tuner=S,dual (column 0 of
+# gmodelopt_m16p_tuner_comb's JP row; which column the retail set straps is not in the firmware); they
+# are not read from a real set. RELEASE.cfg is a Korean SK85's default (BOARD_M16PP_ATSC_KR), so the
+# region values are the JP group's of the same tables.
+ethaddr=a8:23:fe:12:34:56 rev=1 chip=M16PC0 bver=4.03.77 devtmpfs.mount=1
+# 7.5 GB eMMC, as the others (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# 16 SAR-ADC straps as M16PP's board: strap2 1 (DDR 1.5 GB), the rest 0 but the panel (UD, FRC,
+# V-by-One); the country and tuner straps are read from hwopt by the userland
+modelopt=0010010000000000
+# 18 digits, as W18M's tvconfig-gen decodes them: JP (d0 0, gmodelopt_country_type's entry 0 on this ARIB line), V-by-One (d2 2), UD
+# (d3 2), FRC (d4 1), panel V17 (d5 7), the S+dual tuner column (d8 0), DDR 1.5 GB (d11 3), graphic
+# resolution 1920x1080 (d14 2)
+hwopt=002217000003002000
+# 9 tool option words, RELEASE.cfg's SK85 defaults with the model's inch (INCH_43) and tool type
+# (TOOL_UK63)
+ToolOpt=65898:119604257:385363:37669:116773:133897:920315:0:2236550
+# 18 = JP (libdile_boardinfo's group)
+countryGrp=18
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=43UK6300PJF serialNum=805RAXX00001
+cmdEnd
