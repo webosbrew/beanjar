@@ -1,0 +1,24 @@
+models = ["W21O"]
+lg_scaler = [3840, 2160]
+v4l2_capture = true
+
+# W21O kisscurl (03.70.05, "kisscurl-kolovesi" 6.6.0, HE_DTV_W21O_AFABATAA, the global build): the
+# release's paks and services on LG's O20N. Its fstabs and jails pin O22's partitions, not the
+# release's (p14 cert, p29 otncabi, p30 otycabi, p31 fonts, p33 license, p49 uhdcp, p54 db8, p55
+# cmn_data, p56 appstore; jail nodes p19, p20, p23), and its see-init carries the same stale
+# bootstrap table as O22's, so the map is O22's assembled one; the paks it sizes (lxboot, kernel,
+# tzfw, intmicom) are all in this EPK. HAL_VT captures through V4L2 at /dev/video60, and the HAL
+# opens the scaler's nodes (video30-33), as O22 mullet's. Its kernel (4.4.84-229.kcl4tv.6,
+# modules.builtin) has the release's USB and filesystem drivers with ftdi_sio, no ipw, and none of
+# the NLS code pages 949 and 8859-1.
+[release]
+base = "kisscurl"
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",
+    "hid-microsoft", "hid-pl", "hid-sony", "hid-playstation", "hid-zpff", "xpad", "uvcvideo",
+    "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii", "nls_utf8",
+    "exfat", "snd-usb-audio", "cdc-acm", "ftdi_sio", "pl2303", "option", "sierra", "lgfs",
+]
+nvm_disks = { nvram = "8M", eeprom = "32K" }
+partmap = "o22-mullet"

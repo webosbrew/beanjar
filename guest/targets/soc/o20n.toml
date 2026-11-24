@@ -1,0 +1,45 @@
+# The LG O20N (LG's kdriver family o20, with E60 beside it; lxboot's chip=O20), W21O's SoC, on
+# webOS 6 (kisscurl): LG's kdrivers again (lg115x.ko). Its bsppart HAL is the full-KADP one of
+# O22's mullet build (libhal_lg115x's 1441 HAL_* exports and 750 KADP imports against W22O
+# 04.40.93's 1451 and 761), and the same boundary holds: the chip identity in /proc/lg/base, the
+# micom over /dev/lg/ucom0 (HAL_UCOM, libmicom_cmnio: tvpowerd, bootd, micomservice and seven more
+# hold it), the I2C devices on Linux adapters and the GPIO pins in /sys/class/gpio.
+# - CHIP_REV 0x24a0: the kernel's BASE chip table has O20 at 0x24 (E60 0x25); KADP's lx_chip_rev
+#   reads /proc/lg/base/chip_rev with " %x". lxboot builds chip= from "O20" and a revision of its
+#   table (A0 to D1) it reads from the chip: A0 is the chosen virtual revision, as O22's. ACE_REV
+#   the same. CHIP_PLT 0x2000 (UHD); GFX_RES 1920x1080, KADP's own default and the board's graphic
+#   plane. No board_opt: the O20 kernel's BASE_PLT_Probe was not read, and without the file
+#   KADP_OSA_Initialize keeps its default (0x2000000).
+# - I2C: libdile_i2c's DILE_I2C_Initialize opens /dev/i2c-0 to /dev/i2c-9 and fails at the first
+#   that does not open (then lowlevelstorage aborted), and KADP_I2C_Open takes /dev/i2c-<n> without
+#   /proc/lg/iic/sw_cfg. libdile_i2c's gsI2cAllConf (8-bit addresses): NVM 7/0xa0, the light sensors
+#   LIGHT_SENSOR_1/2 5/0x20; the others (MICOM 5/0x52, MONITOR_NVM 4/0xa8, OLED_CPCB_EEPROM
+#   2/0xa0, OLED_SPCB_EEPROM 2/0xaa, TCON_UHD 2/0x70, the amplifiers 0/0x54 and 0/0x56) are not
+#   placed: nothing reached Home through them, and the micom is the UCOM's.
+# - cec=1, v4l2_hdmi=1, earc=1, snd_ctls=1: libcecp opens /dev/cec0; eim and arccontroller hold
+#   /dev/video12, arccontroller and extinput-integration /dev/earc0; the sound engine writes the
+#   card's "LGSE Var Fn009" and mute controls (each seen on the emulator, as on O22).
+# - thermal: fancontroller reads /proc/thermalinfo/soc_temperature.
+# - gpio_lines and gpio_level: libdile_gpio's table, whose highest line is 108 (FAN_FAULT), so 109
+#   lines; the inputs at 1 are GPIO_RD_ON_RF_DONE (16), the OLED panel's power-on refresh finished,
+#   and GPIO_RD_USB1..3_OCD (91, 94, 85), active low.
+
+board_cmdline = "/etc/emulator/board-atsc.cmdline"
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6,7,8,9", "i2c_dev=nvm:7:0x50", "cec=1", "v4l2_hdmi=1", "earc=1",
+    "snd_ctls=1",
+]
+light_bus = 5
+thermal = true
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x24a0",
+    "ace_rev=0x24a0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "ucom=1",
+    "gpio_lines=109",
+    "gpio_level=16:1,91:1,94:1,85:1",
+]

@@ -1,0 +1,19 @@
+# OLED65G1PUA, the US 65-inch G1, on W21O's global firmware (HE_DTV_W21O_AFABATAA).
+# hwopt from the firmware's own hw-option-gen (host/tools/research/model-config.py, VALIDATE "W21O"):
+# country digit 5 US/ATSC, V-by-One UHD OLED at 120 Hz, DDR 3 GB, graphic plane 1920x1080.
+# ToolOpt: lowlevelstorage's default record of this firmware with the G1's tool type and 65".
+# countryGrp is configd's USA RMM group, 2. chip= as lxboot builds it ("O20" and a revision);
+# A0 is a virtual revision. Identity is synthetic.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=2
+modelopt=000000000
+hwopt=502210000106102000
+ToolOpt=1048689:19:266314:65:48358963:825744137
+modelName=OLED65G1PUA
+debugMode=3
+serialNum=000RAXX00001
+chip=O20A0
+tvregion=ATSC
+emmc_size=0x1d2000000
+cmdEnd
