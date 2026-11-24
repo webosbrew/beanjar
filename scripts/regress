@@ -57,7 +57,9 @@ mitmweb, slirp4netns or viewer runs on the VM host):
              it is left to check-m1, which waits up to 150 s for it
   check-m1   as above (its gl checks skip: no gl layer)
   app-calls  as above
-  tvservice  tests/regress/guest.sh tvservice: the same tvservice process as at ready, answering
+  tvservice  tests/regress/guest.sh tvservice: the same tvservice process as at ready, answering;
+             a legacy-broadcast that stopped itself (and may have been started again by a call)
+             only on evidence of clean exits (tests/regress/lb-exit.sh)
   checklist  as above
   standby    as above, with tvpower's powerOff (reason remoteKey, guest.sh power-off) for POWER
              (headless has no compositor to take the key) and no screenshot
@@ -1884,7 +1886,10 @@ def boot_and_check(h, a, r, out, rel, target, fw):
         if a.tv
         else "tests/regress/tvservice/app-calls.sh"
     )
-    rc, _ = h.run(f"host/scripts/vm-launcher put tests/regress/guest.sh {put} >/dev/null", 60)
+    rc, _ = h.run(
+        f"host/scripts/vm-launcher put tests/regress/guest.sh tests/regress/lb-exit.sh {put} >/dev/null",
+        60,
+    )
     if rc:
         r.steps["boot"] = "FAIL"
         return

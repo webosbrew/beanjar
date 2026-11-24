@@ -1784,30 +1784,49 @@ class GuestStepTest(unittest.TestCase):
 
 
 class LbStoppedItselfTest(unittest.TestCase):
-    """guest.sh's lb_stopped_itself: a legacy-broadcast gone from the set passes only when systemd's
-    legacy-broadcast.service finished with result success, status 0 and no restart."""
+    """guest.sh's tvservice step on a legacy-broadcast that is not the process it was at ready: it
+    passes only on evidence of clean exits (tests/regress/lb-exit.sh): systemd's
+    legacy-broadcast.service finished with result success, status 0 and no restart, every exit the
+    hub logged of one it started has EXIT_CODE 0, and no crash report names it. Gone (lb_stopped_itself)
+    or started again since by a call (lb_started_again), never any new pid."""
 
-    def run_case(self, unit, crash=""):
+    UNIT = "Result=success\nExecMainStatus=0\nNRestarts=0\nActiveState=inactive\n"
+    HUB = (
+        "ls-hubd LSHUB_SRV_EXIT "
+        '{"SERVICE_NAME":"com.webos.service.legacybroadcast","EXE":"/usr/sbin/setcpushares-ls2 '
+        '/etc/systemd/system/scripts/legacy-broadcast.sh","STATE":3,"EXIT_CODE":0,"RESPAWN":0,"PID":2756}\n'
+    )
+
+    def run_case(self, call, unit=UNIT, crash="", hub="", release=""):
         import re
 
         with open(os.path.join(TOP, "tests", "regress", "guest.sh")) as f:
-            func = re.search(r"^lb_stopped_itself\(\) \{.*?\n\}\n", f.read(), re.M | re.S).group(0)
+            text = f.read()
+        funcs = "".join(
+            re.search(rf"^{name}\(\) \{{.*?\n\}}\n", text, re.M | re.S).group(0)
+            for name in ("lb_exits_clean", "lb_call", "lb_stopped_itself", "lb_started_again")
+        )
         stubs = (
-            "scale=1\nLB_UNIT=legacy-broadcast.service\n"
-            'in_webos() { case "$1" in systemctl*) printf "%s" "$UNIT";; ls*) printf "%s" "$CRASH";; esac; }\n'
+            f". {os.path.join(TOP, 'tests', 'regress', 'lb-exit.sh')}\nscale=1\n"
+            'in_webos() { case "$1" in systemctl*) printf "%s" "$UNIT";; ls*) printf "%s" "$CRASH";;'
+            ' for*) printf "%s" "$HUB";; pidof*) printf "%s" "$RELEASE";; esac; }\n'
             "wt() { echo '{\"returnValue\":true}'; }\nrelease_pids() { echo 77; }\n"
         )
         return subprocess.run(
-            ["sh", "-c", stubs + func + "lb_stopped_itself 5"],
-            env=dict(os.environ, UNIT=unit, CRASH=crash),
+            ["sh", "-c", stubs + funcs + call],
+            env=dict(os.environ, UNIT=unit, CRASH=crash, HUB=hub, RELEASE=release),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
         )
 
     def test_clean_exit_passes(self):
-        r = self.run_case("Result=success\nExecMainStatus=0\nNRestarts=0\nActiveState=inactive\n")
+        r = self.run_case("lb_stopped_itself 5")
         self.assertEqual(r.returncode, 0, r.stdout)
+        # W23L: the boot instance (1131) stopped itself, a call started 8891, which runs at the step
+        r = self.run_case("lb_started_again 1131 8891", hub=self.HUB)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("started again since as 8891", r.stdout)
 
     def test_everything_else_fails(self):
         ok = {
@@ -1824,10 +1843,18 @@ class LbStoppedItselfTest(unittest.TestCase):
             ("ActiveState", "active"),
         ):
             unit = "".join(f"{k}={value if k == key else v}\n" for k, v in ok.items())
-            self.assertNotEqual(self.run_case(unit).returncode, 0, unit)
-        unit = "".join(f"{k}={v}\n" for k, v in ok.items())
-        self.assertNotEqual(self.run_case(unit, "legacy-broadcast.crash").returncode, 0)
-        self.assertNotEqual(self.run_case("").returncode, 0)
+            for call in ("lb_stopped_itself 5", "lb_started_again 5 77"):
+                self.assertNotEqual(self.run_case(call, unit=unit).returncode, 0, (call, unit))
+        crashed = self.HUB.replace('"EXIT_CODE":0', '"EXIT_CODE":139')
+        for call in ("lb_stopped_itself 5", "lb_started_again 5 77"):
+            self.assertNotEqual(self.run_case(call, crash="legacy-broadcast.crash").returncode, 0)
+            self.assertNotEqual(self.run_case(call, unit="").returncode, 0)
+            r = self.run_case(call, hub=self.HUB + crashed)
+            self.assertNotEqual(r.returncode, 0, call)
+            self.assertIn("abnormal exit", r.stdout)
+        # an old pid still beside the new one, or tvservice (RELEASE) itself under new pids: no
+        self.assertNotEqual(self.run_case("lb_started_again 5,6 6,77").returncode, 0)
+        self.assertNotEqual(self.run_case("lb_started_again 5 77", release="77").returncode, 0)
 
 
 class DeviceCensusIntegrationTest(unittest.TestCase):

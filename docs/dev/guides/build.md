@@ -316,7 +316,11 @@ shows that line's time; app-calls there calls only the services webOS 5 still ha
 (tv.systemproperty, sdx, eim, nop, tvpower). Then check-m1, which waits up to 150 s for
 boot-done itself and skips its gl checks (no `libegl-kms.so` without the gl layer), app-calls,
 and `guest.sh tvservice`: tvservice (`RELEASE`) is the process it was at ready and answers
-`tv.systemproperty/getSystemInfo`. Its table has `core-boot-done` (the guest's uptime at it)
+`tv.systemproperty/getSystemInfo`. A legacy-broadcast (webOS 5 on) stops itself when idle and the
+next call starts it again, so it may be gone or another process by then; that passes only on
+evidence that every exit was clean (`tests/regress/lb-exit.sh`): `legacy-broadcast.service`
+stopped with result success, status 0 and no restart, every `LSHUB_SRV_EXIT` the hub logged for one
+it started has `EXIT_CODE` 0, and no crash report names it. Its table has `core-boot-done` (the guest's uptime at it)
 and `tvservice` where the default has boot-done and the screenshot:
 
 ```sh

@@ -54,6 +54,7 @@
 out=/host/out/regress
 scale=${TIME_SCALE:-1}
 step=$1
+. "${0%/*}/lb-exit.sh"  # put with this file (the initramfs busybox has no dirname)
 # checklist's webOS half (checklist-webos, run through webos-enter, where /host is /mnt/host)
 [ "$step" = checklist-webos ] || mkdir -p $out
 # wt SECS PROG ARGS...: PROG inside webOS under the firmware's busybox timeout, which takes -t SECS
@@ -156,38 +157,41 @@ ready() {
 }
 # tvservice still the processes it was at ready (none dead, none respawned) and answering on Luna
 # A legacy-broadcast may stop itself: W22O mullet's (04.40.93) tv_sysonoff_checkStopService ends it
-# (stopService, exit status 0) about 10 s after tv-ready when the set is idle, and nothing starts it
-# again until the next call. It is a systemd service (legacy-broadcast.service, Type=simple,
-# Restart=on-failure), so the hub never logs its exit; systemd's own result tells. That passes when
-# the unit finished with result success and status 0, was not restarted, no crash report names the
-# daemon, and a call to a legacybroadcast service starts one that answers.
-LB_UNIT=legacy-broadcast.service
-lb_stopped_itself() { # PID
+# (stopService, exit status 0) about 10 s after tv-ready when the set is idle, and the next call
+# starts it again (W23L's runs on demand the same way). lb-exit.sh judges its exits from systemd's
+# result for the boot instance and the hub's LSHUB_SRV_EXIT for those it started since; either way
+# no crash report may name it.
+lb_exits_clean() {
 	u=$(in_webos "systemctl show $LB_UNIT -p Result -p ExecMainStatus -p NRestarts -p ActiveState" | tr '\n' ' ')
 	echo "$LB_UNIT: ${u:-no answer from systemd}"
-	case " $u" in
-	*" ActiveState=inactive "*|*" ActiveState=failed "*) ;;
-	*) echo "$LB_UNIT is not stopped"; return 1 ;;
-	esac
-	case " $u" in
-	*" Result=success "*) ;;
-	*) echo "$LB_UNIT did not finish with result success"; return 1 ;;
-	esac
-	case " $u" in
-	*" ExecMainStatus=0 "*) ;;
-	*) echo "$LB_UNIT's main process did not exit with status 0"; return 1 ;;
-	esac
-	case " $u" in
-	*" NRestarts=0 "*) ;;
-	*) echo "$LB_UNIT was restarted"; return 1 ;;
-	esac
-	if in_webos "ls /var/log/reports/librdx /var/log/crashd 2>/dev/null" | grep -q legacy-broadcast; then
-		echo "a crash report names legacy-broadcast"; return 1
-	fi
-	echo "pid $1 stopped itself ($LB_UNIT: success, status 0); a call starts it again:"
+	lb_unit_clean "$u" || return 1
+	# the hub's log rotates within minutes (messages, messages.0.gz, ...): every file of it
+	in_webos 'for f in /var/log/messages*; do case $f in *.gz) zcat $f ;; *) cat $f ;; esac; done | grep LSHUB_SRV_EXIT' |
+		lb_hub_exits_clean || return 1
+	in_webos "ls /var/log/reports/librdx /var/log/crashd 2>/dev/null" | lb_crash_free
+}
+lb_call() {
 	r=$(wt $((30 * scale)) luna-send -n 1 luna://com.webos.service.legacybroadcast.broadcast/getCurrentChannel '{}' </dev/null 2>&1)
 	echo "legacybroadcast.broadcast getCurrentChannel: $r; pids now $(release_pids)"
 	echo "$r" | tr -d ' ' | grep -q '"returnValue":' && [ -n "$(release_pids)" ]
+}
+lb_stopped_itself() { # PIDS
+	lb_exits_clean || return 1
+	echo "pids $1 stopped themselves (exit status 0); a call starts it again:"
+	lb_call
+}
+# PIDS (at ready) gone and others running: it stopped itself and a call since (app-calls) started
+# it again. Only legacy-broadcast does that, never tvservice (RELEASE).
+lb_started_again() { # PIDS NOW
+	for p in $(echo "$1" | tr ',' ' '); do
+		case ",$2," in *",$p,"*) echo "pid $p still runs beside new ones"; return 1 ;; esac
+	done
+	if [ -n "$(in_webos 'pidof RELEASE')" ]; then
+		echo "RELEASE (tvservice) runs as new pids: respawned"; return 1
+	fi
+	lb_exits_clean || return 1
+	echo "pids $1 stopped themselves (exit status 0), started again since as $2:"
+	lb_call
 }
 tvservice() {
 	now=$(release_pids)
@@ -202,6 +206,8 @@ tvservice() {
 		echo "TVSERVICE PASS (no TV service in this firmware; tvservicemock answers)"
 	elif [ -z "$now" ] && [ -n "$1" ] && lb_stopped_itself "$1"; then
 		echo "TVSERVICE PASS (stopped itself, started again on call)"
+	elif [ -n "$now" ] && [ -n "$1" ] && [ "$1" != none ] && lb_started_again "$1" "$now"; then
+		echo "TVSERVICE PASS (stopped itself, started again by a call since)"
 	else
 		echo "TVSERVICE FAIL"; return 1
 	fi
