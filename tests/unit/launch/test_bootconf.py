@@ -143,7 +143,7 @@ class BootConfTest(unittest.TestCase):
                 "MODULE_PARAMS_mstar_utopia": "",
                 "MODULE_PARAMS_lg115x": "chip_rev=0x13b0 ace_rev=0x13b0 platform=0x2000 graphic_res=0x07800438 "
                 "i2c=micom:1:0x52,nvm:4:0xa0,amp:2:0x54,amp:2:0x56,amp:4:0x54 spi_cs=2 logm_obj=76 "
-                "gpio_pins=144 amst=17:41:20 amst_se=16 be=21:19 timer_hz=198000000",
+                "gpio_pins=144 amst=17:41:20 amst_se=16 amst_spdif=3 be=21:19 timer_hz=198000000",
             },
         )
 
