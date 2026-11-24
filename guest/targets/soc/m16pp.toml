@@ -26,7 +26,8 @@
 #   firmware's own number is in the kernel's DE driver, not read here).
 # - The audio master: GET_KDRV_HANDLE nr 27, GET_EVENT nr 76 (W18H's KADP: 0xc0084d4c), the
 #   audio processing status 66 and its query 67 as M16P's. The BE: GET_FIRMWARE_INFO_ADDR nr 30
-#   and REG_ACCESS nr 28; the LED register block as M16P's.
+#   and REG_ACCESS nr 28; LED_GET_REG_INFO nr 61 (KADP_BE_LED_GetRegInfo's 0x8038443d, M16P's 53)
+#   with the LED register block as M16P's.
 # - KADP's logm objects are 84 bytes, as M16P's.
 # - kadpd's se-kadpd child (_SE_RB202: "Start NetLink", socket(AF_NETLINK, SOCK_RAW, 31)) needs the
 #   SE driver's netlink family 31, which W18H's kernel has built in (no module of its creates it).
@@ -65,7 +66,7 @@ params = [
     "pe_hdr=0x7d700000",
     "amst=27:76:23:66:67",
     "be=30:28",
-    "be_led=0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
+    "be_led=61:0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
 ]
 
 # W18H's tuners, unlike W17H's, are DVBv5's: its webos-tv job loads webos_tv.ko and tvservice's

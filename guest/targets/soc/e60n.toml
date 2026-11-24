@@ -8,6 +8,8 @@
 # - GPIO: libdile_gpio's highest line is 122 (HDMI4_DEV_DET), so 123 lines; the inputs at 1 are
 #   GPIO_RD_USB1..3_OCD (111, 18, 62), active low. The board is an LCD set (no panel refresh to
 #   report finished).
+# - be_led: nr 45 as O20N's; the kernel's BE_LED_HW_E60_Get_RegInfo has the LED block at 0xc9036400
+#   (CPU and MCU) with O20's offsets.
 
 base = "o20n"
 light_bus = 1
@@ -22,4 +24,5 @@ params = [
     "ucom=1",
     "gpio_lines=123",
     "gpio_level=111:1,18:1,62:1",
+    "be_led=45:0xc9036400:0xc9036400:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
 ]

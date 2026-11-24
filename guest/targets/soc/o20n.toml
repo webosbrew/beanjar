@@ -23,6 +23,9 @@
 # - gpio_lines and gpio_level: libdile_gpio's table, whose highest line is 108 (FAN_FAULT), so 109
 #   lines; the inputs at 1 are GPIO_RD_ON_RF_DONE (16), the OLED panel's power-on refresh finished,
 #   and GPIO_RD_USB1..3_OCD (91, 94, 85), active low.
+# - be_led: KADP_BE_LED_GetRegInfo's 0x8038442d (nr 45; HAL_VPQ_LED_Initialize fails without it),
+#   answered as the kernel's BE_LED_HW_O20_Get_RegInfo does: M17's block and offsets. No `be`:
+#   KADP has no GET_FIRMWARE_INFO_ADDR here.
 
 board_cmdline = "/etc/emulator/board-atsc.cmdline"
 lgemu = [
@@ -42,4 +45,5 @@ params = [
     "ucom=1",
     "gpio_lines=109",
     "gpio_level=16:1,91:1,94:1,85:1",
+    "be_led=45:0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
 ]

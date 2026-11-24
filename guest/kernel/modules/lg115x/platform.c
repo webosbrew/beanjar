@@ -330,8 +330,9 @@ static struct lx_kdev sys_kdev = {.name = "sys",
  * answered are the parameter's: GET_FIRMWARE_INFO_ADDR answers no shared firmware block (address
  * and size 0, the GPL driver's answer without a chip function; KADP_BE_Initialize then maps
  * nothing), and REG_ACCESS reads a BE register as last written (0 before: no firmware). With
- * be_led, LED_GET_REG_INFO answers the chip's LED register block (base and offsets, constants of
- * the stock). Every setting (the firmware download, FRC, LED, PWM, PQ) is accepted. */
+ * be_led, LED_GET_REG_INFO, at the number be_led gives (it moved too), answers the chip's LED
+ * register block (base and offsets, constants of the stock). Every setting (the firmware download,
+ * FRC, LED, PWM, PQ) is accepted. */
 #define BE_MAJOR     170
 #define BE_LED_WORDS 14
 
@@ -351,10 +352,11 @@ MODULE_PARM_DESC(
 static char *be_led;
 module_param(be_led, charp, 0444);
 MODULE_PARM_DESC(
-    be_led, "LX_BE_LED_REG_INFO_T: the LED block's CPU and MCU bases, then the 12 register "
-            "offsets, for BE_IOW_LED_GET_REG_INFO's _IOR (M16P's, nr 53); unset: not answered");
+    be_led, "BE_IOW_LED_GET_REG_INFO's number (an _IOR of 56 bytes: M16P 53, M16PP 61, O20 45), "
+            "then its LX_BE_LED_REG_INFO_T: the LED block's CPU and MCU bases and the 12 register "
+            "offsets; unset: not answered");
 
-static u32 be_fwinfo_nr, be_reg_nr, be_led_info[BE_LED_WORDS];
+static u32 be_fwinfo_nr, be_reg_nr, be_led_nr, be_led_info[BE_LED_WORDS];
 static bool be_led_given;
 static DEFINE_XARRAY(be_regs); /* index: type << 32 | address */
 
@@ -376,7 +378,7 @@ static long be_query(unsigned int cmd, void __user *uarg)
         r.data = v ? xa_to_value(v) : 0;
         return copy_to_user(uarg, &r, sizeof(r)) ? -EFAULT : 0;
     }
-    if (be_led_given && cmd == _IOR('D', 53, u32[BE_LED_WORDS]))
+    if (be_led_given && cmd == _IOR('D', be_led_nr, u32[BE_LED_WORDS]))
         return copy_to_user(uarg, be_led_info, sizeof(be_led_info)) ? -EFAULT : 0;
     return -ENOIOCTLCMD;
 }
@@ -401,10 +403,14 @@ static int lx_be_parse(void)
         be_reg_nr = v[1];
     }
     if (be_led) {
-        if (lgemu_parse_u32s(be_led, 0, be_led_info, BE_LED_WORDS)) {
-            pr_err("be: be_led is 14 numbers\n");
+        u32 led[1 + BE_LED_WORDS];
+
+        if (lgemu_parse_u32s(be_led, 0, led, ARRAY_SIZE(led)) || !led[0] || led[0] >= 256) {
+            pr_err("be: be_led is the ioctl number and 14 numbers\n");
             return -EINVAL;
         }
+        be_led_nr = led[0];
+        memcpy(be_led_info, &led[1], sizeof(be_led_info));
         be_led_given = true;
     }
     return 0;
@@ -462,9 +468,9 @@ int lx_kdevs_add(void)
             return err;
         }
     }
-    pr_info("sys0 (registers as written), be0 (firmware info at nr %u, registers at nr %u%s), "
-            "afe0, ovi0\n",
-            be_fwinfo_nr, be_reg_nr, be_led_given ? ", LED registers" : "");
+    pr_info("sys0 (registers as written), be0 (firmware info at nr %u, registers at nr %u, LED "
+            "registers at nr %u), afe0, ovi0\n",
+            be_fwinfo_nr, be_reg_nr, be_led_nr);
     return 0;
 }
 
