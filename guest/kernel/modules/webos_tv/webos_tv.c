@@ -48,12 +48,15 @@
  *   version_cmd is the LIB version (HAL_DVBV5_GetLIBVersion: W18R 0xc0, W19P 0xc1; 0x68 from
  *   webOS 5): webOS 4 wants 1.0.x, webOS 5 2.0.x, webOS 6 2.1.x, W23P 1.2.x, as `version`.
  * A tuner set with an analog tuner (W21P's PAL_SI2178B, PAL_SI2151; O22's NTSC_SI2178B) also has
- * LG's wfm's V4L2 capture device, /dev/video<atv> (atv=; below).
+ * LG's wfm's V4L2 capture device, /dev/video<atv> (atv=; below). An ARIB set's card device,
+ * /dev/dvb/adapter0/acas0 (acas=; below), is LG's lxdvb_sci's, with a stub card that has the VM's
+ * ID and no key.
  * /proc/webos_tv/props counts the commands by direction. */
 #include <linux/compat.h>
 #include <linux/ctype.h>
 #include <linux/device.h>
 #include <linux/hex.h>
+#include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
@@ -640,6 +643,245 @@ EXPORT_SYMBOL_GPL(webos_tv_detach);
 
 static struct proc_dir_entry *proc_dir;
 
+/* ---- the card's answers ----
+ * An ARIB set's conditional-access card (B-CAS, or the A-CAS chip soldered on 4K boards) as its
+ * userland sees it through LG's lxdvb_sci driver: the command APDUs legacy-broadcast-arib's
+ * BCAS_EncodeAPDU sends and the answers BCAS_DecodeExtractInfoFromResponse takes (W22O queue
+ * 43.21.89, docs/research/arib-data-broadcasting.md "Card protocol"). An answer is
+ * 00 | N | IC instruction (2) | return code (2) | data | 90 00, N bytes after the first two
+ * before the status word. This card is no real one: its ID is the VM's (card_id=), it holds no key
+ * (the system key, the CBC value and any scrambling key are zeros) and has no contract, so it
+ * descrambles nothing: an ECM gets "not contracted" (0xA103), the power-on control request
+ * (0x80) "none" (0xA101). */
+#define ACAS_CLA       0x90
+#define ACAS_INT       0x30 /* initial setting conditions */
+#define ACAS_IDI       0x32 /* card ID information */
+#define ACAS_ECM       0x34
+#define ACAS_EMM       0x36
+#define ACAS_POC       0x80   /* power-on control information, one entry by number */
+#define ACAS_NO_POC    0xA101 /* POC: none (the decoder's own no-entry case) */
+#define ACAS_OK        0x2100 /* normal end */
+#define ACAS_NO_KEY    0xA103 /* ECM: not contracted (BCAS_UNCONTRACTED_CHANNEL) */
+#define ACAS_CA_SYSTEM 0x0005 /* B-CAS/A-CAS: INT's CA system ID must be this */
+#define ACAS_TYPE      0x01   /* INT's card type */
+#define ACAS_PARTITION 0x50   /* INT's message partition length */
+#define ACAS_MAKER     'B'    /* IDI's maker letter and version: "B001" in the settings */
+#define ACAS_VERSION   1
+#define ACAS_RX_MAX    0xfe /* the driver's receive limit */
+
+struct acas_card {
+    u8 id[6]; /* the 48-bit card ID, big-endian */
+};
+
+/* CRC-16/CCITT (0x1021, from 0xFFFF) over the card ID: the IDI check code. The firmware shows it
+ * beside the number (%05d) and does not check it; a real card's check code is the issuer's. */
+static u16 acas_check_code(const struct acas_card *card)
+{
+    u16 crc = 0xffff;
+
+    for (int i = 0; i < 6; i++) {
+        crc ^= (u16)card->id[i] << 8;
+        for (int b = 0; b < 8; b++)
+            crc = crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1;
+    }
+    return crc;
+}
+
+/* The answer to the command tx (tx_len bytes) into rx (cap bytes): its length, 0 if it does not
+ * fit. A command that is no B-CAS APDU gets the status word alone: 6E 00 (class not supported) or
+ * 6D 00 (instruction not supported), which the firmware takes as a failed transfer. */
+static size_t acas_answer(const struct acas_card *card, const u8 *tx, size_t tx_len, u8 *rx,
+                          size_t cap)
+{
+    u8 data[64];
+    size_t n = 0, len;
+    u16 rc = ACAS_OK, check;
+
+    /* the APDU in a T=1 block, as an ACAS build's BCAS_EncodeBlock sends it: NAD 0, PCB, LEN, the
+     * APDU, LRC (W22O JP: 00 00 05 90 30 00 02 00 LRC). The answer comes back bare, as LG's driver
+     * gives it, which BCAS_DecodeExtractInfoFromResponse reads from byte 0. */
+    if (tx_len >= 5 && tx[0] == 0x00 && tx[2] + 4u == tx_len) {
+        tx += 3;
+        tx_len -= 4;
+    }
+    if (tx_len < 4 || tx[0] != ACAS_CLA) {
+        if (cap < 2)
+            return 0;
+        rx[0] = 0x6e;
+        rx[1] = 0x00;
+        return 2;
+    }
+    memset(data, 0, sizeof(data));
+    switch (tx[1]) {
+    case ACAS_INT: /* CA system ID, card ID, type, partition length, system key 32, CBC 8, 1 */
+        data[0] = ACAS_CA_SYSTEM >> 8;
+        data[1] = ACAS_CA_SYSTEM & 0xff;
+        memcpy(data + 2, card->id, 6);
+        data[8] = ACAS_TYPE;
+        data[9] = ACAS_PARTITION;
+        n = 51;
+        break;
+    case ACAS_IDI: /* one card ID: maker letter, version, ID (6), check code (2) */
+        check = acas_check_code(card);
+        data[0] = 1;
+        data[1] = ACAS_MAKER;
+        data[2] = ACAS_VERSION;
+        memcpy(data + 3, card->id, 6);
+        data[9] = check >> 8;
+        data[10] = check & 0xff;
+        n = 11;
+        break;
+    case ACAS_ECM:
+        rc = ACAS_NO_KEY;
+        break;
+    case ACAS_POC: /* BCAS_POC_Refresh asks for entry 1, 2, ... until one fails */
+        rc = ACAS_NO_POC;
+        break;
+    case ACAS_EMM:
+    case 0x38:
+    case 0x3a:
+    case 0x3c:
+        break; /* taken, nothing for this card */
+    default:
+        if (cap < 2)
+            return 0;
+        rx[0] = 0x6d;
+        rx[1] = 0x00;
+        return 2;
+    }
+    len = 2 + 4 + n + 2;
+    if (len > cap)
+        return 0;
+    rx[0] = 0x00;
+    rx[1] = 4 + n;
+    rx[2] = 0x00; /* IC instruction */
+    rx[3] = 0x00;
+    rx[4] = rc >> 8;
+    rx[5] = rc & 0xff;
+    memcpy(rx + 6, data, n);
+    rx[6 + n] = 0x90;
+    rx[7 + n] = 0x00;
+    return len;
+}
+
+/* card_id=: 12 hex digits into card; -1 if it is not that */
+static int acas_parse_id(struct acas_card *card, const char *s)
+{
+    for (int i = 0; i < 6; i++) {
+        int hi = hex_to_bin(s[2 * i]), lo = hi < 0 ? -1 : hex_to_bin(s[2 * i + 1]);
+
+        if (hi < 0 || lo < 0)
+            return -1;
+        card->id[i] = hi << 4 | lo;
+    }
+    return s[12] ? -1 : 0;
+}
+/* ---- end of the card's answers ---- */
+
+/* ---- the card's device (acas=) ----
+ * /dev/dvb/adapter0/acas0, as LG's lxdvb_sci registers it on an ARIB set (the A-CAS node; exactly
+ * one of adapter0's and adapter1's must exist). Opened O_RDWR|O_NONBLOCK; only ioctls, each a
+ * 16-byte {u32 id; u32 size; u64 value} (nyxAcas.module, the same in a 32-bit process):
+ * 0x40106F00 with id 0 init (a no-op in LG's driver too), 1 reset (the card activates: no ATR
+ * reaches userland), 2 transfer (size 0x20, value a pointer to {u32 tx_len; u32 timeout; u64 tx;
+ * u64 rx; u64 rx_len}, *rx_len a u32: in the capacity, out the answer's length, 0 a failure); and
+ * 0xC0106F01 with id 3, the reset wait in seconds into value (0: no wait). */
+#define ACAS_IOC_CONTROL _IOW('o', 0, struct acas_ctl)
+#define ACAS_IOC_GET     _IOWR('o', 1, struct acas_ctl)
+#define ACAS_TX_MAX      0x102 /* the driver's transmit limit */
+
+struct acas_ctl {
+    u32 id;
+    u32 size;
+    u64 value;
+};
+
+struct acas_apdu {
+    u32 tx_len;
+    u32 timeout;
+    u64 tx;
+    u64 rx;
+    u64 rx_len;
+};
+
+static unsigned int acas;
+module_param(acas, uint, 0444);
+MODULE_PARM_DESC(acas, "1: the ARIB set's card device, /dev/dvb/adapter0/acas0 (0: none)");
+static char *card_id = "000000000000";
+module_param(card_id, charp, 0444);
+MODULE_PARM_DESC(card_id, "the card's 48-bit ID, 12 hex digits (the VM's own, from beanjar)");
+static struct acas_card acas_card;
+static DEFINE_MUTEX(acas_lock);
+static bool acas_made;
+
+static long acas_transfer(u64 value)
+{
+    struct acas_apdu a;
+    u8 tx[ACAS_TX_MAX], rx[ACAS_RX_MAX];
+    u32 cap;
+    size_t n;
+
+    if (copy_from_user(&a, u64_to_user_ptr(value), sizeof(a)))
+        return -EFAULT;
+    if (!a.tx_len || a.tx_len > sizeof(tx) || !a.rx || !a.rx_len)
+        return -EINVAL;
+    if (copy_from_user(tx, u64_to_user_ptr(a.tx), a.tx_len) ||
+        get_user(cap, (u32 __user *)u64_to_user_ptr(a.rx_len)))
+        return -EFAULT;
+    n = acas_answer(&acas_card, tx, a.tx_len, rx, min_t(u32, cap, sizeof(rx)));
+    pr_info_ratelimited("webos_tv: acas0: %*ph (%u bytes) -> %zu bytes, %*ph\n",
+                        (int)min_t(u32, a.tx_len, 8), tx, a.tx_len, n, (int)min_t(size_t, n, 8),
+                        rx);
+    /* the instruction, in a T=1 block or bare */
+    lgemu_count(&props, "acas", a.tx_len >= 5 && !tx[0] ? tx[4] : a.tx_len >= 2 ? tx[1] : 0, 0);
+    if (n && copy_to_user(u64_to_user_ptr(a.rx), rx, n))
+        return -EFAULT;
+    return put_user((u32)n, (u32 __user *)u64_to_user_ptr(a.rx_len));
+}
+
+static long acas_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    struct acas_ctl c;
+    long ret;
+
+    if (cmd != ACAS_IOC_CONTROL && cmd != ACAS_IOC_GET)
+        return lgemu_ioctl_unhandled(&props, "acas", cmd, -ENOTTY);
+    if (copy_from_user(&c, (void __user *)arg, sizeof(c)))
+        return -EFAULT;
+    mutex_lock(&acas_lock);
+    if (cmd == ACAS_IOC_GET) {
+        ret = -EINVAL;
+        if (c.id == 3) { /* getResetTime */
+            c.value = 0;
+            ret = copy_to_user((void __user *)arg, &c, sizeof(c)) ? -EFAULT : 0;
+        }
+    } else if (c.id == 0 || c.id == 1) { /* init, reset */
+        pr_info("webos_tv: acas0: %s\n", c.id ? "reset" : "init");
+        ret = 0;
+    } else if (c.id == 2) {
+        ret = acas_transfer(c.value);
+    } else {
+        ret = -EINVAL;
+    }
+    mutex_unlock(&acas_lock);
+    lgemu_count(&props, cmd == ACAS_IOC_GET ? "acas get" : "acas control", c.id, 0);
+    return ret;
+}
+
+static const struct file_operations acas_fops = {
+    .owner = THIS_MODULE,
+    .open = nonseekable_open,
+    .unlocked_ioctl = acas_ioctl,
+    .compat_ioctl = compat_ptr_ioctl,
+};
+
+static struct miscdevice acas_dev = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name = "acas0",
+    .nodename = "dvb/adapter0/acas0",
+    .fops = &acas_fops,
+};
+
 /* ---- the analog tuner (atv=) ----
  *
  * LG's wfm for webOS 6 (KLP 1.0's GPL dvbfrontend/v4l2) registers the analog tuner as a V4L2
@@ -854,6 +1096,9 @@ static struct video_device atv_vdev;
 
 static void webos_tv_cleanup(void)
 {
+    if (acas_made)
+        misc_deregister(&acas_dev);
+    acas_made = false;
     if (atv_made)
         video_unregister_device(&atv_vdev);
     atv_made = false;
@@ -965,6 +1210,17 @@ static int __init webos_tv_init(void)
             goto fail;
         fes[i].registered = true;
     }
+    if (acas) {
+        if (acas_parse_id(&acas_card, card_id)) {
+            pr_err("webos_tv: card_id=%s: 12 hex digits\n", card_id);
+            err = -EINVAL;
+            goto fail;
+        }
+        err = misc_register(&acas_dev);
+        if (err)
+            goto fail;
+        acas_made = true;
+    }
     if (atv) {
         strscpy(atv_v4l2.name, "wfm", sizeof(atv_v4l2.name)); /* the device has no driver */
         err = v4l2_device_register(&wdvb->dev, &atv_v4l2);
@@ -987,10 +1243,10 @@ static int __init webos_tv_init(void)
     pr_info("webos_tv: %s, adapter %d, %u frontend(s); commands: LIB version %#x (%s), lock "
             "%#x, post job %#x, frequency %#x, status %#x, monitor %#x, special data %#x/%#x, "
             "strength %#x, quality %#x; "
-            "analog tuner %s%u\n",
+            "analog tuner %s%u; card %s\n",
             platform, adapter.num, frontends, version_cmd, version, lock_cmd, postjob_cmd, freq_cmd,
             status_cmd, monitor_cmd, specstore_cmd, speccheck_cmd, strength_cmd, quality_cmd,
-            atv ? "video" : "none ", atv);
+            atv ? "video" : "none ", atv, acas ? "acas0" : "none");
     return 0;
 fail:
     webos_tv_cleanup();

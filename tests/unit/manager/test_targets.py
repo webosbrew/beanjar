@@ -53,6 +53,19 @@ def test_base_replaces_keys_whole():
     assert targets.RELEASES["beehive"].paks == targets.RELEASES["afro"].paks
 
 
+def test_card_only_on_arib_boards():
+    """The stub card (webos_tv's acas=1) is on O22's Japanese board only, not on its US or global
+    one; its ID is 12 hex digits from the serial, the same for the same serial, starting 0xBE."""
+    o22 = ("o22", "queue")
+    assert targets.card_module(o22, "arib") == "webos_tv"
+    assert targets.card_module(o22, "atsc") is None
+    assert targets.card_module(o22, "dvb") is None
+    assert targets.card_module(o22) is None
+    a, b = targets.card_id("292DADA78604"), targets.card_id("501RAXX00001")
+    assert a == targets.card_id("292DADA78604") and a != b
+    assert len(a) == 12 and a.startswith("be") and int(a, 16)
+
+
 class Malformed:
     def __init__(self, tmp):
         self.dir = os.path.join(tmp, "targets")

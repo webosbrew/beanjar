@@ -18,9 +18,12 @@ broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emul
 # pipeline (watch purpose 2048, window "reserved") holds TU0, Live TV watches on TU1; with one
 # frontend that tune is refused ("DTV Not initialized") and BML never starts. dtv_soc feeds the
 # latest tune that has a signal.
+# acas=1: the set's A-CAS chip, which legacy-broadcast-arib reaches at /dev/dvb/adapter0/acas0
+# (LG's lxdvb_sci); without the node its card init fails and the CAS module information is empty.
+# webos_tv's stub card answers with the VM's own card ID (card_id=, from its serial) and no key.
 # Over the targets' webos_tv words (o22-queue.toml, o22-ponytail.toml); not on the US and global
 # boards.
-broadcast_params = { arib = { webos_tv = ["frontends=2", "delsys=8,8"] } }
+broadcast_params = { arib = { webos_tv = ["frontends=2", "delsys=8,8", "acas=1"] } }
 # The HDMI CEC adapter (lgemu cec.c): webOS 6's libcecp opens /dev/cec0, the kernel's CEC
 # framework, and without it eim's receive thread spins on the failed descriptor.
 # snd_ctls=1: the card's "LGSE Var Fn009" (soundengine's OSD volume) and "Mute Output" (libumi's mute)

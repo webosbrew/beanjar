@@ -350,6 +350,10 @@ def run(words, env=None):
     # the TEE's hardware-unique key, the VM's own (rtk.ko's stand-in TAs derive their keys from it)
     tee = targets.tee_module(p.target)
     vm = {tee: ("tee_huk=" + keys.ensure_tee_huk(p.identity_dir, warn=say),)} if tee else {}
+    # an ARIB set's stub card, whose ID follows the TV's serial (webos_tv's card_id=)
+    card = targets.card_module(p.target, p.broadcast)
+    if card:
+        vm[card] = vm.get(card, ()) + ("card_id=" + targets.card_id(p.env.get("SERIAL", "")),)
     # the StanbyME's accelerometer stands as the set was last turned (rotation.py, beanjar sensor set rotate)
     accel = rotation.launch_params(p.target, p.state_dir)
     if accel:

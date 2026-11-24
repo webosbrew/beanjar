@@ -21,6 +21,7 @@ release file's) with the keys it gives replaced whole; a row without one is stat
 release's base is the release before it in LG's order (WEBOS_ORDER), afro's none.
 """
 
+import hashlib
 import os
 import re
 import subprocess
@@ -1418,6 +1419,27 @@ def tee_module(target):
     """The chip's module with the TEE (a SocModule whose parameters have tee=1: rtk.ko's /dev/tee0),
     whose tee_huk= the VM's identity gives (keys.ensure_tee_huk), or None."""
     return next((m.name for m in soc(target).modules if "tee=1" in m.params), None)
+
+
+def card_module(target, broadcast=None):
+    """The chip's module with an ARIB set's card device on the board of broadcast (acas=1 among its
+    words there: webos_tv's /dev/dvb/adapter0/acas0), whose card_id= the VM's identity gives
+    (card_id), or None."""
+    return next(
+        (
+            m.name
+            for m in soc(target).modules
+            if "acas=1" in board_module_params(target, m.name, broadcast)
+        ),
+        None,
+    )
+
+
+def card_id(serial):
+    """The stub card's 48-bit ID for a TV of serial number serial: 12 hex digits, 0xBE then 40 bits
+    of SHA-256 of the serial. Stable while the TV keeps its serial (an identity reset or a clone
+    makes a new one, and with it a new card); made here, never read from a card."""
+    return "be" + hashlib.sha256(b"beanjar card id\0" + serial.encode()).hexdigest()[:10]
 
 
 def validate_memory(target, derived=None, vm=None):
