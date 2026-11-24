@@ -73,13 +73,13 @@ class BootConfTest(unittest.TestCase):
 
     def test_v4l2_capture(self):
         """video60 (v4l2_capture=1) is the chip's vendor module's, on every captureservice target
-        whose libvtcapture opens it: LG-O's, Realtek's from K6LP, MStar's LM21; and
+        whose libvtcapture opens it: LG-O's (O20N, E60N and the O22 family), Realtek's from K6LP, MStar's LM21; and
         W16R's, read by its libkadaptor shim's DIP; no other module gets the parameter, and no
         other target."""
         for target in targets.all_targets():
             chip = target[0]
             want = (
-                chip.startswith(("o2", "m23"))
+                chip.startswith(("o2", "e60n", "m23"))
                 or (chip.startswith("k") and chip != "k5lp")
                 or chip.startswith("lm21")
                 or targets.name(target) == "m2-dreadlocks"
@@ -606,6 +606,7 @@ class BootConfTest(unittest.TestCase):
             "m23-ponytail": base | {"ftdi_sio"},
             "m23-queue": base | {"ftdi_sio", "ch341", "cp210x"},
             "o20n-kisscurl": base | {"ftdi_sio"},
+            "e60n-kisscurl": base | {"ftdi_sio"},
             "o22-mullet": base | {"ftdi_sio"},
             "o22-number1": base | {"ftdi_sio"},
             "o22n-number1": base | {"ftdi_sio"},
@@ -1076,11 +1077,13 @@ class BootConfTest(unittest.TestCase):
 
     def test_thermalinfo(self):
         """/proc/thermalinfo where the firmware has fancontroller (lm21*, k7, k8*, kf23f, k24*, k25*,
-        m23, the O22 family o2*),
+        m23, the O22 family o2*, O20N and E60N),
         with the IDDQ files from webOS 23 (number1) on; not on older chips."""
         for target in targets.all_targets():
             words = targets.module_params(target).get("lgemu", ())
-            fan = target[0].startswith(("lm21", "k7", "k8", "kf23f", "k24", "k25", "m23", "o2"))
+            fan = target[0].startswith(
+                ("lm21", "k7", "k8", "kf23f", "k24", "k25", "m23", "o2", "e60n")
+            )
             iddq = fan and targets.WEBOS_ORDER.index(target[1]) >= targets.WEBOS_ORDER.index(
                 "number1"
             )
@@ -1311,6 +1314,7 @@ class BootConfTest(unittest.TestCase):
         self.assertEqual(
             [targets.name(p) for p in targets.all_targets()],
             [
+                "e60n-kisscurl",
                 "h13-afro",
                 "k24-ombre",
                 "k24-ponytail",
@@ -1455,6 +1459,7 @@ class BootConfTest(unittest.TestCase):
                 "m23-ponytail": 1536,
                 "m23-queue": 1536,
                 "o20n-kisscurl": 3072,
+                "e60n-kisscurl": 4096,
                 "o22-mullet": 2560,
                 "o22-number1": 2560,
                 "o22-ponytail": 2560,

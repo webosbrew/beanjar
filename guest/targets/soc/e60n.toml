@@ -1,0 +1,25 @@
+# The LG E60N (LG's kdriver family o20's E60, lxboot's chip=E60 on an LG1811), W21K's SoC: O20N's
+# platform (guest/targets/soc/o20n.toml says where each of its values comes from) with W21K's own
+# board and tables, each from W21K 03.70.25's files:
+# - CHIP_REV 0x25a0: the kernel's BASE chip table has E60 at 0x25; A0 is the chosen virtual
+#   revision, as O20N's. KADP (a separate build of the same source) asks the same of lg115x.ko.
+# - I2C: libdile_i2c's gsI2cAllConf has the NVM at 7/0xa0 and the light sensors LIGHT_SENSOR_1/2 at
+#   1/0x20 (O20N's 5).
+# - GPIO: libdile_gpio's highest line is 122 (HDMI4_DEV_DET), so 123 lines; the inputs at 1 are
+#   GPIO_RD_USB1..3_OCD (111, 18, 62), active low. The board is an LCD set (no panel refresh to
+#   report finished).
+
+base = "o20n"
+light_bus = 1
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x25a0",
+    "ace_rev=0x25a0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "ucom=1",
+    "gpio_lines=123",
+    "gpio_level=111:1,18:1,62:1",
+]

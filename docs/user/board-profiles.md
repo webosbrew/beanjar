@@ -159,6 +159,8 @@ LM18A's board (`lm18a-goldilocks`, W18A 05.50.70) is a 43UK6300PUE, a US set (AT
 
 O20N's board (`o20n-kisscurl`, W21O 03.70.05) is an OLED65G1PUA, the US 65" G1 (ATSC, countryGrp 2): W21O's global build (AFABATAA) is the one the models DB lists for the US C1 and G1 models, so it boots the US board. Its line comes from the firmware's own generators (`host/tools/research/model-config.py`, VALIDATE "W21O"): a V-by-One UHD OLED panel at 120 Hz, a 1920x1080 graphic plane, DDR 3 GB (the lower of the two sizes its lxboot knows), and lowlevelstorage's default ToolOpt with the G1's tool type and 65". `chip=O20A0` is lxboot's form ("O20" and a revision); A0 is a virtual revision.
 
+E60N's board (`e60n-kisscurl`, W21K 03.70.25) is a 65QNED99UPA, the US 65" QNED99 (ATSC, countryGrp 2): the models DB's only US models of W21K's global build (AFADATAA) are it and the 75NANO99UPA. Its line comes from the firmware's own generators (VALIDATE "W21K"): a V-by-One 8K LCD panel at 120 Hz, DDR 4 GB (the lower of the two sizes its lxboot knows) and lowlevelstorage's default ToolOpt with the QNED99's tool type and 65". Its graphic plane is 3840x2160: W21K's compositor, built with LG's partial update, draws nothing on a 1920x1080 plane. `chip=E60A0`, as O20N's.
+
 LM15U's board (`lm15u-beehive`, W15U 04.06.25) is a 65UF850V as a German set (DVB, the
 nContinentIdx 50 area): W15U's only OTA ID is the European DVB one (AFADABAA), so it has no US
 or ARIB board. Its fields come from that firmware's MBoot and tvservice tables, each named in the

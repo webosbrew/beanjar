@@ -1,0 +1,18 @@
+models = ["W21K"]
+lg_scaler = [3840, 2160]
+v4l2_capture = true
+
+# W21K kisscurl (03.70.25, "kisscurl-kolovesi" 6.6.0, HE_DTV_W21K_AFADATAA, the global build): as
+# W21O's (o20n-kisscurl.toml) on LG's E60N, with the same paks, kernel (4.4.84-229.kcl4tv.6) and
+# peripherals; its fstabs put the state one partition later (p55-p57), so its own map.
+[release]
+base = "kisscurl"
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",
+    "hid-microsoft", "hid-pl", "hid-sony", "hid-playstation", "hid-zpff", "xpad", "uvcvideo",
+    "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii", "nls_utf8",
+    "exfat", "snd-usb-audio", "cdc-acm", "ftdi_sio", "pl2303", "option", "sierra", "lgfs",
+]
+nvm_disks = { nvram = "8M", eeprom = "32K" }
+partmap = "e60n-kisscurl"

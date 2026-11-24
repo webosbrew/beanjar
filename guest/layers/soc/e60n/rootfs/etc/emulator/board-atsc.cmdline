@@ -1,0 +1,21 @@
+# 65QNED99UPA, the US 65-inch QNED99 (8K), on W21K's global firmware (HE_DTV_W21K_AFADATAA), the
+# OTA id's only US models being it and the 75NANO99UPA. hwopt from the firmware's own hw-option-gen
+# (host/tools/research/model-config.py, VALIDATE "W21K"): country digit 5 US/ATSC, a V-by-One 8K LCD
+# panel at 120 Hz, DDR 4 GB, graphic plane 3840x2160: W21K's compositor (its Qt with LG's partial
+# update) drew nothing on a 1920x1080 plane (eglSetDamageRegion failed, the OSD stayed black) and
+# draws Home on the 4K one. ToolOpt: lowlevelstorage's default record of this firmware with the
+# QNED99's tool type and 65". countryGrp is configd's USA RMM group, 2.
+# chip= as lxboot builds it ("E60" and a revision); A0 is a virtual revision. Identity is synthetic.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=2
+modelopt=000000000
+hwopt=502310000109004000
+ToolOpt=134218705:13331:69857:73:48358963:825744651
+modelName=65QNED99UPA
+debugMode=3
+serialNum=000RAXX00001
+chip=E60A0
+tvregion=ATSC
+emmc_size=0x1d2000000
+cmdEnd
