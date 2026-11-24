@@ -104,14 +104,18 @@ def test_param_value_and_back():
 
 
 def guest_output(
-    param, status, port='{"configs":{"system.arcPort":2},"returnValue":true}', state=None
+    param,
+    status,
+    port='{"configs":{"system.arcPort":2},"returnValue":true}',
+    state=None,
+    profile='{"returnValue":false}',
 ):
     sep = soundbar.SEPARATOR + "\n"
     state = state or (
         '{"arcProfile":"EAC3","cecReady":true,"returnValue":true,'
         '"arcSADs":"150750550700","arcActivation":true}'
     )
-    return f"{param}\n{sep}{status}\n{sep}{port}\n{sep}{state}\n"
+    return f"{param}\n{sep}{status}\n{sep}{port}\n{sep}{profile}\n{sep}{state}\n"
 
 
 def test_parse_attached():
@@ -140,7 +144,7 @@ def test_parse_absent_and_no_cec():
     assert not data["attached"] and data["status"] is None and data["tv"] is None
     assert data["cec"] and data["arc_port"] == 2
     sep = soundbar.SEPARATOR + "\n"
-    data = soundbar.parse(f"nocec\n{sep}{{}}\n{sep}\n")
+    data = soundbar.parse(f"nocec\n{sep}{{}}\n{sep}{{}}\n{sep}\n")
     assert not data["cec"] and not data["attached"] and data["arc_port"] is None
     with pytest.raises(Error):
         soundbar.parse("garbage")
@@ -151,5 +155,18 @@ def test_command_sets_then_reads():
     assert line.index("echo 2,150750 > /sys/module/lgemu/parameters/soundbar") < line.index(
         "cat /sys/module/lgemu/parameters/soundbar;"
     )
-    assert "system.arcPort" in line and "getCECState" in line
+    assert "system.arcPort" in line and "getProfiles" in line and "getCECState" in line
+
+
+def test_arc_port_from_the_system_profile():
+    """43.x: no system.arcPort in the config service; the system profile's arc.port."""
+    data = soundbar.parse(
+        guest_output(
+            "",
+            "absent",
+            port='{"missingConfigs":["system.arcPort"],"returnValue":true}',
+            profile='{"returnValue":true,"profiles":{"arc":{"port":3,"support":true}}}',
+        )
+    )
+    assert data["arc_port"] == 3
     assert "> /sys" not in soundbar.command()

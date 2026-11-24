@@ -80,7 +80,7 @@ beanjar stop tv1
 - `io soundbar attach NAME [--formats ac3,eac3,dts]` plugs a sound bar into the TV's HDMI ARC
   input while it runs (boards whose CEC is emulated: the O22 family and the lm21 boards); with
   the TV's HDMI-CEC setting on, the TV finds it, asks for its audio formats and offers it as its
-  sound output. `io soundbar detach NAME` unplugs it, `io soundbar show NAME` shows both sides
+  sound output, and with eARC Support off it turns ARC on. `io soundbar detach NAME` unplugs it, `io soundbar show NAME` shows both sides
   ([manager README](../../host/core/README.md#sound-bar)).
 - `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
   synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.

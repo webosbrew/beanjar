@@ -55,6 +55,7 @@ static inline void lgemu_i2c_adapters_exit(void)
 #if IS_ENABLED(CONFIG_CEC_CORE)
 int lgemu_cec_init(void);
 void lgemu_cec_exit(void);
+int lgemu_cec_bar_port(void);
 #else
 static inline int lgemu_cec_init(void)
 {
@@ -62,6 +63,10 @@ static inline int lgemu_cec_init(void)
 }
 static inline void lgemu_cec_exit(void)
 {
+}
+static inline int lgemu_cec_bar_port(void)
+{
+    return 0;
 }
 #endif
 

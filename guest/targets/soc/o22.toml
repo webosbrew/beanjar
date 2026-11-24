@@ -26,10 +26,15 @@ broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emul
 broadcast_params = { arib = { webos_tv = ["frontends=2", "delsys=8,8", "acas=1"] } }
 # The HDMI CEC adapter (lgemu cec.c): webOS 6's libcecp opens /dev/cec0, the kernel's CEC
 # framework, and without it eim's receive thread spins on the failed descriptor.
+# v4l2_hdmi=1: the HDMI receiver at /dev/video12 (lgemu v4l2-hdmi.c), which libhdmi-conn-protocol
+# polls for each input's 5 V; libcecp turns ARC on only with 5 V on the ARC input, which a sound bar
+# (beanjar io soundbar) brings.
 # snd_ctls=1: the card's "LGSE Var Fn009" (soundengine's OSD volume) and "Mute Output" (libumi's mute)
 # controls, which the O22 firmware's audiod writes with snd_ctl_elem_write; lgemu turns them into the
 # playback gain, so without them volume and mute never reach the output.
-lgemu = ["i2c_buses=0,1,2,3,4,5,6,7,8,9", "i2c_dev=nvm:7:0x50", "cec=1", "snd_ctls=1"]
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6,7,8,9", "i2c_dev=nvm:7:0x50", "cec=1", "v4l2_hdmi=1", "snd_ctls=1",
+]
 # LIGHT_SENSOR_1/2: channel 1 in every O22 firmware's libdile_i2c (W22O, W23O, W24G)
 light_bus = 1
 # TMF882X_SENSOR_N: channel 1 in the same tables

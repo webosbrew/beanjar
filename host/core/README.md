@@ -957,8 +957,21 @@ port and reads `soundbar_status` (`arc=`, `system_audio=`, `volume=`, `mute=`), 
 side eim's `cec/getCECState` (`arcActivation`, `arcSADs`, `arcProfile`); `--json` has them as
 `port`, `sads`, `formats`, `status` and `tv`. Only the boards whose CEC is `lgemu`'s adapter have
 the bus (targets with `lgemu`'s `cec=1`: the O22 family and the lm21 boards); on the others
-`attach` says so. The TV talks to the bar only with its HDMI-CEC setting (SIMPLINK,
-`other/simplinkEnable`) on, which is off on a new set and stays the user's.
+`attach` says so. While the bar is attached, its HDMI cable's 5 V shows on its input of the HDMI
+receiver (`v4l2-hdmi.c`, `/dev/video12`): on the hardware port whose EDID, as eim wrote it, gives
+the bar's physical address (W22O: HDMI 2 is the receiver's port 3). The ARC input is the config
+service's `system.arcPort`, or on the 43.x builds the system profile's `arc.port`.
+
+What the TV does with it is the user's settings, which stay theirs: it talks to the bar only with
+HDMI-CEC (SIMPLINK, `other/simplinkEnable`) on, which is off on a new set; and it starts ARC over
+CEC only with eARC Support (`sound/eArcSupport`) off, since with it on arccontroller waits for the
+eARC driver (`/dev/earc0`, not emulated yet) to say the connection is ARC. Measured on W22O
+13.30.56 with HDMI-CEC on, eARC Support off and `soundOutput` `external_arc`: `arcActivation`
+true, `arcSADs` `150750550700` for `ac3,eac3,dts`, and `status show` reports `ARC on` with the
+codec the firmware writes for the ARC output while an AC-3 clip plays: E-AC-3 encoded in `auto`,
+PCM in `pcm`, AC-3 bit-exact in `passThrough`. The host still gets the decoded stereo PCM: there is
+no IEC 61937 path. `detach` returns `arcActivation` to false and the output to the TV speaker;
+`arcSADs` keeps the last list, as libcecp keeps it.
 
 ### ares tools
 

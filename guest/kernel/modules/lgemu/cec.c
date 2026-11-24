@@ -30,7 +30,8 @@
  * Descriptor with the CTA-861 descriptors it was given, those of the formats the TV asks for.
  * Attached, it reports its physical address; detached, it leaves as a bar switched off does (System
  * Audio Mode off, Terminate ARC) and stops acknowledging a second later. It is the host's, set at
- * run time (beanjar io soundbar attach and detach), and not kept across a restart.
+ * run time (beanjar io soundbar attach and detach), and not kept across a restart. Its cable's
+ * 5 V, which libcecp needs on the ARC input to turn ARC on, is v4l2-hdmi.c's (lgemu_cec_bar_port).
  *
  *   cec              register the adapter (O22's family; a SoC whose own module models its CEC
  *                    node, rtk.ko's cec0, leaves it off)
@@ -576,6 +577,18 @@ static int soundbar_status_get(char *buf, const struct kernel_param *kp)
         n = sprintf(buf, "absent\n");
     mutex_unlock(&bar_lock);
     return n;
+}
+
+/* the HDMI input the sound bar is plugged into (its HDMI cable carries 5 V to the TV's ARC input,
+ * which v4l2-hdmi.c reports), 0 for none */
+int lgemu_cec_bar_port(void)
+{
+    int port;
+
+    mutex_lock(&bar_lock);
+    port = bar.present && !bar.leaving ? bar.port : 0;
+    mutex_unlock(&bar_lock);
+    return port;
 }
 
 static const struct kernel_param_ops soundbar_status_ops = {.get = soundbar_status_get};

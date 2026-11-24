@@ -385,7 +385,8 @@ def register(cli):
         "ARC handshake, System Audio Mode and the TV's request for its audio formats (short audio "
         "descriptors), as a bar plugged in and switched on; on a running VM whose firmware's CEC "
         "is ours (the O22 family, the lm21 boards), gone when the VM or its guest restarts (not a "
-        "setting). The TV uses it with its HDMI-CEC (SIMPLINK) setting on",
+        "setting). The TV uses it with its HDMI-CEC (SIMPLINK) setting on, and turns ARC on with "
+        "eARC Support off",
         under=io,
         dest="verb",
     )

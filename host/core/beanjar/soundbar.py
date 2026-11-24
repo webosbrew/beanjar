@@ -6,14 +6,16 @@ The bar is lgemu's (guest/kernel/modules/lgemu/cec.c): an audio system at logica
 the TV's ARC input, which answers the ARC handshake, System Audio Mode and Request Short Audio
 Descriptor with the descriptors it was given. The host sets it through lgemu's `soundbar`
 parameter, "PORT,SADS", over the VM's shell port (guestshell.py): PORT is the TV's own ARC input
-(the config service's system.arcPort, which eim reads too), SADS the CTA-861 short audio
+(the config service's system.arcPort, or on the 43.x builds the system profile's arc.port, which
+eim reads too), SADS the CTA-861 short audio
 descriptors of the formats asked for, three bytes each in hex, as eim reports them in arcSADs.
 It is not a setting: a restart of the VM or of its guest has no bar, as a bar unplugged.
 
 The firmwares whose CEC is libcecp on /dev/cec0 with lgemu's adapter have it (the O22 family and
 the lm21 boards, targets with lgemu's cec=1); the others report that they have no such bus.
-The TV turns ARC on only with its HDMI-CEC (SIMPLINK) setting on (other/simplinkEnable), which
-is the user's, as on a set."""
+The TV talks to it only with its HDMI-CEC (SIMPLINK) setting on (other/simplinkEnable), and
+starts ARC over CEC only with eARC Support off (sound/eArcSupport; with it on arccontroller waits
+for the eARC driver): both are the user's, as on a set."""
 
 import json
 import re
@@ -27,6 +29,8 @@ ARC_PORT = (
     "luna://com.webos.service.config/getConfigs",
     {"configNames": ["system.arcPort"]},
 )
+# the 43.x builds' eim reads it from the system profile's arc.port instead
+ARC_PROFILE = ("luna://com.webos.service.systemprofile/getProfiles", {"names": ["arc"]})
 CEC_STATE = ("luna://com.webos.service.eim/cec/getCECState", {})
 MAX_SADS = 12  # cec.c's BAR_MAX_SADS
 
@@ -116,14 +120,16 @@ def luna(url_params):
 
 def command(value=None):
     """The guest command: (after setting the parameter to value) the parameter, the bar's status,
-    then the TV's ARC input and its CEC state (luna-send's answers), SEPARATOR between them; "nocec"
+    then the TV's ARC input (the config service's, the system profile's) and its CEC state
+    (luna-send's answers), SEPARATOR between them; "nocec"
     for a guest without the parameter."""
     sep = shlex.quote(SEPARATOR)
     set_ = f"echo {shlex.quote(value)} > {PARAMS}/soundbar && " if value is not None else ""
     return (
         f"if [ -e {PARAMS}/soundbar ]; then {set_}"
         f"cat {PARAMS}/soundbar; echo {sep}; cat {PARAMS}/soundbar_status; "
-        f"else echo no''cec; fi; echo {sep}; {luna(ARC_PORT)}; echo {sep}; {luna(CEC_STATE)}"
+        f"else echo no''cec; fi; echo {sep}; {luna(ARC_PORT)}; echo {sep}; {luna(ARC_PROFILE)}; "
+        f"echo {sep}; {luna(CEC_STATE)}"
     )
 
 
@@ -143,12 +149,15 @@ def parse(out):
         cec = False
     else:
         cec = True
-    if len(parts) != 4:
+    if len(parts) != 5:
         raise Error(f"no answer about the sound bar: {out!r}")
     param = parse_param(parts[0]) if cec else None
     config = json_answer(parts[2]) or {}
     arc_port = (config.get("configs") or {}).get("system.arcPort")
-    state = json_answer(parts[3]) or {}
+    if not isinstance(arc_port, int):
+        profile = json_answer(parts[3]) or {}
+        arc_port = ((profile.get("profiles") or {}).get("arc") or {}).get("port")
+    state = json_answer(parts[4]) or {}
     tv = None
     if state.get("returnValue"):
         tv = {
@@ -199,7 +208,7 @@ def attach(vm, names):
     if data["attached"]:
         raise Error(f"VM {vm.name} has a sound bar: detach it first (beanjar io soundbar detach)")
     if data["arc_port"] is None:
-        raise Error(f"VM {vm.name}: its firmware names no ARC input (system.arcPort)")
+        raise Error(f"VM {vm.name}: its firmware names no ARC input (system.arcPort, arc.port)")
     data = _run(vm, command(param_value(data["arc_port"], names)))
     if not data["attached"]:
         raise Error(f"VM {vm.name}: lgemu did not take the sound bar")

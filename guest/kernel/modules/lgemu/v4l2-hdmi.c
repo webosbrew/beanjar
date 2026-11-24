@@ -6,7 +6,9 @@
  * download that succeeds sets eim's start flag 0x80, without which eim never starts its CEC stack
  *. The EDID RAM is modelled: a port's last write is what a read returns. HPD, power-off,
  * repeater and expert settings are kept as written. Everything that would describe an incoming
- * signal reads as none: no 5 V, and zeroed timing, infoframes and diagnostics. HDCP keys have no
+ * signal reads as none: no 5 V (but on the input a sound bar of cec.c is plugged into, whose
+ * cable carries it: libhdmi-conn-protocol's 5 V poll tells eim, and libcecp turns ARC on only with
+ * 5 V on its ARC input; bar_5v), and zeroed timing, infoframes and diagnostics. HDCP keys have no
  * receiver to go to and stay unsupported. The controls are LG's v4l2-ext ones (W21P's
  * dvbfrontend/v4l2 headers in LG's GPL sources), V4L2_CID_USER_EXT_HDMI_BASE 0x985900, through
  * the 32-bit S/G_EXT_CTRLS (class 0x980000, one control). v4l2_hdmi=1 turns it on. */
@@ -18,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/unaligned.h>
+#include <media/cec.h>
 #include "lgemu.h"
 #include "lgemu-drv.h"
 
@@ -50,6 +53,7 @@ MODULE_PARM_DESC(v4l2_hdmi, "enable the modeled HDMI receiver with nothing conne
 static DEFINE_MUTEX(lock);
 static struct {
     u8 edid[EDID_MAX];
+    u32 edid_len;
     u32 hpd, repeater[3];
     u32 expert[EXPERT_TYPES][3];
 } ports[PORTS];
@@ -80,6 +84,18 @@ static long port_of(const u8 *payload, u32 size)
 {
     u32 port = size >= 4 ? get_unaligned_le32(payload) : 0;
     return port >= 1 && port <= PORTS ? port - 1 : -EINVAL;
+}
+
+/* with lock held: whether port has 5 V, which only a sound bar of cec.c brings: on the input whose
+ * EDID (the TV's, as eim wrote it) gives the bar's physical address PORT.0.0.0, as a device on that
+ * input takes it from there; the TV numbers its inputs in the EDID, and the hardware's port order
+ * is the board's (W22O: HDMI 2's EDID is on port 3) */
+static bool bar_5v(long port)
+{
+    int bar = lgemu_cec_bar_port();
+
+    return bar && ports[port].edid_len &&
+           cec_get_edid_phys_addr(ports[port].edid, ports[port].edid_len, NULL) == bar << 12;
 }
 
 static long extended(unsigned int cmd, void __user *arg)
@@ -124,9 +140,14 @@ static long extended(unsigned int cmd, void __user *arg)
             else if (copy_from_user(edid, data, bytes))
                 ret = -EFAULT;
             if (!ret) {
+                u16 pa = cec_get_edid_phys_addr(edid, bytes, NULL);
+
                 mutex_lock(&lock);
                 memcpy(ports[port].edid, edid, bytes);
+                ports[port].edid_len = bytes;
                 mutex_unlock(&lock);
+                pr_info("port %ld: EDID of %u bytes, physical address %x.%x.%x.%x\n", port + 1,
+                        bytes, pa >> 12, pa >> 8 & 0xF, pa >> 4 & 0xF, pa & 0xF);
             }
             kfree(edid);
         } else {
@@ -145,7 +166,7 @@ static long extended(unsigned int cmd, void __user *arg)
         }
         goto out;
     } else if (id == CONNECTION && cmd == G_EXT && size >= 5 && port >= 0) {
-        payload[4] = 0; /* no 5 V */
+        payload[4] = bar_5v(port);
     } else if (id == HPD && size == 8 && port >= 0) {
         if (cmd == S_EXT)
             ports[port].hpd = get_unaligned_le32(payload + 4);
