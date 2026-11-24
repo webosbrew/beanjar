@@ -451,6 +451,7 @@ commands follow is in [AGENTS.md](../../AGENTS.md#follow-the-command-line-guidel
 | `shell [-t \| -T] NAME [[--] CMD [ARG...]]` | A root shell inside webOS on the running VM, or one command, over the VM's own `webos.shell` port: no SSH, developer mode, network or layer (see Shell). Exits with the command's status. |
 | `mitm show NAME [--password]` | The traffic inspector of a running `mode = "mitm"` VM: its mode, status (`Running`, `Inspector is not ready`, `Inspector off: REASON`, `Not running`, ...), whether it is ready, its URL (with `link = "lan"` the LAN one, and `local_url`, the host's way in), its password file, and `mitmweb`: the `version` and `path` the start found and the `problem` that kept the inspector off (no mitmweb, older than 12.0.1, or it failed; the guest then goes out directly); the password itself only with `--password`. |
 | `io usb attach NAME [--id ID] [--image FILE [--readonly] \| --device VENDOR:PRODUCT\|BUS-DEVICE [--sudo] \| --camera [--pattern NAME]]` / `io usb detach NAME ID` / `io usb list NAME` | USB devices plugged into a running VM over usbredir: `attach` without a source adds a `usb-redir` device with a unix socket in the run directory and prints the socket; with `--image` a disk image as a USB stick; with `--device` or `--camera` it does the lot for a device of this machine, or for the virtual camera, until Ctrl-C. `detach` unplugs one, `list` shows each with whether a client is on its socket and whether the guest has the device (see [USB devices](#usb-devices)). |
+| `io soundbar attach NAME [--formats FORMAT,...]` / `io soundbar detach NAME` / `io soundbar show NAME` | A sound bar on the running VM's HDMI ARC input, on its CEC bus: `attach` plugs one in with the audio formats it reports (default `lpcm,ac3,eac3,dts`), `detach` switches it off and unplugs it, `show` shows it, what it agreed with the TV (ARC, System Audio Mode, volume) and the TV's `getCECState` (see [Sound bar](#sound-bar)). Not kept across a restart. |
 | `mitm connect NAME` | Makes the inspector reachable from this machine and keeps it so until stdin ends, across the VM's restarts (`stop` and `start`, a guest reboot): prints one JSON line, `{"url", "password"}`, and another whenever they change (a restarted VM's inspector has a new password and no flows); stderr says when the inspector is gone and when it is back. Every 5 s it asks mitmweb with the session cookie of its first login, and when that fails asks for the VM's state again (at most every 10 s). For `HOST/NAME` it asks the host's `mitm show --password` and adds a forward from `127.0.0.1:PORT` here to the inspector there to the host's shared ssh connection; those requests keep that connection open (`ControlPersist` ends an idle one after 60 s, and the forward with it), and should it end anyway the same forward is added to a new one. It is cancelled at the end (also on SIGTERM, SIGHUP, Ctrl-C; one left by a killed run is cancelled by the next remote run, as `ares-TOOL`'s). Refused for a VM without mitm, not running, or whose inspector is not ready. beanjar-web serves the inspector through it ([web viewer](../../docs/dev/architecture/web-viewer.md#the-traffic-inspector)). |
 | `mitm clear NAME` | Empties the inspector's flow list, as its page's Clear does (`POST /clear` with the password and tornado's XSRF pair: the `_mitmproxy_xsrf` cookie and an equal `X-XSRFToken` header). For `HOST/NAME` through a forward as `mitm connect`'s, for the one request. |
 
@@ -920,6 +921,44 @@ and Quick Start+ standby, but not across a stop and start: it is QEMU's, not one
 settings. An `attach --device` killed outright (SIGKILL) leaves its `usb-redir` device with no
 client, which the guest does not see; `io usb detach` removes it. The guest kernel's USB class drivers are per
 release ([build and boot](../../docs/dev/architecture/build-and-boot.md), "Peripheral modules").
+
+### Sound bar
+
+`beanjar io soundbar attach NAME [--formats FORMAT,...]` plugs a sound bar into a running VM's
+HDMI ARC input and switches it on; `io soundbar detach NAME` switches it off and unplugs it;
+`io soundbar show NAME` shows it and the TV's view of it. The bar is an HDMI-CEC audio system on
+the emulated CEC bus (`lgemu`'s `cec.c`, logical address 5, physical address `PORT.0.0.0` on the
+firmware's own ARC input, `system.arcPort`): it answers the device queries, the ARC handshake,
+System Audio Mode, the audio status and volume keys, and Request Short Audio Descriptor with the
+CTA-861 descriptors of its formats, those the TV asks for. It is not a setting: a stop and start, or
+a guest reboot, has no bar, as after unplugging it.
+
+```sh
+beanjar io soundbar attach tv --formats ac3,eac3,dts
+beanjar io soundbar show tv --json
+beanjar io soundbar detach tv
+```
+
+| `--formats` | Descriptor (format, channels, rates, byte 3) |
+|---|---|
+| `lpcm` | `09 07 07`: LPCM, 2 channels, 32/44.1/48 kHz, 16/20/24 bit |
+| `ac3` | `15 07 50`: AC-3, 5.1, 32/44.1/48 kHz, 640 kbit/s |
+| `eac3` | `55 07 00`: E-AC-3, 5.1, 32/44.1/48 kHz |
+| `eac3-atmos` | `57 07 01`: E-AC-3, 7.1, 32/44.1/48 kHz, Joint Object Coding (Atmos) |
+| `dts` | `3d 06 c0`: DTS, 5.1, 44.1/48 kHz, 1536 kbit/s |
+| `aac` | `35 07 50`: AAC LC, 5.1, 32/44.1/48 kHz, 640 kbit/s |
+
+The default is `lpcm,ac3,eac3,dts`; `eac3` and `eac3-atmos` exclude each other. The TV asks only
+for the formats its own profile names (W22O: LPCM, AC-3 and E-AC-3), so `arcSADs` lists those of
+the bar's that it asked for. The descriptors are checked with `edid-decode` in the unit tests.
+
+The host sets `lgemu`'s `soundbar` parameter (`PORT,SADS`, empty for none) over the VM's shell
+port and reads `soundbar_status` (`arc=`, `system_audio=`, `volume=`, `mute=`), and for the TV's
+side eim's `cec/getCECState` (`arcActivation`, `arcSADs`, `arcProfile`); `--json` has them as
+`port`, `sads`, `formats`, `status` and `tv`. Only the boards whose CEC is `lgemu`'s adapter have
+the bus (targets with `lgemu`'s `cec=1`: the O22 family and the lm21 boards); on the others
+`attach` says so. The TV talks to the bar only with its HDMI-CEC setting (SIMPLINK,
+`other/simplinkEnable`) on, which is off on a new set and stays the user's.
 
 ### ares tools
 

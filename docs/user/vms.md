@@ -77,6 +77,11 @@ beanjar stop tv1
   and digital mode chosen in its settings, the outputs the emulated hardware has open, the mode
   (PCM, auto, passthrough) and the codec and channel count each output sends, and the streams the
   TV's player plays ([manager README](../../host/core/README.md#what-the-tv-sends-out-as-audio)).
+- `io soundbar attach NAME [--formats ac3,eac3,dts]` plugs a sound bar into the TV's HDMI ARC
+  input while it runs (boards whose CEC is emulated: the O22 family and the lm21 boards); with
+  the TV's HDMI-CEC setting on, the TV finds it, asks for its audio formats and offers it as its
+  sound output. `io soundbar detach NAME` unplugs it, `io soundbar show NAME` shows both sides
+  ([manager README](../../host/core/README.md#sound-bar)).
 - `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
   synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
 - `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the

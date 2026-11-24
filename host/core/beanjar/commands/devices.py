@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The set's inputs and ports: io tuner and io usb."""
+"""The set's inputs and ports: io tuner, io usb and io soundbar."""
 
 import argparse
 import json
@@ -208,11 +208,53 @@ def plug_usb(lib, a, host=None):
     return usb.plug_local(lib.vm(a.name), client, a.id, ready, out)
 
 
+def soundbar_text(name, data):
+    if not data["cec"]:
+        return f"{name}: no CEC bus of ours on its board"
+    lines = []
+    if data["attached"]:
+        st = data["status"] or {}
+        lines.append(
+            f"{name}: sound bar on HDMI {data['port']}: {', '.join(data['formats'])}"
+            + (f"; ARC {'on' if st.get('arc') else 'off'}" if st else "")
+            + (f", system audio {'on' if st.get('system_audio') else 'off'}" if st else "")
+            + (f", volume {st['volume']}{' (muted)' if st.get('mute') else ''}" if st else "")
+        )
+    else:
+        lines.append(f"{name}: no sound bar")
+    tv = data.get("tv")
+    if tv:
+        lines.append(
+            f"TV: ARC {'active' if tv.get('arcActivation') else 'not active'}"
+            + (f", SADs {tv['arcSADs']}" if tv.get("arcSADs") else ", no SADs")
+            + (f", profile {tv['arcProfile']}" if tv.get("arcProfile") else "")
+        )
+    return "\n".join(lines)
+
+
+def cmd_soundbar(lib, a):
+    from .. import soundbar
+
+    vm = lib.vm(a.name)
+    if a.verb == "attach":
+        try:
+            names = soundbar.parse_formats(a.formats or ",".join(soundbar.DEFAULT_FORMATS))
+        except ValueError as e:
+            raise Usage(f"io soundbar attach: --formats: {e}") from None
+        data = soundbar.attach(vm, names)
+    elif a.verb == "detach":
+        data = soundbar.detach(vm)
+    else:
+        data = soundbar.show(vm)
+    return emit(a, data, soundbar_text(a.name, data))
+
+
 def register(cli):
     command, group, vm_name = cli.command, cli.group, cli.vm_name
     io = group(
         "io",
-        "the hardware a set talks to, from outside: USB devices and the tuner's antenna",
+        "the hardware a set talks to, from outside: USB devices, the tuner's antenna and a sound "
+        "bar",
         dest="area",
         metavar="DEVICE",
     )
@@ -336,3 +378,49 @@ def register(cli):
     s.add_argument("--size", default="64M", help="the disk's size, whole MiB (default 64M)")
     s.add_argument("--label", default="BEANJAR", help="the filesystem's label (default BEANJAR)")
     s.add_argument("--overwrite", action="store_true", help="replace FILE if it exists")
+
+    g = group(
+        "soundbar",
+        "a sound bar on the set's HDMI ARC input, on its CEC bus: an audio system that answers the "
+        "ARC handshake, System Audio Mode and the TV's request for its audio formats (short audio "
+        "descriptors), as a bar plugged in and switched on; on a running VM whose firmware's CEC "
+        "is ours (the O22 family, the lm21 boards), gone when the VM or its guest restarts (not a "
+        "setting). The TV uses it with its HDMI-CEC (SIMPLINK) setting on",
+        under=io,
+        dest="verb",
+    )
+    from ..soundbar import DEFAULT_FORMATS, FORMATS
+
+    s = command(
+        g,
+        "attach",
+        "plug a sound bar into the TV's ARC input (its firmware's system.arcPort) and switch it "
+        "on: it reports itself, and the TV asks it for ARC and its formats",
+        cmd_soundbar,
+        usage="beanjar io soundbar attach NAME [--formats FORMAT,...] [--json]",
+    )
+    vm_name(s)
+    s.add_argument(
+        "--formats",
+        metavar="FORMAT,...",
+        help="the audio formats the bar decodes, listed in that order: "
+        + "; ".join(f"{k} ({v[0]})" for k, v in FORMATS.items())
+        + f". eac3 and eac3-atmos exclude each other. Default {','.join(DEFAULT_FORMATS)}",
+    )
+    s = command(
+        g,
+        "detach",
+        "switch the sound bar off and unplug it: it turns System Audio Mode and ARC off, as a bar "
+        "going to standby does, and leaves the bus a second later",
+        cmd_soundbar,
+    )
+    vm_name(s)
+    s = command(
+        g,
+        "show",
+        "the VM's sound bar (its ARC input, formats, and what it agreed with the TV: ARC, System "
+        "Audio Mode, the volume) and the TV's view (eim's getCECState: arcActivation, arcSADs, "
+        "arcProfile, where the firmware has it)",
+        cmd_soundbar,
+    )
+    vm_name(s)

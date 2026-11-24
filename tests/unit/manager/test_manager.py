@@ -3662,6 +3662,13 @@ class CliParseTest(unittest.TestCase):
                 {"overwrite": True},
             ),
             (
+                ["io", "soundbar", "attach", "tv1", "--formats", "ac3,dts"],
+                devices.cmd_soundbar,
+                {"verb": "attach", "formats": "ac3,dts"},
+            ),
+            (["io", "soundbar", "detach", "tv1"], devices.cmd_soundbar, {"verb": "detach"}),
+            (["io", "soundbar", "show", "tv1"], devices.cmd_soundbar, {"verb": "show"}),
+            (
                 ["screenshot", "tv1", "-", "--frame", "384x216"],
                 display.cmd_screenshot,
                 {"frame": "384x216"},
@@ -3746,7 +3753,8 @@ class CliParseTest(unittest.TestCase):
             (["key", "model"], "show,set,unset"),
             (["io", "tuner"], "list,map,unmap"),
             (["sensor", "show"], "light,presence,temperature,rotate"),
-            (["io"], "tuner,usb"),
+            (["io", "soundbar"], "attach,detach,show"),
+            (["io"], "tuner,usb,soundbar"),
             ([], "list,create"),
         ):
             with self.subTest(argv):
