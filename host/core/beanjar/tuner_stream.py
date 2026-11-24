@@ -41,7 +41,7 @@ TABLE_STT = 0xCD
 PACKET = 188
 MUX_RATE = 5_000_000  # bits a second
 SECONDS = 20  # of a made stream, looped
-VERSION = 2  # of the generator: part of a stream's key
+VERSION = 3  # of the generator: part of a stream's key
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # fonts-dejavu-core
 
 
@@ -88,6 +88,7 @@ LINEUP = {
                     "source_id": 7001,
                     "program": 1,
                     "tone_hz": 440,
+                    "picture": "testsrc2",
                     "events": [
                         (
                             "Test Pattern Hour",
@@ -107,6 +108,7 @@ LINEUP = {
                     "source_id": 7002,
                     "program": 2,
                     "tone_hz": 660,
+                    "picture": "smptehdbars",
                     "events": [
                         ("Subchannel Loop", 45, "Looping content on the second subchannel."),
                         ("Weather", 15, "Clear skies in the emulated region."),
@@ -126,6 +128,7 @@ LINEUP = {
                     "source_id": 14001,
                     "program": 1,
                     "tone_hz": 880,
+                    "picture": "rgbtestsrc",
                     "events": [
                         ("Fourteen Live", 90, "Programme on the second physical channel."),
                         ("Quiz Night", 30, "Questions, answers and a test tone."),
@@ -146,6 +149,7 @@ LINEUP = {
                     "source_id": 33001,
                     "program": 1,
                     "tone_hz": 1000,
+                    "picture": "gradients",
                     "events": [
                         ("Documentary", 60, "Colour bars in their natural habitat."),
                         ("Sports Desk", 30, "Scores from the emulated league."),
@@ -333,8 +337,8 @@ def _write_tables(rf, d, now):
 
 
 def _make_loop(rf, path):
-    """The A/V loop of the physical channel: a test pattern labelled with the virtual channel and a
-    tone, per service, MPEG-2 and AC-3 at the mux rate."""
+    """The A/V loop of the physical channel: each service's own built-in FFmpeg picture, labelled
+    with the virtual channel, and its own tone, MPEG-2 and AC-3 at the mux rate."""
     v, a, dur = LINEUP["video"], LINEUP["audio"], LINEUP["loop_seconds"]
     cmd = ["ffmpeg", "-v", "error", "-y"]
     maps, progs = [], []
@@ -344,7 +348,7 @@ def _make_loop(rf, path):
             "-f",
             "lavfi",
             "-i",
-            f"testsrc2=s={v['size']}:r={v['fps']}:d={dur},drawtext=fontfile={FONT}:text='{label}':"
+            f"{s['picture']}=s={v['size']}:r={v['fps']}:d={dur},drawtext=fontfile={FONT}:text='{label}':"
             "fontsize=44:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h/2-th",
             "-f",
             "lavfi",

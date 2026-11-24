@@ -569,6 +569,24 @@ class AribTest(unittest.TestCase):
         self.assertEqual(tuner.channels_of([557143000], tuner.ARIB), [27])
         self.assertEqual(tuner.channels_of([557143000]), [])
 
+    def test_each_channel_has_its_own_picture_and_tone(self):
+        services = [s for rf in tuner_stream.LINEUP["rf"] for s in rf["services"]]
+        self.assertGreater(len(services), 1)
+        for key in ("picture", "tone_hz"):
+            values = [s[key] for s in services]
+            self.assertEqual(len(set(values)), len(values), key)
+        # the stream's key follows a service's picture and tone
+        now = time.time()
+        a = tuner_stream.stream_key(7, now)
+        svc = tuner_stream.LINEUP["rf"][0]["services"][0]
+        for key, other in (("picture", "life"), ("tone_hz", 123)):
+            old = svc[key]
+            svc[key] = other
+            try:
+                self.assertNotEqual(tuner_stream.stream_key(7, now), a, key)
+            finally:
+                svc[key] = old
+
     def test_map_frame_and_reader(self):
         f = tuner.map_frame([557142857], tuner.SYS_ISDBT)
         self.assertEqual(struct.unpack_from("<II", f, 16), (557142857, 8))
