@@ -54,9 +54,13 @@ soc_phys_base = '0xB8000000u'
 # The GPU vendor libraries the gl layer replaces with empty stand-ins: none. bsppart's Mali
 # Midgard r12p0 driver is one library, libmali.so.0.1 (no SONAME: its users record libmali.so),
 # NEEDing libgm and Wayland; libEGL.so.1.4, libGLESv2.so.2.0, libGLESv1_CM.so.1.1 and
-# libOpenCL.so.1.1 are small wrappers NEEDing it. Nothing imports a mali_*, ump_*, cl* or gbm_*
-# symbol, and libmali NEEDs no libUMP any more, so no other stand-in is needed.
+# libOpenCL.so.1.1 are small wrappers NEEDing it. libmali NEEDs no libUMP any more, so no other
+# stand-in is needed. Nothing imports a mali_* or gbm_* symbol; libehsp (W18H's and W18M's rootfs,
+# LG's GPU compute for the smart local dimming) imports ump_* and cl*, which LG's HAL makes global
+# by dlopening libOpenCL.so: gl_vendor_mali_compute gives the stand-in libmali's answers without
+# the GPU driver (guest/layers/gl/src/mali-compute.c).
 gl_vendor_stubs = []
+gl_vendor_mali_compute = true
 # The vendor's one GL library (guest/layers/soc/h13/meson.build): libmali.so, NEEDing Mesa's libEGL
 # libGLESv2 and libGLESv1_CM, as libmali.so.0.1 with its .so and .so.0 links (bsppart's names), as on M2.
 # W17H's libwayland-egl.so.0.1 is a real implementation (NEEDing libgm) rather than a libmali

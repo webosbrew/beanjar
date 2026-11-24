@@ -22,7 +22,9 @@
 #                                               window-config rule, also as libEGL.so{,.1,.1.4},
 #                                               and Mesa's libEGL as libEGL-mesa.so.1; with
 #                                               gl_vendor_mali_pixmap (o22) images of Mali
-#                                               native pixmaps (src/mali-pixmap.c)
+#                                               native pixmaps (src/mali-pixmap.c); with
+#                                               gl_vendor_mali_compute (m16p) Mali's UMP and
+#                                               OpenCL without a GPU (src/mali-compute.c)
 #   libegl-kms.so                               compositor only (LD_PRELOAD): window 0 -> KMS
 #   libstarfishsurface.so.0.0.0                 QtWebKit's shared surfaces on gbm/dmabuf
 #   libIMGegl.so*, libsrv_um.so*, libglslcompiler.so*   empty stubs
@@ -131,6 +133,10 @@ endforeach
 # libGLESv1_CM (Mali's one library carries GLES 1 too), and libwayland-egl where the vendor library also exports wl_egl_window_* (k5lp's Mali Bifrost). Its
 # SONAME is the chip's gl_vendor_gl_soname where the vendor's has one (k7lp's libmali.so.0, which
 # the firmware NEEDs), else lib<name>.so (the vendor's had none).
+# With the chip's gl_vendor_mali_compute: Mali's UMP and OpenCL functions as the vendor library
+# answers them without its GPU driver (src/mali-compute.c; m16p: LG's HAL loads libehsp, which
+# imports them from libmali).
+vendor_extra_src = get_variable('gl_vendor_mali_compute', false) ? ['src/mali-compute.c'] : []
 if gl_vendor_gl != ''
   # by the stage's unversioned names, which every version has (a -l would make Meson record the
   # file it resolves to when configuring, such as libwayland-egl.so.1.26.0, as an input)
@@ -149,7 +155,7 @@ if gl_vendor_gl != ''
     if vendor_soname != ''
       vendor_needs += '-Wl,-soname,' + vendor_soname
     endif
-    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/mali-pixmap.c',
+    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/mali-pixmap.c', vendor_extra_src,
       dependencies: mesa_dep,
       c_args: ['-fvisibility=hidden'],
       link_args: ['-Wl,--hash-style=both', '-ldl', '-lpthread',
@@ -159,7 +165,7 @@ if gl_vendor_gl != ''
     if vendor_soname != ''
       vendor_needs += '-Wl,-soname,' + vendor_soname
     endif
-    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/pvr-stub.c',
+    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/pvr-stub.c', vendor_extra_src,
       link_args: ['-nostdlib', '-L' + mesa_lib, '-Wl,--no-as-needed'] + vendor_needs,
       link_depends: mesa)}
   else
@@ -182,7 +188,7 @@ if gl_vendor_gl != ''
     foreach f : gl_window_rgba
       rgba += '{@0@,@1@,@2@,@3@}'.format(f[0], f[1], f[2], f[3])
     endforeach
-    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/egl-window-formats.c',
+    pvr_stubs += {gl_vendor_gl: shared_library(gl_vendor_gl, 'src/egl-window-formats.c', vendor_extra_src,
       dependencies: mesa_dep,
       c_args: ['-fvisibility=hidden', '-DWINDOW_RGBA=' + ','.join(rgba)],
       link_with: mesa_egl_name,

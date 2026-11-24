@@ -121,6 +121,12 @@ static_assert(sizeof(struct lx_de_fw_info) == 16);
 #define DE_IOW_GET_SUB_MODE         _IOR(DE_IOC_MAGIC, 53, u32) /* sic: an _IOR */
 #define DE_IOW_SET_SRC_SIZE         _IOW(DE_IOC_MAGIC, 55, struct lx_de_src_size)
 #define DE_IOR_GET_SRC_SIZE         _IOR(DE_IOC_MAGIC, 56, struct lx_de_src_size)
+/* KADP_DE_FPP_Initialize (M16PP's libkadaptor.so.2): in 1, out the address of the frame
+ * pre-processing table, which KADP then maps from this node, DE_FPP_SIZE bytes, without checking
+ * either call (a failure faults on the mapping's +0x40); LG's HAL (libhal_lg115x's smart local
+ * dimming and colour contrast threads, after a Quick Start+ resume) reads the table's blocks */
+#define DE_IOWR_FPP_INIT _IOWR(DE_IOC_MAGIC, 91, u32)
+#define DE_FPP_SIZE      0x8000
 
 static char *de_mem, *de_capacity, *de_abi;
 static unsigned int de_panel, de_vtm_buffers = 3, de_src_status = DE_SRC_STATUS_M16P;
@@ -155,9 +161,11 @@ static u32 de_base, de_size, de_frame_size;
 static u8 *de_vtm;               /* the VTM page: per window, the request and the reply */
 static unsigned int de_vtm_size; /* a slot's bytes in the chip's layout */
 static u8 *de_frames;            /* the VT frame buffers, after the page */
-static u8 *de_rgba;              /* a viewer capture, converted into a frame buffer */
-static bool de_filled[DE_WINS];  /* the frozen frame was filled since the freeze */
-static u32 de_blocked[4];        /* SET_VTM_BLOCK_STATE, per window */
+/* the frame pre-processing table, at the end of de_mem: empty (no block: the HAL's threads stop) */
+static u8 *de_fpp;
+static u8 *de_rgba;             /* a viewer capture, converted into a frame buffer */
+static bool de_filled[DE_WINS]; /* the frozen frame was filled since the freeze */
+static u32 de_blocked[4];       /* SET_VTM_BLOCK_STATE, per window */
 /* what resource_mgr.c keeps and answers: the sub-window mode, each window's source size */
 static u32 de_sub_mode;
 static struct lx_de_src_size de_src_size[4];
@@ -202,6 +210,7 @@ static unsigned int de_command(unsigned int cmd)
     case DE_IOR_GET_FIRMWARE_INFO:
         return de_fw_version ? cmd : 0;
     case DE_IOW_GET_VTM_BUFFER:
+    case DE_IOWR_FPP_INIT:
     case DE_IOW_SET_SUB_MODE:
     case DE_IOW_GET_SUB_MODE:
     case DE_IOW_SET_SRC_SIZE:
@@ -242,6 +251,11 @@ static void de_vtm_pack(u8 *wire, const struct lx_de_vtm *v)
     memcpy(wire + DE_VTM_HEAD, v->y_frame, n);
     memcpy(wire + DE_VTM_HEAD + n, v->c_frame, n);
     memcpy(wire + DE_VTM_HEAD + 2 * n, &v->r_idx, DE_VTM_TAIL);
+}
+
+static u32 de_fpp_address(void)
+{
+    return de_base + de_size - DE_FPP_SIZE;
 }
 
 static u8 *de_slot(unsigned int i)
@@ -446,6 +460,9 @@ static long de_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         de_vtm_pack(wire, &vtm);
         ret = copy_to_user(uarg, wire, de_vtm_size) ? -EFAULT : 0;
         break;
+    case DE_IOWR_FPP_INIT:
+        ret = put_user(de_fpp_address(), (u32 __user *)uarg);
+        break;
     case DE_IOW_SET_SUB_MODE:
         ret = get_user(de_sub_mode, (u32 __user *)uarg);
         break;
@@ -496,7 +513,7 @@ static long de_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 /* KADP maps the VTM page at the address SET_VTM returned (the stock driver's DE_Mmap takes the
  * firmware windows of de_cfg_get_fcmem): read and written, KADP_DE_VTMFrameControl writes the
  * freeze and rate into it (M17: the request slot). tvservice's capture maps the frame buffers'
- * planes after it. */
+ * planes after it, and KADP_DE_FPP_Initialize the FPP table at its end. */
 static int de_mmap(struct file *file, struct vm_area_struct *vma)
 {
     unsigned long frames = (de_base >> PAGE_SHIFT) + 1, size = vma->vm_end - vma->vm_start;
@@ -506,6 +523,8 @@ static int de_mmap(struct file *file, struct vm_area_struct *vma)
     if (vma->vm_pgoff >= frames &&
         ((vma->vm_pgoff - frames) << PAGE_SHIFT) + size <= DE_VTM_BUFFERS * de_frame_size)
         return remap_vmalloc_range(vma, de_frames, vma->vm_pgoff - frames);
+    if (vma->vm_pgoff == de_fpp_address() >> PAGE_SHIFT && size <= DE_FPP_SIZE)
+        return remap_vmalloc_range(vma, de_fpp, 0);
     pr_info("de: mmap of %#lx+%#lx is not the VTM page or a frame (%s)\n",
             vma->vm_pgoff << PAGE_SHIFT, size, current->comm);
     return -EINVAL;
@@ -534,6 +553,7 @@ void lx_de_remove(void)
     vfree(de_vtm);
     vfree(de_frames);
     vfree(de_rgba);
+    vfree(de_fpp);
 }
 
 int lx_de_add(void)
@@ -597,21 +617,23 @@ int lx_de_add(void)
     de_size = mem[1];
     /* a frame at the VT's largest size, luma and 4:2:2 chroma, each whole pages */
     de_frame_size = 2 * PAGE_ALIGN(ALIGN(c[11], 16) * c[12]);
-    if (PAGE_SIZE + DE_VTM_BUFFERS * (u64)de_frame_size > de_size) {
-        pr_err("de: de_mem's %#x bytes hold no %u frames of %ux%u\n", de_size, DE_VTM_BUFFERS,
-               c[11], c[12]);
+    if (PAGE_SIZE + DE_VTM_BUFFERS * (u64)de_frame_size + DE_FPP_SIZE > de_size) {
+        pr_err("de: de_mem's %#x bytes hold no %u frames of %ux%u and the FPP table\n", de_size,
+               DE_VTM_BUFFERS, c[11], c[12]);
         return -EINVAL;
     }
     de_vtm = vmalloc_user(PAGE_SIZE);
     de_frames = vmalloc_user(DE_VTM_BUFFERS * de_frame_size);
     de_rgba = vmalloc(c[11] * c[12] * 4);
-    err = de_vtm && de_frames && de_rgba ? 0 : -ENOMEM;
+    de_fpp = vmalloc_user(DE_FPP_SIZE);
+    err = de_vtm && de_frames && de_rgba && de_fpp ? 0 : -ENOMEM;
     if (!err)
         err = lgemu_cdev_add(&de_cdev, DE_MAJOR, 0, DE_MINORS, "de", &de_fops);
     if (err) {
         vfree(de_vtm);
         vfree(de_frames);
         vfree(de_rgba);
+        vfree(de_fpp);
         return err;
     }
     for (unsigned int i = 0; i < DE_VTM_BUFFERS; i++) /* black */
