@@ -924,14 +924,25 @@ release ([build and boot](../../docs/dev/architecture/build-and-boot.md), "Perip
 
 ### Sound bar
 
-`beanjar io soundbar attach NAME [--formats FORMAT,...]` plugs a sound bar into a running VM's
-HDMI ARC input and switches it on; `io soundbar detach NAME` switches it off and unplugs it;
-`io soundbar show NAME` shows it and the TV's view of it. The bar is an HDMI-CEC audio system on
-the emulated CEC bus (`lgemu`'s `cec.c`, logical address 5, physical address `PORT.0.0.0` on the
-firmware's own ARC input, `system.arcPort`): it answers the device queries, the ARC handshake,
-System Audio Mode, the audio status and volume keys, and Request Short Audio Descriptor with the
-CTA-861 descriptors of its formats, those the TV asks for. It is not a setting: a stop and start, or
-a guest reboot, has no bar, as after unplugging it.
+`beanjar io soundbar attach NAME [--formats FORMAT,...] [--arc-only]` plugs a sound bar into a
+running VM's HDMI ARC input and switches it on; `io soundbar detach NAME` switches it off and
+unplugs it; `io soundbar show NAME` shows it and the TV's view of it. The bar has the two links a
+real one has, each where the board has ours, and it is not a setting: a stop and start, or a guest
+reboot, has no bar, as after unplugging it.
+
+- CEC: an HDMI-CEC audio system on the emulated CEC bus (`lgemu`'s `cec.c`, logical address 5,
+  physical address `PORT.0.0.0` on the firmware's own ARC input, `system.arcPort`): it answers the
+  device queries, the ARC handshake, System Audio Mode, the audio status and the volume keys, and
+  Request Short Audio Descriptor with the CTA-861 descriptors of its formats, those the TV asks for.
+  Boards whose CEC is `lgemu`'s adapter (`cec=1`: the O22 family and the lm21 boards).
+- eARC: the receiver at the other end of the board's eARC transmitter (`lgemu`'s `earc.c`,
+  `/dev/earc0`, `earc=1`: the K8 family, W22H to W24P, and the O22 family), which arccontroller
+  enables with the user's eARC Support on and polls every 50 ms. The bar answers with an eARC
+  connection and its capability: the HDMI 2.1 eARC capabilities data structure, version 1 and block
+  1 with a CTA-861 audio data block (the same descriptors) and a speaker allocation data block (2.0,
+  5.1 or, for `eac3-atmos`'s 8 channels, 7.1). A bar is an eARC one by default; `--arc-only` makes it
+  one without eARC, whose discovery fails (the connection stays IDLE_2), so that the TV, which then
+  calls it ARC mode, starts ARC over CEC with eARC Support on; it needs the CEC bus.
 
 ```sh
 beanjar io soundbar attach tv --formats ac3,eac3,dts
@@ -948,30 +959,47 @@ beanjar io soundbar detach tv
 | `dts` | `3d 06 c0`: DTS, 5.1, 44.1/48 kHz, 1536 kbit/s |
 | `aac` | `35 07 50`: AAC LC, 5.1, 32/44.1/48 kHz, 640 kbit/s |
 
-The default is `lpcm,ac3,eac3,dts`; `eac3` and `eac3-atmos` exclude each other. The TV asks only
-for the formats its own profile names (W22O: LPCM, AC-3 and E-AC-3), so `arcSADs` lists those of
-the bar's that it asked for. The descriptors are checked with `edid-decode` in the unit tests.
+The default is `lpcm,ac3,eac3,dts`; `eac3` and `eac3-atmos` exclude each other. Over CEC the TV
+asks only for the formats its own profile names (W22O: LPCM, AC-3 and E-AC-3), so `arcSADs` lists
+those of the bar's that it asked for; over eARC it reads the whole capability, and arccontroller
+names the codecs its model takes (W22H, W22O: DD+, DD and PCM, and Atmos for Joint Object Coding).
+The descriptors and the capability's data blocks are checked with `edid-decode` in the unit tests.
 
-The host sets `lgemu`'s `soundbar` parameter (`PORT,SADS`, empty for none) over the VM's shell
-port and reads `soundbar_status` (`arc=`, `system_audio=`, `volume=`, `mute=`), and for the TV's
-side eim's `cec/getCECState` (`arcActivation`, `arcSADs`, `arcProfile`); `--json` has them as
-`port`, `sads`, `formats`, `status` and `tv`. Only the boards whose CEC is `lgemu`'s adapter have
-the bus (targets with `lgemu`'s `cec=1`: the O22 family and the lm21 boards); on the others
-`attach` says so. While the bar is attached, its HDMI cable's 5 V shows on its input of the HDMI
-receiver (`v4l2-hdmi.c`, `/dev/video12`): on the hardware port whose EDID, as eim wrote it, gives
-the bar's physical address (W22O: HDMI 2 is the receiver's port 3). The ARC input is the config
-service's `system.arcPort`, or on the 43.x builds the system profile's `arc.port`.
+The host sets `lgemu`'s `soundbar` parameter (`PORT,SADS`, empty for none) and `earc_bar`
+(`PORT,CAPABILITY` in hex, `PORT,arc` for an ARC-only bar, empty for none) over the VM's shell port,
+and reads `soundbar_status` (`arc=`, `system_audio=`, `volume=`, `mute=`; `nobus` without the
+adapter) and `earc_status` (`enabled=`, what arccontroller set from eARC Support, and `status=`, the
+connection: 0 IDLE_1, 1 IDLE_2, 4 EARC; `absent` without the node); for the TV's side eim's
+`cec/getCECState` (`arcActivation`, `arcSADs`, `arcProfile`) and arccontroller's `getARCState`
+(`arcActivation` `ARC`, `eARC` or `None`, `earcCapability`, `earcATMOS`, the descriptors of
+`advancedEarcCapability`). `--json` has them as `cec` and `earc` (whether the board has each link),
+`link` (`earc` or `arc`), `port`, `sads`, `formats`, `status`, `earc_status` and `tv` (with
+`tv.arccontroller`). On a board with neither link `attach` says so. While the bar is attached, its
+HDMI cable's 5 V shows on its input of the HDMI receiver (`v4l2-hdmi.c`, `/dev/video12`, where the
+board has it): on the hardware port whose EDID, as eim wrote it, gives the bar's physical address
+(W22O: HDMI 2 is the receiver's port 3). The ARC input is the config service's `system.arcPort`,
+or on the 43.x builds the system profile's `arc.port`.
 
-What the TV does with it is the user's settings, which stay theirs: it talks to the bar only with
-HDMI-CEC (SIMPLINK, `other/simplinkEnable`) on, which is off on a new set; and it starts ARC over
-CEC only with eARC Support (`sound/eArcSupport`) off, since with it on arccontroller waits for the
-eARC driver (`/dev/earc0`, not emulated yet) to say the connection is ARC. Measured on W22O
-13.30.56 with HDMI-CEC on, eARC Support off and `soundOutput` `external_arc`: `arcActivation`
-true, `arcSADs` `150750550700` for `ac3,eac3,dts`, and `status show` reports `ARC on` with the
-codec the firmware writes for the ARC output while an AC-3 clip plays: E-AC-3 encoded in `auto`,
-PCM in `pcm`, AC-3 bit-exact in `passThrough`. The host still gets the decoded stereo PCM: there is
-no IEC 61937 path. `detach` returns `arcActivation` to false and the output to the TV speaker;
-`arcSADs` keeps the last list, as libcecp keeps it.
+What the TV does with it is the user's settings, which stay theirs. With eARC Support
+(`sound/eArcSupport`) on and the output on the HDMI(ARC) device (`soundOutput` `external_arc`), it
+connects the bar over eARC; CEC (HDMI-CEC, SIMPLINK, `other/simplinkEnable`, off on a new set) is
+not needed for that. With eARC Support off, or with an ARC-only bar, it starts ARC over CEC, which
+needs HDMI-CEC on. Measured on the PC (x86-64 guest kernel):
+
+| Firmware (board) | eARC bar, eARC Support on | `--arc-only` bar | detach |
+|---|---|---|---|
+| W22H 43.22.73 (`k8hp-queue`, no CEC bus) | `arcActivation` `eARC`, `earcCapability` DD+, DD, PCM, `earcATMOS` with `eac3-atmos` | not possible (no CEC bus) | `None`, output back to the TV speaker |
+| W22O 13.30.56 (`o22-number1`) | `eARC`, as W22H | IDLE_2, then ARC over CEC: `arcActivation` `ARC`, CEC `arcActivation` true | `None`, output back to the TV speaker |
+| W22O 43.21.89 (`o22-queue`) | `eARC`, Atmos | not checked | `None`, output back to the TV speaker |
+
+With the bar on eARC, `status show` reports what the firmware writes for the eARC output (an AC-3
+clip): W22H writes `Sndout EARC OnOff` 1, so the output is `earc`, and E-AC-3 encoded
+(`2 5 0 0 1`) in `auto` and in `passThrough` alike, PCM in `pcm`; W22O 13.30.56 writes the ARC and
+eARC Outputtype together and never `EARC OnOff`, so the output stays `arc`: E-AC-3 in `auto`, AC-3
+bit-exact in `passThrough`, PCM in `pcm`; W22O 43.21.89 writes `EARC OnOff` 1. The host still gets
+the decoded stereo PCM: there is no IEC 61937 path. Without eARC Support, with HDMI-CEC on, ARC
+over CEC as before: W22O 13.30.56 `arcActivation` true, `arcSADs` `150750550700` for
+`ac3,eac3,dts`. `arcSADs` keeps the last list after `detach`, as libcecp keeps it.
 
 ### ares tools
 
@@ -1182,6 +1210,7 @@ numbers).
 | `outputs` | the outputs the hardware has open, each `{"name", "id", "codec", "channels", "bypass", "derived"}`; `null` where the hardware does not say (W18R, whose HAL keeps the connections to itself; webOS 5 and 6) |
 | `mode` | `pcm`, `auto`, `forced-ac3`, `forced-eac3` or `passthrough`, as far as the hardware's values tell, else `null` |
 | `arc` | whether ARC is on, `null` where the line has no such value |
+| `earc` | whether eARC is on (webOS 7 and later: `Sndout EARC OnOff`, written while the TV has an eARC connection; the output then shows as `earc`), else `null` |
 | `path` | which kind of table it was: `outputtype` (webOS 7 and later), `spdif-outputtype` (webOS 5 and 6), `realtek`, `mstar` or `lx` |
 | `streams` | the audio streams the TV's player sends to the host: `{"port", "kind", "element", "caps", "codec", "channels", "rate"}` |
 | `generation`, `writes`, `values` | the table's change and write counts and its raw values |

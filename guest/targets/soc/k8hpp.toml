@@ -2,9 +2,9 @@
 # provisional; its board and partition pins are measured separately.
 
 base = "k8lp"
-# Runtime DILE initialization opens buses 0..6; stock NVM remains 4/0xa0.
+# Runtime DILE initialization opens buses 0..6; stock NVM remains 4/0xa0. earc=1 as K8LP's.
 lgemu = [
-    "i2c_buses=0,1,2,3,4,5,6", "i2c_dev=nvm:4:0x50,amp:0:0x2a,amp:0:0x2b", "snd_ctls=1",
+    "i2c_buses=0,1,2,3,4,5,6", "i2c_dev=nvm:4:0x50,amp:0:0x2a,amp:0:0x2b", "snd_ctls=1", "earc=1",
 ]
 
 # gpio_usb_vbus and gpio_level: the USB ports' power switches and overcurrent inputs

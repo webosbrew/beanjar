@@ -38,7 +38,7 @@
  *   soundbar         the sound bar: "PORT,SADS" (the ARC input's number and the descriptors,
  *                    three bytes each in hex, as eim's arcSADs), empty or "off" for none
  *   soundbar_status  read only: what the bar has agreed with the TV (ARC, System Audio Mode, the
- *                    volume), or "absent" */
+ *                    volume), "absent", or "nobus" without the adapter */
 #define pr_fmt(fmt) KBUILD_MODNAME ": cec: " fmt
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -570,7 +570,9 @@ static int soundbar_status_get(char *buf, const struct kernel_param *kp)
     int n;
 
     mutex_lock(&bar_lock);
-    if (bar.present && !bar.leaving)
+    if (!board)
+        n = sprintf(buf, "nobus\n");
+    else if (bar.present && !bar.leaving)
         n = sprintf(buf, "arc=%d system_audio=%d volume=%u mute=%d\n", bar.arc, bar.sam, bar.volume,
                     bar.mute);
     else
@@ -593,7 +595,7 @@ int lgemu_cec_bar_port(void)
 
 static const struct kernel_param_ops soundbar_status_ops = {.get = soundbar_status_get};
 module_param_cb(soundbar_status, &soundbar_status_ops, NULL, 0444);
-MODULE_PARM_DESC(soundbar_status, "cec: what the sound bar agreed with the TV, or absent");
+MODULE_PARM_DESC(soundbar_status, "cec: what the sound bar agreed with the TV, absent, or nobus");
 
 static int board_cec_probe(struct platform_device *pdev)
 {

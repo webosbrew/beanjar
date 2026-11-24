@@ -38,6 +38,10 @@ int lgemu_vsc_init(void);
 void lgemu_vsc_exit(void);
 int lgemu_hdmi_init(void);
 void lgemu_hdmi_exit(void);
+int lgemu_earc_init(void);
+void lgemu_earc_exit(void);
+/* the HDMI input of the sound bar on the eARC port (earc.c), 0 for none */
+int lgemu_earc_bar_port(void);
 int lgemu_thermal_init(void);
 void lgemu_thermal_exit(void);
 #if IS_ENABLED(CONFIG_I2C)

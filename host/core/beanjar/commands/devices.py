@@ -209,25 +209,45 @@ def plug_usb(lib, a, host=None):
 
 
 def soundbar_text(name, data):
-    if not data["cec"]:
-        return f"{name}: no CEC bus of ours on its board"
+    if not data["cec"] and not data["earc"]:
+        return f"{name}: no sound bar connection of ours on its board (no CEC bus, no eARC)"
     lines = []
     if data["attached"]:
         st = data["status"] or {}
         lines.append(
-            f"{name}: sound bar on HDMI {data['port']}: {', '.join(data['formats'])}"
+            f"{name}: {'eARC' if data['link'] == 'earc' else 'ARC'} sound bar on HDMI "
+            f"{data['port']}"
+            + (f": {', '.join(data['formats'])}" if data.get("formats") else "")
             + (f"; ARC {'on' if st.get('arc') else 'off'}" if st else "")
             + (f", system audio {'on' if st.get('system_audio') else 'off'}" if st else "")
             + (f", volume {st['volume']}{' (muted)' if st.get('mute') else ''}" if st else "")
         )
     else:
         lines.append(f"{name}: no sound bar")
-    tv = data.get("tv")
-    if tv:
+    link = data.get("earc_status")
+    if link:
         lines.append(
-            f"TV: ARC {'active' if tv.get('arcActivation') else 'not active'}"
+            f"eARC: {'enabled' if link['enabled'] else 'not enabled'} by the TV, "
+            f"connection {link['status']}"
+        )
+    tv = data.get("tv") or {}
+    if "arcActivation" in tv:
+        lines.append(
+            f"TV CEC: ARC {'active' if tv.get('arcActivation') else 'not active'}"
             + (f", SADs {tv['arcSADs']}" if tv.get("arcSADs") else ", no SADs")
             + (f", profile {tv['arcProfile']}" if tv.get("arcProfile") else "")
+        )
+    arc = tv.get("arccontroller")
+    if arc:
+        lines.append(
+            f"TV: {arc.get('arcActivation') or 'not known'}"
+            + (
+                f", capability {', '.join(arc['earcCapability'])}"
+                if arc.get("earcCapability")
+                else ""
+            )
+            + (", Atmos" if arc.get("earcATMOS") else "")
+            + (f", SADs {' '.join(arc['earcSADs'])}" if arc.get("earcSADs") else "")
         )
     return "\n".join(lines)
 
@@ -241,7 +261,7 @@ def cmd_soundbar(lib, a):
             names = soundbar.parse_formats(a.formats or ",".join(soundbar.DEFAULT_FORMATS))
         except ValueError as e:
             raise Usage(f"io soundbar attach: --formats: {e}") from None
-        data = soundbar.attach(vm, names)
+        data = soundbar.attach(vm, names, a.arc_only)
     elif a.verb == "detach":
         data = soundbar.detach(vm)
     else:
@@ -381,12 +401,14 @@ def register(cli):
 
     g = group(
         "soundbar",
-        "a sound bar on the set's HDMI ARC input, on its CEC bus: an audio system that answers the "
+        "a sound bar on the set's HDMI ARC input: on its CEC bus an audio system that answers the "
         "ARC handshake, System Audio Mode and the TV's request for its audio formats (short audio "
-        "descriptors), as a bar plugged in and switched on; on a running VM whose firmware's CEC "
-        "is ours (the O22 family, the lm21 boards), gone when the VM or its guest restarts (not a "
-        "setting). The TV uses it with its HDMI-CEC (SIMPLINK) setting on, and turns ARC on with "
-        "eARC Support off",
+        "descriptors), and on its eARC transmitter an eARC receiver with the same formats, as a "
+        "bar plugged in and switched on; on a running VM whose board has either of ours (CEC: the "
+        "O22 family, the lm21 boards; eARC: the K8 family and O22's), gone when the VM or its "
+        "guest restarts (not a setting). The TV uses CEC with its HDMI-CEC (SIMPLINK) setting on "
+        "and eARC with eARC Support on; with that off, or with an ARC-only bar, it turns ARC on "
+        "over CEC",
         under=io,
         dest="verb",
     )
@@ -395,10 +417,11 @@ def register(cli):
     s = command(
         g,
         "attach",
-        "plug a sound bar into the TV's ARC input (its firmware's system.arcPort) and switch it "
-        "on: it reports itself, and the TV asks it for ARC and its formats",
+        "plug a sound bar into the TV's ARC input (its firmware's system.arcPort or arc.port) and "
+        "switch it on: it reports itself over CEC, and the TV asks it for ARC and its formats; on "
+        "an eARC board it is an eARC bar, whose formats the TV reads from its eARC capability",
         cmd_soundbar,
-        usage="beanjar io soundbar attach NAME [--formats FORMAT,...] [--json]",
+        usage="beanjar io soundbar attach NAME [--formats FORMAT,...] [--arc-only] [--json]",
     )
     vm_name(s)
     s.add_argument(
@@ -408,11 +431,17 @@ def register(cli):
         + "; ".join(f"{k} ({v[0]})" for k, v in FORMATS.items())
         + f". eac3 and eac3-atmos exclude each other. Default {','.join(DEFAULT_FORMATS)}",
     )
+    s.add_argument(
+        "--arc-only",
+        action="store_true",
+        help="a bar without eARC: the TV's eARC discovery fails (IDLE2) and it turns ARC on over "
+        "CEC even with eARC Support on; needs the board's CEC bus",
+    )
     s = command(
         g,
         "detach",
         "switch the sound bar off and unplug it: it turns System Audio Mode and ARC off, as a bar "
-        "going to standby does, and leaves the bus a second later",
+        "going to standby does, and leaves the bus a second later; its eARC connection ends",
         cmd_soundbar,
     )
     vm_name(s)
@@ -420,8 +449,9 @@ def register(cli):
         g,
         "show",
         "the VM's sound bar (its ARC input, formats, and what it agreed with the TV: ARC, System "
-        "Audio Mode, the volume) and the TV's view (eim's getCECState: arcActivation, arcSADs, "
-        "arcProfile, where the firmware has it)",
+        "Audio Mode, the volume; the eARC connection) and the TV's view (eim's getCECState: "
+        "arcActivation, arcSADs, arcProfile; arccontroller's getARCState: arcActivation ARC or "
+        "eARC, the eARC capability; where the firmware has them)",
         cmd_soundbar,
     )
     vm_name(s)

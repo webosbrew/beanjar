@@ -6,10 +6,10 @@
  * download that succeeds sets eim's start flag 0x80, without which eim never starts its CEC stack
  *. The EDID RAM is modelled: a port's last write is what a read returns. HPD, power-off,
  * repeater and expert settings are kept as written. Everything that would describe an incoming
- * signal reads as none: no 5 V (but on the input a sound bar of cec.c is plugged into, whose
- * cable carries it: libhdmi-conn-protocol's 5 V poll tells eim, and libcecp turns ARC on only with
- * 5 V on its ARC input; bar_5v), and zeroed timing, infoframes and diagnostics. HDCP keys have no
- * receiver to go to and stay unsupported. The controls are LG's v4l2-ext ones (W21P's
+ * signal reads as none: no 5 V (but on the input a sound bar of cec.c or earc.c is plugged
+ * into, whose cable carries it: libhdmi-conn-protocol's 5 V poll tells eim, and libcecp turns ARC
+ * on only with 5 V on its ARC input; bar_5v), and zeroed timing, infoframes and diagnostics. HDCP
+ * keys have no receiver to go to and stay unsupported. The controls are LG's v4l2-ext ones (W21P's
  * dvbfrontend/v4l2 headers in LG's GPL sources), V4L2_CID_USER_EXT_HDMI_BASE 0x985900, through
  * the 32-bit S/G_EXT_CTRLS (class 0x980000, one control). v4l2_hdmi=1 turns it on. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": hdmi: " fmt
@@ -86,13 +86,13 @@ static long port_of(const u8 *payload, u32 size)
     return port >= 1 && port <= PORTS ? port - 1 : -EINVAL;
 }
 
-/* with lock held: whether port has 5 V, which only a sound bar of cec.c brings: on the input whose
- * EDID (the TV's, as eim wrote it) gives the bar's physical address PORT.0.0.0, as a device on that
- * input takes it from there; the TV numbers its inputs in the EDID, and the hardware's port order
- * is the board's (W22O: HDMI 2's EDID is on port 3) */
+/* with lock held: whether port has 5 V, which only a sound bar brings (cec.c's or earc.c's): on
+ * the input whose EDID (the TV's, as eim wrote it) gives the bar's physical address PORT.0.0.0, as
+ * a device on that input takes it from there; the TV numbers its inputs in the EDID, and the
+ * hardware's port order is the board's (W22O: HDMI 2's EDID is on port 3) */
 static bool bar_5v(long port)
 {
-    int bar = lgemu_cec_bar_port();
+    int bar = lgemu_cec_bar_port() ?: lgemu_earc_bar_port();
 
     return bar && ports[port].edid_len &&
            cec_get_edid_phys_addr(ports[port].edid, ports[port].edid_len, NULL) == bar << 12;

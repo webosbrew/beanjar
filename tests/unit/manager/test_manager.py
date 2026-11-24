@@ -3664,7 +3664,12 @@ class CliParseTest(unittest.TestCase):
             (
                 ["io", "soundbar", "attach", "tv1", "--formats", "ac3,dts"],
                 devices.cmd_soundbar,
-                {"verb": "attach", "formats": "ac3,dts"},
+                {"verb": "attach", "formats": "ac3,dts", "arc_only": False},
+            ),
+            (
+                ["io", "soundbar", "attach", "tv1", "--arc-only"],
+                devices.cmd_soundbar,
+                {"verb": "attach", "formats": None, "arc_only": True},
             ),
             (["io", "soundbar", "detach", "tv1"], devices.cmd_soundbar, {"verb": "detach"}),
             (["io", "soundbar", "show", "tv1"], devices.cmd_soundbar, {"verb": "show"}),

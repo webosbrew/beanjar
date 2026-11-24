@@ -111,8 +111,25 @@ def test_webos7_arc_and_earc():
         ("Sndout EARC OnOff", five(1)),
         open_="32",
     )
-    out = model(earc)["outputs"][0]
+    m = model(earc)
+    out = m["outputs"][0]
     assert (out["name"], out["codec"], out["channels"], out["bypass"]) == ("earc", "mat", 8, True)
+    assert m["earc"] is True and model(arc)["earc"] is None
+    # W22H 43.22.73 with an eARC bar, an AC-3 clip, passThrough: E-AC-3 encoded, as in auto
+    w22h = table(
+        ("Sndout EARC Outputtype", five(2, 5, 0, 0, 1)),
+        *UMI_BOOT[:2],
+        ("Sndout EARC OnOff", five(1)),
+        open_="32",
+    )
+    m = model(w22h)
+    assert (m["outputs"][0]["name"], m["outputs"][0]["codec"], m["mode"]) == (
+        "earc",
+        "eac3",
+        "auto",
+    )
+    text = soundout.lines(dict(m, selected={"output": "external_arc", "digital": "passThrough"}))
+    assert "audio mode: auto, eARC on" in text and "audio out earc: eac3" in text
 
 
 def test_webos5_spdif_outputtype():

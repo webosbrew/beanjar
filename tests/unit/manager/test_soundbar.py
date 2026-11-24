@@ -109,13 +109,20 @@ def guest_output(
     port='{"configs":{"system.arcPort":2},"returnValue":true}',
     state=None,
     profile='{"returnValue":false}',
+    earc_param=None,
+    earc_status=None,
+    arc_state='{"returnValue":false}',
 ):
+    """command()'s output: the CEC side (param None: no bus), the eARC side (earc_status None:
+    no /dev/earc0), then the luna answers."""
     sep = soundbar.SEPARATOR + "\n"
     state = state or (
         '{"arcProfile":"EAC3","cecReady":true,"returnValue":true,'
         '"arcSADs":"150750550700","arcActivation":true}'
     )
-    return f"{param}\n{sep}{status}\n{sep}{port}\n{sep}{profile}\n{sep}{state}\n"
+    cec = f"{param}\n{sep}{status}\n" if param is not None else f"nocec\n{sep}"
+    earc = f"{earc_param or ''}\n{sep}{earc_status}\n" if earc_status else f"absent\n{sep}"
+    return f"{cec}{sep}{earc}{sep}{port}\n{sep}{profile}\n{sep}{state}\n{sep}{arc_state}\n"
 
 
 def test_parse_attached():
@@ -124,11 +131,14 @@ def test_parse_attached():
     )
     assert data == {
         "cec": True,
+        "earc": False,
         "attached": True,
+        "link": "arc",
         "port": 2,
         "sads": "1507505507003d06c0",
         "formats": ["ac3", "eac3", "dts"],
         "status": {"arc": True, "system_audio": True, "volume": 25, "mute": False},
+        "earc_status": None,
         "arc_port": 2,
         "tv": {
             "cecReady": True,
@@ -139,23 +149,29 @@ def test_parse_attached():
     }
 
 
-def test_parse_absent_and_no_cec():
+def test_parse_absent_and_no_bus():
     data = soundbar.parse(guest_output("", "absent", state='{"returnValue":false}'))
     assert not data["attached"] and data["status"] is None and data["tv"] is None
-    assert data["cec"] and data["arc_port"] == 2
-    sep = soundbar.SEPARATOR + "\n"
-    data = soundbar.parse(f"nocec\n{sep}{{}}\n{sep}{{}}\n{sep}\n")
-    assert not data["cec"] and not data["attached"] and data["arc_port"] is None
+    assert data["cec"] and not data["earc"] and data["arc_port"] == 2 and data["link"] is None
+    data = soundbar.parse(guest_output(None, None, port="{}", state="{}"))
+    assert not data["cec"] and not data["earc"] and not data["attached"]
+    assert data["arc_port"] is None
     with pytest.raises(Error):
         soundbar.parse("garbage")
 
 
 def test_command_sets_then_reads():
-    line = soundbar.command("2,150750")
-    assert line.index("echo 2,150750 > /sys/module/lgemu/parameters/soundbar") < line.index(
-        "cat /sys/module/lgemu/parameters/soundbar;"
+    line = soundbar.command("2,150750", "2,0101")
+    assert line.index("echo 2,150750 2>/dev/null >/sys/module/lgemu/parameters/soundbar") < (
+        line.index("cat /sys/module/lgemu/parameters/soundbar;")
     )
-    assert "system.arcPort" in line and "getProfiles" in line and "getCECState" in line
+    assert line.index("echo 2,0101 2>/dev/null >/sys/module/lgemu/parameters/earc_bar") < (
+        line.index("cat /sys/module/lgemu/parameters/earc_bar;")
+    )
+    assert "!= nobus" in line and "!= absent" in line
+    for call in ("system.arcPort", "getProfiles", "getCECState", "arccontroller/getARCState"):
+        assert call in line
+    assert "> /sys" not in soundbar.command() and ">/sys" not in soundbar.command()
 
 
 def test_arc_port_from_the_system_profile():
@@ -169,4 +185,124 @@ def test_arc_port_from_the_system_profile():
         )
     )
     assert data["arc_port"] == 3
-    assert "> /sys" not in soundbar.command()
+
+
+def test_earc_capability():
+    """HDMI 2.1's eARC capabilities data structure as arccontroller parses it: version 1, block
+    ID 1 and its length, CTA-861 audio (tag 1) and speaker allocation (tag 4, 3 bytes) blocks."""
+    cap = soundbar.earc_capability(["lpcm", "ac3", "eac3-atmos", "dts"])
+    assert cap.hex() == "0101112c0907071507505707013d06c0830f0800"  # 7.1: Atmos's 8 channels
+    assert cap[2] == len(cap) - 3
+    assert soundbar.earc_capability(["lpcm"]).hex() == "01010823090707830100" + "00"
+    assert soundbar.speaker_allocation(["lpcm", "ac3"]) == bytes([0x0F, 0, 0])
+    assert soundbar.speaker_allocation(["eac3-atmos"]) == bytes([0x0F, 0x08, 0])
+    every = list(soundbar.FORMATS)
+    every.remove("eac3")
+    assert len(soundbar.earc_capability(every * 2)) <= 256  # the most cec.c takes, 12 SADs
+    assert soundbar.capability_sads(cap.hex()) == "0907071507505707013d06c0"
+    assert soundbar.capability_sads("0201030000") == ""
+    assert soundbar.earc_value(3, ["ac3"]) == "3,01010823150750830f" + "0000"
+    assert soundbar.earc_value(3, ["ac3"], arc_only=True) == "3,arc"
+    with pytest.raises(Error):
+        soundbar.earc_value(0, ["ac3"])
+
+
+@pytest.mark.skipif(not shutil.which("edid-decode"), reason="edid-decode is not installed")
+def test_edid_decode_reads_the_capability_blocks():
+    """The data blocks inside block ID 1 are CTA-861's: edid-decode reads them in an EDID."""
+    cap = soundbar.earc_capability(["lpcm", "ac3", "eac3-atmos", "dts"])
+    blocks = cap[3 : 3 + cap[2]]
+    base = bytearray(edid_with_sads(b"")[:128])
+    ext = bytearray(128)
+    ext[0:4] = bytes([0x02, 0x03, 4 + len(blocks), 0x40])
+    ext[4 : 4 + len(blocks)] = blocks
+    ext[127] = -sum(ext[:127]) & 0xFF
+    out = subprocess.run(
+        ["edid-decode"], input=bytes(base + ext), capture_output=True, check=False
+    ).stdout.decode()
+    assert "Enhanced AC-3 (DD+):\n      Max channels: 8" in out, out
+    assert "Supports Joint Object Coding" in out
+    assert "Speaker Allocation Data Block:" in out
+    for speaker in ("FL/FR", "LFE1", "FC", "BL/BR", "LS/RS"):
+        assert speaker in out[out.index("Speaker Allocation") :], out
+
+
+def test_parse_earc():
+    """An eARC board without our CEC bus (K8): the formats from the capability, the link's state,
+    arccontroller's view."""
+    arc_state = (
+        '{"arcActivation":"eARC","audioDeviceType":"arc","earcCapability":["DD+","DD","PCM"],'
+        '"earcATMOS":true,"advancedEarcCapability":[{"audioCodingType":"DTS",'
+        '"maxChannelNumber":6,"hexSAD":"3d06c0"},{"audioCodingType":"PCM","maxChannelNumber":2,'
+        '"hexSAD":"090707"}],"returnValue":true}'
+    )
+    data = soundbar.parse(
+        guest_output(
+            None,
+            None,
+            earc_param="3,0101112c0907071507505707013d06c0830f0000",
+            earc_status="enabled=1 status=4 latency_req=0",
+            arc_state=arc_state,
+        )
+    )
+    assert (data["cec"], data["earc"], data["attached"], data["link"]) == (
+        False,
+        True,
+        True,
+        "earc",
+    )
+    assert data["port"] == 3 and data["formats"] == ["lpcm", "ac3", "eac3-atmos", "dts"]
+    assert data["earc_status"] == {"enabled": True, "status": "EARC", "latency_req": 0}
+    assert data["tv"]["arccontroller"] == {
+        "arcActivation": "eARC",
+        "audioDeviceType": "arc",
+        "earcCapability": ["DD+", "DD", "PCM"],
+        "earcATMOS": True,
+        "earcSADs": ["3d06c0", "090707"],
+    }
+    # both sides (O22): the CEC side's formats; an ARC-only bar's link
+    data = soundbar.parse(
+        guest_output(
+            "2,150750",
+            "arc=1 system_audio=1 volume=25 mute=0",
+            earc_param="2,arc",
+            earc_status="enabled=1 status=1 latency_req=0",
+        )
+    )
+    assert (data["link"], data["formats"], data["earc_status"]["status"]) == (
+        "arc",
+        ["ac3"],
+        "IDLE_2",
+    )
+    data = soundbar.parse(
+        guest_output("", "absent", earc_status="enabled=0 status=0 latency_req=0")
+    )
+    assert not data["attached"] and data["earc_status"]["status"] == "IDLE_1"
+
+
+def test_attach_sets_the_board_sides(monkeypatch):
+    """attach: an eARC bar where the board has eARC, the CEC side where it has the bus; an
+    ARC-only bar needs the bus."""
+    calls = []
+    board = {"cec": False, "earc": True}
+
+    def fake_run(vm, line, timeout=20.0):
+        calls.append(line)
+        attached = "earc_bar;" in line and "echo 3," in line
+        return {
+            **board,
+            "attached": attached,
+            "arc_port": 3,
+        }
+
+    class Vm:
+        name = "tv"
+
+    monkeypatch.setattr(soundbar, "_run", fake_run)
+    soundbar.attach(Vm(), ["ac3"])
+    assert "earc_bar" in calls[-1] and ">/sys/module/lgemu/parameters/soundbar;" not in calls[-1]
+    with pytest.raises(Error, match="ARC-only"):
+        soundbar.attach(Vm(), ["ac3"], arc_only=True)
+    board.update(earc=False)
+    with pytest.raises(Error, match="no sound bar connection"):
+        soundbar.attach(Vm(), ["ac3"])

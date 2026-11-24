@@ -28,6 +28,7 @@ static const struct {
     {"mic", lgemu_mic_init, lgemu_mic_exit},
     {"video", lgemu_video_init, lgemu_video_exit},
     {"v4l2-vsc", lgemu_vsc_init, lgemu_vsc_exit},
+    {"earc", lgemu_earc_init, lgemu_earc_exit},
     {"v4l2-hdmi", lgemu_hdmi_init, lgemu_hdmi_exit},
     {"capture", lgemu_capture_init, lgemu_capture_exit},
     {"cec", lgemu_cec_init, lgemu_cec_exit},

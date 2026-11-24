@@ -9,6 +9,13 @@
 # tuner values are not derived yet.
 
 base = "k7lp"
+# K7LP's lgemu, and earc=1: the eARC transmitter at /dev/earc0 (lgemu earc.c), which arccontroller
+# (nyxEarc.module on the 43.x builds) enables with the user's eARC Support on and polls for the sound
+# bar's connection and capability; every K8 profile (W22H, W22P, W23H, W23P, W24P, W24H) has
+# arc.supportEarc.
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5", "i2c_dev=nvm:4:0x50,amp:0:0x2a,amp:0:0x2b", "snd_ctls=1", "earc=1",
+]
 broadcast_params = {}
 
 # gpio_usb_vbus and gpio_level: the USB ports' power switches and overcurrent inputs

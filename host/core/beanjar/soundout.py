@@ -23,7 +23,9 @@ decode() turns the table into one model per line of firmware (docs/research/tv-s
 - `mode`: pcm, auto, forced-ac3, forced-eac3 or passthrough, as far as the hardware's values tell
   (None when they do not: on webOS 7 and later pcm, auto and passThrough write the same values
   while no compressed stream plays);
-- `arc`: whether ARC is on (None where the line has no such value).
+- `arc`: whether ARC is on (None where the line has no such value);
+- `earc`: whether eARC is on (webOS 7 and later's Sndout EARC OnOff, which audiod writes while
+  arccontroller has an eARC connection; None elsewhere).
 A codec is never guessed: auto's result is reported only where the firmware itself writes it
 (the Outputtype controls, a forced mode); a bypass takes the open audio stream's codec, marked
 derived, and only when there is exactly one."""
@@ -254,7 +256,7 @@ def on(value):
 
 def decode(table, streams=()):
     """The model of a parsed table (parse_table) and the open streams (parse_streams)."""
-    model = {"path": None, "outputs": None, "mode": None, "arc": None}
+    model = {"path": None, "outputs": None, "mode": None, "arc": None, "earc": None}
     if table is None:
         return model
     values = table["values"]
@@ -279,7 +281,7 @@ def decode_umi(table, model):
     Outputtype {2, codec, channels, 0, mix}, mix 0 the bit-exact bypass."""
     values = table["values"]
     model["path"] = "outputtype"
-    earc = on(first(values, "Sndout EARC OnOff"))
+    earc = model["earc"] = on(first(values, "Sndout EARC OnOff"))
     model["arc"] = on(first(values, "Sndout ARC OnOff"))
     outputs, modes = [], set()
     for number in table["open"]:
@@ -425,7 +427,8 @@ def lines(audio):
         "audio selected: "
         + (f"{sel.get('output')} ({sel.get('digital')})" if sel else "not known"),
         f"audio mode: {audio.get('mode') or 'not known'}"
-        + (f", ARC {'on' if audio['arc'] else 'off'}" if audio.get("arc") is not None else ""),
+        + (f", ARC {'on' if audio['arc'] else 'off'}" if audio.get("arc") is not None else "")
+        + (f", eARC {'on' if audio['earc'] else 'off'}" if audio.get("earc") is not None else ""),
     ]
     outputs = audio.get("outputs")
     if outputs is None:
