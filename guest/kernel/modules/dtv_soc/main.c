@@ -4,7 +4,8 @@
  * demodulator chips behind webos_tv.ko's frontends put out a transport stream, which the SoC's
  * demux filters for the software (the stock layout's per-system *_dtv_soc and the SoC's demux
  * module). Here the host has the antenna: it says which frequencies carry a signal (the channel
- * map) and sends the stream of the one frontend 0 is tuned to (include/webos-tuner.h, through the
+ * map) and sends one stream, that of the latest tune with a signal (soc_tuned; frontend 0 alone on
+ * most boards) (include/webos-tuner.h, through the
  * initramfs's pump, guest/initramfs/src/virtio-tuner.c, and /dev/dtv-soc). This module is
  * webos_tv's signal source (webos_tv.h): a frontend tuned within LOCK_TOLERANCE_HZ of a mapped
  * channel's frequency, with its delivery system, locks.
@@ -13,7 +14,7 @@
  * /dev/dvb/adapter0/demux<n> and dvr<n> with section filters, the CRC check and immediate start,
  * as legacy-broadcast uses them (it opens demux0 to demux3 at init, and on lock sets a filter per
  * table on demux0 with DMX_SET_BUFFER_SIZE, DMX_SET_FILTER with DMX_CHECK_CRC |
- * DMX_IMMEDIATE_START, and epoll). Every demux gets frontend 0's stream.
+ * DMX_IMMEDIATE_START, and epoll). Every demux gets that one stream.
  *
  * The decoders' input: the demuxes' decoder filters (DMX_OUT_DECODER: the PCR, video and audio
  * PES filters of the channel being watched) are the SoC's path to its decoders, which the DVB core
@@ -220,13 +221,21 @@ static bool soc_signal(u32 freq, u32 delsys)
     return on;
 }
 
+/* The host gets one stream: the one of the latest tune that has a signal. A tune without one moves
+ * it only from the frontend fed now (a scan's), so a second frontend's watch is not taken away by
+ * the other tuning to nothing. */
+static unsigned int fed_fe;
+
 static void soc_tuned(unsigned int fe, u32 freq, u32 delsys)
 {
     unsigned long flags;
 
-    if (fe)
-        return;
     spin_lock_irqsave(&state_lock, flags);
+    if (fe != fed_fe && !tuner_mapped(map, nmap, freq, delsys)) {
+        spin_unlock_irqrestore(&state_lock, flags);
+        return;
+    }
+    fed_fe = fe;
     tuned_freq = freq;
     tuned_delsys = delsys;
     pending = true;
