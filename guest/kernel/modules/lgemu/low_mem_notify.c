@@ -335,6 +335,8 @@ static ssize_t reset_store(struct kobject *k, struct kobj_attribute *a, const ch
     return count;
 }
 
+/* read in pages, written in bytes (memparse: K, M, G suffixes; 0 refused), as LG's webOS 3 GPL
+ * kernel (kernel-DM2, mm/low-mem-notify.c): W15L's and W16R's memchute jobs write "80M" */
 static ssize_t workingset_show(struct kobject *k, struct kobj_attribute *a, char *buf)
 {
     return sysfs_emit(buf, "%lu\n", READ_ONCE(workingset_pages));
@@ -343,11 +345,11 @@ static ssize_t workingset_show(struct kobject *k, struct kobj_attribute *a, char
 static ssize_t workingset_store(struct kobject *k, struct kobj_attribute *a, const char *buf,
                                 size_t count)
 {
-    unsigned long pages;
+    unsigned long long bytes = memparse(buf, NULL);
 
-    if (kstrtoul(buf, 10, &pages))
+    if (!bytes)
         return -EINVAL;
-    WRITE_ONCE(workingset_pages, pages);
+    WRITE_ONCE(workingset_pages, bytes >> PAGE_SHIFT);
     return count;
 }
 

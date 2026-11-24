@@ -387,14 +387,14 @@ listed.
 | | `EXT4_FS`, `BLK_DEV_WRITE_MOUNTED` | the state disks (formatted by the firmware's mkfs.ext4); the second is Kconfig's default, which `allnoconfig` turns off (writes to a mounted block device refused) |
 | | `SQUASHFS`, `SQUASHFS_LZO`, `SQUASHFS_XATTR`, `SQUASHFS_FILE_DIRECT`, `SQUASHFS_COMPILE_DECOMP_MULTI_PERCPU` | the six paks are LZO (compressor id 3, 256 KiB blocks) and carry xattr tables; so are the `ROOTFS=uncompressed` copies (same compressor id) |
 | | `OVERLAY_FS`, `BLK_DEV_LOOP` | `/webos`; loop devices as on the TV (LG's kernel has them and the firmware ships losetup, though no boot or test here uses one) |
+| | `ZRAM` (`ZSMALLOC`), `ZRAM_BACKEND_LZ4`, `ZRAM_BACKEND_LZO` | `/dev/zram0`, built in as in every LG kernel (`modules.builtin`'s `zram.ko`, never a module): W15L's webOS lite `memchute` job sets it up itself (`lzo`, 400 MiB, `mkswap`, `swapon`, no guard) and fails without it, so memchuted never ran; the other releases' `swapon`, `swap-on` and `zram-on` jobs (lz4 first, else lzo) skip it when it is missing and now take it as on the TV. The default compressor is Kconfig's `lzo-rle`; the jobs set theirs. The old per-file statistics the 3.10 memchuted reads (`orig_data_size`, `compr_data_size`, `mem_used_total`) are gone from current zram (`mm_stat`), so those lines of its log come out empty |
 | USB | `USB`, `USB_XHCI_HCD` (`USB_SUPPORT`, `USB_PCI` and `USB_XHCI_PCI` come with them) | the TV's USB host, the launcher's `qemu-xhci`: `/sys/bus/usb`, which webOS 5's and 6's native jails mount (`jail_native_builtin.conf`'s `mount ro /sys/bus/usb`; without it the jailer cannot build the browser's jail on W20L and W21P). The class drivers are modules ("Peripheral modules", below). LG's kernels drive their ports with EHCI, never xHCI; what in the firmware names the stock controller's path is under "Peripheral modules". The ports have power while the board's VBUS switches are on (`gpio_usb_vbus`, the GPIO paragraph of the SoC modules below). Patch `0019`: no uevent for a SCSI power-on unit attention, which QEMU's stick reports and LG's 4.4 kernels never send (webOS's `60-block.rules` would turn it into a disk change that drops PDM's `READ_ONLY`) |
 | Peripherals (`=m`) | `USB_HID` (`HID_PID`), `UHID`, `INPUT_JOYDEV`, `JOYSTICK_XPAD` (`_FF`), `HID_ACRUX`, `HID_DRAGONRISE`, `HID_LOGITECH`, `HID_MICROSOFT`, `HID_PANTHERLORD`, `HID_SONY`, `HID_PLAYSTATION`, `HID_ZEROPLUS` (each with its `_FF`; `LEDS_CLASS`, `LEDS_CLASS_MULTICOLOR`), `MEDIA_SUPPORT`, `MEDIA_CAMERA_SUPPORT`, `MEDIA_USB_SUPPORT`, `USB_VIDEO_CLASS` (`_INPUT_EVDEV`), `SCSI`, `BLK_DEV_SD`, `USB_STORAGE`, `SND_USB_AUDIO`, `USB_ACM`, `USB_SERIAL` (`_GENERIC`; `_PL2303`, `_OPTION`, `_SIERRAWIRELESS`, `_IPW`, `_FTDI_SIO`, `_CH341`, `_CP210X`, `_WWAN`), `FUSE_FS`, `VFAT_FS`, `EXFAT_FS`, `NTFS3_FS` (without ntfs3's legacy `ntfs`, which is lgfs's), `NLS_CODEPAGE_437`, `NLS_CODEPAGE_949`, `NLS_ASCII`, `NLS_ISO8859_1`, `NLS_UTF8` | the USB class drivers and filesystems LG's own kernels build (their decoded configs and `modules.builtin`), for the peripherals the stock userland handles: PDM's classes (HID, gamepad, storage, video, sound, CDC, whose USB serial check needs `/sys/bus/usb-serial/drivers/pl2303`; its PTP and MTP mounts are fuse), lginput2's HID gamepads (hidraw and uhid), camera2's UVC camera, audiod's USB headset and microphone. Not `HID_APPLE` and `HID_CHICONY`, which `USB_HID` brings by default and no LG kernel has. Loaded per release line, "Peripheral modules" below |
 | Network | `NET`, `UNIX`, `INET`, `IP_MULTICAST`, `PACKET`, `IPV6` (Kconfig's default, no longer turned off) | multicast for SSDP/DIAL; connman's DHCP client uses packet sockets. IPv6 as W20L's own kernel has it (its config: `IPV6`, `IPV6_SIT`, `IPV6_NDISC_NODETYPE`; here `IPV6_SIT` is a module, `sit.ko`, which only the releases whose stock kernel has SIT load, "Peripheral modules" below; WT1H's 3.10 had no IPv6): W20L's mdnsd exits without an `AF_INET6` socket. Sockets and link-local only: no NET mode gives the guest IPv6 connectivity (`NET=direct`'s slirp has `ipv6=off`, `NET=mitm`'s slirp4netns runs without `--enable-ipv6`, `NET=off` has the link down), so no router advertisement and no global route. `Image` 9,144,328 to 9,615,368 bytes; Pi KVM, `normal,headless`, h13-afro, three boots each interleaved: `core-boot-done` 19.5 s with and without (one 14.5 s outlier with). No netfilter: the firmware's iptables and connman ran without it on the defconfig kernel too (its netfilter was all modules, never loaded) |
 
 Left out on purpose: the I2C HID transport, the class drivers LG's kernels have that the stock userland has no class for (`USB_HIDDEV`, which nothing in the firmware opens; W22A's CD-ROM `BLK_DEV_SR`; PS/2 keyboards and mice, `INPUT_KEYBOARD`/`INPUT_MOUSE` and `INPUT_MOUSEDEV`, no consumer of `/dev/input/mice`), the StanbyME's own `HID_MULTITOUCH` (its touch panel is virtio here), virtio-fs (nothing mounts it), netfilter,
-bridge/VLAN, wireless and Bluetooth (no such devices), zram (`swapon.conf` finds no zram
-device, as with the defconfig kernel), ACPI and EFI (QEMU loads the Image directly with a device
-tree), SVE/SME/pointer authentication/MTE/BTI (the 32-bit userland cannot use them), seccomp,
+bridge/VLAN, wireless and Bluetooth (no such devices), ACPI and EFI (QEMU loads the Image
+directly with a device tree), SVE/SME/pointer authentication/MTE/BTI (the 32-bit userland cannot use them), seccomp,
 audit and LSMs, NUMA, CPU frequency scaling (CPU hotplug comes with `SUSPEND`, above), debug info.
 
 ### The display's refresh
@@ -606,7 +606,9 @@ memchuted. Sources:
   event_ctrl, reset and workingset.
 - The WT1H firmware's own kernel (`3.10.19-32.afro.6`, built 2022), read from its code (kallsyms):
   the version the firmware was built against, which adds xreclaimable, ratio, zramswap and force
-  and changes the usable-memory formula. The module follows this one.
+  and changes the usable-memory formula. The module follows this one, except that `workingset`
+  is written in bytes as in LG's webOS 3 GPL kernel (`kernel-DM2`, `mm/low-mem-notify.c`):
+  W15L's and W16R's memchute jobs write `80M` to it.
 
 | File | Mode | Read | Write |
 |---|---|---|---|
@@ -616,7 +618,7 @@ memchuted. Sources:
 | `thresholds` | 0444 | the thresholds in pages, ascending, `*` before the current one | |
 | `event_ctrl` | 0644 | number of thresholds | `<eventfd> <threshold>`: register one |
 | `reset` | 0644 | empty | anything: drop every threshold |
-| `workingset` | 0644 | pages | pages (default 30720, 120 MiB) |
+| `workingset` | 0644 | pages | bytes, K/M/G suffixes, not 0 (default 30720 pages, 120 MiB) |
 | `xreclaimable` | 0644 | bytes | bytes, K/M/G suffixes (default 0) |
 | `ratio` | 0644 | 0 or 1 | a number, non-zero sets it (default 1) |
 | `zramswap` | 0644 | 0 or 1 | a number, non-zero sets it (default 0) |
