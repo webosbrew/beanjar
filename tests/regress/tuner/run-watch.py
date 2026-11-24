@@ -25,6 +25,8 @@ import tempfile
 import time
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
+LIVETV = "com.webos.app.livetv"
+AM = "luna-send -n 1 -w 30000 luna://com.webos.service.applicationmanager/"
 MIN_FPS = 10  # the test channels are 29.97 frames a second; TCG decodes headers in time
 
 
@@ -46,6 +48,19 @@ def shell(name, command, timeout=60):
         check=False,
     )
     return r.stdout
+
+
+def foreground(name):
+    """The app in front, "" for none."""
+    m = re.search(
+        r'"appId":"([^"]*)"',
+        shell(
+            name,
+            "luna-send -n 1 -w 10000 "
+            "luna://com.webos.service.applicationmanager/getForegroundAppInfo '{}' | tr -d ' '",
+        ),
+    )
+    return m.group(1) if m else ""
 
 
 def vdec(name):
@@ -112,22 +127,17 @@ def main():
     run = os.path.join(info["dir"], "run")
     # a just-booted set brings Home to the front once it is up, over a Live TV launched before
     for _ in range(60):
-        if '"appId":"' in shell(
-            a.name,
-            "luna-send -n 1 -w 10000 "
-            "luna://com.webos.service.applicationmanager/getForegroundAppInfo '{}' | tr -d ' '",
-        ).replace('"appId":""', ""):
+        if foreground(a.name):
             break
         time.sleep(5)
     # a fresh Live TV: one left in front by run-scan.py's scan.sh, whose own watch it ended, does
     # not tune again when launched
-    am = "luna-send -n 1 -w 30000 luna://com.webos.service.applicationmanager/"
     shell(
         a.name,
-        am
-        + 'closeByAppId \'{"id":"com.webos.app.livetv"}\'; sleep 5; '
-        + am
-        + 'launch \'{"id":"com.webos.app.livetv"}\'',
+        AM
+        + f'closeByAppId \'{{"id":"{LIVETV}"}}\'; sleep 5; '
+        + AM
+        + f'launch \'{{"id":"{LIVETV}"}}\'',
         120,
     )
     t0 = time.monotonic()
@@ -151,10 +161,19 @@ def main():
     else:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             shot = f.name
-    subprocess.run(
-        [BEANJAR, "screenshot", a.name, shot], capture_output=True, env=env(), check=True
-    )
-    light = lit(shot)
+    # Home may come over Live TV once after a boot, even after the watch started: bring Live TV
+    # back to the front (a launch, not a close) and look again, for up to a minute
+    t3 = time.monotonic()
+    while True:
+        subprocess.run(
+            [BEANJAR, "screenshot", a.name, shot], capture_output=True, env=env(), check=True
+        )
+        light = lit(shot)
+        if light >= 0.5 or time.monotonic() - t3 > 60:
+            break
+        if foreground(a.name) != LIVETV:
+            shell(a.name, AM + f'launch \'{{"id":"{LIVETV}"}}\'')
+        time.sleep(5)
     if not a.shot:
         os.unlink(shot)
     numbers = {
