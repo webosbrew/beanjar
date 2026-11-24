@@ -607,8 +607,13 @@ memchuted. Sources:
 - The WT1H firmware's own kernel (`3.10.19-32.afro.6`, built 2022), read from its code (kallsyms):
   the version the firmware was built against, which adds xreclaimable, ratio, zramswap and force
   and changes the usable-memory formula. The module follows this one, except that `workingset`
-  is written in bytes as in LG's webOS 3 GPL kernel (`kernel-DM2`, `mm/low-mem-notify.c`):
-  W15L's and W16R's memchute jobs write `80M` to it.
+  is written in bytes (`memparse`, 0 refused; read back in pages), as in every later LG GPL
+  kernel: webOS 3 (`kernel-DM2`, `mm/low-mem-notify.c`), webOS 3.5 (`linux-4.4-lg115x`), webOS
+  4 (`kernel-404-glacier`, whose built `drivers/staging/webos/low-mem-notify.c` replaces the
+  unbuilt `mm/` copy that still takes pages), webOS 5, webOS 6 and webOS 22
+  (`drivers/staging/webos/`). Every firmware that writes it writes `80M`: W15's `memchute` job
+  (W15M's and W15U's only in their unused webOS lite branch), W16R's, and the `memchute-ready`
+  job or script of W17 and later. WT1H writes none, so the 2014 source's pages never mattered.
 
 | File | Mode | Read | Write |
 |---|---|---|---|

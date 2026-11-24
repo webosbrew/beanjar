@@ -335,8 +335,8 @@ static ssize_t reset_store(struct kobject *k, struct kobj_attribute *a, const ch
     return count;
 }
 
-/* read in pages, written in bytes (memparse: K, M, G suffixes; 0 refused), as LG's webOS 3 GPL
- * kernel (kernel-DM2, mm/low-mem-notify.c): W15L's and W16R's memchute jobs write "80M" */
+/* read in pages, written in bytes (memparse: K, M, G suffixes; 0 refused), as in LG's GPL kernels
+ * from webOS 3 to webOS 22: every firmware job that writes it writes "80M" */
 static ssize_t workingset_show(struct kobject *k, struct kobj_attribute *a, char *buf)
 {
     return sysfs_emit(buf, "%lu\n", READ_ONCE(workingset_pages));
