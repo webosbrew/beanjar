@@ -1,0 +1,21 @@
+# mtka5lr (MediaTek MT5882; W15L, webOS 2 beehive-bighorn): the board is a 49LF590V (European DVB,
+# the only W15L build; RELEASE.cfg's series INCH_49 TOOL_LF59), its cmdline in the soc layer
+# (guest/layers/soc/mtka5lr/rootfs/etc/emulator/board.cmdline, every field's source there).
+# docs/research/mediatek-mtka5lr.md.
+board_cmdline = "/etc/emulator/board.cmdline"
+# W15L's RELEASE.cfg: nContinentIdx 50 ("DE"), LANG_COUNTRY_EU, HWSETTING_EU (as soc/m2.toml)
+continent = [50, 24, 0]
+
+# mtk: MediaTek's kernel drivers under libmtal (kdrv_mtk5882.ko's /dev/mtal, /dev/cb, /dev/kmem2,
+# the fbm_* windows and the media nodes). i2c: the board's devices on MTAL's SIF (I2C) buses,
+# device:channel:slave (8-bit address): W15L's RELEASE.cfg "[i2c]MICOM:3:0x52:0", "[i2c]NVM:1:0xA0:1"
+# and the NTP7515 amplifier ToolOpt3 selects ("[i2c]NTP7515:1:0x54:1"), which HAL_I2C_Read/Write
+# pass to MTSIF_ReadMultipleSubAddr/WriteMultipleSubAddr as SIF channel the [i2c] channel less one
+# (seen on the emulator: the NVM's reads on channel 0, the micom's writes on channel 2). The
+# analog tuner, ToolOpt4's SI2178B, answers on channel 1 at 0xc0 (its driver reads it there; the
+# tuner lines' channel is 0xFF in RELEASE.cfg), as soc/lm15u.toml's.
+[[modules]]
+name = "mtk"
+params = [
+    "i2c=micom:2:0x52,nvm:0:0xa0,amp:0:0x54,tuner:1:0xc0",
+]

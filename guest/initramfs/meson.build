@@ -42,6 +42,7 @@ initramfs_args = [
   '--var', 'MSTAR_UTOPIA_KO', mstar_utopia_ko,
   '--var', 'LG115X_KO', lg115x_ko,
   '--var', 'RTK_KO', rtk_ko,
+  '--var', 'MTK_KO', mtk_ko,
   '--var', 'BTMTK_USB_KO', btmtk_usb_ko,
   '--var', 'WEBOS_TV_KO', webos_tv_ko,
   '--var', 'DTV_SOC_KO', dtv_soc_ko,

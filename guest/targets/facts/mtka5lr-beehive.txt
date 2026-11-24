@@ -1,0 +1,19 @@
+# mtka5lr-beehive: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# Generated: host/scripts/vm-launcher firmware-facts mtka5lr-beehive (from 03.31.00.01-HE_DTV_W15L_AFAAABAA)
+lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
+lib usr/lib/libluna-service2.so.3 libluna-service2.so.3
+path usr/lib/libdile_gal.so.1.0.2 yes
+path usr/lib/libsestore.so.0.1.0 no
+path usr/lib/nyx/modules/nyxSecureStore.module no
+path usr/palm/services/com.webos.service.secondscreen.gateway/helpers/bus/ssl-cert-getter.js no
+sym usr/lib/libglib-2.0.so.0 g_main_loop_new func
+sym usr/lib/libglib-2.0.so.0 g_main_loop_quit func
+sym usr/lib/libglib-2.0.so.0 g_main_loop_run func
+sym usr/lib/libglib-2.0.so.0 g_timeout_add_seconds func
+sym usr/lib/libluna-service2.so.3 LSCallOneReply func
+sym usr/lib/libluna-service2.so.3 LSErrorFree func
+sym usr/lib/libluna-service2.so.3 LSErrorInit func
+sym usr/lib/libluna-service2.so.3 LSErrorPrint func
+sym usr/lib/libluna-service2.so.3 LSGmainAttach func
+sym usr/lib/libluna-service2.so.3 LSMessageGetPayload func
+version usr/lib/libwayland-client.so.0 1.0

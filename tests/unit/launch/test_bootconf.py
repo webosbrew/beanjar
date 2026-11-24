@@ -590,6 +590,7 @@ class BootConfTest(unittest.TestCase):
             "m2-simplesmart": base,
             "lm14-netcast45": set(),
             "lm15u-beehive": base | {"ftdi_sio"},
+            "mtka5lr-beehive": {"pl2303", "option", "ipw"},
             "lm21a-kisscurl": base | {"ipw"},
             "lm21u-kisscurl": base | {"ipw"},
             "lm21an-mullet": base | {"ipw"},
@@ -653,7 +654,7 @@ class BootConfTest(unittest.TestCase):
 
     def test_sit(self):
         """sit.ko (IPv6-in-IPv4, whose fallback device is sit0) loads where the release's stock
-        kernel has SIT (every webOS release's but WT1H's, which has no IPv6; modules.builtin of the
+        kernel has SIT (every webOS release's but WT1H's and W15L's, which have no IPv6; modules.builtin of the
         firmware's rootfs), and nowhere else: NetCast 4.5's and SimpleSmart's networkmanager takes
         sit0 for its Wi-Fi interface and its private ioctl overruns a stack buffer
         (docs/research/netcast-networkmanager-wifi-country.md)."""
@@ -664,6 +665,7 @@ class BootConfTest(unittest.TestCase):
                 "h13-afro",
                 "lm14-netcast45",
                 "m2-simplesmart",
+                "mtka5lr-beehive",
             ):
                 self.assertNotIn("sit", mods, name)
             else:
@@ -1360,6 +1362,7 @@ class BootConfTest(unittest.TestCase):
                 "m2r-dreadlocks2",
                 "m3-goldilocks",
                 "m3r-goldilocks2",
+                "mtka5lr-beehive",
                 "o22-mullet",
                 "o22-number1",
                 "o22-ombre",
@@ -1409,6 +1412,7 @@ class BootConfTest(unittest.TestCase):
                 "h13-afro": 3072,
                 "m14-beehive": 1536,
                 "lm15u-beehive": 2560,
+                "mtka5lr-beehive": 1536,
                 "m2-dreadlocks": 1280,
                 "m16p-dreadlocks2": 1536,
                 "m16plite-dreadlocks2": 1536,

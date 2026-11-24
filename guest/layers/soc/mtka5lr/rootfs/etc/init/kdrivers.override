@@ -1,0 +1,6 @@
+# Emulator: no MediaTek kernel drivers to load (kdrv_mtk5882.ko, MediaTek's MTAL kernel side, and
+# snd-mtk.ko, built for LG's 3.10 kernel); the emulator's mtk.ko stands in for kdrv_mtk5882.ko and
+# is loaded before init. Kept as a task: gpu-libs starts on "stopped kdrivers".
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: nothing to load"
+end script

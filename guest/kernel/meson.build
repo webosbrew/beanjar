@@ -58,6 +58,7 @@ subdir('modules/media-pool')
 subdir('modules/mstar-utopia')
 subdir('modules/lg115x')
 subdir('modules/rtk')
+subdir('modules/mtk')
 subdir('modules/btmtk_usb')
 subdir('modules/webos_tv')
 subdir('modules/dtv_soc')
@@ -121,6 +122,7 @@ if x86_64_kernel
                ['mstar-utopia', mstar_utopia_inputs, ['lgemu']],
                ['lg115x', lg115x_inputs, ['lgemu']],
                ['rtk', rtk_inputs, ['lgemu']],
+               ['mtk', mtk_inputs, ['lgemu']],
                ['btmtk_usb', btmtk_usb_inputs, []],
                ['webos_tv', webos_tv_inputs, ['lgemu']],
                ['dtv_soc', dtv_soc_inputs, ['webos_tv']],

@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# mtk.ko: MediaTek's kernel drivers under its MTAL userland (libmtal.so), as kdrv_mtk5882.ko is
+# one module: the device nodes and their memory (mtk-main.c), MTAL's ioctls (mtk-mtal.c) and the
+# callback channel /dev/cb (mtk-cb.c). The SIF buses call lgemu.ko's I2C devices (lgemu-i2c.h;
+# kbuild.sh gives modpost lgemu's Module.symvers).
+obj-m := mtk.o
+mtk-y := mtk-main.o mtk-mtal.o mtk-cb.o
+ccflags-y := -I$(src)/../lgemu

@@ -158,6 +158,8 @@ nContinentIdx 50 area): W15U's only OTA ID is the European DVB one (AFADABAA), s
 or ARIB board. Its fields come from that firmware's MBoot and tvservice tables, each named in the
 board file's comments.
 
+mtka5lr's board (`mtka5lr-beehive`, W15L 03.31.00, MediaTek MT5882) is a 49LF590V as a German set (DVB, the nContinentIdx 50 area): W15L's only OTA ID is the European DVB one (AFAAABAA), so it has no US or ARIB board. Its RELEASE.cfg is the model's own series (INCH_49, TOOL_LF59); the values are `host/tools/research/model-config.py`'s for it. The EPK has no bootloader, so the DDR strap (1.5 GB) and the chip revision (A0) are defaults, named as such in the board file.
+
 The boards are in `guest/layers/soc/<chip>/rootfs/etc/emulator/`. Region digits and ToolOpt words are
 specific to each firmware, so each board comes from its own firmware's data. A US board is the
 European board's line with three region values changed, each read from that firmware:

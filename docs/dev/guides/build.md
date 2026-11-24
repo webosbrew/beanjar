@@ -5,7 +5,7 @@ target and the host build:
 
 | Directory     | Machine                         | Builds                                                   |
 |---------------|---------------------------------|----------------------------------------------------------|
-| `build/guest-<chip>-<release>` (WT1H: `build/guest-h13-afro`) | cross, `meson/cross/webos-sdk.ini` for webOS/SimpleSmart or `meson/cross/lgtv-sdk.ini` for NetCast 4.5 (x86_64 SDKs), `-Dsoc=<chip> -Dwebos=<release>` | target-specific 32-bit ARM layers and tools (webOS: common, soc, webos, gl with Mesa and optional layers; SimpleSmart: simplesmart; NetCast 4.5: netcast45 with Mesa); and the arm64 kernel with its modules (lgemu.ko, lg115x.ko, mstar-utopia.ko, rtk.ko, btmtk_usb.ko, webos_tv.ko, lgfs.ko), busybox and initramfs |
+| `build/guest-<chip>-<release>` (WT1H: `build/guest-h13-afro`) | cross, `meson/cross/webos-sdk.ini` for webOS/SimpleSmart or `meson/cross/lgtv-sdk.ini` for NetCast 4.5 (x86_64 SDKs), `-Dsoc=<chip> -Dwebos=<release>` | target-specific 32-bit ARM layers and tools (webOS: common, soc, webos, gl with Mesa and optional layers; SimpleSmart: simplesmart; NetCast 4.5: netcast45 with Mesa); and the arm64 kernel with its modules (lgemu.ko, lg115x.ko, mstar-utopia.ko, rtk.ko, mtk.ko, btmtk_usb.ko, webos_tv.ko, lgfs.ko), busybox and initramfs |
 | `build/host`  | native (x86_64 or the Pi's aarch64) | the viewer, the GTK layouts (viewer, VM manager), the firmware cache, the network helpers, the unit tests; the prebuilt QEMU, FFmpeg and neatvnc published beside them |
 | `build/host-arm64` | cross on the x86_64 PC, `meson/cross/debian-arm64.ini` (Debian's aarch64 GCC and Debian's arm64 libraries, multiarch) | the host build's programs for arm64, published to `build/publish-arm64` for the arm64 packages; its tests are built, not run; no firmware cache |
 
@@ -146,7 +146,7 @@ firmware cache takes `-Dfirmware`, else `FW`'s), then `meson compile`;
 before booting (not on the Pi, which does not build the guest, nor for a VM directory, `--dir`).
 
 Each build ends with its `publish` step (`meson/publish.py`), which copies what changed to where
-the launchers and any host sync use it: `build/Image`, `build/{lgemu,lg115x,mstar-utopia,rtk,btmtk_usb,webos_tv,dtv_soc,lgfs}.ko`,
+the launchers and any host sync use it: `build/Image`, `build/{lgemu,lg115x,mstar-utopia,rtk,mtk,btmtk_usb,webos_tv,dtv_soc,lgfs}.ko`,
 `build/initramfs.cpio.gz`, `build/components/{common,soc/<chip>,release/<release>,gl,...}`, `build/ssh/bin`,
 `build/guest-installation.toml` (the guest build's version, information for logs; the host build's is
 `build/source-version.toml`; docs/dev/architecture/build-and-boot.md, "Host and guest compatibility"),
@@ -794,7 +794,7 @@ against the x86 checkout's `build/` and the tracked files.
 
 **Shippable:** built from this tree and the wraps only.
 
-- `build/Image`, `build/{lgemu,lg115x,mstar-utopia,rtk,btmtk_usb,webos_tv,dtv_soc,lgfs}.ko`, `build/initramfs.cpio.gz`.
+- `build/Image`, `build/{lgemu,lg115x,mstar-utopia,rtk,mtk,btmtk_usb,webos_tv,dtv_soc,lgfs}.ko`, `build/initramfs.cpio.gz`.
 - `build/components/{common,soc/<chip>,release/<release>,gl,...}` (common, soc, webos, gl, rootssh, devmode, hbchannel, tcg-perf),
   each layer's `build/components/<name>/layer.toml`, and
   `build/ssh/bin`. The layers are linked against the firmware's libraries but contain none of

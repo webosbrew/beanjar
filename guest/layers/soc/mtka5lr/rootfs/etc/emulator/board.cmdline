@@ -1,0 +1,48 @@
+# Board parameters the bootloader (MediaTek's U-Boot, LG's build for mtka5lr; not in the EPK,
+# which carries only its env.o) puts on the kernel command line, parsed by libdile_boardinfo,
+# tvservice and the Upstart jobs. The initramfs appends these to the real cmdline and bind-mounts
+# the result over /proc/cmdline inside webOS. With no bootloader to read, the keys are
+# libdile_boardinfo's (ToolOpt=, countryGrp=, debugMode=, emmc_size=, modelName=, serialNum=, sver=,
+# bver=, hwopt=, hwoption=, chip=) in the order the other LG boards print them. The values describe
+# a 49LF590V, a model that runs W15L (the models DB; RELEASE.cfg's series INCH_49 TOOL_LF59 is the
+# model's own), in W15L's own encodings, as host/tools/research/model-config.py proposes them from
+# this firmware; they are not read from a real set. sver=/bver= (the boot versions) are left out:
+# libdile_boardinfo then has none.
+ethaddr=a8:23:fe:12:34:56
+# 18 digits as W15L's tvservice (SystemHdrInit) decodes them: country index 0 of
+# gmodelopt_country_type (EU), LVDS (d2 1), FHD (d3 1), no FRC (d4 0), panel V14 (d5 2), tuner
+# column 1 of gmodelopt_LM15U_tuner_comb[EU] (S + T2: RELEASE.cfg's TCS_COMBO and DVB_SI2169C),
+# DDR 1.5 GB (d11 2: a bootloader strap, not in the firmware; DDR_SIZE_1_5G, the default), graphic
+# resolution 1920x1080 (d14 2)
+hwopt=001102001002002000
+# W15L's tvservice reads 8 tool option words (the ToolOptionDB's 16-bit words: ToolOption1..7 and
+# ToolOption9), which the launcher programs into a new EEPROM (host/core/beanjar/nvm.py). From
+# RELEASE.cfg (the model's series) through W15L's OSA_MD_SetValueOfToolOptionN setters:
+#   ToolOpt1 1348: INCH_49 (4), TOOL_LF59 (42), MODULE_LGD, LVDS bit 0.
+#   ToolOpt2 4628: video input row 4 of video_adc_LCD_DVB (HDMI x2, component, SCART, AV), audio
+#     index 1, edge LED backlight, three USB ports.
+#   ToolOpt3 665: AMP_NTP7515 ("[i2c]NTP7515:1:0x54:1"), headphone, logo light, ISF, dual view.
+#   ToolOpt4 64793: demodulators TCS_COMBO (S), DVB_SI2169C (T2/C), SI2178B analog, NO_DEMOD and
+#     NO_DEMOD_ANA for the sub path. No tuner or demodulator chip is modelled.
+#   ToolOpt5 8786: WIFI_11N_COMBO, no camera, MOTION_REMOCON_READY, component/RCA common, 2D only,
+#     scanning backlight.
+#   ToolOpt6 2376: default backlight 65 (8), motion eye care MIDDLE1, audio power 1, speaker 1.
+#   ToolOpt7 48271: the MAC, ESN, CI and Widevine keys in the AP, EDID DTS, PSU power board, edge
+#     LED bar EDGE_6, PWM 100/120 Hz.
+#   ToolOption9 0: every field at its default record.
+ToolOpt=1348:4628:665:64793:8786:2376:48271:0
+# 4 = EU (libdile_boardinfo)
+countryGrp=4
+# 3 = DEBUG, 4 = EVENT, 5 = RELEASE (the bootloader copies the EEPROM's debug status byte)
+debugMode=3
+# modelName <= 12 chars, serialNum <= 16 chars (the EEPROM's ModelInfoDB). The EEPROM's area
+# (ContinentOptionDB) is the factory's, not the bootloader's: targets.py's Soc.continent.
+modelName=49LF590V serialNum=505RAXX00001
+# chip= is one of libdile_boardinfo's A5LRA0, A5LRA1, A5LRB0 or A5LRB1; which revision a retail
+# set prints is not established (no bootloader in the EPK): A0, the first. mknod.conf creates the
+# /etc/device_table nodes only with devtmpfs.mount=1.
+devtmpfs.mount=1 chip=A5LRA0
+# 0x + 9 hex digits; parsers drop the last 2 digits and read KB. The firmware's own partition
+# map's device size, 0xe4800000 (lginit_app2's partinfo, 48 partitions)
+emmc_size=0x0e4800000
+cmdEnd

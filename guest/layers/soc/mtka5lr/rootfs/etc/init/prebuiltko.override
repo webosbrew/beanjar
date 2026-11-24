@@ -1,0 +1,6 @@
+# Emulator: no prebuilt Wi-Fi/Bluetooth modules to load (bcmdhd, wl, bcm_dbus, btusb0 in
+# /mnt/lg/res/lglib, Broadcom's, built for LG's 3.10 kernel). The stock script starts lginput2 and
+# btmngr itself only for the 11ac combo modules (builtinWifiPID 3104/bd27), which the VM has not.
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: nothing to load"
+end script

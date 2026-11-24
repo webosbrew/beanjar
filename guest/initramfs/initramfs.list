@@ -64,6 +64,7 @@ file /lib/modules/media-pool.ko ${MEDIA_POOL_KO} 0644 0 0
 file /lib/modules/mstar-utopia.ko ${MSTAR_UTOPIA_KO} 0644 0 0
 file /lib/modules/lg115x.ko ${LG115X_KO} 0644 0 0
 file /lib/modules/rtk.ko ${RTK_KO} 0644 0 0
+file /lib/modules/mtk.ko ${MTK_KO} 0644 0 0
 file /lib/modules/btmtk_usb.ko ${BTMTK_USB_KO} 0644 0 0
 file /lib/modules/webos_tv.ko ${WEBOS_TV_KO} 0644 0 0
 file /lib/modules/dtv_soc.ko ${DTV_SOC_KO} 0644 0 0

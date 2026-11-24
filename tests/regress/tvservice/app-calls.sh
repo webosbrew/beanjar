@@ -5,7 +5,7 @@
 # on this emulator, and what the soc layer's HAL and DILE shims let it do: master volume, AV on
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip= and modelName=
-# (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W16R on M2, W17H
+# (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W15L on mtka5lr (A5LR), W16R on M2, W17H
 # on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W17R on M2R, W18R on M3, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
@@ -54,6 +54,15 @@ M14*)   model=W15M ota=AFAAABAA fw=04.06.75 platform=lg1311 sound_bad_type=SOUND
 LM15U*) model=W15U ota=AFADABAA fw=04.06.25 platform=lm15u sound_bad_type=SOUND_ERROR_013
 	capture_no_video=CAPTURE_ERROR_01 max_devices= inputs=6 reset3d='"returnValue":true'
 	tool_options='"panelInch":"65","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"' ;;
+# W15L (mtka5lr is its own platform name; chip=A5LRA0), webOS 2 on MediaTek: a 49LF590V, FHD DVB
+# table row 4 (ToolOpt2's video input index): HDMI x2, component, SCART, AV; edge LED, no camera, a
+# headphone output, 2D only, so reset3DStatus answers DISPLAY_ERROR_1002 as W16R's (RELEASE.cfg's
+# LF59 defaults: ToolOpt3, ToolOpt5). tv.capture's GRAPHIC works on the soc layer's DILE_GAL; VIDEO
+# without video answers CAPTURE_ERROR_09 ("no signal state"), as a set does.
+A5LR*)  model=W15L ota=AFAAABAA fw=03.31.00 platform=mtka5lr sound_bad_type=SOUND_ERROR_013
+	capture_no_video=CAPTURE_ERROR_09 max_devices= inputs=5
+	reset3d='"errorCode":"DISPLAY_ERROR_1002"'
+	tool_options='"panelInch":"49","backlightType":"edgeLed","cameraReady":"off","headphone":"true"' ;;
 # W16R (msd93f2g is M2's name; MBoot's chip=M2A0, M2A1, M2B0 or M2B1, not LG's M23 of the webOS 5 boards): tvservice reads the board's EEPROM over MStar's HWI2C
 # (mstar-utopia.ko). The board is a 43LH604V: non-UHD table row 7, AV, component, HDMI x3, no
 # SCART; no camera, no 3D, a headphone output (W16R's RELEASE.cfg, the LH60's ToolOpt3). Its

@@ -1,0 +1,17 @@
+# W15L is LG's 2015 low-end FHD line (LF59x sets) on the MediaTek MT5882 (LG's mtka5lr platform):
+# webOS 2.1 "Rockhopper" beehive-bighorn, the beehive userland over MediaTek's MTAL vendor side.
+# Only a European DVB build exists (HE_DTV_W15L_AFAAABAA). docs/research/mediatek-mtka5lr.md.
+models = ["W15L"]
+
+# The peripheral modules W15L's own kernel has (its modules.builtin, 3.10.27-p.31.bighorn.mtka5lr):
+# USB HID with only the Logitech and Sony gamepad drivers, xpad, UVC, storage, USB audio and CDC
+# ACM; the serial drivers ipw, option and pl2303 (no ftdi_sio, no sierra); FAT, NTFS (ntfs3 here;
+# "ntfs" is lgfs's) and fuse, codepages 437, ASCII and UTF-8. No IPv6, so no SIT (as WT1H's); no
+# uhid.
+[release]
+base = "beehive"
+peripherals = [
+    "usbhid", "hid-logitech", "hid-sony", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "nls_iso8859-1", "snd-usb-audio", "cdc-acm", "ipw", "option", "pl2303", "lgfs",
+]
