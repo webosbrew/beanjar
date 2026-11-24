@@ -192,6 +192,9 @@ extern const struct file_operations lgemu_gfx_fops;
 void lgemu_snd_osd_level(u32 level);
 /* The speaker output's mute */
 void lgemu_snd_speaker_mute(bool on);
+/* What the firmware selected for the sound outputs through a call named name (n values, at most
+ * 5 kept): stored and listed in /proc/lgemu/sound_out, never acted on */
+void lgemu_snd_out_set(const char *name, const long *vals, unsigned int n);
 
 /* ---- the scaler's video windows, for the host viewer (video.c) ---- */
 

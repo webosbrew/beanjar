@@ -14,11 +14,15 @@
  *   - the card's own LG control elements, when snd_ctls=1 (webOS 5 and 6's audio adaptation
  *     layer writes "LGSE Var Fn009" [level, volume] and "Mute Output" [output, mute] on hw:0;
  *     W18R's audio HAL shim writes them too).
- * lgemu_snd_osd_level() and lgemu_snd_speaker_mute() are the stand-ins' entry points. */
+ * lgemu_snd_osd_level() and lgemu_snd_speaker_mute() are the stand-ins' entry points; what the
+ * firmware selects for the other outputs is kept below (lgemu_snd_out_set, /proc/lgemu/sound_out).
+ */
 #define pr_fmt(fmt) KBUILD_MODNAME ": snd: " fmt
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/string.h>
 #include <sound/core.h>
 #include <sound/control.h>
@@ -138,13 +142,29 @@ static int ctl_put(struct snd_kcontrol *k, struct snd_ctl_elem_value *v)
     return changed;
 }
 
-/* The sound output's routing and switches (libumi's setControlElement): kept as written, each
- * KEPT_VALUES integers. The card has one output, the speaker PCM, so none of them changes it.
- * "Sndout Spk Output" is the amplifier library's (W21A libaudio-adaptation-layer-amplifier,
+/* ---- the sound output's selection: kept, readable, never acted on ----
+ *
+ * The card has one output, the speaker PCM; what the firmware selects for the others (optical,
+ * ARC, eARC, the digital sound mode) is kept as written, under the name of the call it came
+ * through, and listed in /proc/lgemu/sound_out: a "generation N" line that counts the changes,
+ * "writes N" every write (a setting the firmware applies again with the same values counts there),
+ * "open=" the outputs open and "connected=" their connections (OUTPUT:A:B, from the Sndout Open,
+ * Close, Connect and Disconnect events), then one "NAME=V0 V1 ..." line a name in order of the
+ * first write. Two ways in:
+ *   - the card's Sndout control elements (snd_ctls=1), written by libumi's setControlElement
+ *     (webOS 5 to 24) or nyxSoundOut's setAlsaControl (queue and later): names and values as
+ *     the firmware writes them, readable back with the element's get;
+ *   - lgemu_snd_out_set() from the stand-ins of the HAL-based lines (rtk.ko, mstar-utopia.ko,
+ *     lg115x.ko), under a name of their own for the HAL or KADP call.
+ * The elements are the union of the firmwares' sets (docs/research/tv-sound-outputs.md, the
+ * release x SoC matrix): a firmware writes the names it knows. The Outputtype setters write a
+ * 5-integer struct (codec, mix, channels, ...), hence OUT_VALUES 5; a shorter write leaves the
+ * rest 0. "Sndout Spk Output" is the amplifier library's (W21A libaudio-adaptation-layer-amplifier,
  * AALAmpAlsaControl::setAmpParam): every amplifier reset, at start-up and in Prepare Resume,
  * writes the speaker output's channel count there (2 above two amplifiers, else 1), and a
  * missing element fails the reset, so audiooutputd answers prepareResume with error 20. */
-#define KEPT_VALUES 4
+#define OUT_VALUES 5
+#define OUT_MAX    48
 static const char *const kept_names[] = {
     "Mute Input",
     "Sndout MainAudio Output",
@@ -152,20 +172,163 @@ static const char *const kept_names[] = {
     "Sndout Close",
     "Sndout Connect",
     "Sndout Disconnect",
-    "Sndout EARC OnOff",
+    "Sndout Spdif OutputType",
+    "Sndout OPTIC Outputtype",
+    "Sndout ARC Outputtype",
     "Sndout EARC Outputtype",
+    "Sndout WOWCAST Outputtype",
+    "Sndout ARC OnOff",
+    "Sndout EARC OnOff",
+    "Sndout WOWCAST OnOff",
+    "Sndout EARC MS12 SP50 OnOff",
+    "Sndout eAC3 ATMOS Encode OnOff",
+    "Sndout Spdif CopyProtectionInfo",
+    "Sndout Spdif CategoryCode",
     "Sndout Optic LG",
     "Sndout Optic LightOnOff",
-    "Sndout Spdif OutputType",
-    "Sndout Spdif CategoryCode",
     "Sndout Spk Output",
+    "Sndout Spk Max Output Channel",
+    "Sndout Spk Sampling Frequency",
+    "Sndout Capture Output Resampling",
+    "Sndout Capture Input TimeClock",
+    "Sndout Center Extraction OnOff",
+    "Decoder Spk Configuration",
+    "Input Downmix Enable",
+    "Adec Dolby OTTMode",
 };
-static long kept[ARRAY_SIZE(kept_names)][KEPT_VALUES];
+
+struct out_entry {
+    char name[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
+    long v[OUT_VALUES];
+    bool written;
+    u32 order; /* of the first write */
+};
+static struct out_entry outs[OUT_MAX];
+static size_t n_outs;
+static u32 generation, writes, n_written;
+static struct proc_dir_entry *proc_dir;
+
+/* "Sndout Open" and "Close" [output] and "Connect" and "Disconnect" [output, input, ...] are
+ * events, not states: the outputs open and their connections are kept as well, in order. */
+#define OPEN_MAX    8
+#define CONN_MAX    24
+#define CONN_VALUES 3
+static long opened[OPEN_MAX], conns[CONN_MAX][CONN_VALUES];
+static size_t n_opened, n_conns;
+
+/* drop element i of an array of n elements of size bytes */
+static void drop(void *base, size_t *n, size_t i, size_t size)
+{
+    memmove((char *)base + i * size, (char *)base + (i + 1) * size, (*n - i - 1) * size);
+    (*n)--;
+}
+
+/* the routing events' effect on opened and conns: whether they changed; under lock */
+static bool out_route(const char *name, const long *v)
+{
+    bool open = !strcmp(name, "Sndout Open"), conn = !strcmp(name, "Sndout Connect");
+    size_t i;
+
+    if (open || !strcmp(name, "Sndout Close")) {
+        for (i = 0; i < n_opened && opened[i] != v[0]; i++)
+            ;
+        if (i < n_opened && !open)
+            drop(opened, &n_opened, i, sizeof(opened[0]));
+        else if (i == n_opened && open && n_opened < OPEN_MAX)
+            opened[n_opened++] = v[0];
+        else
+            return false;
+        return true;
+    } else if (conn || !strcmp(name, "Sndout Disconnect")) {
+        for (i = 0; i < n_conns && memcmp(conns[i], v, sizeof(conns[0])); i++)
+            ;
+        if (i < n_conns && !conn)
+            drop(conns, &n_conns, i, sizeof(conns[0]));
+        else if (i == n_conns && conn && n_conns < CONN_MAX)
+            memcpy(conns[n_conns++], v, sizeof(conns[0]));
+        else
+            return false;
+        return true;
+    }
+    return false;
+}
+
+/* the entry of name, a new one if there is room; under lock */
+static struct out_entry *out_find(const char *name)
+{
+    for (size_t i = 0; i < n_outs; i++)
+        if (!strcmp(outs[i].name, name))
+            return &outs[i];
+    if (n_outs == OUT_MAX)
+        return NULL;
+    strscpy(outs[n_outs].name, name, sizeof(outs[0].name));
+    return &outs[n_outs++];
+}
+
+/* store n values of e (the rest 0); whether they changed; under lock */
+static bool out_store(struct out_entry *e, const long *vals, unsigned int n)
+{
+    long v[OUT_VALUES] = {0};
+    bool changed;
+
+    memcpy(v, vals, min_t(unsigned int, n, OUT_VALUES) * sizeof(v[0]));
+    writes++;
+    changed = !e->written || memcmp(e->v, v, sizeof(v));
+    memcpy(e->v, v, sizeof(v));
+    if (!e->written) {
+        e->written = true;
+        e->order = n_written++;
+    }
+    if (out_route(e->name, v))
+        changed = true;
+    if (changed) {
+        generation++;
+        pr_info("out: %s = %ld %ld %ld %ld %ld\n", e->name, v[0], v[1], v[2], v[3], v[4]);
+    }
+    return changed;
+}
+
+void lgemu_snd_out_set(const char *name, const long *vals, unsigned int n)
+{
+    struct out_entry *e;
+
+    mutex_lock(&lock);
+    e = out_find(name);
+    if (e)
+        out_store(e, vals, n);
+    else
+        pr_warn_once("out: no room for %s\n", name);
+    mutex_unlock(&lock);
+}
+EXPORT_SYMBOL_GPL(lgemu_snd_out_set);
+
+static int sound_out_show(struct seq_file *m, void *unused)
+{
+    mutex_lock(&lock);
+    seq_printf(m, "generation %u\nwrites %u\nopen=", generation, writes);
+    for (size_t i = 0; i < n_opened; i++)
+        seq_printf(m, "%s%ld", i ? " " : "", opened[i]);
+    seq_puts(m, "\nconnected=");
+    for (size_t i = 0; i < n_conns; i++)
+        seq_printf(m, "%s%ld:%ld:%ld", i ? " " : "", conns[i][0], conns[i][1], conns[i][2]);
+    seq_putc(m, '\n');
+    for (u32 k = 0; k < n_written; k++)
+        for (size_t i = 0; i < n_outs; i++) {
+            struct out_entry *e = &outs[i];
+
+            if (!e->written || e->order != k)
+                continue;
+            seq_printf(m, "%s=%ld %ld %ld %ld %ld\n", e->name, e->v[0], e->v[1], e->v[2], e->v[3],
+                       e->v[4]);
+        }
+    mutex_unlock(&lock);
+    return 0;
+}
 
 static int kept_info(struct snd_kcontrol *k, struct snd_ctl_elem_info *info)
 {
     info->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
-    info->count = KEPT_VALUES;
+    info->count = OUT_VALUES;
     info->value.integer.min = 0;
     info->value.integer.max = 0x7fffffff;
     return 0;
@@ -174,18 +337,17 @@ static int kept_info(struct snd_kcontrol *k, struct snd_ctl_elem_info *info)
 static int kept_get(struct snd_kcontrol *k, struct snd_ctl_elem_value *v)
 {
     mutex_lock(&lock);
-    memcpy(v->value.integer.value, kept[k->private_value], sizeof(kept[0]));
+    memcpy(v->value.integer.value, outs[k->private_value].v, sizeof(outs[0].v));
     mutex_unlock(&lock);
     return 0;
 }
 
 static int kept_put(struct snd_kcontrol *k, struct snd_ctl_elem_value *v)
 {
-    int changed;
+    bool changed;
 
     mutex_lock(&lock);
-    changed = memcmp(kept[k->private_value], v->value.integer.value, sizeof(kept[0])) != 0;
-    memcpy(kept[k->private_value], v->value.integer.value, sizeof(kept[0]));
+    changed = out_store(&outs[k->private_value], v->value.integer.value, OUT_VALUES);
     mutex_unlock(&lock);
     return changed;
 }
@@ -212,9 +374,17 @@ static int add_kept(void)
                                      .name = kept_names[i],
                                      .info = kept_info,
                                      .get = kept_get,
-                                     .put = kept_put,
-                                     .private_value = i};
-        int err = snd_ctl_add(card, snd_ctl_new1(&k, NULL));
+                                     .put = kept_put};
+        struct out_entry *e;
+        int err;
+
+        mutex_lock(&lock);
+        e = out_find(kept_names[i]);
+        mutex_unlock(&lock);
+        if (!e)
+            return -ENOSPC;
+        k.private_value = e - outs;
+        err = snd_ctl_add(card, snd_ctl_new1(&k, NULL));
 
         if (err)
             return err;
@@ -226,6 +396,9 @@ int lgemu_snd_init(void)
 {
     int err;
 
+    proc_dir = proc_mkdir("lgemu", NULL);
+    if (!proc_dir || !proc_create_single("sound_out", 0444, proc_dir, sound_out_show))
+        pr_err("cannot add /proc/lgemu/sound_out\n");
     if (!snd_ctls)
         return 0;
     card = snd_card_ref(0);
@@ -268,5 +441,8 @@ void lgemu_snd_exit(void)
         snd_card_unref(card);
         card = NULL;
     }
+    if (proc_dir)
+        proc_remove(proc_dir);
+    proc_dir = NULL;
     virtsnd_set_playback_gain(0x10000);
 }
