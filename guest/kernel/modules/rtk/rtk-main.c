@@ -86,6 +86,14 @@ static char *waits[16];
 static int waits_count;
 module_param_array(waits, charp, &waits_count, 0444);
 MODULE_PARM_DESC(waits, "ioctls that wait for an event that never comes, node:cmd");
+/* ARC on or off: KADP_VFE_ARC_Enable's _IOW('w', 0x8f, int) on /dev/vfedev (W19P), whose int
+ * lgemu keeps as the sound output's "VFE ARC Enable" (lgemu snd.c, /proc/lgemu/sound_out) */
+static char *arc_ioctl;
+module_param(arc_ioctl, charp, 0444);
+MODULE_PARM_DESC(arc_ioctl, "the ARC enable ioctl, node:cmd (W19P vfedev:0x4004778f); unset: not "
+                            "recorded");
+static char arc_node[16];
+static u32 arc_cmd;
 
 /* the TEE (tee.c): /dev/tee0, OP-TEE's user ABI, with the stand-in TAs of tee-ta.c */
 static bool tee;
@@ -136,6 +144,10 @@ static struct {
 
 static int node_rules_parse(void)
 {
+    if (arc_ioctl && lgemu_parse_named(arc_ioctl, arc_node, sizeof(arc_node), 0, &arc_cmd, 1)) {
+        pr_err("arc_ioctl=%s: not node:cmd\n", arc_ioctl);
+        return -EINVAL;
+    }
     for (int i = 0; i < waits_count; i++) {
         if (lgemu_parse_named(waits[i], wait_rules[i].node, NODE_NAME_LEN, 0, &wait_rules[i].cmd,
                               1)) {
@@ -203,6 +215,13 @@ static long node_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         return rtk_vt_ioctl(cmd, arg);
     if (rtk_ucom_command(file->private_data, cmd))
         return rtk_ucom_ioctl(cmd, arg);
+    if (arc_ioctl && cmd == arc_cmd && !strcmp(file->private_data, arc_node)) {
+        int on;
+
+        if (get_user(on, (int __user *)compat_ptr(arg)))
+            return -EFAULT;
+        lgemu_snd_out_set("VFE ARC Enable", (long[]){on}, 1);
+    }
     return 0;
 }
 

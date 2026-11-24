@@ -41,6 +41,9 @@
 # fail cleanly; no key is involved.
 # The OSD volume (rpc_fn009): the audio CPU's AO_LGSE_SetFn009 (201:248), whose level rtk.ko
 # passes to lgemu's playback gain.
+# The digital sound outputs (rpc_audio_config, rpc_spdifo_source, arc_ioctl): the audio CPU's
+# AudioConfig (201:16; the S/PDIF mode, ARC, channel status, device mutes) and SPDIFO source
+# (201:90) and VFE's ARC enable, which rtk.ko keeps in lgemu's /proc/lgemu/sound_out.
 # The media windows (vsc, vsc_screen): tvservice's scaler windows reach /dev/vscdev through the
 # stock HAL_VSC and KADP_VSC, whose ioctls rtk.ko decodes for the viewer (rtk-vsc.c, "the
 # scaler's windows"); their rectangles are in the panel's pixels, 3840x2160 on this UHD board
@@ -89,6 +92,9 @@ params = [
     "rpc_word=100:12070:2:0x11000",
     "tee=1",
     "rpc_fn009=201:248",
+    "rpc_audio_config=201:16",
+    "rpc_spdifo_source=201:90",
+    "arc_ioctl=vfedev:0x4004778f",
     "vsc=vscdev",
     "vsc_screen=3840,2160",
 ]

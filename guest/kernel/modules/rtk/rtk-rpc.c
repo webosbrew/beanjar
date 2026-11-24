@@ -47,6 +47,64 @@ module_param(rpc_fn009, charp, 0444);
 MODULE_PARM_DESC(rpc_fn009,
                  "the LGSE FN009 RPC, program:procedure (W19P 201:248); unset: not decoded");
 static u32 fn009_rpc[2];
+/* The digital sound outputs (W19P's libhal_rtd2872 over libkadaptor): KADP_AUDIO_SendConfig's
+ * AUDIO_RPC_ToAgent_AudioConfig_0, whose XDR AUDIO_CONFIG_COMMAND is msg_id and 15 value words:
+ *   - msg_id 2, the S/PDIF output's mode, sent for the connected digital output (soundbar on
+ *     S/PDIF PCM 0x101, else ARC's code, else S/PDIF's) when a mode is set or an output connects:
+ *     value 0 the code, 0x100 + 1 PCM, 2 auto (and half auto), 3 auto AAC, 0xa forced AC-3,
+ *     0xb forced E-AC-3, 0xc bypass, 0xd bypass AAC, 0xe and 0xf the E-AC-3 bypasses;
+ *   - msg_id 63, ARC: value 0 on (1) or off (0);
+ *   - msg_id 62, the channel status: values 2 copy-free (1), 3 the category, 4 0x80 (no copy);
+ *   - msg_id 101, a device's mute: value 1 the device (3 the S/PDIF port, also ARC's; 5 the
+ *     headphone; 10 S/PDIF-ES), value 4 the mute;
+ * and AUDIO_RPC_AO_ToAgent_SPDIFO_Source_Config_0 {instanceID, source}: 3 ARC, 0 S/PDIF.
+ * lgemu keeps them as the sound output's values (lgemu snd.c, /proc/lgemu/sound_out). */
+static char *rpc_audio_config, *rpc_spdifo_source;
+module_param(rpc_audio_config, charp, 0444);
+MODULE_PARM_DESC(rpc_audio_config,
+                 "the AudioConfig RPC, program:procedure (W19P 201:16); unset: not decoded");
+module_param(rpc_spdifo_source, charp, 0444);
+MODULE_PARM_DESC(rpc_spdifo_source, "the S/PDIF out source RPC, program:procedure (W19P 201:90); "
+                                    "unset: not decoded");
+static u32 audio_config_rpc[2], spdifo_source_rpc[2];
+#define AUDIO_CONFIG_SPDIF_MODE 2
+#define AUDIO_CONFIG_SPDIF_CS   62
+#define AUDIO_CONFIG_ARC        63
+#define AUDIO_CONFIG_MUTE       101
+
+/* the sound output's part of a request's argument words a */
+static void rpc_sound_out(u32 program, u32 procedure, const __be32 *a, u32 nargs)
+{
+    long v[5];
+
+    if (rpc_audio_config && program == audio_config_rpc[0] && procedure == audio_config_rpc[1] &&
+        nargs >= 6) {
+        for (int i = 0; i < 5; i++)
+            v[i] = be32_to_cpu(a[1 + i]);
+        switch (be32_to_cpu(a[0])) {
+        case AUDIO_CONFIG_SPDIF_MODE:
+            lgemu_snd_out_set("AudioConfig SPDIF Mode", v, 1);
+            break;
+        case AUDIO_CONFIG_ARC:
+            lgemu_snd_out_set("AudioConfig ARC", v, 1);
+            break;
+        case AUDIO_CONFIG_SPDIF_CS:
+            lgemu_snd_out_set("AudioConfig SPDIF ChannelStatus", v + 2, 3);
+            break;
+        case AUDIO_CONFIG_MUTE: {
+            char name[32];
+
+            snprintf(name, sizeof(name), "AudioConfig Mute %ld", v[1]);
+            lgemu_snd_out_set(name, v + 4, 1);
+            break;
+        }
+        }
+    } else if (rpc_spdifo_source && program == spdifo_source_rpc[0] &&
+               procedure == spdifo_source_rpc[1] && nargs >= 2) {
+        v[0] = be32_to_cpu(a[1]);
+        lgemu_snd_out_set("SPDIFO Source", v, 1);
+    }
+}
 #define FN009_DATA_OPTION 1 /* argument word 1's high half */
 #define FN009_VARS        1
 #define FN009_LEVEL       12 /* argument word */
@@ -182,6 +240,14 @@ int rtk_rpc_rules_parse(void)
         pr_err("rpc_fn009=%s: not program:procedure\n", rpc_fn009);
         return -EINVAL;
     }
+    if (rpc_audio_config && lgemu_parse_u32s(rpc_audio_config, 0, audio_config_rpc, 2)) {
+        pr_err("rpc_audio_config=%s: not program:procedure\n", rpc_audio_config);
+        return -EINVAL;
+    }
+    if (rpc_spdifo_source && lgemu_parse_u32s(rpc_spdifo_source, 0, spdifo_source_rpc, 2)) {
+        pr_err("rpc_spdifo_source=%s: not program:procedure\n", rpc_spdifo_source);
+        return -EINVAL;
+    }
     pr_info("rpc: %d result sizes, %d creates, %d answers, %d words\n", rpc_reply_count,
             rpc_create_count, rpc_answer_count, rpc_word_count);
     return 0;
@@ -293,6 +359,7 @@ static ssize_t rpc_write(struct file *file, const char __user *buf, size_t n, lo
     if (rpc_fn009 && program == fn009_rpc[0] && procedure == fn009_rpc[1] && nargs > FN009_LEVEL &&
         be32_to_cpu(req[RPC_HEADER / 4 + FN009_DATA_OPTION]) >> 16 == FN009_VARS)
         lgemu_snd_osd_level(be32_to_cpu(req[RPC_HEADER / 4 + FN009_LEVEL]) & 0xffff);
+    rpc_sound_out(program, procedure, req + RPC_HEADER / 4, nargs);
     lgemu_count(&rpc_counts, "rpc", program, procedure);
     bytes = rpc_result_size(program, procedure, &given);
     if (!given)
