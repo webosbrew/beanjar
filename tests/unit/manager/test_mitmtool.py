@@ -51,7 +51,9 @@ def test_version_from_the_command(tmp_path):
     assert mitmtool.version(str(tmp_path / "missing")) == ""
 
 
-def test_check(tmp_path):
+# Whether bubblewrap is installed on this machine is not what test_check tests
+@mock.patch.object(mitmtool, "sandbox", return_value="/usr/bin/bwrap")
+def test_check(_sandbox, tmp_path):
     missing = mitmtool.check({"NETNS_MITMWEB": str(tmp_path / "none")})
     assert not missing.usable and mitmtool.INSTALL in missing.problem
     assert missing.brief() == "mitmproxy not installed"
