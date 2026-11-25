@@ -199,10 +199,13 @@ long rtk_vsc_legacy_ioctl(unsigned int cmd, unsigned long arg)
 #define CID_WIN_REGION         0x00982900
 #define CID_CONNECT            0x0098290c
 #define CID_ACTIVE_WIN         0x0098290d
+#define CID_PLANE_NUM          0x00982926
 #define EV_MUTE_OFF            0x0098291e
 #define EV_ACTIVE_WIN          0x00982920
 #define EV_APPLY_DONE          0x00982922
 #define VSC_SCALARS            16
+#define VSC_PAYLOADS           12
+#define VSC_PAYLOAD_SIZE       64
 #define VSC_SUBS               8
 #define VSC_EVENTS             16
 #define VSC_EVENT_SIZE         128
@@ -220,10 +223,14 @@ static int vsc_screen_count;
 module_param_array(vsc_screen, uint, &vsc_screen_count, 0444);
 MODULE_PARM_DESC(vsc_screen, "the panel the scaler's output rectangles are in, width,height");
 
-/* each window's stored controls, for the readbacks */
+/* each window's stored controls, for the readbacks: a get answers what the last set of the same
+ * control stored, and fails (-EINVAL) for a control never set, rather than succeed and leave the
+ * caller's buffer as it was */
 static struct {
-    u8 region[28], connect[12], prop[12];
-    bool has_region, has_connect, has_prop;
+    struct {
+        u32 id, size;
+        u8 data[VSC_PAYLOAD_SIZE];
+    } payloads[VSC_PAYLOADS];
     struct {
         u32 id;
         s32 value;
@@ -289,18 +296,35 @@ static s32 *vsc_scalar(unsigned int idx, u32 id, bool make)
     return NULL;
 }
 
+/* the stored payload of control id, or a free slot for it with make (vsc_lock held) */
+static typeof(&vsc_ctl[0].payloads[0]) vsc_payload(unsigned int idx, u32 id, bool make)
+{
+    for (int i = 0; i < VSC_PAYLOADS; i++) {
+        if (vsc_ctl[idx].payloads[i].id == id)
+            return &vsc_ctl[idx].payloads[i];
+        if (!vsc_ctl[idx].payloads[i].id && make) {
+            vsc_ctl[idx].payloads[i].id = id;
+            return &vsc_ctl[idx].payloads[i];
+        }
+    }
+    return NULL;
+}
+
 /* a control set: the window's state and its events (vsc_lock held) */
 static void vsc_v4l2_set(unsigned int idx, u32 id, const u8 *p, u32 size)
 {
     struct lgemu_video_window *w = &vsc_win[idx];
+    typeof(&vsc_ctl[0].payloads[0]) stored = vsc_payload(idx, id, true);
     u8 data[11];
 
+    if (stored) {
+        stored->size = size;
+        memcpy(stored->data, p, size);
+    }
     switch (id) {
     case CID_WIN_REGION:
         if (size < 28)
             return;
-        memcpy(vsc_ctl[idx].region, p, 28);
-        vsc_ctl[idx].has_region = true;
         w->open = true;
         w->width = get_unaligned_le16(p + 12);
         w->height = get_unaligned_le16(p + 14);
@@ -322,8 +346,6 @@ static void vsc_v4l2_set(unsigned int idx, u32 id, const u8 *p, u32 size)
 
         if (size < 12)
             return;
-        memcpy(vsc_ctl[idx].connect, p, 12);
-        vsc_ctl[idx].has_connect = true;
         w->open = true;
         w->connected = src && dest;
         if (w->connected) {
@@ -333,47 +355,56 @@ static void vsc_v4l2_set(unsigned int idx, u32 id, const u8 *p, u32 size)
         vsc_publish(idx, w->connected ? WEBOS_VIDEO_CONNECT : WEBOS_VIDEO_DISCONNECT);
         break;
     }
-    default:
-        if (id == 0x00982902 && size >= 12) {
-            memcpy(vsc_ctl[idx].prop, p, 12);
-            vsc_ctl[idx].has_prop = true;
-        }
-        break;
     }
 }
 
-/* a readback into p (size bytes); false: nothing stored, the payload is left as it is */
+/* a readback into p (size bytes, all written); false: nothing to answer (vsc_lock held) */
 static bool vsc_v4l2_get(unsigned int idx, u32 id, u8 *p, u32 size)
 {
     const struct lgemu_video_window *w = &vsc_win[idx];
+    typeof(&vsc_ctl[0].payloads[0]) stored;
 
+    memset(p, 0, size);
     switch (id) {
-    case CID_WIN_REGION:
-        if (!vsc_ctl[idx].has_region || size < 28)
+    case CID_PLANE_NUM:
+        /* libval-starfish's V4l2vsc::getPlaneNum (webOS 24 and 25) sizes its scalers by this into
+         * an uninitialised word; nyxVscaler (webOS 26) takes 1 to 6 and falls back to 2. The
+         * scaler has the windows of v4l2_vsc= */
+        if (size < 4)
             return false;
-        memcpy(p, vsc_ctl[idx].region, 28);
-        return true;
-    case CID_CONNECT:
-        if (!vsc_ctl[idx].has_connect || size < 12)
-            return false;
-        memcpy(p, vsc_ctl[idx].connect, 12);
-        return true;
-    case 0x00982902:
-        if (!vsc_ctl[idx].has_prop || size < 12)
-            return false;
-        memcpy(p, vsc_ctl[idx].prop, 12);
+        put_unaligned_le32(v4l2_vsc_count, p);
         return true;
     case CID_ACTIVE_WIN: /* the whole input is active: {original, active} */
         if (size < 16 || !w->width)
             return false;
-        memset(p, 0, 16);
         put_unaligned_le16(w->width, p + 4);
         put_unaligned_le16(w->height, p + 6);
         put_unaligned_le16(w->width, p + 12);
         put_unaligned_le16(w->height, p + 14);
         return true;
     }
-    return false;
+    stored = vsc_payload(idx, id, false);
+    if (!stored)
+        return false;
+    memcpy(p, stored->data, min(size, stored->size));
+    return true;
+}
+
+/* a get with nothing to answer: -EINVAL, the control logged the first time */
+static long vsc_unanswered(unsigned int idx, u32 id)
+{
+    static u32 seen[16];
+
+    for (int i = 0; i < ARRAY_SIZE(seen); i++) {
+        if (seen[i] == id)
+            break;
+        if (!seen[i]) {
+            seen[i] = id;
+            pr_info("%s: get of control %#x, never set: -EINVAL\n", v4l2_vsc[idx], id);
+            break;
+        }
+    }
+    return -EINVAL;
 }
 
 long rtk_vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -391,21 +422,23 @@ long rtk_vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
         if (copy_from_user(ctrls, uarg, sizeof(ctrls)))
             return -EFAULT;
-        if (ctrls[1] != 1) /* V4l2vsc sets one control at a time */
-            return 0;
+        /* V4l2vsc sets one control at a time, a payload of up to 64 bytes; a get of anything
+         * else would leave the caller's buffer unwritten */
+        if (ctrls[1] != 1)
+            return cmd == V4L2_G_EXT_CTRLS ? -EINVAL : 0;
         if (copy_from_user(ctrl, compat_ptr(ctrls[5]), sizeof(ctrl)))
             return -EFAULT;
         if (!ctrl[1] || ctrl[1] > sizeof(payload))
-            return 0; /* a scalar in the union, or not one of the scaler's */
-        if (copy_from_user(payload, compat_ptr(ctrl[3]), ctrl[1]))
+            return cmd == V4L2_G_EXT_CTRLS ? -EINVAL : 0;
+        if (cmd == V4L2_S_EXT_CTRLS && copy_from_user(payload, compat_ptr(ctrl[3]), ctrl[1]))
             return -EFAULT;
         mutex_lock(&vsc_lock);
-        if (cmd == V4L2_S_EXT_CTRLS) {
+        if (cmd == V4L2_S_EXT_CTRLS)
             vsc_v4l2_set(idx, ctrl[0], payload, ctrl[1]);
-        } else if (vsc_v4l2_get(idx, ctrl[0], payload, ctrl[1]) &&
-                   copy_to_user(compat_ptr(ctrl[3]), payload, ctrl[1])) {
+        else if (!vsc_v4l2_get(idx, ctrl[0], payload, ctrl[1]))
+            ret = vsc_unanswered(idx, ctrl[0]);
+        else if (copy_to_user(compat_ptr(ctrl[3]), payload, ctrl[1]))
             ret = -EFAULT;
-        }
         mutex_unlock(&vsc_lock);
         return ret;
     }
@@ -431,10 +464,12 @@ long rtk_vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             }
         } else {
             v = vsc_scalar(idx, c[0], false);
-            if (v) {
-                c[1] = *v;
+            if (v || c[0] == CID_BG_COLOR) {
+                c[1] = v ? *v : vsc_win[idx].mute;
                 if (copy_to_user(uarg, c, sizeof(c)))
                     ret = -EFAULT;
+            } else {
+                ret = vsc_unanswered(idx, c[0]); /* never set */
             }
         }
         mutex_unlock(&vsc_lock);
@@ -479,6 +514,9 @@ long rtk_vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         }
     }
     }
+    /* the rest (QUERYCAP, G_FMT, ...: no known caller): a set is accepted, a get not answered */
+    if (_IOC_DIR(cmd) & _IOC_READ)
+        return rtk_mark_unhandled(rtk_vsc_counter_name(idx), cmd, -ENOTTY);
     return 0;
 }
 

@@ -35,6 +35,7 @@
 #define CONNECT        0x0098290c
 #define ORBIT_WINDOW   0x00982911
 #define ORBIT_MOVE     0x00982912
+#define PLANE_NUM      0x00982926
 #define BG_COLOR       0x00980923
 #define VDO_CONNECT    0x00988e02
 #define VDO_DISCONNECT 0x00988e03
@@ -186,6 +187,14 @@ static long extended(struct vsc_file *f, unsigned int cmd, void __user *arg)
         return -EFAULT;
     id = control[0];
     size = control[1];
+    /* libval-starfish's V4l2vsc::getPlaneNum (webOS 24 and 25) sizes its scalers by this into an
+     * uninitialised word, failure or not; nyxVscaler (webOS 26) takes 1 to 6 and falls back to 2.
+     * The scaler has WINDOWS windows. */
+    if (id == PLANE_NUM) {
+        if (cmd != G_EXT || size != 4)
+            return -EINVAL;
+        return put_user(WINDOWS, (u32 __user *)compat_ptr(control[3])) ? -EFAULT : 0;
+    }
     if (id != REGION && id != CONNECT && id != ORBIT_WINDOW && id != ORBIT_MOVE)
         return -EOPNOTSUPP;
     /* The region is 28 bytes, {input, original, output rects (u16 x, y, w, h), u32 rotation}; W22O
