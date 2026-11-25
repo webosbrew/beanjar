@@ -13,7 +13,12 @@
  * HIST_WAIT_MS (default 2000), and print every block's R, G and B bins that are not empty; then
  * finalize. It ends on preset 0, the driver's state at boot (the preset is global to the driver).
  * The caller gate of vtCapture_initHistogram passes only with /var/luna/preferences/vt_devmode,
- * which tests/regress/tv.sh makes for the run and removes. Facts only, one "hist.*" line each. */
+ * which tests/regress/tv.sh makes for the run and removes. Facts only, one "hist.*" line each.
+ * The calls are looked up at run time (dlsym), not linked: the preload also reaches every process
+ * on the way to the suite (busybox's or coreutils' timeout), which has no libvtcapture; there the
+ * probe does nothing and the process runs on. */
+#define _GNU_SOURCE /* RTLD_DEFAULT */
+#include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,10 +26,10 @@
 #include <time.h>
 #include <unistd.h>
 
-void *vtCapture_initHistogram(int (*policy)(void));
-int vtCapture_setPresetHistogram(void *h, int preset);
-int vtCapture_getHistogram(void *h, void *buf);
-int vtCapture_finalizeHistogram(void *h);
+static void *(*vtCapture_initHistogram)(int (*policy)(void));
+static int (*vtCapture_setPresetHistogram)(void *h, int preset);
+static int (*vtCapture_getHistogram)(void *h, void *buf);
+static int (*vtCapture_finalizeHistogram)(void *h);
 
 #define BLOCK 1540 /* u32 index, then R, G and B as 256 little-endian u16 counts */
 static uint8_t buf[16 * BLOCK];
@@ -82,6 +87,13 @@ __attribute__((constructor)) static void probe(void)
 {
     if (!getenv("HIST_PROBE"))
         return;
+    *(void **)&vtCapture_initHistogram = dlsym(RTLD_DEFAULT, "vtCapture_initHistogram");
+    *(void **)&vtCapture_setPresetHistogram = dlsym(RTLD_DEFAULT, "vtCapture_setPresetHistogram");
+    *(void **)&vtCapture_getHistogram = dlsym(RTLD_DEFAULT, "vtCapture_getHistogram");
+    *(void **)&vtCapture_finalizeHistogram = dlsym(RTLD_DEFAULT, "vtCapture_finalizeHistogram");
+    if (!vtCapture_initHistogram || !vtCapture_setPresetHistogram || !vtCapture_getHistogram ||
+        !vtCapture_finalizeHistogram)
+        return; /* not the suite (timeout on the way to it): leave the process alone */
     const char *w = getenv("HIST_WAIT_MS");
     double wait = w ? atof(w) : 2000;
     setvbuf(stdout, NULL, _IOLBF, 0);

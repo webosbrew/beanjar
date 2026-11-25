@@ -257,5 +257,95 @@ class GeneratorTest(unittest.TestCase):
         self.assertLess(text.index("[histogram]"), text.index("[sources]"))
 
 
+# A stand-in for libvtcapture: each block's R, G and B in bin 0, as many as the C2's totals
+FAKE_LIB = r"""
+#include <stdint.h>
+#include <string.h>
+static const unsigned totals[4][16] = {%(totals)s};
+static const int counts[4] = {16, 16, 16, 14};
+static int preset = -1, h;
+void *vtCapture_initHistogram(int (*policy)(void)) { return policy() ? &h : 0; }
+int vtCapture_setPresetHistogram(void *x, int p) { (void)x; preset = p; return 0; }
+int vtCapture_getHistogram(void *x, void *buf)
+{
+    (void)x;
+    uint8_t *b = buf;
+    for (int i = 0; i < counts[preset]; i++, b += 1540) {
+        uint32_t index = (uint32_t)i;  /* the library numbers the blocks, as the stock one does */
+        memcpy(b, &index, 4);
+        memset(b + 4, 0, 1536);
+        for (int ch = 0; ch < 3; ch++) {
+            uint16_t n = totals[preset][i];
+            memcpy(b + 4 + ch * 512, &n, 2);
+        }
+    }
+    return 0;
+}
+int vtCapture_finalizeHistogram(void *x) { (void)x; return 0; }
+"""
+# the suite needs the library (its main never runs: the probe exits first)
+FAKE_SUITE = (
+    "int vtCapture_finalizeHistogram(void *);\n"
+    "int main(int argc, char **argv) { (void)argv; return argc > 99 ? vtCapture_finalizeHistogram(0) : 42; }\n"
+)
+
+
+class ProbeTest(unittest.TestCase):
+    """hist-probe.c built for this machine: preloaded into a process without libvtcapture (the
+    timeout on the way to the suite) it does nothing; into one with it, it prints what vthist reads."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        d = cls.tmp.name
+        src = os.path.join(REGRESS, "histogram", "hist-probe.c")
+        cls.probe = os.path.join(d, "hist-probe.so")
+        flags = ["-shared", "-fPIC", "-Wall", "-Wextra", "-Werror"]
+        subprocess.run(["cc", *flags, src, "-o", cls.probe, "-ldl", "-Wl,-z,defs"], check=True)
+        totals = ", ".join("{" + ", ".join(map(str, t)) + "}" for t in vthist.TOTALS)
+        with open(os.path.join(d, "fake.c"), "w") as f:
+            f.write(FAKE_LIB % {"totals": totals})
+        with open(os.path.join(d, "suite.c"), "w") as f:
+            f.write(FAKE_SUITE)
+        lib = os.path.join(d, "libvtcapture.so")
+        subprocess.run(["cc", "-shared", "-fPIC", os.path.join(d, "fake.c"), "-o", lib], check=True)
+        cls.suite = os.path.join(d, "suite")
+        subprocess.run(
+            [
+                "cc",
+                os.path.join(d, "suite.c"),
+                "-o",
+                cls.suite,
+                f"-L{d}",
+                "-lvtcapture",
+                f"-Wl,-rpath,{d}",
+            ],
+            check=True,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def run_with_probe(self, argv):
+        env = dict(os.environ, HIST_PROBE="1", HIST_WAIT_MS="500", LD_PRELOAD=self.probe)
+        return subprocess.run(argv, env=env, capture_output=True, text=True, timeout=30)
+
+    def test_other_processes_run_on(self):
+        r = self.run_with_probe(["timeout", "10", "sh", "-c", "exit 3"])
+        self.assertEqual((r.returncode, r.stdout), (3, ""), r.stderr)
+
+    def test_through_timeout_into_the_suite(self):
+        r = self.run_with_probe(["timeout", "20", self.suite])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        f = vthist.parse(r.stdout)
+        self.assertEqual((f["init"], f["finalize"]), ("ok", "0"))
+        items = dict((c, s) for c, s, _ in vthist.judge(r.stdout, PAT))
+        self.assertEqual(
+            (items["histogram.calls"], items["histogram.layout"], items["histogram.picture"]),
+            ("PASS", "PASS", "FAIL"),  # all in bin 0: not the picture
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
