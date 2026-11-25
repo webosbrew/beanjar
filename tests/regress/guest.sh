@@ -42,6 +42,11 @@
 #                                                     decode-log (the page's and the media stack's lines)
 #   sh /host/tests/regress/guest.sh smp ID SECONDS    scripts/regress --tv's smp step: tests/regress/tv.sh
 #                                                     smp (the SMP check app's run and its lines)
+#   sh /host/tests/regress/guest.sh idle-cpu SECONDS WINDOWS  every process's and thread's CPU and
+#                                                     context switches, WINDOWS+1 snapshots SECONDS
+#                                                     apart (judged by tests/regress/lib/idlecpu.py)
+#   sh /host/tests/regress/guest.sh idle-threads PIDS SAMPLES  the threads of PIDS (comma-joined):
+#                                                     state, wchan, syscall, SAMPLES times
 #   sh /host/tests/regress/guest.sh checklist [LASTINPUT]  the bring-up checklist's facts, one
 #                                                     "name=value" a line, judged on the host
 #                                                     (tests/regress/lib/checklist.py); LASTINPUT: the
@@ -55,6 +60,7 @@ out=/host/out/regress
 scale=${TIME_SCALE:-1}
 step=$1
 . "${0%/*}/lb-exit.sh"  # put with this file (the initramfs busybox has no dirname)
+. "${0%/*}/idle-cpu.sh"  # the idle-cpu and idle-threads steps, put with this file too
 # checklist's webOS half (checklist-webos, run through webos-enter, where /host is /mnt/host)
 [ "$step" = checklist-webos ] || mkdir -p $out
 # wt SECS PROG ARGS...: PROG inside webOS under the firmware's busybox timeout, which takes -t SECS
@@ -389,6 +395,8 @@ standby-prep) standby_prep ;;
 power-off) power_off ;;
 resumed) resumed "$2" "$3" "$4" ;;
 checklist) checklist "$2" ;;
+idle-cpu) idle_cpu "${2:-30}" "${3:-2}" ;;
+idle-threads) idle_threads "$2" "${3:-10}" ;;
 check-m1) webos-enter env TIME_SCALE=$scale sh /mnt/host/guest/scripts/check-m1.sh "${3:-10}" "$2" </dev/null ;;
 app-calls) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tvservice/app-calls.sh "$2" </dev/null ;;
 luna-info) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tv.sh luna-info </dev/null ;;

@@ -323,7 +323,8 @@ it), `guest/scripts/check-m1.sh`, `tests/regress/tvservice/app-calls.sh`, the br
 compositor shows no launcher by itself (`guest.sh home-idle`: webOS 3.5's Home Auto Launch shows it
 for a few seconds after the first app, and a HOME then hides it; `tests/regress/ir-key.py`, over
 `ir.sock`; webOS 4.5's Home, a HOME window that stays up after boot, gets HOME twice, hide and show) and a `tests/regress/virgl/dbus-grab.py` screenshot (the UI
-over an opaque black video plane, as a TV shows it with no video), Quick Start+'s standby and
+over an opaque black video plane, as a TV shows it with no video), the guest's idle CPU at Home
+(`idle-cpu`, "Bring-up checklist" below; headless: after ssh), Quick Start+'s standby and
 resume where the firmware and the model offer it (tvpowerd opens `/dev/lgib`, and tvservice's
 `instantBooting` is `quickStartPlus` or `true`; SKIP on WT1H and W15M's 42LF652V-ZA): `guest.sh
 standby-prep` turns it on, POWER on the remote (headless: tvpower's `powerOff`, reason
@@ -348,7 +349,7 @@ ends the run if a stopped VM leaves any of them behind. Results, copied back her
 `build/regress/<run>/<target>.png`, `build/regress/<run>/<target>/` (the steps' output, the logs
 saved at stop and check-m1's in `saved/`, the launcher's host logs in `host/`) and
 `summary.txt`, the table it prints (target, mode, boot-done, check-m1, app-calls, checklist,
-screenshot, standby (seconds from POWER to the standby, QEMU's CPU in it, seconds from the power
+screenshot, idle cpu, standby (seconds from POWER to the standby, QEMU's CPU in it, seconds from the power
 key to the wake and from the wake line to Active), capture, run window; "Bring-up checklist" below), and `summary.json`; the exit status is 1 if any target failed. A target whose build makes
 no gl layer (`guest/layers/gl/meson.build`: its chip's table, `guest/layers/soc/<chip>/meson.build`, has neither
 `gl_vendor_stubs` nor `gl_vendor_gl`; no chip at present) is skipped when `LAYERS` has gl, neither built nor
@@ -518,6 +519,40 @@ any region that belongs to neither.
 A WARN does not fail the target; a FAIL does. The table has a `checklist` column, for example
 `WARN(tvservice)`. Below the table, each target's items that are not PASS are listed with their
 reasons. `summary.json` has every item of every target under `checklist`.
+
+#### Idle CPU
+
+One more item is judged later, in a step of its own: `idle-cpu`, once Home is up and settled (a
+graphics run: after the screenshot; headless, which presses no HOME: after ssh). It looks for a
+process that spins on a value our emulation never supplies, as tvservice did on o18 (an HDMI
+switch's ready GPIO, polled every 1 ms), legacy-broadcast-atsc on k25lp (a tuner property, read in
+a busy loop) and tvservice on k2l (a demux node that always polled readable). The guest's load
+average is no use for this: real sets sit at load 15 to 34 while 76 to 90 % idle. So
+`tests/regress/idle-cpu.sh` (sourced by `guest.sh`, run in the initramfs, whose `/proc` sees every
+webOS process) takes three snapshots 30 s apart of each process's and thread's utime+stime and
+each thread's voluntary and involuntary context switches, and `tests/regress/lib/idlecpu.py`
+works out the CPU per process (% of one core) and the wakeups per thread for both windows:
+
+| Item | FAIL | WARN |
+|---|---|---|
+| `idle-cpu` | The sampler did not finish | In both windows, a process above its CPU limit, or a thread waking above the wakeup limit (KVM and emulation alike for now) |
+
+| Limit | KVM | qemu-user (x86-64 guest kernel) | TCG | Evidence |
+|---|---|---|---|---|
+| process CPU, default | 25 % | 100 % | 100 % | the busiest healthy process on 34 targets under KVM is servicemanager at 10-11 % on three ponytail boards, then pqcontroller at 4 %; k25lp's busy loop was 86 %. Emulation costs several times the CPU (o18's tvservice about 11 % under qemu-user against 2-4 % on KVM) |
+| surface-manager | 50 % | 200 % | 200 % | 15-20 % on real sets |
+| thread wakeups | 500/s | 500/s | 250/s | the busiest stock thread wakes 142/s (W19P's CCThreadProc, a 5 ms sleep); o18's 1 ms poll woke 640-800/s, and only 290-596/s under TCG: emulation lowers the rate, so it is never scaled up |
+
+The two windows rule out a one-off burst (the Home page settling, a once-a-minute job); a spin is
+steady. 30 s at 100 ticks a second resolves 0.1 % of a core. For each flagged process a second
+guest step, `idle-threads`, samples its threads 10 times 0.2 s apart (state, `wchan`, the syscall
+from `/proc/TID/syscall`, named for arm or x86-64), and the report lists its busiest threads with
+their CPU and wakeups per second: a busy loop holds the CPU with few voluntary switches, a
+short-sleep poll has many. The step adds about 65 s to a lane (2 s more for a flagged process).
+The numbers of every process above 0.5 % of a core go into `<target>/idle-cpu.json`, the raw
+snapshots into `<target>/idle-cpu.txt`; the table's `idle cpu` column names the busiest process
+(`PASS tvservice:3%`) or the flagged ones (`WARN(legacy-broadcas)`, the comm as the kernel cuts
+it), and the lines under it give each target's numbers; `summary.json` has them under `idle_cpu`.
 
 ### TV feature suite
 

@@ -739,6 +739,7 @@ class DryRunTest(unittest.TestCase):
                 "guest.sh checklist 0 ",
                 "ir-key.py",
                 "t1/h13-afro.png",
+                "guest.sh idle-cpu 30 2",
                 "guest.sh standby-prep",
                 "ir-key.py 0x08",
                 "standby.py wait 60",
@@ -938,6 +939,7 @@ class DryRunTest(unittest.TestCase):
                 "guest.sh app-calls",
                 "guest.sh tvservice",
                 "guest.sh checklist 0x1bc8 ",
+                "guest.sh idle-cpu 30 2",
                 "guest.sh standby-prep",
                 "guest.sh power-off",
                 "standby.py wait 240",
@@ -1545,6 +1547,7 @@ class ResultTest(unittest.TestCase):
                 "tvservice",
                 "checklist",
                 "ssh",
+                "idle-cpu",
                 "standby",
                 "stop",
                 "capture",
@@ -1613,6 +1616,26 @@ class ResultTest(unittest.TestCase):
         self.assertIn("WARN(tvservice)", text.splitlines()[1])
         self.assertIn("h13-afro: WARN tvservice: 1 crash report(s): x", text)
         r.steps["checklist"] = "FAIL"
+        self.assertFalse(r.ok)
+
+    def test_idle_cpu(self):
+        # a flag WARNs and keeps the target passing; the cell names the process, the notes the numbers
+        r = regress.Result("k25lp-queue", W18R, "headless")
+        r.steps.update({s: "PASS" for s in r.steps})
+        flagged = dict(pid=400, comm="legacy-broadcas", cpu=[86.0, 85.0], why="86-85 %", threads=[])
+        r.idle = dict(windows=[30.0, 30.0], processes=[flagged], flagged=[flagged])
+        r.idle_item = ("WARN", "legacy-broadcas 86/85 %: 85-86 % of a core (limit 25) [30+30 s]")
+        r.steps["idle-cpu"] = "WARN"
+        self.assertTrue(r.ok)
+        text = regress.table([r], "headless")
+        self.assertIn("idle cpu", text.splitlines()[0])
+        self.assertIn("WARN(legacy-broadcas)", text.splitlines()[1])
+        self.assertIn("k25lp-queue: WARN legacy-broadcas 86/85 %", text)
+        quiet = dict(pid=200, comm="tvservice", cpu=[3.0, 2.0], limit=25.0)
+        r.idle = dict(windows=[30.0, 30.0], processes=[quiet], flagged=[])
+        r.steps["idle-cpu"] = "PASS"
+        self.assertIn("PASS tvservice:2%", regress.table([r], "headless").splitlines()[1])
+        r.steps["idle-cpu"] = "FAIL"  # the sampler did not finish
         self.assertFalse(r.ok)
 
     def test_checklist_args(self):

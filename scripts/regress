@@ -76,6 +76,12 @@ mitmweb, slirp4netns or viewer runs on the VM host):
   shot       once no Home launcher shows by itself (guest.sh home-idle: webOS 3.5's Home Auto
              Launch), HOME on the remote (tests/regress/ir-key.py), SETTLE s, tests/regress/virgl/dbus-grab.py (the
              screen: the UI over a black video plane); a Home that stays (webOS 4.5) gets HOME twice
+  idle-cpu   at Home after the screenshot: tests/regress/guest.sh idle-cpu, two 30 s windows of
+             every guest process's CPU (/proc utime+stime) and every thread's context switches;
+             tests/regress/lib/idlecpu.py flags a process over its limit (25 % of a core, surface-
+             manager 50; x4 under qemu-user or TCG) or with a thread over 500 wakeups/s (TCG 250) in
+             both windows: WARN, with its busiest threads (guest.sh idle-threads: wchan, syscall);
+             numbers in <target>/idle-cpu.json
   standby    Quick Start+ (docs/dev/architecture/suspend.md), where the firmware and the model offer it
              (tvpowerd opens /dev/lgib, tvservice's instantBooting; SKIP elsewhere): guest.sh standby-prep turns it on; the remote's POWER
              (ir-key.py 0x08); tests/regress/standby.py waits for the standby (the guest's
@@ -103,6 +109,7 @@ mitmweb, slirp4netns or viewer runs on the VM host):
              a legacy-broadcast that stopped itself (and may have been started again by a call)
              only on evidence of clean exits (tests/regress/lb-exit.sh)
   checklist  as above
+  idle-cpu   as above, after ssh (headless has no HOME to press)
   standby    as above, with tvpower's powerOff (reason remoteKey, guest.sh power-off) for POWER
              (headless has no compositor to take the key) and no screenshot
   stop       as above
@@ -230,6 +237,7 @@ from beanjar import guestlayers, launch, nvm, targets, paths, qemu, vmunits  # n
 import checklist  # noqa: E402
 import hostsrc  # noqa: E402
 import device_census  # noqa: E402
+import idlecpu  # noqa: E402
 import tvsuite  # noqa: E402
 
 STEPS = {
@@ -241,6 +249,7 @@ STEPS = {
         "checklist",
         "ssh",
         "shot",
+        "idle-cpu",
         "standby",
         "stop",
         "capture",
@@ -253,6 +262,7 @@ STEPS = {
         "tvservice",
         "checklist",
         "ssh",
+        "idle-cpu",
         "standby",
         "stop",
         "capture",
@@ -874,6 +884,8 @@ class Result:
         self.failed = ""  # why the target failed without booting (its firmware not on the VM host)
         self.checklist = []  # [(item, PASS/WARN/FAIL, reason)]: tests/regress/lib/checklist.py
         self.standby = "-"  # the standby step's numbers, or why it was skipped
+        self.idle = None  # the idle-cpu step's numbers (idlecpu.measure), for idle-cpu.json
+        self.idle_item = None  # its (PASS/WARN/FAIL, reason)
         self.seconds = None  # the target's whole run, start to stopped
         self.instance = None  # its INSTANCE (every target runs in one of its own)
         self.host = None  # the VM host that ran it (None: this machine, or none ran it)
@@ -918,6 +930,9 @@ class Result:
             cl,
             self.steps["ssh"],
             last,
+            idlecpu.cell(self.steps["idle-cpu"], self.idle)
+            if self.idle
+            else self.steps["idle-cpu"],
             self.standby if self.steps["standby"] in ("PASS", "SKIP") else self.steps["standby"],
             self.steps["capture"],
             f"{self.window[0]}-{self.window[1]}",
@@ -950,6 +965,7 @@ def table(results, mode="graphics", tv=False, hosts=False):
             "checklist",
             "ssh",
             "tvservice",
+            "idle cpu",
             "standby",
             "capture",
             "run window (UTC)",
@@ -966,6 +982,7 @@ def table(results, mode="graphics", tv=False, hosts=False):
             "checklist",
             "ssh",
             "screenshot",
+            "idle cpu",
             "standby",
             "capture",
             "run window (UTC)",
@@ -989,6 +1006,9 @@ def table(results, mode="graphics", tv=False, hosts=False):
     ]
     if notes:
         out += ["", "checklist (not PASS):"] + notes
+    idle = [f"  {r.target}: {r.idle_item[0]} {r.idle_item[1]}" for r in results if r.idle_item]
+    if idle:
+        out += ["", "idle cpu (% of one core per window):"] + idle
     fails = [
         f"  {r.target}: {s} {step} {item}: {why}"
         for r in results
@@ -1188,6 +1208,39 @@ def home_shot(h, a, r, out, png, name):
         a.timeout + a.settle + 30,
     )
     return rc
+
+
+def idle_cpu(h, a, r, out, target):
+    """The idle-cpu step, once Home is up and settled: guest.sh idle-cpu's idlecpu.WINDOWS windows
+    of idlecpu.WINDOW s, then for a flagged process guest.sh idle-threads (its threads' state, wchan
+    and syscall, idlecpu.SAMPLES times); judged by idlecpu.judge. r.idle (written to idle-cpu.json
+    once the results are here) and r.idle_item; r.steps["idle-cpu"] the item's status, or FAIL or
+    TIMEOUT where the sampling did not finish."""
+    say(f"{target}: idle cpu ({idlecpu.WINDOWS} x {idlecpu.WINDOW} s)")
+    rc = guest_step(h, a, r, "idle-cpu", f"{idlecpu.WINDOW} {idlecpu.WINDOWS}", out)
+    if a.dry_run:
+        r.steps["idle-cpu"] = "dry"
+        return
+    data = idlecpu.parse(r.text) if rc == 0 else None
+    if data is None:
+        r.steps["idle-cpu"] = "TIMEOUT" if rc == 124 else "FAIL"
+        r.idle_item = (r.steps["idle-cpu"], f"the sampler did not finish (status {rc})")
+        return
+    r.idle = idlecpu.measure(data, a.accel)
+    if r.idle["flagged"]:
+        pids = ",".join(str(p["pid"]) for p in r.idle["flagged"])
+        if guest_step(h, a, r, "idle-threads", f"{pids} {idlecpu.SAMPLES}", out) == 0:
+            idlecpu.add_threads(r.idle, r.text)
+    r.idle_item = idlecpu.judge(r.idle)
+    r.steps["idle-cpu"] = r.idle_item[0]
+    say(f"{target}:   {r.idle_item[0]} idle-cpu: {r.idle_item[1]}")
+    for p in r.idle["flagged"]:
+        for t in p["threads"]:
+            say(
+                f"{target}:     {p['comm']}/{t['comm']} cpu {'/'.join(f'{c:.1f}' for c in t['cpu'])} %, "
+                f"wakeups {'/'.join(f'{w:.0f}' for w in t['wakeups'])}/s"
+                + "".join(f", {k} {t[k]}" for k in ("wchan", "syscall", "kind") if t.get(k))
+            )
 
 
 def standby(h, a, r, out, rel, target):
@@ -1985,7 +2038,7 @@ def boot_and_check(h, a, r, out, rel, target, fw):
         else "tests/regress/tvservice/app-calls.sh"
     )
     rc, _ = h.run(
-        f"host/scripts/vm-launcher put tests/regress/guest.sh tests/regress/lb-exit.sh {put} >/dev/null",
+        f"host/scripts/vm-launcher put tests/regress/guest.sh tests/regress/lb-exit.sh tests/regress/idle-cpu.sh {put} >/dev/null",
         60,
     )
     if rc:
@@ -2063,6 +2116,7 @@ def boot_and_check(h, a, r, out, rel, target, fw):
         )
         r.steps["ssh"] = "dry" if a.dry_run else verdict.get(rc, "FAIL")
     if a.headless:
+        idle_cpu(h, a, r, out, target)
         standby(h, a, r, out, rel, target)
         return
     say(f"{target}: HOME, screenshot")
@@ -2071,6 +2125,7 @@ def boot_and_check(h, a, r, out, rel, target, fw):
     r.steps["shot"] = verdict.get(rc, "FAIL")
     if rc == 0:
         r.shot = png
+    idle_cpu(h, a, r, out, target)
     standby(h, a, r, out, rel, target)
     return
 
@@ -2118,6 +2173,7 @@ def follow_restart(h, a, r, target, e):
         if s != "start" and r.steps[s] != "SKIP":
             r.steps[s] = "-"
     r.items, r.checklist = {}, []
+    r.idle, r.idle_item = None, None
     r.boot_done, r.tvservice, r.shot, r.standby = "-", "", "-", "-"
     return True
 
@@ -2240,6 +2296,12 @@ def run_target(h, a, target, fw):
                     r.steps["capture"] = (
                         "FAIL"  # the capture/report are not retained with this run's results here
                     )
+        if not a.dry_run and r.idle is not None:
+            try:
+                with open(os.path.join(TOP, out, "idle-cpu.json"), "w") as f:
+                    json.dump(r.idle, f, indent=1)
+            except OSError as e:
+                say(f"{target}: idle-cpu.json: {e}")
         if not a.dry_run:
             saved = os.path.join(TOP, out, "saved")
             snapshot, error = device_census.select_latest(Path(saved))
@@ -3118,6 +3180,17 @@ def lanes(a, sel, run, skipped, hosts):
                         commit=a.source["commit"],
                         device_census=r.device_census,
                         checklist=[dict(item=i, status=s, reason=why) for i, s, why in r.checklist],
+                        idle_cpu=(
+                            dict(
+                                status=r.idle_item[0],
+                                reason=r.idle_item[1],
+                                report=f"{r.target}/idle-cpu.json" if r.idle else None,
+                                top=r.idle["processes"][:5] if r.idle else [],
+                                flagged=r.idle["flagged"] if r.idle else [],
+                            )
+                            if r.idle_item
+                            else None
+                        ),
                         tv={
                             step: [dict(item=i, status=s, reason=why) for i, s, why in items]
                             for step, items in r.items.items()
