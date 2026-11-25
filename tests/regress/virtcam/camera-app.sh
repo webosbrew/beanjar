@@ -11,7 +11,8 @@
 # asks for JPEG, which LG's camera player decodes with appsrc ! omxmjpegdec ! appsink), launches
 # the app and prints KEY=VALUE lines: WebAppMgr's pid before and after, and the media elements'
 # syslog lines since the launch (the stand-in decoder's choice of consumer and format, and its
-# "host decoding" rate lines, guest/layers/soc/src/video/src/esdec.c). Camera access is granted to
+# "host decoding" rate lines, guest/layers/soc/src/video/src/esdec.c), and the camera player's and
+# camera2's lines as cam= (tests/regress/lib/camclass.py names a failure from them). Camera access is granted to
 # the app first, as its prompt's Allow does. KEEP=0 closes the app.
 APP=$1 SECS=$2 KEEP=$3
 # one run at a time: a run left behind by a timed-out shell would close this run's app at its end
@@ -66,6 +67,10 @@ echo "crashes_after=$(crashes)"
 kill $follow
 grep -a -E "host decoding|pictures as|pictures from the host|reaches|no answer from the host|the host decodes" \
 	/tmp/camera-app.log | sed 's/^/log=/'
+# the camera player's and camera2's lines, for run-camera.py to name a failure by
+# (tests/regress/lib/camclass.py: its LOG_PATTERN)
+grep -a -E "Load, ret|need loaded state_|onLoadComplete|PrintDecodedBuffer|getUserMedia|getProperties" \
+	/tmp/camera-app.log | head -n 300 | sed 's/^/cam=/'
 rm -f /tmp/camera-app.log
 [ "$KEEP" = 1 ] || luna-send -n 1 -a com.webos.surfacemanager luna://com.webos.applicationManager/closeByAppId \
 	"{\"id\":\"$APP\"}" </dev/null >/dev/null 2>&1

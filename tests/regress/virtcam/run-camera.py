@@ -29,7 +29,15 @@ and pushes the picture to the appsink. It checks that the decoder found the apps
 format, that the host answered, that at least 95% of the decoder's inputs went downstream as
 pictures, at no less than --min-fps over the steady part (the rate lines after the first), and that
 WebAppMgr kept its pid. --min-fps is not the camera's rate: on a TCG guest QEMU loses whole frames
-on the way in, which the preview mode measures."""
+on the way in, which the preview mode measures.
+
+A launch that never feeds the decoder is named from the log lines (tests/regress/lib/camclass.py):
+libcbe-race (LG's camera player calls Play before onLoadComplete: the same code runs on a real TV),
+getproperties-timeout (camera2 over Chromium's 2 s luna timeout), app-slow (no getUserMedia in the
+window) or unclassified (with the lines seen). The launch is tried once more; the second result
+stands and the first one's class is printed ("attempts" in the numbers). The last line is PASS, FAIL
+or STOCK, and the exit status 0, 1 or 3: STOCK is LG's libcbe race on the last launch, with its three
+log lines as evidence, not a pass (the other classes are FAIL)."""
 
 import argparse
 import json
@@ -43,6 +51,9 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "..", "lib"))
+import camclass
+
 CAMERA_APP = "com.webos.app.camera"
 RATE = re.compile(
     r"(\S+): host decoding: (\d+) pictures pushed of (\d+) inputs in ([\d.]+) s .*?"
@@ -95,8 +106,8 @@ def one(d, key):
     return (d.get(key) or [""])[0]
 
 
-def app_checks(a, nums):
-    """The camera app on the default path: camera-app.sh's lines, checked."""
+def run_app(a):
+    """One launch of the camera app through camera-app.sh: its output."""
     script = open(os.path.join(HERE, "camera-app.sh")).read()
     command = f"set -- {a.app} {a.seconds} {1 if a.keep else 0}\n" + script
     try:
@@ -113,9 +124,29 @@ def app_checks(a, nums):
             capture_output=True, timeout=60, env=env(), stdin=subprocess.DEVNULL,
         )  # fmt: skip
         raise
-    out = r.stdout
+    return r.stdout
+
+
+def app_checks(a, nums):
+    """The camera app on the default path: camera-app.sh's lines, checked. A launch that never fed
+    the decoder is named from its log lines (camclass.py) and tried once more; the second launch's
+    result stands, the first one's class is printed."""
+    out = run_app(a)
     print(out.rstrip())
     d = parse(out)
+    cls, evidence = camclass.classify(d.get("cam", []) + d.get("log", []))
+    attempts = [cls]
+    if cls != camclass.FED:
+        print(f"attempt 1: {cls}; launching once more")
+        for x in evidence:
+            print(f"  {x}")
+        out = run_app(a)
+        print(out.rstrip())
+        d = parse(out)
+        cls, evidence = camclass.classify(d.get("cam", []) + d.get("log", []))
+        attempts.append(cls)
+    nums.update(attempts=attempts, failure_class=cls if cls != camclass.FED else None)
+    nums["_class"] = (cls, evidence)
     logs = d.get("log", [])
     rates = [m.groups() for m in map(RATE.search, logs) if m]
     steady = rates[1:]
@@ -317,9 +348,18 @@ def main():
         if "ended after" in line:
             print(line)
     ok = bool(checks) and all(c[1] for c in checks)
+    cls, evidence = nums.pop("_class", (camclass.FED, []))
     for name, passed, detail in checks:
         print(f"{'ok  ' if passed else 'FAIL'} {name}: {detail}")
+    if cls != camclass.FED:
+        # the decoder was not fed: the class names why, and LG's own race is a stock result
+        print(f"class: {cls}")
+        for x in evidence:
+            print(f"  {x}")
     print("numbers: " + json.dumps(nums))
+    if cls == camclass.RACE:
+        print("STOCK: LG's libcbe camera player race (Play before onLoadComplete); not a pass")
+        return camclass.STATUS[cls]
     print("PASS" if ok else "FAIL")
     return 0 if ok else 1
 
