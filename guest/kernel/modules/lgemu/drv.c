@@ -256,8 +256,9 @@ long lgemu_ioctl_unhandled(struct lgemu_counts *c, const char *dev, unsigned int
         e->marked = true;
     spin_unlock(&c->lock);
     if (first)
-        pr_info("%s: %s: ioctl %#x ('%c' %u, %u bytes) not emulated: %ld\n", c->module, dev, cmd,
-                _IOC_TYPE(cmd), _IOC_NR(cmd), _IOC_SIZE(cmd), ret);
+        pr_info("%s: %s: ioctl %#x ('%c' %u, %u bytes) not emulated: %ld, first from %s[%d]\n",
+                c->module, dev, cmd, _IOC_TYPE(cmd), _IOC_NR(cmd), _IOC_SIZE(cmd), ret,
+                current->comm, task_tgid_nr(current));
     else if (!e)
         pr_info_ratelimited("%s: %s: ioctl %#x not emulated: %ld (count table full)\n", c->module,
                             dev, cmd, ret);
