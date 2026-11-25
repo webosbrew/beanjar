@@ -663,6 +663,77 @@ class RemoteTest(unittest.TestCase):
         self.assertEqual(self.beanjar("io", "tuner", "unmap", "pi/tv", "all")[0], 0)
         self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf20.ts")))
 
+    def test_lineup_files_reach_the_feed(self):
+        """The lineup's files are copied into the mirror the feed reads, and the lineup the feed
+        loads from it is the one the streams were made for here (the same key)."""
+        src = os.path.join(self.dir, "src")
+        os.makedirs(os.path.join(src, "art"))
+        with open(os.path.join(src, "art", "logo.png"), "wb") as f:
+            f.write(b"png")
+        path = os.path.join(src, "lineup.toml")
+        with open(path, "w") as f:
+            f.write(ATSC_MIN + 'picture = { image = "art/logo.png" }\n')
+        rc, _out, err = self.beanjar("io", "tuner", "lineup", "set", "pi/tv", path)
+        self.assertEqual(rc, 0, err)
+        shutil.rmtree(src)  # the feed does not depend on the user's folder
+        with open(os.path.join(self.mirror(), tuner.LINEUP_DIR, "art", "logo.png"), "rb") as f:
+            self.assertEqual(f.read(), b"png")
+        fed = tuner.lineup_for_delsys(self.mirror(), tuner.SYS_ATSC)
+        self.assertTrue(fed.own)
+        self.assertEqual(fed.spec["key"], self.made.call_args.kwargs["lu"].spec["key"])
+
+    def test_lineup_with_a_missing_file_asks_nothing_of_the_host(self):
+        path = os.path.join(self.dir, "mine.toml")
+        with open(path, "w") as f:
+            f.write(ATSC_MIN + 'picture = { image = "art/nope.png" }\n')
+        calls = len(self.calls)
+        rc, _out, err = self.beanjar("io", "tuner", "lineup", "set", "pi/tv", path)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("nope.png", err)
+        self.assertEqual([w for w, _ in self.calls[calls:] if w[3] == "set"], [])
+        self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.LINEUP_DIR)))
+
+    def test_lineup_from_stdin(self):
+        with mock.patch("sys.stdin", io.StringIO(ATSC_MIN)):
+            rc, _out, err = self.beanjar("io", "tuner", "lineup", "set", "pi/tv", "-")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.calls[-1][1].decode(), ATSC_MIN)
+        self.assertIsNotNone(tuner.own_lineup(self.mirror()))
+
+    def test_stream_is_copied_whole_and_read_by_the_feed(self):
+        rec_path = os.path.join(self.dir, "rec.ts")
+        stream(rec_path)
+        self.beanjar("io", "tuner", "map", "pi/tv", "20", "--stream", rec_path)
+        with (
+            open(rec_path, "rb") as a,
+            open(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf20.ts"), "rb") as b,
+        ):
+            self.assertEqual(a.read(), b.read())
+        rec = tuner.streams(self.mirror())[20]
+        self.assertTrue(os.path.isfile(rec["path"]))
+        self.assertEqual(tuner.mapped(self.mirror()), [])  # the map is the host's; the feed asks it
+
+    def test_map_without_stream_goes_back_to_the_lineup(self):
+        rec_path = os.path.join(self.dir, "rec.ts")
+        stream(rec_path)
+        self.beanjar("io", "tuner", "map", "pi/tv", "7", "--stream", rec_path)
+        rc, _out, err = self.beanjar("io", "tuner", "map", "pi/tv", "7")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(
+            self.calls[-1][0], ["io", "tuner", "map", "local/tv", "7", "--fed", "--json"]
+        )
+        self.assertEqual(self.made.call_args.args[1], [7])  # the lineup's stream, made here
+        self.assertEqual(tuner.streams(self.mirror()), {})
+        self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf07.ts")))
+
+    def test_host_refusal_is_reported(self):
+        rec_path = os.path.join(self.dir, "rec.ts")
+        stream(rec_path)
+        with mock.patch.object(remote, "transport", lambda *a, **k: (1, b"", "no such VM\n")):
+            rc, _out, err = self.beanjar("io", "tuner", "map", "pi/tv", "20", "--stream", rec_path)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("no such VM", err)
+
 
 if __name__ == "__main__":
     unittest.main()
