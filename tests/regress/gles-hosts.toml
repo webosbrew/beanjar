@@ -16,3 +16,18 @@ source = "measured 2026-11-18: a k8hp-ombre guest (TV version 3.2) under TCG on 
 renderer = "D3D12 (NVIDIA GeForce RTX 4070 Ti)"
 es = "3.1"
 source = "measured 2026-11-18: a k8hp-ombre guest (before the TV-version cap; its TV version is 3.2) on WSL's d3d12 with MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA advertised ES 3.1"
+
+[[host]]
+renderer = "LLVMPIPE (LLVM 19.1.7, 256 bits)"
+es = "3.2"
+source = "measured 2026-11-26: an o22-ponytail guest (TV version 3.2, x86-64 guest kernel) with GALLIUM_DRIVER=llvmpipe gave ES 3.2, nothing missing, 149 extensions"
+
+[[host]]
+renderer = "V3D 7.1.7.0"
+es = "3.0"
+source = "measured 2026-11-26: a k8hp-ponytail guest (TV version 3.2) on a Raspberry Pi 5 gave ES 3.0; missing for 3.2: OES_geometry_shader, OES_primitive_bounding_box, OES_sample_variables, OES_tessellation_shader, OES_texture_buffer, OES_texture_cube_map_array, OES_texture_stencil8"
+
+[[host]]
+renderer = "Mali-T860 (Panfrost)"
+es = "3.0"
+source = "measured 2026-11-26: a k8hp-ponytail guest (TV version 3.2) on a ROCK Pi 4 (RK3399) gave ES 3.0; missing for 3.2: KHR_robustness and the same seven OES extensions as V3D"
