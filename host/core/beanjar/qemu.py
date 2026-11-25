@@ -1343,6 +1343,8 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             display = ["-display", f"dbus,gl=on,rendernode={node},addr={dbus_addr}"]
         else:
             raise Error(f"unknown DISPLAY_BACKEND={display_backend} (none, egl-headless or dbus)")
+    if display_backend != "none" and not dry:
+        say(gl_renderer_line(node, {**os.environ, **env, **p.env}))
     if p.capture_relay and display_backend == "dbus":
         # the relay's sink: the headless viewer on the display's bus
         viewer = env.get("BEANJAR_VIEWER") or tree.build("viewer", "beanjar-viewer")
@@ -1653,6 +1655,51 @@ def gpu_process(env, node, qemu, tree=paths.TREE, say=print):
             f"note: no vhost-user-gpu backend ({backend or qemu + ' has none of ours'}): virtio-gpu-gl"
         )
     return usable and runnable
+
+
+def parse_eglinfo_renderer(text):
+    """The GL_RENDERER string of `eglinfo -B` output: the ES profile's, else the core profile's,
+    else the compatibility profile's ("D3D12 (NVIDIA GeForce RTX 3060)" on Mesa's d3d12, naming the
+    adapter); None when it has none."""
+    found = {}
+    for m in re.finditer(
+        r"^OpenGL (ES|core|compatibility) profile renderer: (.+?)\s*$", text, re.MULTILINE
+    ):
+        found.setdefault(m.group(1), m.group(2))
+    for profile in ("ES", "core", "compatibility"):
+        if profile in found:
+            return found[profile]
+    return None
+
+
+def gl_renderer_line(node, env):
+    """The launch log's line naming the GL renderer virgl gets on NODE ("surfaceless" or a render
+    node): asked of Mesa's EGL with `eglinfo` (mesa-utils) on the same platform, node and Mesa
+    environment as QEMU's display (the same device, so the adapter the d3d12 driver picks is the
+    one named). Without eglinfo, or for a render node GBM would not pick, it says so."""
+    if node == "surfaceless":
+        platform_args, platform_env = ["-p", "surfaceless"], {"EGL_PLATFORM": "surfaceless"}
+    elif node == first_rendernode():
+        # eglinfo's GBM platform opens the first render node, as does QEMU's default
+        platform_args, platform_env = ["-p", "gbm"], {}
+    else:
+        return f"gl renderer: not probed (render node {node})"
+    exe = shutil.which("eglinfo", path=env.get("PATH"))
+    if not exe:
+        return "gl renderer: unknown (eglinfo not installed)"
+    try:
+        out = subprocess.run(
+            [exe, "-B", *platform_args],
+            env={**env, **platform_env},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return "gl renderer: unknown (eglinfo failed)"
+    return f"gl renderer: {parse_eglinfo_renderer(out) or 'unknown (eglinfo reported none)'}"
 
 
 def tcg_rendernode(env=os.environ):

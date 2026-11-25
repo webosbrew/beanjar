@@ -280,3 +280,53 @@ class GpuProcessTest(unittest.TestCase):
             with self.subTest(env=env, node=node, backend=backend):
                 with self.assertRaises(qemu.Error):
                     self.decide(env, node=node, backend=backend)
+
+
+class GlRendererLineTest(unittest.TestCase):
+    """qemu.parse_eglinfo_renderer and gl_renderer_line: the launch log's GL renderer line."""
+
+    D3D12 = (
+        "Surfaceless platform:\n"
+        "OpenGL core profile renderer: D3D12 (Intel(R) UHD Graphics 770)\n"
+        "OpenGL compatibility profile renderer: D3D12 (Intel(R) UHD Graphics 770)\n"
+        "OpenGL ES profile renderer: D3D12 (Intel(R) UHD Graphics 770)\n"
+    )
+
+    def test_parse_names_the_adapter(self):
+        self.assertEqual(
+            qemu.parse_eglinfo_renderer(self.D3D12), "D3D12 (Intel(R) UHD Graphics 770)"
+        )
+
+    def test_parse_falls_back_to_core_profile(self):
+        text = "OpenGL core profile renderer: llvmpipe (LLVM 19.1.7, 256 bits)\n"
+        self.assertEqual(qemu.parse_eglinfo_renderer(text), "llvmpipe (LLVM 19.1.7, 256 bits)")
+
+    def test_parse_none(self):
+        self.assertIsNone(qemu.parse_eglinfo_renderer("eglinfo: eglInitialize failed\n"))
+
+    def test_line_runs_eglinfo_on_the_surfaceless_platform(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = os.path.join(tmp, "eglinfo")
+            with open(exe, "w") as f:
+                f.write(
+                    f"#!{sys.executable}\nimport os, sys\n"
+                    "assert sys.argv[1:] == ['-B', '-p', 'surfaceless'], sys.argv\n"
+                    "assert os.environ['EGL_PLATFORM'] == 'surfaceless'\n"
+                    f"print({self.D3D12!r})\n"
+                )
+            os.chmod(exe, 0o755)
+            line = qemu.gl_renderer_line("surfaceless", {"PATH": tmp})
+        self.assertEqual(line, "gl renderer: D3D12 (Intel(R) UHD Graphics 770)")
+
+    def test_line_without_eglinfo(self):
+        self.assertEqual(
+            qemu.gl_renderer_line("surfaceless", {"PATH": "/nonexistent"}),
+            "gl renderer: unknown (eglinfo not installed)",
+        )
+
+    def test_line_for_another_render_node(self):
+        with mock.patch.object(qemu, "first_rendernode", return_value="/dev/dri/renderD128"):
+            self.assertEqual(
+                qemu.gl_renderer_line("/dev/dri/renderD129", {}),
+                "gl renderer: not probed (render node /dev/dri/renderD129)",
+            )
