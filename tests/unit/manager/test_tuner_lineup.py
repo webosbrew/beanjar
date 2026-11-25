@@ -396,6 +396,8 @@ class VM:
     def __init__(self, d):
         self.state_dir = os.path.join(d, "state")
         self.run_dir = os.path.join(d, "run")
+        self.library = mock.Mock(root=d)
+        self.library.vms = lambda: [self]
 
     def target(self):
         return ("o22", "queue")
@@ -446,9 +448,73 @@ class VmTest(unittest.TestCase):
         self.assertEqual(self.made[-1], (True, [20]))
         with self.assertRaises(tuner.Error):
             tuner.change(self.vm, self.tree, add=[7])  # not the own lineup's
-        data = tuner.lineup_reset(self.vm)
+        data = tuner.lineup_reset(self.vm, self.tree)
         self.assertEqual((data["lineup"], data["unmapped"]), ("built-in", [20]))
         self.assertEqual(tuner.lineup_show(self.vm)["text"], tuner_lineup.default("atsc")["text"])
+
+    def cached(self, *names):
+        cache = os.path.join(self.dir, "cache")
+        os.makedirs(cache, exist_ok=True)
+        for n in names:
+            with open(os.path.join(cache, n), "wb") as f:
+                f.write(b"ts")
+        return cache
+
+    def test_cache_keeps_what_a_lineup_refers_to(self):
+        builtin = tuner_lineup.default("atsc")["key"][:8]
+        other = "0" * 8
+        cache = self.cached(
+            f"rf07-{builtin}-aaaa.ts",  # the built-in lineup's
+            f"loop07-{builtin}-aaaa.ts",
+            f"rf20-{other}-bbbb.ts",  # a lineup no one has
+            f"loop20-{other}-bbbb.ts",
+            f"isdbt30-{other}-cccc.ts",
+            "notes.txt",
+        )
+        # the own lineup being set: its streams stay, the earlier edit's go
+        spec = tuner_lineup.parse(ATSC_MIN, "-", os.getcwd(), "atsc")
+        mine = spec["key"][:8]
+        self.cached(f"rf20-{mine}-dddd.ts", f"loop20-{mine}-dddd.ts")
+        tuner.lineup_set(self.vm, self.tree, "-", ATSC_MIN)
+        self.assertEqual(
+            sorted(os.listdir(cache)),
+            sorted(
+                [
+                    f"rf07-{builtin}-aaaa.ts",
+                    f"loop07-{builtin}-aaaa.ts",
+                    f"rf20-{mine}-dddd.ts",
+                    f"loop20-{mine}-dddd.ts",
+                    "notes.txt",
+                ]
+            ),
+        )
+        # reset: the own lineup's streams go too, the built-in ones stay
+        tuner.lineup_reset(self.vm, self.tree)
+        self.assertEqual(
+            sorted(os.listdir(cache)),
+            sorted([f"rf07-{builtin}-aaaa.ts", f"loop07-{builtin}-aaaa.ts", "notes.txt"]),
+        )
+
+    def test_cache_keeps_another_vms_lineup(self):
+        spec = tuner_lineup.parse(ATSC_MIN, "-", os.getcwd(), "atsc")
+        theirs = VM(os.path.join(self.dir, "other"))
+        self.vm.library.vms = lambda: [self.vm, theirs]
+        tuner_lineup.install(
+            "-", os.path.join(theirs.state_dir, tuner.LINEUP_DIR), "atsc", ATSC_MIN
+        )
+        cache = self.cached(f"rf20-{spec['key'][:8]}-eeee.ts")
+        tuner.lineup_reset(self.vm, self.tree)
+        self.assertEqual(os.listdir(cache), [f"rf20-{spec['key'][:8]}-eeee.ts"])
+        # and a mirror of a VM on another host is a lineup in use too
+        mirror = tuner.remote_dir(self.dir, "pi", "tv")
+        self.vm.library.vms = lambda: [self.vm]
+        shutil.rmtree(theirs.state_dir)
+        tuner_lineup.install("-", os.path.join(mirror, tuner.LINEUP_DIR), "atsc", ATSC_MIN)
+        tuner.prune_cache(self.tree, self.vm.library)
+        self.assertEqual(len(os.listdir(cache)), 1)
+        shutil.rmtree(mirror)
+        tuner.prune_cache(self.tree, self.vm.library)
+        self.assertEqual(os.listdir(cache), [])
 
     def test_set_of_another_standard(self):
         with self.assertRaises(tuner.Error) as e:

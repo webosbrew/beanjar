@@ -103,7 +103,7 @@ def cmd_tuner(lib, a):
                     text = f.read()
             data = tuner.lineup_set(vm, paths.Tree(vm.library.repo), path, text, a.fed)
         else:
-            data = tuner.lineup_reset(vm)
+            data = tuner.lineup_reset(vm, paths.Tree(vm.library.repo))
         return lineup_done(a, a.name, data)
     verb, channels = tuner_words(a)
     if verb == "list":
@@ -134,6 +134,8 @@ def remote_lineup(a, host, name, uri, mirror, listed):
         import shutil
 
         shutil.rmtree(dest, ignore_errors=True)
+        library = Library(a.library, a.repo)
+        tuner.prune_cache(paths.Tree(library.repo), library)
         return lineup_done(a, f"{host}/{name}", data)
     path, text = read_lineup_file(a.file)
     broadcast = listed.get("broadcast", "atsc")
@@ -159,6 +161,8 @@ def remote_lineup(a, host, name, uri, mirror, listed):
     )
     if rc:
         raise remote.HostError(host, err.strip() or f"io tuner lineup set: status {rc}")
+    library = Library(a.library, a.repo)
+    tuner.prune_cache(paths.Tree(library.repo), library)
     return lineup_done(a, f"{host}/{name}", json.loads(out))
 
 

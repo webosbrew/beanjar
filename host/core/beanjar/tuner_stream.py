@@ -410,6 +410,35 @@ def stream_path(cache, lu, ch, now):
     return os.path.join(cache, f"{stream_prefix(lu, ch)}{stream_key(lu, ch, now)}.ts")
 
 
+_OWNER = re.compile(r"^(?:rf|loop|isdbt)\d+-([0-9a-f]{8})-.*\.ts$")
+
+
+def cache_owner(name):
+    """The first 8 digits of the lineup key a cached file (a stream or a loop, by its name) was made
+    for; None for any other file."""
+    m = _OWNER.match(name)
+    return m.group(1) if m else None
+
+
+def prune(cache, keep):
+    """Removes the streams and loops in the directory cache that were made for a lineup whose key
+    (8 digits, cache_owner) is not in keep; the names removed. Files of other names stay."""
+    gone = []
+    try:
+        names = sorted(os.listdir(cache))
+    except FileNotFoundError:
+        return gone
+    for name in names:
+        owner = cache_owner(name)
+        if owner is not None and owner not in keep:
+            try:
+                os.unlink(os.path.join(cache, name))
+            except FileNotFoundError:
+                continue
+            gone.append(name)
+    return gone
+
+
 def make(cache, lu, ch, now):
     """The path of the lineup's physical channel's stream for the EIT block of now, made into the
     directory cache if it is not there yet (validated before it is kept)."""
@@ -428,7 +457,7 @@ def make(cache, lu, ch, now):
         loop_key = hashlib.sha256(
             json.dumps([VERSION, lu["key"], ch], sort_keys=True).encode()
         ).hexdigest()[:16]
-        loop = os.path.join(cache, f"loop{ch:02d}-{loop_key}.ts")
+        loop = os.path.join(cache, f"loop{ch:02d}-{lu['key'][:8]}-{loop_key}.ts")
         if not os.path.exists(loop):
             _make_loop(lu, rf, loop + ".tmp")
             os.replace(loop + ".tmp", loop)

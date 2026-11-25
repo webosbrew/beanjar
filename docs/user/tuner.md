@@ -42,6 +42,11 @@ refused. The fields use each standard's own terms. Paths in the file are relativ
 and stay inside its folder; `lineup set` copies the file and everything it names into the VM, so
 the VM no longer depends on your copy. When you edit the file, set it again.
 
+The streams beanjar makes from a lineup are cached on the machine that makes them. `lineup set`
+and `lineup reset` remove the cached streams of lineups no VM of the library (nor a VM on another
+host that this machine feeds) has any more, an earlier edit's included; the built-in lineups'
+streams stay. A removed stream is made again when a lineup of that content comes back.
+
 The built-in lineups are complete examples: `beanjar io tuner lineup show NAME` prints the one in
 effect, and they are `host/core/beanjar/lineups/atsc.toml` and `arib.toml` in the source.
 

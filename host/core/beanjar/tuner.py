@@ -471,6 +471,32 @@ def cache_dir(tree):
     return tree.cache("tuner")
 
 
+def prune_cache(tree, library):
+    """Keeps the stream cache to what a lineup in use refers to: the streams and loops of the
+    built-in lineups and of the own lineup of any VM of the library (or its mirror of a VM on
+    another host) stay; those of a lineup no one has any more (an edited or reset one) are removed,
+    and made again if a lineup of that content comes back. The names removed."""
+    dirs = [vm.state_dir for vm in library.vms()]
+    remote = os.path.join(library.root, "remote")
+    try:
+        dirs += [
+            os.path.join(remote, h, n)
+            for h in sorted(os.listdir(remote))
+            for n in sorted(os.listdir(os.path.join(remote, h)))
+        ]
+    except OSError:
+        pass
+    keep = {lu.spec["key"][:8] for lu in LINEUPS.values()}
+    for d in dirs:
+        try:
+            own = own_lineup(d)
+        except (Error, OSError, tuner_lineup.Error):
+            own = None
+        if own is not None:
+            keep.add(own.spec["key"][:8])
+    return tuner_stream.prune(cache_dir(tree), keep)
+
+
 def has_tuner(target):
     """Whether the target's board has our tuner: dtv_soc among its modules."""
     from . import targets
@@ -677,14 +703,19 @@ def lineup_set(vm, tree, path, text=None, fed=False):
         make(cache_dir(tree), wanted, MAKE_HINT, new)
         os.makedirs(vm.state_dir, exist_ok=True)
         tuner_lineup.install(path, dest, broadcast, text)
-    return lineup_show(vm) | {"unmapped": prune(vm, vm_lineup(vm.state_dir, board))}
+    unmapped = prune(vm, vm_lineup(vm.state_dir, board))
+    prune_cache(tree, vm.library)
+    return lineup_show(vm) | {"unmapped": unmapped}
 
 
-def lineup_reset(vm):
-    """Back to the built-in lineup: the own one removed; the lineup shown after, with "unmapped"."""
+def lineup_reset(vm, tree):
+    """Back to the built-in lineup: the own one removed (and its streams from the cache, if no other
+    VM has that lineup); the lineup shown after, with "unmapped"."""
     shutil.rmtree(os.path.join(vm.state_dir, LINEUP_DIR), ignore_errors=True)
     lu = vm_lineup(vm.state_dir, vm_broadcast(vm))
-    return lineup_show(vm) | {"unmapped": prune(vm, lu)}
+    unmapped = prune(vm, lu)
+    prune_cache(tree, vm.library)
+    return lineup_show(vm) | {"unmapped": unmapped}
 
 
 # ---- the generator: needs TSDuck and ffmpeg, or the streams already in its cache ----
