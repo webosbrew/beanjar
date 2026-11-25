@@ -10,7 +10,7 @@ Three sources, read when asked:
 - the TV's own setting (the settings service's sound category: soundOutput, soundOutputDigital),
   read over the same session, reported as `selected` beside the hardware's, so the two can
   disagree;
-- the media helper's open sessions (RUN_DIR/media-streams, host/helpers/media-helper): the
+- the media helper's open sessions (RUN_DIR/media/media-streams, host/helpers/media-helper): the
   elementary streams the guest's audio sinks send, with their caps.
 
 decode() turns the table into one model per line of firmware (docs/research/tv-sound-outputs.md,
@@ -395,7 +395,7 @@ def read(vm, timeout=10.0):
 
     streams_text = None
     try:
-        with open(os.path.join(vm.run_dir, qemu.MEDIA_STREAMS)) as f:
+        with open(os.path.join(vm.run_dir, qemu.MEDIA_DIR, qemu.MEDIA_STREAMS)) as f:
             streams_text = f.read()
     except OSError:
         pass

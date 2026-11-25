@@ -9,7 +9,7 @@ After a scan (run-scan.py), with a channel mapped: closes and launches Live TV, 
 channel it watched last, waits until the video decoder (dtv_soc's /dev/video20) streams, and measures for S
 seconds (default 20): the pictures the guest's decoder read the headers of
 (/proc/dtv_soc), the pictures and audio frames the host's media decoder decoded of the tuner's
-sessions (the VM's run/media-sessions.log names them, run/media-helper.log counts them), and
+sessions (the VM's run/media/media-sessions.log names them, run/media/media-helper.log counts them), and
 whether the TV picture is a picture and not black or the "No Signal" screen (a screenshot with
 light in most of it). Prints the numbers as JSON and PASS or FAIL; the exit status is 0 only for
 PASS.
@@ -112,7 +112,7 @@ def decoded(text, kind, port):
 
 def helper_counts(name, s):
     """(video, audio) decoded so far by the media helper of the sessions s."""
-    text = log(name, "run/media-helper.log")
+    text = log(name, "run/media/media-helper.log")
     return decoded(text, "video", s.get("video")), decoded(text, "audio", s.get("audio"))
 
 
@@ -155,7 +155,7 @@ def main():
         time.sleep(3)
     start_s = round(time.monotonic() - t0)
     time.sleep(5)  # past the first sequence header and the host's first pictures
-    s = sessions(log(a.name, "run/media-sessions.log"))
+    s = sessions(log(a.name, "run/media/media-sessions.log"))
     v0, a0 = helper_counts(a.name, s)
     p0, t1 = vdec(a.name), time.monotonic()
     time.sleep(a.seconds)

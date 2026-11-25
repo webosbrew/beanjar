@@ -141,6 +141,7 @@ from . import (
     fwfacts,
     hostswap,
     keys,
+    mediasandbox,
     netns,
     nvm,
     targets,
@@ -264,36 +265,88 @@ def media_helper_environment(env):
 
 def start_media_helper(p):
     """The media hub (p.hub_argv), a child that outlives the exec of QEMU and ends with this pid
-    (QEMU's then), on media_helper_environment(p.env). It owns its logs (--log, --decode-log:
-    bounded, rotated); RUN_DIR/media-helper.out has only its stdout and stderr: fatal errors and
-    what comes before its logs open."""
-    argv = [str(os.getpid()) if a == "PID" else a for a in p.hub_argv]
-    pool = None
-    if p.pool_socket:
-        # the pool's ivshmem server socket, listening before the helper and QEMU start: QEMU's
-        # ivshmem-doorbell connects at realize and waits there for the helper's setup
-        pool = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            os.unlink(p.pool_socket)
-        except FileNotFoundError:
-            pass
-        pool.bind(p.pool_socket)
-        pool.listen(4)
-        argv += ["--pool-fd", str(pool.fileno())]
+    (QEMU's then), on media_helper_environment(p.env), in its sandbox (mediasandbox.py). It owns
+    its logs (--log, --decode-log: bounded, rotated) in its own directories (p.hub_dirs, made
+    here); RUN_DIR/media-helper.out has only its stdout and stderr: fatal errors, what comes before
+    its logs open and the sandbox's notes. Its sockets for the viewers (p.hub_viewers) and the
+    pool's server socket listen here before it and QEMU start and are passed open, with a pidfd of
+    this process (--pid-fd: QEMU's after the exec), so that it needs no path outside its
+    directories and no pid outside its namespace."""
     try:
+        sandbox = mediasandbox.enabled(p.env)
+    except mediasandbox.Error as e:
+        raise Error(str(e)) from None
+    for d in p.hub_dirs:
+        os.makedirs(d, mode=0o700, exist_ok=True)
+    fds, notes, pidfd = [], [], None
+    try:
+        viewers = []
+        for path, kind in p.hub_viewers:
+            s = socket.socket(
+                socket.AF_UNIX,
+                socket.SOCK_SEQPACKET if kind == "seqpacket" else socket.SOCK_STREAM,
+            )
+            fds.append(s)
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+            s.bind(path)
+            s.listen(4)
+            viewers.append(str(s.fileno()))
+        argv = []
+        pidfd = os.pidfd_open(os.getpid()) if hasattr(os, "pidfd_open") else None
+        for a in p.hub_argv:
+            if a == "PID" and pidfd is not None:
+                argv[-1] = "--pid-fd"  # in place of --pid
+                a = str(pidfd)
+            argv.append(str(os.getpid()) if a == "PID" else a)
+        if viewers:
+            argv += ["--viewer-fds", ",".join(viewers)]
+        if p.pool_socket:
+            # the pool's ivshmem server socket, listening before the helper and QEMU start: QEMU's
+            # ivshmem-doorbell connects at realize and waits there for the helper's setup
+            pool = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            fds.append(pool)
+            try:
+                os.unlink(p.pool_socket)
+            except FileNotFoundError:
+                pass
+            pool.bind(p.pool_socket)
+            pool.listen(4)
+            argv += ["--pool-fd", str(pool.fileno())]
+        env = media_helper_environment(p.env)
+        if not sandbox:
+            argv.append("--no-sandbox")
+            notes.append("media sandbox: off (MEDIA_SANDBOX=off)")
+        else:
+            bwrap = mediasandbox.find(p.env)
+            why = mediasandbox.problem(bwrap) if bwrap else "bubblewrap (bwrap) not found"
+            if bwrap and not why:
+                hwdec = argv[argv.index("--hwdec") + 1] if "--hwdec" in argv else "auto"
+                argv = mediasandbox.command(bwrap, argv[0], p.hub_dirs, env, hwdec) + argv
+                env = mediasandbox.environment(env)
+            elif sys.platform.startswith("linux"):
+                notes.append(f"media sandbox: no bubblewrap ({why}): its own confinement only")
+        passed = [s.fileno() for s in fds] + ([pidfd] if pidfd is not None else [])
         with open(os.path.join(p.run_dir, "media-helper.out"), "ab") as out:
+            for note in notes:
+                out.write(f"{note}\n".encode())
+            out.flush()
             subprocess.Popen(
                 argv,
-                env=media_helper_environment(p.env),
+                env=env,
                 stdin=subprocess.DEVNULL,
                 stdout=out,
                 stderr=out,
                 close_fds=True,
-                pass_fds=(pool.fileno(),) if pool else (),
+                pass_fds=tuple(passed),
             )
     finally:
-        if pool:
-            pool.close()
+        for s in fds:
+            s.close()
+        if pidfd is not None:
+            os.close(pidfd)
 
 
 def start_capture_relay(p):

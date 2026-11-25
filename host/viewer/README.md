@@ -542,7 +542,7 @@ raw compressed sockets cannot be fed directly to this viewer.
   each change in `sound-status` beside the bus socket (`--sound-status PATH` for another bus
   address; none: unity), looked at every 100 ms, and a change ramps over one mixing block. The
   viewer's virtual AMP (`--media-volume`, `--media-mute`) multiplies on top.
-- The helper's `RUN_DIR/media-helper.log` (rotated to `media-helper.log.1` at 4 MiB,
+- The helper's `RUN_DIR/media/media-helper.log` (rotated to `media-helper.log.1` at 4 MiB,
   rate-limited per line kind and port: docs/dev/architecture/video.md) records codec selection,
   lifecycle and decoder statistics (`decode N video session=S: h264 sw packets= decoded= dropped= errors= decode=...`).
   The viewer records window changes and presentation reports (`present N video session=S:

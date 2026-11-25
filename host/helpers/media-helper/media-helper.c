@@ -24,6 +24,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -617,7 +618,7 @@ static int start_pool(const char *path, int listen_fd, uint32_t size)
 int main(int argc, char **argv)
 {
     pid_t pid = 0;
-    int sandbox = 1;
+    int pid_fd = -1, sandbox = 1, viewer_fds[MAX_PORTS + 1], nviewer_fds = 0;
     int ports = WEBOS_MEDIA_PORTS;
     char vq[108] = "", vv[108] = "", mq[108] = "", mv[108] = "";
     const char *logpath = NULL, *decode_log = NULL, *pool_path = NULL;
@@ -634,7 +635,18 @@ int main(int argc, char **argv)
             break;
         if (!strcmp(argv[i], "--pid"))
             pid = atoi(argv[i + 1]);
-        else if (!strcmp(argv[i], "--log"))
+        else if (!strcmp(argv[i], "--pid-fd"))
+            pid_fd = atoi(argv[i + 1]);
+        else if (!strcmp(argv[i], "--viewer-fds")) {
+            nviewer_fds = 0;
+            for (char *p = argv[i + 1], *end; *p && nviewer_fds <= MAX_PORTS; p = end) {
+                viewer_fds[nviewer_fds++] = (int)strtol(p, &end, 10);
+                if (*end == ',')
+                    end++;
+                else if (*end)
+                    break;
+            }
+        } else if (!strcmp(argv[i], "--log"))
             logpath = argv[i + 1];
         else if (!strcmp(argv[i], "--decode-log"))
             decode_log = argv[i + 1];
@@ -653,15 +665,17 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--video") && !split(argv[i + 1], vq, vv)) {
         } else if (!strcmp(argv[i], "--media") && !split(argv[i + 1], mq, mv)) {
         } else {
-            fprintf(stderr, "usage: media-helper --pid PID [--log FILE] [--decode-log FILE] "
-                            "[--streams FILE] --video Q:V --media QPREFIX:VPREFIX [--ports N] "
-                            "[--pool FILE --pool-fd FD] [--no-sandbox]\n");
+            fprintf(stderr,
+                    "usage: media-helper --pid PID|--pid-fd FD [--log FILE] [--decode-log FILE] "
+                    "[--streams FILE] --video Q:V --media QPREFIX:VPREFIX [--ports N] "
+                    "[--viewer-fds FD,...] [--pool FILE --pool-fd FD] [--no-sandbox]\n");
             return 2;
         }
     }
-    if (!pid || !*vq || !*mq || strlen(mq) > 99 || strlen(mv) > 99 || ports < 1 ||
-        ports > MAX_PORTS) {
-        fprintf(stderr, "media-helper: --pid, --video and --media are needed\n");
+    if ((!pid && pid_fd < 0) || !*vq || !*mq || strlen(mq) > 99 || strlen(mv) > 99 || ports < 1 ||
+        ports > MAX_PORTS || (nviewer_fds && nviewer_fds != ports + 1)) {
+        fprintf(stderr, "media-helper: --pid or --pid-fd, --video and --media are needed "
+                        "(--viewer-fds: one per port and the video's)\n");
         return 2;
     }
     /* Two malloc arenas for all threads (a poll loop and a decoder per port, FFmpeg's frame threads
@@ -713,15 +727,37 @@ int main(int argc, char **argv)
             snprintf(c->viewer, sizeof c->viewer, "%s", vv);
         }
         c->gfd = c->vfd = -1;
-        c->lfd = unix_listen(c->viewer, c->media);
+        if (nviewer_fds) {
+            /* the launcher's, listening at c->viewer (outside a sandbox's view) */
+            c->lfd = viewer_fds[i];
+            fcntl(c->lfd, F_SETFL, fcntl(c->lfd, F_GETFL) | O_NONBLOCK);
+            fcntl(c->lfd, F_SETFD, FD_CLOEXEC);
+        } else
+            c->lfd = unix_listen(c->viewer, c->media);
+    }
+    if (pid_fd >= 0) {
+        fcntl(pid_fd, F_SETFD, FD_CLOEXEC);
+        /* signal 0 checks that it is a pidfd (EBADF otherwise; ESRCH: QEMU ended already) */
+        if (syscall(SYS_pidfd_send_signal, pid_fd, 0, NULL, 0) < 0 && errno == EBADF) {
+            fprintf(stderr, "media-helper: --pid-fd %d is not a pidfd\n", pid_fd);
+            return 2;
+        }
     }
     /* Setup done: the helper confines itself (sandbox.h) before any thread starts, since Landlock
      * holds for the threads made after it. It writes only in its own directories: the logs', the
-     * open sessions', the pool's and its sockets'. */
+     * open sessions', the pool's and, when it made them, its sockets'. */
     if (sandbox) {
-        struct hm_sandbox box = {.devices = !hwdec || strcmp(hwdec, "none") != 0};
+        struct hm_sandbox box = {
+            .devices = !hwdec || strcmp(hwdec, "none") != 0,
+            .scope_signals = pid_fd >= 0,
+        };
         static char dirs[8][4096];
-        const char *files[] = {logpath, decode_log, streams_path, pool_path, vv, mv};
+        const char *files[] = {logpath,
+                               decode_log,
+                               streams_path,
+                               pool_path,
+                               nviewer_fds ? NULL : vv,
+                               nviewer_fds ? NULL : mv};
         int nd = 0;
         for (size_t i = 0; i < sizeof files / sizeof *files && nd < 7; i++) {
             if (!files[i] || !*files[i])
@@ -759,7 +795,7 @@ int main(int argc, char **argv)
         clock_gettime(CLOCK_MONOTONIC, &now);
         if (now.tv_sec != last_try.tv_sec) {
             last_try = now;
-            if (kill(pid, 0) < 0 && errno == ESRCH)
+            if (pid_fd < 0 && kill(pid, 0) < 0 && errno == ESRCH)
                 break;
             hm_log_tick(&sessions);
             hm_log_tick(&hm_engine_log);
@@ -777,11 +813,17 @@ int main(int argc, char **argv)
                     say(ch[i].media ? ch[i].index : -1, "%s %d: QEMU's socket connected",
                         ch[i].media ? "media" : "video", ch[i].index);
         }
-        struct pollfd pf[3 * (MAX_PORTS + 1) + 4];
-        int map[3 * (MAX_PORTS + 1) + 4][2], k = 0;
+        struct pollfd pf[3 * (MAX_PORTS + 1) + 5];
+        int map[3 * (MAX_PORTS + 1) + 5][2], k = 0;
         pf[k] = (struct pollfd){wake_fd, POLLIN, 0};
         map[k][0] = 0;
         map[k++][1] = 3;
+        if (pid_fd >= 0) {
+            /* readable once QEMU (the launcher it became) has ended */
+            pf[k] = (struct pollfd){pid_fd, POLLIN, 0};
+            map[k][0] = 0;
+            map[k++][1] = 7;
+        }
         if (have_pool) {
             pf[k] = (struct pollfd){server.listen_fd, POLLIN, 0};
             map[k][0] = 0;
@@ -812,6 +854,11 @@ int main(int argc, char **argv)
             }
         }
         if (poll(pf, (nfds_t)k, 5) < 0 && errno != EINTR)
+            break;
+        int ended = 0;
+        for (int j = 0; j < k; j++)
+            ended |= map[j][1] == 7 && pf[j].revents;
+        if (ended)
             break;
         for (int j = 0; j < k; j++) {
             struct chan *c = &ch[map[j][0]];
@@ -889,7 +936,8 @@ int main(int argc, char **argv)
         if (ch[i].gfd >= 0)
             close(ch[i].gfd);
         close(ch[i].lfd);
-        unlink(ch[i].viewer);
+        if (!nviewer_fds)
+            unlink(ch[i].viewer);
         free(ch[i].in);
         free(ch[i].open);
         free(ch[i].caps);

@@ -230,12 +230,18 @@ def media_helper(top, env):
     return path if env.get("MEDIAHUB", "1") != "0" and os.access(path, os.X_OK) else None
 
 
-MEDIA_STREAMS = "media-streams"  # in RUN_DIR: the media helper's open sessions (--streams)
+# The media helper's own directory, in RUN_DIR and in the unit's RUNTIME_DIRECTORY: the only parts
+# of either it writes, and so the only ones its sandbox sees (mediasandbox.py; RUN_DIR itself has
+# the QMP sockets). In RUN_DIR: its logs (run/media/*.log for `beanjar log show`), its open sessions
+# (MEDIA_STREAMS) and QEMU's sockets for its ports (qemu_side); in RUNTIME_DIRECTORY: the pool.
+MEDIA_DIR = "media"
+MEDIA_STREAMS = "media-streams"  # in RUN_DIR/MEDIA_DIR: the helper's open sessions (--streams)
 
 
-def qemu_side(path):
-    """QEMU's own socket behind a hub-served one: video.sock -> qemu-video.sock."""
-    return os.path.join(os.path.dirname(path), "qemu-" + os.path.basename(path))
+def qemu_side(media_dir, path):
+    """QEMU's own socket behind a hub-served one, in the helper's directory: video.sock ->
+    MEDIA_DIR/qemu-video.sock."""
+    return os.path.join(media_dir, "qemu-" + os.path.basename(path))
 
 
 DBUS_AUDIO = (
@@ -357,6 +363,11 @@ class Plan:
             None  # D-Bus address, QMP socket and options for secondary console before boot
         )
         self.hub_argv = None  # the media hub's command (its --pid filled in by the launcher)
+        # the hub's own directories (MEDIA_DIR: created by the launcher, its sandbox's only
+        # writable ones) and the viewers' sockets it serves, as (path, "stream" or "seqpacket"),
+        # which the launcher listens on and passes it (--viewer-fds): video's first, then each port's
+        self.hub_dirs = []
+        self.hub_viewers = []
         # the media pool's server socket, which the launcher listens on before it starts the hub
         # (passed as --pool-fd) and QEMU; None without the pool
         self.pool_socket = None
@@ -1078,20 +1089,25 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # with the media hub (host/helpers/media-helper), QEMU's video and media sockets are the hub's alone and
     # it serves the viewers at the usual names; the viewers' sockets are QEMU's without it
     hub = media_helper(top, env)
-    guest_video = qemu_side(socks["VIDEO_SOCK"]) if hub else socks["VIDEO_SOCK"]
-    guest_media = qemu_side(socks["MEDIA_SOCK"]) if hub else socks["MEDIA_SOCK"]
+    media_dir = os.path.join(p.run_dir, MEDIA_DIR)
+    guest_video = qemu_side(media_dir, socks["VIDEO_SOCK"]) if hub else socks["VIDEO_SOCK"]
+    guest_media = qemu_side(media_dir, socks["MEDIA_SOCK"]) if hub else socks["MEDIA_SOCK"]
     if hub:
+        p.hub_dirs = [media_dir]
+        p.hub_viewers = [(socks["VIDEO_SOCK"], "stream")] + [
+            (f"{socks['MEDIA_SOCK']}-{n}.sock", "seqpacket") for n in range(MEDIA_PORTS)
+        ]
         p.hub_argv = [
             hub,
             "--pid",
             "PID",
             "--log",
-            os.path.join(p.run_dir, "media-sessions.log"),
+            os.path.join(media_dir, "media-sessions.log"),
             "--decode-log",
-            os.path.join(p.run_dir, "media-helper.log"),
+            os.path.join(media_dir, "media-helper.log"),
             # the sessions open now, for status show's audio (soundout.py)
             "--streams",
-            os.path.join(p.run_dir, MEDIA_STREAMS),
+            os.path.join(media_dir, MEDIA_STREAMS),
             "--video",
             f"{guest_video}:{socks['VIDEO_SOCK']}",
             "--media",
@@ -1207,7 +1223,8 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # a session's pages out when it ends) and hands it to QEMU. The launcher listens on the socket
     # before either starts. Without a unit (the setsid fallback) the pictures come inline.
     if hub and env.get("RUNTIME_DIRECTORY"):
-        pool = os.path.join(env["RUNTIME_DIRECTORY"], MEDIA_POOL)
+        p.hub_dirs.append(os.path.join(env["RUNTIME_DIRECTORY"], MEDIA_DIR))
+        pool = os.path.join(p.hub_dirs[-1], MEDIA_POOL)
         p.pool_socket = os.path.join(env["RUNTIME_DIRECTORY"], MEDIA_POOL_SOCK)
         devices += [
             "-chardev",

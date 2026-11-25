@@ -79,7 +79,7 @@ beanjar stop tv1
   TV's player plays ([manager README](../../host/core/README.md#what-the-tv-sends-out-as-audio)).
 - `log show NAME FILE` prints one of the VM's host-side logs, also of a VM on another host
   (`HOST/NAME`): `logs/console.log`, `logs/webos.log`, or while it runs a helper's, such as
-  `run/media-helper.log`.
+  `run/media/media-helper.log`.
 - `io soundbar attach NAME [--formats ac3,eac3,dts] [--arc-only]` plugs a sound bar into the TV's
   HDMI ARC input while it runs (boards whose CEC is emulated: the O22 family and the lm21 boards;
   boards with eARC: the K8 family and O22's). With the TV's eARC Support on, an eARC board

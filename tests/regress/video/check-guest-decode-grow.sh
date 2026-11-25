@@ -15,7 +15,7 @@
 # Realtek; omx_lxvideodec on LX). PLAY=0 copies the clip and prints the command without playing.
 # PASS when the guest's syslog has a "pictures from the host" line for each of the three sizes, in
 # order, and the decoder's end line counts 600 pictures with 0 dropped; the media helper's decode
-# lines (its run/media-helper.log) then show returned=600 and no slot-drops.
+# lines (its run/media/media-helper.log) then show returned=600 and no slot-drops.
 set -eu
 VM=${1:?usage: check-guest-decode-grow.sh VM [OUT]}
 TOP=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -50,7 +50,7 @@ echo "$LOG" | cut -c1-260
 sizes=$(echo "$LOG" | sed -n 's/.*pictures from the host: .*width=(int)\([0-9]*\), height=(int)\([0-9]*\).*/\1x\2/p' | tr '\n' ' ' | sed 's/ $//')
 end=$(echo "$LOG" | grep -c 'host decoding ends: 600 pictures, 0 inputs unanswered, 0 dropped' || true)
 case "$VM" in */*) ;; *)
-	H=${XDG_DATA_HOME:-$HOME/.local/share}/beanjar/vms/$VM/run/media-helper.log
+	H=${XDG_DATA_HOME:-$HOME/.local/share}/beanjar/vms/$VM/run/media/media-helper.log
 	[ -f "$H" ] && grep -a 'decode [0-9]* video session=.*(closed)' "$H" | tail -n 1 ;;
 esac
 if [ "$sizes" = "640x360 1280x720 1920x1080" ] && [ "$end" = 1 ]; then

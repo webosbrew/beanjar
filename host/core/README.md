@@ -810,7 +810,7 @@ the MPEG-2 headers of the demux's video decoder filter for the events that make 
 lift its mute, and passes the decoder filters' packets and the PCRs to the same pump through
 `/dev/dtv-soc-av`. The pump sends each running decoder's stream as a session on a free
 `webos.media.<n>` port, timed on the PCR, and the media helper decodes it as it does an app's
-(`run/media-sessions.log` names them `tuner-vdec0` and `tuner-adec0`); the viewer shows the video in
+(`run/media/media-sessions.log` names them `tuner-vdec0` and `tuner-adec0`); the viewer shows the video in
 the scaler window connected to the decoder's VDEC port.
 
 The helper is a feeder that needs neither TSDuck nor ffmpeg when a feed serves it: a generator on
@@ -1223,7 +1223,7 @@ one: `start --reason` is refused there before anything starts.
 is off). It is read when asked, over the VM's shell port: the guest's `/proc/lgemu/sound_out`, the
 table where the emulated hardware keeps what the firmware selected for its sound outputs, and the
 TV's own `soundOutput` and `soundOutputDigital` settings; the streams come from the media helper's
-`media-streams` file in the VM's run directory. `beanjar/soundout.py` decodes the table per line of
+`media-streams` file in the VM's `run/media` directory. `beanjar/soundout.py` decodes the table per line of
 firmware ([docs/research/tv-sound-outputs.md](../../docs/research/tv-sound-outputs.md) has the
 numbers).
 

@@ -155,6 +155,7 @@ ENV_NAMES = frozenset(
         "TCG_TB_SIZE",
         "MEDIAHUB",
         "MEDIA_HWDEC",
+        "MEDIA_SANDBOX",
         # netns.py and the mode=mitm helpers (netns.py's docstring, mitm_addon.py, tlsca.py)
         "NETNS_FWD",
         "NETNS_TAP",

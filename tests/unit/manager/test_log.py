@@ -26,12 +26,15 @@ class LogShow(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
-        for sub in ("run", "logs"):
+        for sub in ("run", "run/media", "logs", "elsewhere"):
             os.mkdir(os.path.join(self.dir, sub))
-        self.write("run/media-helper.log", b"decode 3 video session=1 decoded=42\n\xff\n")
+        # the media helper's own directory (qemu.MEDIA_DIR)
+        self.write("run/media/media-helper.log", b"decode 3 video session=1 decoded=42\n\xff\n")
         self.write("logs/console.log", b"boot\n")
         self.write("run/mitmweb.json", b'{"password": "secret"}')
         os.symlink("/etc/passwd", os.path.join(self.dir, "run", "link.log"))
+        self.write("elsewhere/secret.log", b"not a log of the VM's\n")
+        os.symlink("/etc/passwd", os.path.join(self.dir, "run", "media", "link.log"))
         self.vm = SimpleNamespace(name="tv", dir=self.dir)
 
     def write(self, file, data):
@@ -56,7 +59,7 @@ class LogShow(unittest.TestCase):
         return rc, out.buffer.getvalue(), err.getvalue()
 
     def test_bytes(self):
-        rc, out, err = self.invoke("log", "show", "tv", "run/media-helper.log")
+        rc, out, err = self.invoke("log", "show", "tv", "run/media/media-helper.log")
         self.assertEqual((rc, err), (0, ""))
         self.assertEqual(out, b"decode 3 video session=1 decoded=42\n\xff\n")
 
@@ -74,7 +77,7 @@ class LogShow(unittest.TestCase):
         )
 
     def test_json_replaces_invalid_utf8(self):
-        rc, out, _err = self.invoke("log", "show", "tv", "run/media-helper.log", "--json")
+        rc, out, _err = self.invoke("log", "show", "tv", "run/media/media-helper.log", "--json")
         self.assertEqual(rc, 0)
         self.assertTrue(json.loads(out)["text"].endswith("�\n"))
 
@@ -87,23 +90,38 @@ class LogShow(unittest.TestCase):
             "logs/saved/console.log",
             "/etc/x.log",
             "media-helper.log",
+            "run/media/media-sessions.json",
+            "run/media/qemu-video.sock",
+            "run/media/../mitmweb.log",
+            "run/media/x/y.log",
+            "run/other/x.log",
+            "logs/media/x.log",
         ):
             with self.subTest(file=file):
                 rc, out, err = self.invoke("log", "show", "tv", file)
                 self.assertEqual((rc, out), (2, b""))
-                self.assertIn("FILE is run/NAME or logs/NAME", err)
+                self.assertIn("FILE is run/NAME, run/media/NAME or logs/NAME", err)
 
     def test_missing_or_not_regular(self):
-        for file in ("run/tuner.log", "run/link.log"):
+        for file in ("run/tuner.log", "run/link.log", "run/media/link.log", "run/media/x.log"):
             with self.subTest(file=file):
                 rc, out, err = self.invoke("log", "show", "tv", file)
                 self.assertEqual((rc, out), (1, b""))
                 self.assertIn(f"tv has no {file}", err)
 
     def test_rotated(self):
-        self.write("run/media-helper.log.1", b"old\n")
-        rc, out, _err = self.invoke("log", "show", "tv", "run/media-helper.log.1")
+        self.write("run/media/media-helper.log.1", b"old\n")
+        rc, out, _err = self.invoke("log", "show", "tv", "run/media/media-helper.log.1")
         self.assertEqual((rc, out), (0, b"old\n"))
+
+    def test_media_directory_not_a_link(self):
+        """run/media is the helper's directory only as a directory: a link there to another one is
+        not followed."""
+        os.rename(os.path.join(self.dir, "run", "media"), os.path.join(self.dir, "run", "m"))
+        os.symlink(os.path.join(self.dir, "elsewhere"), os.path.join(self.dir, "run", "media"))
+        rc, out, err = self.invoke("log", "show", "tv", "run/media/secret.log")
+        self.assertEqual((rc, out), (1, b""))
+        self.assertIn("tv has no run/media/secret.log", err)
 
     def test_no_verb(self):
         rc, _out, err = self.invoke("log")
@@ -123,8 +141,8 @@ class LogShowRemote(unittest.TestCase):
 
     def test_forwarded(self):
         for extra, words in (
-            ((), ["log", "show", "local/tv", "run/media-helper.log"]),
-            (("--json",), ["log", "show", "local/tv", "run/media-helper.log", "--json"]),
+            ((), ["log", "show", "local/tv", "run/media/media-helper.log"]),
+            (("--json",), ["log", "show", "local/tv", "run/media/media-helper.log", "--json"]),
         ):
             with (
                 self.subTest(extra=extra),
@@ -138,7 +156,7 @@ class LogShowRemote(unittest.TestCase):
                     "log",
                     "show",
                     "pi/tv",
-                    "run/media-helper.log",
+                    "run/media/media-helper.log",
                     *extra,
                 )
             self.assertEqual(rc, 0)

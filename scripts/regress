@@ -1984,7 +1984,7 @@ def tv_decode(h, a, r, out, target, ctx, state):
         f"{out}/{VIEWER_WAV}",
         f"{h.inst.run_dir}/{CAPTURE_CTL}",
     )
-    helper_log = f"{h.inst.run_dir}/media-helper.log"
+    helper_log = f"{h.inst.run_dir}/media/media-helper.log"
     # the page's beacons (its log lines as GETs) to the test server in the VM's own namespace: not
     # every firmware's WebAppMgr puts the app's console in PmLog
     token = os.urandom(8).hex()
@@ -2148,7 +2148,7 @@ def tv_smp(h, a, r, out, target, ctx):
         if not a.viewer:
             viewer(h, out, True, headless=True)
         log, ctl = f"{out}/host/viewer.log", f"{h.inst.run_dir}/{CAPTURE_CTL}"
-        helper_log = f"{h.inst.run_dir}/media-helper.log"
+        helper_log = f"{h.inst.run_dir}/media/media-helper.log"
         # the viewer's log from here on, and its captures while the app runs (one kept, to look at)
         _, mark = h.run(f"echo $PWD/{d}/shot.ppm > {ctl} && {{ {sizes(log, helper_log)}; }}", 30)
         gstep(h, a, r, out, "smp", tvsuite.SMP_APP, 60, save="smp/run")

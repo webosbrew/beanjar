@@ -328,9 +328,10 @@ def cmd_status(lib, a):
     return emit(a, data, "\n".join(text))
 
 
-# a VM's host-side logs: its launcher's (logs/) and its helpers' while it runs (run/); never its
-# other files (run/ has sockets and mitmweb's password, identity/ its keys)
-LOG_RE = re.compile(r"(run|logs)/[A-Za-z0-9_-][A-Za-z0-9._-]*\.(?:log|out)(?:\.[0-9]+)?")
+# a VM's host-side logs: its launcher's (logs/) and its helpers' while it runs (run/, and the media
+# helper's own directory run/media/: qemu.MEDIA_DIR); never its other files (run/ has sockets and
+# mitmweb's password, identity/ its keys), never through a link
+LOG_RE = re.compile(r"(run|run/media|logs)/[A-Za-z0-9_-][A-Za-z0-9._-]*\.(?:log|out)(?:\.[0-9]+)?")
 
 
 def log_path(vm, file):
@@ -338,12 +339,17 @@ def log_path(vm, file):
     FILE that is not a log's, an error for one that is not there."""
     if not LOG_RE.fullmatch(file):
         raise Usage(
-            f"{file}: FILE is run/NAME or logs/NAME, a .log or .out file (rotated: .log.1); "
-            f"for example run/media-helper.log or logs/console.log"
+            f"{file}: FILE is run/NAME, run/media/NAME or logs/NAME, a .log or .out file "
+            f"(rotated: .log.1); for example run/media/media-helper.log or logs/console.log"
         )
     path = os.path.join(vm.dir, file)
+    parts = file.split("/")
     try:
-        regular = stat.S_ISREG(os.lstat(path).st_mode)
+        # each directory a directory and the file a regular file, none of them a link
+        regular = all(
+            stat.S_ISDIR(os.lstat(os.path.join(vm.dir, *parts[: i + 1])).st_mode)
+            for i in range(len(parts) - 1)
+        ) and stat.S_ISREG(os.lstat(path).st_mode)
     except FileNotFoundError:
         regular = False
     if not regular:
@@ -691,8 +697,8 @@ def register_vm(cli):
     s.add_argument(
         "file",
         metavar="FILE",
-        help="run/NAME or logs/NAME, a .log or .out file: run/media-helper.log, "
-        "run/media-sessions.log, logs/console.log, ...",
+        help="run/NAME, run/media/NAME or logs/NAME, a .log or .out file: "
+        "run/media/media-helper.log, run/media/media-sessions.log, logs/console.log, ...",
     )
 
     s = command(sub, "delete", "remove a VM that is off, with its state", cmd_delete)

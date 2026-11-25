@@ -54,11 +54,13 @@ class Parse(unittest.TestCase):
 
 class Log(unittest.TestCase):
     def test_reads_through_beanjar_log_show(self):
-        reply = json.dumps({"name": "tv", "file": "run/media-helper.log", "text": HELPER})
+        reply = json.dumps({"name": "tv", "file": "run/media/media-helper.log", "text": HELPER})
         with mock.patch.object(rw.subprocess, "run", return_value=done(reply)) as run:
-            self.assertEqual(rw.log("rk-1/tv", "run/media-helper.log"), HELPER)
+            self.assertEqual(rw.log("rk-1/tv", "run/media/media-helper.log"), HELPER)
         argv = run.call_args.args[0]
-        self.assertEqual(argv[1:], ["log", "show", "rk-1/tv", "run/media-helper.log", "--json"])
+        self.assertEqual(
+            argv[1:], ["log", "show", "rk-1/tv", "run/media/media-helper.log", "--json"]
+        )
 
     def test_no_log_is_empty(self):
         for result in (done("", 1), done("not json"), done("{}")):
@@ -66,7 +68,7 @@ class Log(unittest.TestCase):
                 self.subTest(result=result),
                 mock.patch.object(rw.subprocess, "run", return_value=result),
             ):
-                self.assertEqual(rw.log("tv", "run/media-sessions.log"), "")
+                self.assertEqual(rw.log("tv", "run/media/media-sessions.log"), "")
 
     def test_helper_counts(self):
         reply = json.dumps({"text": HELPER})
