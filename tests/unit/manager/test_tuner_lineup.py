@@ -70,7 +70,12 @@ class FormatTest(unittest.TestCase):
             {"major": 7, "minor": 1, "name": "BJ7", "source_id": 7001, "program": 1},
         )
         self.assertEqual((svc["picture"], svc["sound"], svc["label"]),
-                         ({"pattern": "testsrc2"}, {"tone": 440}, True))  # fmt: skip
+                         ({"pattern": "testsrc2"},
+                          [{"tone": 440, "language": "eng"}, {"tone": 554, "language": "spa"}],
+                          True))  # fmt: skip
+        self.assertEqual(svc["captions"]["language"], "eng")
+        self.assertTrue(os.path.isfile(svc["captions"]["file"]))
+        self.assertIn(svc["captions"]["file"], tuner_lineup.paths(atsc))
         self.assertEqual(svc["events"][0]["minutes"], 60)
         arib_lu = tuner_lineup.default("arib")
         rf = arib_lu["rf"][0]
@@ -142,6 +147,19 @@ class FormatTest(unittest.TestCase):
             (ATSC_MIN + 'picture = { image = "/x.png" }\n', "give it relative to the lineup file"),
             (ATSC_MIN + 'picture = { video = "clip.mp4" }\n', "clip.mp4: no such file"),
             (ATSC_MIN + "sound = { tone = 5 }\n", "sound.tone: 5 is out of range"),
+            (ATSC_MIN + "sound = [{ tone = 400 }, { tone = 500 }]\n",
+             "sound[1]: language is missing"),
+            (ATSC_MIN + 'sound = [{ tone = 400 }, { tone = 500, language = "eng" }]\n',
+             "language eng is given twice"),
+            (ATSC_MIN + 'sound = { tone = 400, language = "English" }\n',
+             "an ISO 639-2 language code"),
+            (ATSC_MIN + "sound = [" + ", ".join(
+                f'{{ tone = {400 + n}, language = "{c}" }}' for n, c in enumerate(("eng", "spa", "fra", "deu"))
+            ) + "]\n", "a list of 1 to 3"),
+            (ATSC_MIN + "sound = []\n", "a list of 1 to 3"),
+            (ATSC_MIN + 'captions = { file = "cc.scc" }\n', "cc.scc: no such file"),
+            (ATSC_MIN + 'captions = { file = "cc.scc", service = 2 }\n', "unknown key service"),
+            (ARIB_MIN + 'captions = { file = "cc.scc" }\n', "unknown key captions"),
             (ATSC_MIN + ATSC_MIN.split("broadcast = \"atsc\"\n")[1], "channel 20 is given twice"),
             ('timezone = "Mars/Base"\n' + ATSC_MIN, "no time zone"),
             ("broadcast = 'atsc'\nrf = [", "not TOML"),
@@ -157,6 +175,19 @@ class FormatTest(unittest.TestCase):
             parse(ATSC_MIN, broadcast="arib")
         self.assertIn(
             "the lineup is atsc, the board's broadcast standard is arib", str(e.exception)
+        )
+        # tracks: the first one's language defaults to the standard's, the others name theirs
+        lu = parse(ATSC_MIN + 'sound = [{ tone = 400 }, { file = "b.ac3", language = "spa" }]\n'
+                   'captions = { file = "cc.scc", language = "spa" }\n', check_files=False)  # fmt: skip
+        svc = lu["rf"][0]["services"][0]
+        self.assertEqual(svc["sound"], [{"tone": 400, "language": "eng"},
+                                        {"file": "/nonexistent/b.ac3", "language": "spa"}])  # fmt: skip
+        self.assertEqual(svc["captions"], {"file": "/nonexistent/cc.scc", "language": "spa"})
+        self.assertEqual(tuner_lineup.paths(lu), ["/nonexistent/b.ac3", "/nonexistent/cc.scc"])
+        self.assertIsNone(parse(ATSC_MIN)["rf"][0]["services"][0]["captions"])
+        arib_lu = parse(ARIB_MIN, check_files=False)
+        self.assertEqual(
+            arib_lu["rf"][0]["services"][0]["sound"], [{"tone": 1000, "language": "jpn"}]
         )
         # a lineup whose files are elsewhere (a host fed from another machine)
         self.assertEqual(parse(ARIB_MIN, check_files=False)["rf"][0]["channel"], 30)
@@ -193,6 +224,30 @@ class FormatTest(unittest.TestCase):
             self.assertIn('remote_control_key_id="3"', t["nit"])
             self.assertIn(f'value="{arib.uhf_center_hz(30)}"', t["nit"])
             self.assertEqual(t["eit"].count("<EIT "), 2)
+
+    def test_arib_second_sound_track(self):
+        """A second AAC track: its own PID and component tag in the PMT, and in each event an
+        audio component of its language beside the main one."""
+        text = ARIB_MIN.replace(
+            'bml = "page"\n', 'sound = [{ tone = 500 }, { tone = 600, language = "eng" }]\n'
+        )
+        rf = parse(text)["rf"][0]
+        t = arib._tables(rf, 1_800_000_000, [None])
+        self.assertIn(
+            'elementary_PID="0x112">\n    <stream_identifier_descriptor component_tag="0x10"',
+            t["pmt0"],
+        )
+        self.assertIn(
+            'elementary_PID="0x113">\n    <stream_identifier_descriptor component_tag="0x11"',
+            t["pmt0"],
+        )
+        self.assertIn('component_tag="0x10" stream_type="0x0F" main_component="true"', t["eit"])
+        self.assertIn('component_tag="0x11" stream_type="0x0F" main_component="false"', t["eit"])
+        self.assertIn('ISO_639_language_code="eng"', t["eit"])
+        keep, remap = tuner_stream.ff_remap(
+            rf["services"], lambda i, k: arib.video_pid(i) if k is None else arib.audio_pid(i, k)
+        )
+        self.assertEqual(remap, ["256=273", "257=274", "258=275"])
 
 
 # ---- streams ----

@@ -83,8 +83,14 @@ events = [
 
 - `rf`: `channel`, `tsid`, and its `services` (1 to 16).
 - A service: `major`, `minor`, `name`, `source_id` are needed; `long_name` (default the name),
-  `program` (the MPEG program number, default 1, 2, ... in order), `picture`, `sound`, `label`
-  and `events`.
+  `program` (the MPEG program number, default 1, 2, ... in order), `picture`, `sound`, `label`,
+  `captions` and `events`.
+- `captions`: `{ file = FILE, language = "eng" }`, closed captions from a Scenarist (`.scc`)
+  caption file, the format caption editors and converters write (pycaption, Subtitle Edit, ...).
+  They go out as CEA-608 CC1 in the picture's user data (ATSC A/53), with the caption service
+  descriptor in the PMT and the guide. The captions
+  must fit in `loop_seconds`, as they repeat with the picture. `language` defaults to `eng`. The
+  built-in 7.1 has a pair of test captions (`lineups/captions-eng.scc` in the source).
 
 ### ARIB (Japan, ISDB-T)
 
@@ -133,7 +139,11 @@ events = [
   lineup's video size, letterboxed; a video is looped or cut to `loop_seconds`. Default
   `testsrc2`.
 - `sound`: `{ tone = HZ }` or `{ file = FILE }`, an audio or video file whose first audio is used,
-  looped or cut likewise. Default a 1000 Hz tone.
+  looped or cut likewise. Default a 1000 Hz tone. A list of up to three gives the service more
+  sound tracks, each in its own language: `sound = [{ tone = 440 }, { tone
+  = 554, language = "spa" }]`. Each track has a `language` (an ISO 639-2 code); the first one's
+  defaults to `eng` on ATSC and `jpn` on ARIB, the others must name theirs. The built-in 7.1 has
+  an English and a Spanish track.
 - `label`: whether the service's name (ATSC: `20.1 KBJR`) is drawn in the middle of the picture.
   Default `true` on a test pattern and `false` on an image or video of yours.
 - `events`: the programme cycle, one event or more, each `title`, `minutes` and an optional

@@ -14,6 +14,13 @@ key). The tuner
 (tuner.py) loops the file and rewrites the STT's time as it sends it (stt_rewrite), so the set's
 clock follows the host's.
 
+A service may have up to three AC-3 sound tracks, each a complete main service of its own language
+(the PMT's ISO 639 and AC-3 descriptors, the TVCT's service location), and closed captions from an
+SCC file: CEA-608 CC1 as A/53 cc_data in the pictures' user data, named by the caption service
+descriptor on the video in the PMT and in each EIT event. FFmpeg makes them: its SCC demuxer reads
+the file, the pairs go into an intra-only carrier of the picture (with_cc), and the loop's encoder
+writes them again from its decoder's A53 side data (_caption_carrier).
+
 TSDuck writes an ATSC EIT's start_time string straight into the GPS-seconds field, so the times
 given to it are UTC plus the GPS-UTC offset (gps_naive). validate() checks a made stream
 independently of TSDuck: every long section's CRC32, each table's repetition and that the MGT
@@ -43,7 +50,7 @@ TABLE_STT = 0xCD
 PACKET = 188
 MUX_RATE = 5_000_000  # bits a second
 SECONDS = 20  # of a made stream, looped
-VERSION = 4  # of the generator: part of a stream's key
+VERSION = 5  # of the generator: part of a stream's key
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # fonts-dejavu-core
 
 
@@ -63,11 +70,50 @@ def video_pid(i):
     return 0x31 + 4 * i
 
 
-def audio_pid(i):
-    return 0x34 + 4 * i
+def audio_pid(i, k=0):
+    """Service i's sound track k: the main one at 0x34 + 4i, the others in the gap below it."""
+    return 0x34 + 4 * i if k == 0 else 0x31 + 4 * i + k
 
 
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
+
+
+def streams(services):
+    """ffmpeg's output streams, in order (its PIDs from FF_PID0 on): (service, None) for a
+    service's picture, (service, k) for its sound track k."""
+    out = []
+    for i, s in enumerate(services):
+        out += [(i, None)] + [(i, k) for k in range(len(s["sound"]))]
+    return out
+
+
+def ff_remap(services, pid_of):
+    """(the ffmpeg PIDs to keep, tsp remap's FROM=TO list) to pid_of(service, track or None)."""
+    keep, remap = [], []
+    for n, (i, k) in enumerate(streams(services)):
+        keep.append(FF_PID0 + n)
+        remap.append(f"{FF_PID0 + n}={pid_of(i, k)}")
+    return keep, remap
+
+
+def ff_programs(services, title=None):
+    """ffmpeg's -program options: one a service, with its picture and sound tracks."""
+    progs, at = [], 0
+    for i, s in enumerate(services):
+        n = 1 + len(s["sound"])
+        sts = ":".join(f"st={at + j}" for j in range(n))
+        progs += ["-program", (f"title={title(s)}:" if title else "") + sts]
+        at += n
+    return progs
+
+
+def caption_descriptor(c):
+    """ATSC's caption_service_descriptor (A/65 6.9.2) of a service's captions: line 21 CC1."""
+    return (
+        f'<caption_service_descriptor><service language="{c["language"]}" digital_cc="false" '
+        'line21_field="false" caption_service_number="0" easy_reader="false" '
+        'wide_aspect_ratio="false"/></caption_service_descriptor>'
+    )
 
 
 def rf_center_hz(ch):
@@ -148,17 +194,25 @@ def _tables(rf, now, timezone):
         + "</PAT>\n"
     )
     for i, s in enumerate(rf["services"]):
-        t[f"pmt{i}"] = (
+        cc = s.get("captions")
+        pmt = (
             f'<PMT service_id="{s["program"]}" PCR_PID="0x{video_pid(i):X}">\n'
-            f'  <component stream_type="0x02" elementary_PID="0x{video_pid(i):X}"/>\n'
-            f'  <component stream_type="0x81" elementary_PID="0x{audio_pid(i):X}">\n'
-            '    <registration_descriptor format_identifier="0x41432D33"/>\n'
-            '    <ATSC_AC3_audio_stream_descriptor sample_rate_code="0" bsid="8" bit_rate_code="10" '
-            'surround_mode="0" bsmod="0" num_channels="2" full_svc="true" mainid="0" priority="1" '
-            'asvcflags="0"/>\n'
-            '    <ISO_639_language_descriptor><language code="eng" audio_type="0"/></ISO_639_language_descriptor>\n'
-            "  </component>\n</PMT>\n"
+            f'  <component stream_type="0x02" elementary_PID="0x{video_pid(i):X}">'
+            + (f"\n    {caption_descriptor(cc)}\n  " if cc else "")
+            + "</component>\n"
         )
+        # each track a complete main service (bsmod 0) of its own language (A/52 annex A)
+        for k, tr in enumerate(s["sound"]):
+            pmt += (
+                f'  <component stream_type="0x81" elementary_PID="0x{audio_pid(i, k):X}">\n'
+                '    <registration_descriptor format_identifier="0x41432D33"/>\n'
+                '    <ATSC_AC3_audio_stream_descriptor sample_rate_code="0" bsid="8" bit_rate_code="10" '
+                f'surround_mode="0" bsmod="0" num_channels="2" full_svc="true" mainid="{k}" priority="1" '
+                f'asvcflags="0" language="{tr["language"]}"/>\n'
+                f'    <ISO_639_language_descriptor><language code="{tr["language"]}" audio_type="0"/></ISO_639_language_descriptor>\n'
+                "  </component>\n"
+            )
+        t[f"pmt{i}"] = pmt + "</PMT>\n"
     tvct = f'<TVCT version="0" transport_stream_id="{rf["tsid"]}">\n'
     for i, s in enumerate(rf["services"]):
         tvct += (
@@ -168,8 +222,12 @@ def _tables(rf, now, timezone):
             f'service_type="dtv" source_id="{s["source_id"]}">\n'
             f'    <service_location_descriptor PCR_PID="0x{video_pid(i):X}">\n'
             f'      <component stream_type="0x02" elementary_PID="0x{video_pid(i):X}"/>\n'
-            f'      <component stream_type="0x81" elementary_PID="0x{audio_pid(i):X}" ISO_639_language_code="eng"/>\n'
-            "    </service_location_descriptor>\n"
+            + "".join(
+                f'      <component stream_type="0x81" elementary_PID="0x{audio_pid(i, k):X}" '
+                f'ISO_639_language_code="{tr["language"]}"/>\n'
+                for k, tr in enumerate(s["sound"])
+            )
+            + "    </service_location_descriptor>\n"
             "    <extended_channel_name_descriptor><long_channel_name_text>"
             f'<string language="eng" text={_q(s["long_name"])}/></long_channel_name_text>'
             "</extended_channel_name_descriptor>\n"
@@ -199,7 +257,9 @@ def _tables(rf, now, timezone):
                 eit += (
                     f'  <event event_id="{eid}" start_time="{gps_naive(start)}" ETM_location="1" '
                     f'length_in_seconds="{minutes * 60}"><title_text><string language="eng" '
-                    f"text={_q(title)}/></title_text></event>\n"
+                    f"text={_q(title)}/></title_text>"
+                    + (caption_descriptor(s["captions"]) if s.get("captions") else "")
+                    + "</event>\n"
                 )
                 etm = (s["source_id"] << 16) | (eid << 2) | 2
                 ett += (
@@ -257,8 +317,8 @@ def av_inputs(services, v, dur, label_of):
     """ffmpeg's inputs and maps of the services' pictures and sounds, dur seconds each: a test
     pattern or a tone is a lavfi source; an image, or a video or audio file (looped), an input
     whose picture is scaled into the size (letterboxed) at the rate. A service with label has
-    label_of(service) drawn in the middle. (args, maps): the maps a video and an audio stream a
-    service, in order."""
+    label_of(service) drawn in the middle. (args, maps): the maps a video stream and an audio
+    stream a sound track of each service, in order (streams())."""
     args, maps, graphs = [], [], []
     n = 0
     for i, s in enumerate(services):
@@ -289,87 +349,184 @@ def av_inputs(services, v, dur, label_of):
             )
             maps += ["-map", f"[v{i}]"]
         n += 1
-        if "tone" in snd:
-            args += [
-                "-f",
-                "lavfi",
-                "-i",
-                f"sine=frequency={snd['tone']}:sample_rate=48000:duration={dur}",
-            ]
-            maps += ["-map", f"{n}:a"]
-        else:
-            args += ["-stream_loop", "-1", "-t", str(dur), "-i", snd["file"]]
-            maps += ["-map", f"{n}:a:0"]
-        n += 1
+        for tr in snd:
+            if "tone" in tr:
+                args += [
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    f"sine=frequency={tr['tone']}:sample_rate=48000:duration={dur}",
+                ]
+                maps += ["-map", f"{n}:a"]
+            else:
+                args += ["-stream_loop", "-1", "-t", str(dur), "-i", tr["file"]]
+                maps += ["-map", f"{n}:a:0"]
+            n += 1
     return args + (["-filter_complex", ";".join(graphs)] if graphs else []), maps
+
+
+def cc_pairs(scc, frames, fps):
+    """The CEA-608 byte pairs of an SCC file for each of frames pictures at fps (a Fraction), one
+    pair a picture (608's rate on field 1), None where it has none. FFmpeg's SCC demuxer reads the
+    file: each packet is its line's cc_data triplets (0xFC, then the pair) at the line's time;
+    a line's pairs go out on the pictures from that time on, after the previous line's."""
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "packet=pts_time,size", "-of", "json", scc],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", scc, "-map", "0:s:0", "-c", "copy", "-f", "data", "-"],
+        capture_output=True,
+        check=False,
+    )
+    if probe.returncode or raw.returncode:
+        raise Error(
+            f"{scc}: not a caption file FFmpeg reads (SCC): {(probe.stderr or raw.stderr.decode(errors='replace')).strip()[-300:]}"
+        )
+    out, at, cur = [None] * frames, 0, 0
+    for pkt in json.loads(probe.stdout).get("packets", []):
+        size = int(pkt["size"])
+        data, at = raw.stdout[at : at + size], at + size
+        cur = max(cur, round(float(pkt["pts_time"]) * fps))
+        for j in range(0, size - 2, 3):
+            if cur >= frames:
+                raise Error(f"{scc}: its captions run past the loop ({frames} pictures)")
+            out[cur] = data[j + 1 : j + 3]
+            cur += 1
+    return out
+
+
+def a53_user_data(pair):
+    """The picture user data (A/53 part 4, 6.2.3) carrying one field-1 608 pair (or 608's null
+    pair) and field 2's null pair: ATSC_identifier 'GA94', user_data_type_code 3, cc_data()."""
+    pair = pair or b"\x80\x80"
+    return b"\x00\x00\x01\xb2GA94\x03" + bytes([0x40 | 2, 0xFF, 0xFC]) + pair + b"\xfd\x80\x80\xff"
+
+
+def with_cc(es, pairs):
+    """The MPEG-2 video elementary stream es (decode order is display order: intra pictures only)
+    with each picture's user data from pairs put after its headers, before its first slice."""
+    out, i, pos, f, pending = bytearray(), 0, 0, 0, False
+    while (j := es.find(b"\x00\x00\x01", pos)) >= 0 and j + 3 < len(es):
+        code = es[j + 3]
+        if code == 0x00:  # picture_start_code
+            pending = True
+        elif pending and 0x01 <= code <= 0xAF:  # its first slice
+            out += es[i:j] + a53_user_data(pairs[f] if f < len(pairs) else None)
+            i, f, pending = j, f + 1, False
+        pos = j + 3
+    return bytes(out + es[i:]), f
+
+
+def _caption_carrier(lu, s, path):
+    """The service's picture (labelled as av_inputs makes it), with its captions as A/53 cc_data,
+    as intra-only high-quality MPEG-2 at path: the loop's input for that picture, whose decoder
+    gives ffmpeg the captions as each frame's A53 side data, which its MPEG-2 encoder writes again
+    into the loop's pictures (-a53cc, on by default)."""
+    from fractions import Fraction
+
+    v, dur = lu["video"], lu["loop_seconds"]
+    fps = Fraction(v["fps"])
+    inputs, maps = av_inputs([s], v, dur, lambda x: f"{x['major']}.{x['minor']} {x['name']}")
+    es = path + ".es"
+    _run(
+        ["ffmpeg", "-v", "error", "-y"]
+        + inputs
+        + maps[:2]
+        + ["-c:v", "mpeg2video", "-q:v", "2", "-g", "1", "-bf", "0", "-pix_fmt", "yuv420p"]
+        + ["-f", "mpeg2video", es]
+    )
+    with open(es, "rb") as f:
+        data = f.read()
+    os.unlink(es)
+    frames = round(dur * fps)
+    data, pictures = with_cc(data, cc_pairs(s["captions"]["file"], frames, fps))
+    if not pictures:
+        raise Error(f"{s['name']}: no pictures in the captions' carrier")
+    with open(path, "wb") as f:
+        f.write(data)
 
 
 def _make_loop(lu, rf, path):
     """The A/V loop of the physical channel: each service's picture, labelled with the virtual
-    channel where the lineup says so, and its sound, MPEG-2 and AC-3 at the mux rate."""
+    channel where the lineup says so, with its captions, and its sound tracks, MPEG-2 and AC-3 at
+    the mux rate."""
     v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
-    cmd = ["ffmpeg", "-v", "error", "-y"]
-    inputs, maps = av_inputs(
-        rf["services"], v, dur, lambda s: f"{s['major']}.{s['minor']} {s['name']}"
-    )
-    cmd += inputs
-    progs = []
+    services, carriers = [], []
     for i, s in enumerate(rf["services"]):
-        progs += ["-program", f"title={s['name']}:st={2 * i}:st={2 * i + 1}"]
-    vb = str(v["bitrate"])
-    cmd += (
-        maps
-        + progs
-        + [
-            "-c:v",
-            "mpeg2video",
-            "-b:v",
-            vb,
-            "-minrate",
-            vb,
-            "-maxrate",
-            vb,
-            "-bufsize",
-            "1835008",
-            "-g",
-            "15",
-            "-bf",
-            "2",
-            "-pix_fmt",
-            "yuv420p",
-            "-flags",
-            "+cgop",
-            "-sc_threshold",
-            "1000000000",
-            "-c:a",
-            "ac3",
-            "-b:a",
-            str(a["bitrate"]),
-            "-ar",
-            "48000",
-            "-ac",
-            "2",
-            "-f",
-            "mpegts",
-            "-mpegts_start_pid",
-            str(FF_PID0),
-            "-pcr_period",
-            "40",
-            "-muxrate",
-            str(MUX_RATE),
-            path,
-        ]
-    )
-    _run(cmd)
+        if s.get("captions"):
+            carrier = f"{path}.cc{i}.m2v"
+            _caption_carrier(lu, s, carrier)
+            carriers.append(carrier)
+            s = {**s, "picture": {"video": carrier}, "label": False}
+        services.append(s)
+    try:
+        cmd = ["ffmpeg", "-v", "error", "-y"]
+        inputs, maps = av_inputs(
+            services, v, dur, lambda s: f"{s['major']}.{s['minor']} {s['name']}"
+        )
+        cmd += inputs
+        progs = ff_programs(services, lambda s: s["name"])
+        vb = str(v["bitrate"])
+        cmd += (
+            maps
+            + progs
+            + [
+                "-c:v",
+                "mpeg2video",
+                "-b:v",
+                vb,
+                "-minrate",
+                vb,
+                "-maxrate",
+                vb,
+                "-bufsize",
+                "1835008",
+                "-g",
+                "15",
+                "-bf",
+                "2",
+                "-pix_fmt",
+                "yuv420p",
+                "-flags",
+                "+cgop",
+                "-sc_threshold",
+                "1000000000",
+                "-c:a",
+                "ac3",
+                "-b:a",
+                str(a["bitrate"]),
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-f",
+                "mpegts",
+                "-mpegts_start_pid",
+                str(FF_PID0),
+                "-pcr_period",
+                "40",
+                "-muxrate",
+                str(MUX_RATE),
+                path,
+            ]
+        )
+        _run(cmd)
+    finally:
+        for c in carriers:
+            if os.path.exists(c):
+                os.unlink(c)
 
 
 def _tsp(lu, rf, d, loop, out):
     repeat = max(1, -(-SECONDS // lu["loop_seconds"]))
     a = ["tsp", "--bitrate", str(MUX_RATE), "-I", "file", loop, "--repeat", str(repeat)]
-    keep, remap = [NULL_PID], []
-    for i in range(len(rf["services"])):
-        keep += [FF_PID0 + 2 * i, FF_PID0 + 2 * i + 1]
-        remap += [f"{FF_PID0 + 2 * i}={video_pid(i)}", f"{FF_PID0 + 2 * i + 1}={audio_pid(i)}"]
+    keep, remap = ff_remap(
+        rf["services"], lambda i, k: video_pid(i) if k is None else audio_pid(i, k)
+    )
+    keep.append(NULL_PID)
     a += ["-P", "filter", "--stuffing"] + sum([["--pid", str(p)] for p in sorted(keep)], [])
     a += ["-P", "continuity", "--fix", "-P", "remap", "--no-psi"] + remap
 

@@ -30,7 +30,11 @@ source_id = 7001
 program = 1
 picture = "testsrc2"
 label = true
-sound = { tone = 440 }
+# two sound tracks, English and a Spanish one a third higher, for the set's audio language menu
+sound = [{ tone = 440 }, { tone = 554, language = "spa" }]
+# CC1, English. captions-eng.scc was made once from two SubRip cues with pycaption's SCCWriter
+# (pop-on captions); FFmpeg's SCC demuxer reads it when the stream is made.
+captions = { file = "captions-eng.scc" }
 events = [
   { title = "Test Pattern Hour", minutes = 60, text = "A synthetic colour test pattern with a 440 Hz tone." },
   { title = "Morning Signal", minutes = 30, text = "Short programme with generated content." },

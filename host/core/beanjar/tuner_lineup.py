@@ -164,17 +164,57 @@ def _picture(w, where, v, base, check):
     return {kind: path}
 
 
-def _sound(w, where, v, base, check):
+LANGUAGE = {"atsc": "eng", "arib": "jpn"}  # a first sound track's language when it names none
+TRACKS = 3  # sound tracks a service has at most
+
+
+def _language(w, where, v):
+    """An ISO 639-2 code: three lower-case letters."""
+    if not (isinstance(v, str) and len(v) == 3 and v.isascii() and v.isalpha() and v.islower()):
+        w.fail(where, f"{v!r}: an ISO 639-2 language code, three lower-case letters (eng, spa)")
+    return v
+
+
+def _track(w, where, v, base, check, language):
     t = _table(w, where, v)
-    if len(t) != 1 or next(iter(t)) not in ("tone", "file"):
-        w.fail(where, "{ tone = HZ } or { file = FILE } (an audio or video file)")
-    ((kind, value),) = t.items()
+    kinds = [k for k in ("tone", "file") if k in t]
+    if len(kinds) != 1 or set(t) - {"tone", "file", "language"}:
+        w.fail(where, "{ tone = HZ } or { file = FILE } (an audio or video file), and a language")
+    kind = kinds[0]
+    if "language" in t:
+        language = _language(w, f"{where}.language", t["language"])
+    elif language is None:
+        w.fail(where, 'language is missing (a second sound track\'s language: language = "spa")')
     if kind == "tone":
-        return {"tone": _int(w, f"{where}.tone", value, 20, 20000)}
-    path = _path(w, f"{where}.file", value, base)
+        return {"tone": _int(w, f"{where}.tone", t["tone"], 20, 20000), "language": language}
+    path = _path(w, f"{where}.file", t["file"], base)
     if check:
         _exists(w, f"{where}.file", path, "file")
-    return {"file": path}
+    return {"file": path, "language": language}
+
+
+def _sound(w, where, v, base, check, broadcast):
+    """A service's sound tracks: one table, or a list of up to TRACKS, the first the main one."""
+    tracks = v if isinstance(v, list) else [v]
+    if not 1 <= len(tracks) <= TRACKS:
+        w.fail(where, f"one sound track or a list of 1 to {TRACKS}")
+    out = [
+        _track(w, f"{where}[{i}]" if isinstance(v, list) else where, t, base, check,
+               LANGUAGE[broadcast] if i == 0 else None)
+        for i, t in enumerate(tracks)
+    ]  # fmt: skip
+    _unique(w, where, [t["language"] for t in out], "language")
+    return out
+
+
+def _captions(w, where, v, base, check):
+    """A service's closed captions: { file = SCC, language = ... }."""
+    t = _table(w, where, v)
+    _keys(w, where, t, ("file",), ("language",))
+    path = _path(w, f"{where}.file", t["file"], base)
+    if check:
+        _exists(w, f"{where}.file", path, "file")
+    return {"file": path, "language": _language(w, f"{where}.language", t.get("language", "eng"))}
 
 
 def _events(w, where, v):
@@ -205,14 +245,16 @@ def _unique(w, where, values, what):
         seen.add(v)
 
 
-def _media(w, where, s, base, check):
-    """A service's picture, label and sound."""
+def _media(w, where, s, base, check, broadcast):
+    """A service's picture, label and sound tracks."""
     picture = _picture(w, f"{where}.picture", s.get("picture", "testsrc2"), base, check)
     return {
         "picture": picture,
         # the label goes on a test pattern, not over a picture of the user's, unless asked
         "label": _bool(w, f"{where}.label", s.get("label", "pattern" in picture)),
-        "sound": _sound(w, f"{where}.sound", s.get("sound", {"tone": 1000}), base, check),
+        "sound": _sound(
+            w, f"{where}.sound", s.get("sound", {"tone": 1000}), base, check, broadcast
+        ),
     }
 
 
@@ -237,7 +279,11 @@ def _atsc_rf(w, where, rf, base, check):
         at = f"{where}.services[{i}]"
         _table(w, at, s)
         _keys(
-            w, at, s, ("major", "minor", "name", "source_id"), ("long_name", "program") + MEDIA_KEYS
+            w,
+            at,
+            s,
+            ("major", "minor", "name", "source_id"),
+            ("long_name", "program", "captions") + MEDIA_KEYS,
         )
         name = _str(w, f"{at}.name", s["name"], 7)  # the TVCT's short_name: 7 UTF-16 units
         out.append(
@@ -248,7 +294,10 @@ def _atsc_rf(w, where, rf, base, check):
                 "long_name": _str(w, f"{at}.long_name", s.get("long_name", name)),
                 "source_id": _int(w, f"{at}.source_id", s["source_id"], 1, 0xFFFF),
                 "program": _int(w, f"{at}.program", s.get("program", i + 1), 1, 0xFFFF),
-                **_media(w, at, s, base, check),
+                **_media(w, at, s, base, check, "atsc"),
+                "captions": None
+                if "captions" not in s
+                else _captions(w, f"{at}.captions", s["captions"], base, check),
                 "events": _events(w, f"{at}.events", s.get("events")),
             }
         )
@@ -286,7 +335,7 @@ def _arib_rf(w, where, rf, base, check):
                 "provider": None
                 if "provider" not in s
                 else _str(w, f"{at}.provider", s["provider"]),
-                **_media(w, at, s, base, check),
+                **_media(w, at, s, base, check, "arib"),
                 "bml": bml,
                 "events": _events(w, f"{at}.events", s.get("events")),
             }
@@ -409,7 +458,7 @@ def paths(lu):
     out = []
     for rf in lu["rf"]:
         for s in rf["services"]:
-            for v in (s["picture"], s["sound"]):
+            for v in [s["picture"], *s["sound"], s.get("captions") or {}]:
                 out += [p for k, p in v.items() if k in ("image", "video", "file")]
             if s.get("bml"):
                 out.append(s["bml"])

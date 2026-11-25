@@ -138,6 +138,56 @@ class StreamTest(unittest.TestCase):
 
 
 class LineupTest(unittest.TestCase):
+    def test_second_track_and_captions_in_the_tables(self):
+        """The built-in 7.1: two AC-3 tracks (English, Spanish) with their languages in the PMT's
+        ISO 639 and AC-3 descriptors and the TVCT's service location, and line 21 captions named
+        by the caption service descriptor on the video in the PMT and in each EIT event."""
+        rf = tuner_stream.channel(ATSC, 7)
+        t = tuner_stream._tables(rf, 1_800_000_000, ATSC["timezone"])
+        pmt = t["pmt0"]
+        for pid, lang, mainid in ((0x34, "eng", 0), (0x32, "spa", 1)):
+            self.assertIn(f'<component stream_type="0x81" elementary_PID="0x{pid:X}">', pmt)
+            self.assertIn(f'mainid="{mainid}" priority="1" asvcflags="0" language="{lang}"', pmt)
+            self.assertIn(f'<language code="{lang}" audio_type="0"/>', pmt)
+            self.assertIn(f'elementary_PID="0x{pid:X}" ISO_639_language_code="{lang}"', t["tvct"])
+        self.assertLess(pmt.index("0x34"), pmt.index("0x32"))  # the main track first
+        cc = '<caption_service_descriptor><service language="eng" digital_cc="false" line21_field="false"'
+        self.assertIn('elementary_PID="0x31">\n    ' + cc, pmt)
+        self.assertNotIn("caption", t["pmt1"])  # 7.2 has none
+        self.assertNotIn("0x32", t["pmt1"])
+        eit = t["eit0"].split("<ATSC_EIT ")
+        self.assertEqual(eit[1].count("<event "), eit[1].count(cc))
+        self.assertNotIn(cc, eit[2])
+        # ffmpeg's streams in order and where tsp puts them
+        self.assertEqual(
+            tuner_stream.streams(rf["services"]), [(0, None), (0, 0), (0, 1), (1, None), (1, 0)]
+        )
+        keep, remap = tuner_stream.ff_remap(
+            rf["services"],
+            lambda i, k: tuner_stream.video_pid(i) if k is None else tuner_stream.audio_pid(i, k),
+        )
+        self.assertEqual(remap, ["256=49", "257=52", "258=50", "259=53", "260=56"])
+        self.assertEqual(tuner_stream.ff_programs(rf["services"]),
+                         ["-program", "st=0:st=1:st=2", "-program", "st=3:st=4"])  # fmt: skip
+        # no PID twice, in any lineup of 16 services of 3 tracks
+        pids = [tuner_stream.video_pid(i) for i in range(16)] + [
+            tuner_stream.audio_pid(i, k) for i in range(16) for k in range(3)]  # fmt: skip
+        self.assertEqual(len(set(pids)), len(pids))
+
+    def test_captions_go_into_each_pictures_user_data(self):
+        """A/53 cc_data after each picture's headers, before its first slice: one field-1 pair a
+        picture, 608's null pair where the captions have none."""
+        seq = b"\x00\x00\x01\xb3" + b"\x00" * 8 + b"\x00\x00\x01\xb5" + b"\x14" * 6
+        pic = b"\x00\x00\x01\x00\x00\x0f\xff\xf8" + b"\x00\x00\x01\xb5\x8f\xff"
+        sl = b"\x00\x00\x01\x01\x12\x34" + b"\x00\x00\x01\x02\x56"
+        es = seq + pic + sl + pic + sl + pic + sl
+        out, n = tuner_stream.with_cc(es, [b"\x94\x2c", None])
+        self.assertEqual(n, 3)
+        ud = [tuner_stream.a53_user_data(p) for p in (b"\x94\x2c", None, None)]
+        self.assertEqual(ud[0], b"\x00\x00\x01\xb2GA94\x03\x42\xff\xfc\x94\x2c\xfd\x80\x80\xff")
+        self.assertEqual(ud[1][-8:], b"\xff\xfc\x80\x80\xfd\x80\x80\xff")
+        self.assertEqual(out, seq + pic + ud[0] + sl + pic + ud[1] + sl + pic + ud[2] + sl)
+
     def test_frequencies(self):
         self.assertEqual(tuner_stream.rf_center_hz(2), 57000000)
         self.assertEqual(tuner_stream.rf_center_hz(7), 177000000)

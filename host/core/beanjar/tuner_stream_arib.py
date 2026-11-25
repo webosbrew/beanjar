@@ -27,12 +27,11 @@ import subprocess
 from datetime import date, datetime, timedelta, timezone
 from xml.sax.saxutils import escape, quoteattr
 
-from .tuner_stream import PACKET, Error, crc32_mpeg
+from .tuner_stream import FF_PID0, PACKET, Error, crc32_mpeg, ff_remap
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 9  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
-FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
 
 PAT_PID, NIT_PID, SDT_PID, EIT_PID, TOT_PID = 0x00, 0x10, 0x11, 0x12, 0x14
 TABLE_TDT, TABLE_TOT = 0x70, 0x73
@@ -47,8 +46,9 @@ def video_pid(i):
     return VIDEO_PID + 0x10 * i
 
 
-def audio_pid(i):
-    return AUDIO_PID + 0x10 * i
+def audio_pid(i, k=0):
+    """Service i's sound track k."""
+    return AUDIO_PID + 0x10 * i + k
 
 
 def data_pid(i):
@@ -249,9 +249,12 @@ def _tables(rf, now, modules):
             # ARIB STD-B10: the video's format, which a set takes before the decoder's; 3 is 480p
             '    <video_decode_control_descriptor still_picture="false" sequence_end_code="false" '
             f'video_encode_format="{VIDEO_ENCODE_FORMAT}"/>\n  </component>\n'
-            f'  <component stream_type="0x0F" elementary_PID="0x{audio_pid(i):X}">\n'
-            f'    <stream_identifier_descriptor component_tag="0x{TAG_AUDIO:02X}"/>\n  </component>\n'
         )
+        for k, _tr in enumerate(s["sound"]):
+            pmt += (
+                f'  <component stream_type="0x0F" elementary_PID="0x{audio_pid(i, k):X}">\n'
+                f'    <stream_identifier_descriptor component_tag="0x{TAG_AUDIO + k:02X}"/>\n  </component>\n'
+            )
         if modules[i] is not None:
             pmt += (
                 f'  <component stream_type="0x0D" elementary_PID="0x{data_pid(i):X}">\n'
@@ -305,9 +308,14 @@ def _tables(rf, now, modules):
                 # the event's video and audio, as broadcasts describe them (STD-B10 6.2.3, 6.2.26)
                 f'    <component_descriptor stream_content="1" component_type="0x{COMPONENT_VIDEO:02X}" '
                 f'component_tag="0x{TAG_VIDEO:02X}" language_code="jpn"/>\n'
-                f'    <audio_component_descriptor component_type="0x03" component_tag="0x{TAG_AUDIO:02X}" '
-                'stream_type="0x0F" quality_indicator="1" sampling_rate="7" ISO_639_language_code="jpn"/>\n'
-                "  </event>\n"
+                # a track each, the first the main one (component tags 0x10 on)
+                + "".join(
+                    f'    <audio_component_descriptor component_type="0x03" component_tag="0x{TAG_AUDIO + n:02X}" '
+                    f'stream_type="0x0F" main_component="{"true" if n == 0 else "false"}" quality_indicator="1" '
+                    f'sampling_rate="7" ISO_639_language_code="{tr["language"]}"/>\n'
+                    for n, tr in enumerate(s["sound"])
+                )
+                + "  </event>\n"
             )
         eit += "</EIT>\n"
     t["eit"] = eit
@@ -347,15 +355,12 @@ def _run(cmd):
 def _make_loop(lu, rf, path):
     """The A/V loop: each service's picture and sound, MPEG-2 video and AAC (ADTS) audio; with more
     than one service a program each, so each video carries its own PCR."""
-    from .tuner_stream import av_inputs
+    from .tuner_stream import av_inputs, ff_programs
 
     v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     vb = str(v["bitrate"])
     inputs, maps = av_inputs(rf["services"], v, dur, lambda s: s["name"])
-    progs = []
-    if len(rf["services"]) > 1:
-        for i in range(len(rf["services"])):
-            progs += ["-program", f"st={2 * i}:st={2 * i + 1}"]
+    progs = ff_programs(rf["services"]) if len(rf["services"]) > 1 else []
     _run(
         ["ffmpeg", "-v", "error", "-y"]
         + inputs
@@ -386,12 +391,9 @@ def _tsp(lu, rf, d, loop, out, now, modules):
     services = rf["services"]
     repeat = max(1, -(-SECONDS // lu["loop_seconds"]))
     a = ["tsp", "--japan", "--bitrate", str(MUX_RATE), "-I", "file", loop, "--repeat", str(repeat)]
-    a += ["-P", "filter", "--stuffing"]
-    for i in range(len(services)):
-        a += ["--pid", str(FF_PID0 + 2 * i), "--pid", str(FF_PID0 + 2 * i + 1)]
-    a += ["--pid", "0x1FFF", "-P", "continuity", "--fix", "-P", "remap", "--no-psi"]
-    for i in range(len(services)):
-        a += [f"{FF_PID0 + 2 * i}={video_pid(i)}", f"{FF_PID0 + 2 * i + 1}={audio_pid(i)}"]
+    keep, remap = ff_remap(services, lambda i, k: video_pid(i) if k is None else audio_pid(i, k))
+    a += ["-P", "filter", "--stuffing"] + [x for p in keep for x in ("--pid", str(p))]
+    a += ["--pid", "0x1FFF", "-P", "continuity", "--fix", "-P", "remap", "--no-psi"] + remap
 
     def inject(pid, files):
         return ["-P", "inject", "--stuffing", "--pid", f"0x{pid:X}"] + [
