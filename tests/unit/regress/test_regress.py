@@ -26,6 +26,9 @@ TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 loader = importlib.machinery.SourceFileLoader("regress", os.path.join(TOP, "scripts", "regress"))
 regress = importlib.util.module_from_spec(importlib.util.spec_from_loader("regress", loader))
 loader.exec_module(regress)
+# no test reads or writes this checkout's store of measured peaks: an empty one of their own
+_PEAKS_DIR = tempfile.TemporaryDirectory()
+regress.PEAKS = os.path.join(_PEAKS_DIR.name, "peaks.json")
 
 # A run over ssh needs a named VM host and a sync command (neither has a built-in default): the
 # tests give them through the environment unless they say otherwise.
@@ -1780,12 +1783,11 @@ class JobsTest(unittest.TestCase):
             regress.host_capacity(H(255, "ssh: no route"))
         n, _ = regress.cap_jobs(2, 6, 4, 5000000, 1536, smp=4)  # the Pi: 4 CPUs / SMP 4
         self.assertEqual(n, 1)
+        # no overcommit: the Pi's 4 CPUs take one 4-vCPU VM, two 2-vCPU ones
+        self.assertEqual(regress.cap_jobs(3, 6, 4, 9000000, 1536, smp=4)[0], 1)
+        self.assertEqual(regress.cap_jobs(4, 6, 4, 9000000, 1536, smp=2)[0], 2)
         self.assertEqual(
-            regress.cap_jobs(3, 6, 4, 5000000, 1536, smp=4, oversub=2)[0], 2
-        )  # KVM: 4 x 2 / 4
-        self.assertEqual(regress.cap_jobs(4, 6, 4, 9000000, 1536, smp=2, oversub=2)[0], 4)
-        self.assertEqual(
-            regress.cap_jobs(4, 6, 4, 5000000, 1536, smp=2, oversub=2)[0], 2
+            regress.cap_jobs(4, 6, 8, 5000000, 1536, smp=2)[0], 2
         )  # (4.8 GB - 1 GB) / 1.5 GB
 
     def test_meminfo(self):
@@ -1914,6 +1916,190 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual(order[:2], [(0, "fast"), (1, "fast")])  # before slow was ready
         self.assertIn("slow", ran.values())  # and then side by side
         self.assertNotIn("broken", ran.values())
+
+    def test_a_refused_item_goes_to_another_host(self):
+        # "full" refuses (its swap grew): its item goes back in its place, for "spare"
+        ran = []
+        spare_go = threading.Event()
+
+        def work(x, host):
+            if host == "full":
+                spare_go.set()
+                return regress.REFUSED
+            spare_go.wait(5)
+            ran.append(x)
+            return x
+
+        out = regress.schedule_hosts([0, 1, 2], [("full", 1), ("spare", 1)], work)
+        self.assertEqual(out, [(0, 0), (1, 1), (2, 2)])
+        self.assertEqual(sorted(ran), [0, 1, 2])
+        # an item only the refusing host could run is left out
+        out = regress.schedule_hosts(
+            [0, 1], [("full", 1), ("spare", 1)], work, lambda x, h: x == 1 or h == "full"
+        )
+        self.assertEqual(out, [(1, 1)])
+
+
+class MemoryBookingTest(unittest.TestCase):
+    """Slots planned on the lanes' bookings (lanemem.booking) instead of their RAM: the numbers of a
+    ROCK Pi 4 board (3617 MB available, 6 CPUs) and the Pi (about 6400 MB, 4 CPUs)."""
+
+    def test_board_slots(self):
+        # the memory arithmetic of a ROCK Pi 4 board's MemAvailable, with CPUs to spare (16)
+        board = 3617 * 1024
+        ram = [3072, 3072, 2048, 1536]
+        self.assertEqual(regress.cap_jobs(3, 4, 16, board, ram)[0], 1)  # 3072 > 2593
+        # h13-afro 600, o18k 1000, k25lp 1300, m3 700 MB measured
+        peaks = [600, 1000, 1300, 700]
+        book = [
+            regress.lanemem.booking(r, "headless", {"peak_mb": p, "ram_mb": r})[0]
+            for r, p in zip(ram, peaks)
+        ]
+        self.assertEqual(book, [818, 1278, 1623, 933])
+        n, why = regress.cap_jobs(3, 4, 16, board, book)
+        self.assertEqual(n, 1)  # 1623 + 1278 > 2593: the two largest bookings do not fit together
+        self.assertEqual(regress.cap_jobs(3, 2, 16, board, [818, 1278])[0], 2)  # 2096
+        self.assertEqual(regress.cap_jobs(3, 2, 2, board, [818, 1278])[0], 1)  # its 2 big cores
+        # graphics keeps the RAM
+        self.assertEqual(
+            regress.lanemem.booking(3072, "graphics", {"peak_mb": 600, "ram_mb": 3072}),
+            (3072, "ram"),
+        )
+
+    def test_pi_slots(self):
+        pi = 6400 * 1024
+        book = [933, 933, 1700]
+        self.assertEqual(regress.cap_jobs(2, 3, 16, pi, [3072, 3072, 2048])[0], 1)  # memory
+        self.assertEqual(regress.cap_jobs(2, 3, 16, pi, book)[0], 2)
+        n, why = regress.cap_jobs(2, 3, 4, pi, book)  # its 4 CPUs: one 4-vCPU VM
+        self.assertEqual(n, 1)
+        self.assertIn("4 CPUs / 4 vCPUs per VM", why)
+
+    def test_big_little(self):
+        # a ROCK Pi 4: four A53 at 1.4 GHz, two A72 at 1.8 GHz: its two big cores count
+        self.assertEqual(regress.fast_cpus(6, [1416000] * 4 + [1800000] * 2), 2)
+        self.assertEqual(regress.fast_cpus(4, [2400000] * 4), 4)  # the Pi 5: all alike
+        self.assertEqual(regress.fast_cpus(8, []), 8)  # no cpufreq (a VM, WSL)
+        self.assertEqual(regress.fast_cpus(1, [1, 2, 2]), 1)  # never more than nproc
+
+        class H:
+            host = "rock"
+
+            def run(self, cmd, timeout):
+                return 0, "6\nMemAvailable:    3700000 kB\n" + "1416000\n" * 4 + "1800000\n" * 2
+
+        cpus, avail = regress.host_capacity(H())
+        self.assertEqual((cpus, avail), (2, 3700000))
+        # two big cores / 4 vCPUs: one lane, whatever the bookings
+        self.assertEqual(regress.cap_jobs(3, 6, cpus, avail, [818, 1278])[0], 1)
+
+    def test_fit_ram_on_bookings(self):
+        gb = 1 << 20
+        where = {"h13-afro": ["pi", "rock"], "o20n-kisscurl": ["pi", "rock"]}
+        capacity = {"pi": (4, 6 * gb), "rock": (6, 3617 * 1024)}
+        # h13-afro booked from its peak on both; o20n-kisscurl not measured: its RAM
+        book = {
+            ("h13-afro", "pi"): 818,
+            ("h13-afro", "rock"): 818,
+            ("o20n-kisscurl", "pi"): 3072,
+            ("o20n-kisscurl", "rock"): 3072,
+        }
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            regress.fit_ram(where, book, capacity)
+        self.assertEqual(where, {"h13-afro": ["pi", "rock"], "o20n-kisscurl": ["pi"]})
+        self.assertIn("o20n-kisscurl: on pi only (its 3072 MB", out.getvalue())
+
+    def test_dry_run_books_from_the_store(self):
+        store = regress.lanemem.Peaks(regress.PEAKS)
+        arch = regress.machine()
+        for t, p in (("h13-afro", 600), ("o18k-goldilocks2", 1000)):
+            store.record(t, "headless", arch, p, 3072, "fixture", "rock")
+        real = regress.parse
+        regress.parse = lambda argv: real(argv, found=FOUND, env={})
+        out = io.StringIO()
+        try:
+            with (
+                contextlib.redirect_stdout(out),
+                mock.patch.object(regress, "host_capacity", return_value=(16, 3617 * 1024)),
+                mock.patch.object(regress.qemu, "default_accel", return_value="tcg"),
+            ):
+                rc = regress.main(
+                    [
+                        "-n",
+                        "--local",
+                        "--headless",
+                        "--no-build",
+                        "--run",
+                        "t39",
+                        "-j",
+                        "3",
+                        "--target",
+                        "h13-afro,o18k-goldilocks2",
+                    ]
+                )
+        finally:
+            regress.parse = real
+            os.unlink(regress.PEAKS)
+        text = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "memory: 2 of 2 target(s) booked from measured peaks (h13-afro 818 of 3072 MB, "
+            "o18k-goldilocks2 1278 of 3072 MB); 1024 MB reserve; 2 slot(s), 1 with each target's "
+            "full RAM and 1024 MB",
+            text,
+        )
+        self.assertIn("2 VM(s) at once", text)
+        self.assertIn("slots: this machine 2 booked, 1 with full RAM", text)
+        self.assertIn("each lane starts once its host's MemAvailable holds its booking", text)
+        for target in ("h13-afro", "o18k-goldilocks2"):
+            self.assertIn(f"build/regress/t39/{target}/host/qemu-status.txt", text)
+            self.assertIn("/proc/vmstat", text)
+
+
+class KeepPeakTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.store = regress.lanemem.Peaks(os.path.join(self.dir.name, "peaks.json"))
+        self.a = argparse.Namespace(vm_env={}, traits={"rock": {"arch": "aarch64"}}, run="r1")
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def lane(self, peak=700, ok=True, oom=None):
+        r = regress.Result("h13-afro", "fw", "headless")
+        r.host = "rock"
+        for s in r.steps:
+            r.steps[s] = "PASS" if ok else "FAIL"
+        r.memory = dict(ram_mb=3072, peak_mb=peak)
+        r.oom = oom
+        return r
+
+    def test_keeps(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            regress.keep_peak(self.a, self.store, self.lane(700))
+            # a failed lane: not kept
+            regress.keep_peak(self.a, self.store, self.lane(900, ok=False))
+            regress.keep_peak(self.a, self.store, self.lane(None))  # no QEMU at the stop: nothing
+            self.a.vm_env = {"MEM": "4096"}
+            regress.keep_peak(self.a, self.store, self.lane(990))  # under MEM: not kept
+        e = self.store.get("h13-afro", "headless", "aarch64")
+        self.assertEqual((e["peak_mb"], e["lanes"], e["host"]), (700, 1, "rock"))
+
+    def test_oom(self):
+        own = {"count": 1, "kills": [], "own": True}
+        other = {
+            "count": 1,
+            "kills": [{"victim": "qemu-system-aar", "pid": 9, "rss_mb": 1}],
+            "own": False,
+        }
+        lane = self.lane(600, oom=other)
+        self.assertFalse(lane.ok)  # an OOM kill fails the lane
+        with contextlib.redirect_stdout(io.StringIO()):
+            regress.keep_peak(self.a, self.store, lane)  # another lane's QEMU: not this one's
+            self.assertIsNone(self.store.get("h13-afro", "headless", "aarch64"))
+            regress.keep_peak(self.a, self.store, self.lane(None, ok=False, oom=own))
+        e = self.store.get("h13-afro", "headless", "aarch64")
+        self.assertEqual((e["peak_mb"], e["oom"]), (3072, "r1"))
 
 
 class InstanceTest(unittest.TestCase):

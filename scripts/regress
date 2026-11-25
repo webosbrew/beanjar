@@ -114,8 +114,9 @@ mitmweb, slirp4netns or viewer runs on the VM host):
              (headless has no compositor to take the key) and no screenshot
   stop       as above
   No HOME, no screenshot.
---headless runs -j N targets at once (--local: default 2, each SMP 4 vCPUs; on a VM host default 2, capped by its CPUs at two vCPUs each; capped by the CPUs at SMP vCPUs per VM, by
-the targets' RAM (MEM, else each model's, nvm.board_ram: the largest ones running together must fit in the host's
+--headless runs -j N targets at once (--local: default 2, each SMP 4 vCPUs; on a VM host default 2; capped by the CPUs at SMP vCPUs per VM, no overcommit, a big.LITTLE host's fast ones only, by
+the targets' RAM (MEM, else each model's, nvm.board_ram; a headless target with a measured peak in PEAKS
+books that peak and a margin instead, lanemem.booking: the largest bookings running together must fit in the host's
 MemAvailable, read at the start, less HEADROOM_MB = 1 GiB), and by the targets), each in an instance of its own, INSTANCE=<target>
 (launch.instance_env: build/instances/<target>/ for its runtime files, logs, shares and state, the unit
 beanjar-vm-regress-<target> in beanjar-regress.slice, its own slot and so its own host address, 127.0.1.<slot>, where its ports are at
@@ -123,6 +124,11 @@ their stock numbers: `host/scripts/vm-launcher config ADDRESS`), with NET_MODE=d
 NET_MODE=mitm too, its inspector on the instance's address) and each target's model's RAM (nvm.board_ram; MEM overrides it). A failure (without --keep-going) or a leftover starts no further target; each target's leftover
 check is its instance's, and the host as a whole is checked after the run. Every target's host/ has
 meminfo-{start,ready,end}.txt (the host's free -m and /proc/meminfo).
+Every lane (each mode, every host) records its QEMU's peak (VmHWM, host/qemu-status.txt) and the host's
+swap at its start and end into its summary.json "memory", keeps the peak in PEAKS, starts only once its
+host's MemAvailable holds its booking and while the host's swap has not grown by more than
+lanemem.SWAP_GROWTH_MB since the run began, and fails on an OOM kill on its host (lanemem; docs/dev/guides/build.md,
+"Memory per lane").
 --tv, the TV feature suite (tests/regress/lib/tvsuite.py; docs/dev/guides/build.md, "TV feature suite") instead of the
 boot checks, in either mode, with NET_LINK=nat NET_MODE=direct (another network is a usage error):
   start      as above
@@ -239,6 +245,7 @@ import checklist  # noqa: E402
 import hostsrc  # noqa: E402
 import device_census  # noqa: E402
 import idlecpu  # noqa: E402
+import lanemem  # noqa: E402
 import tvsuite  # noqa: E402
 
 STEPS = {
@@ -341,8 +348,10 @@ M1_WAIT = {"graphics": 10, "headless": 150}  # check-m1's wait for boot-done, on
 # nvm.board_ram) against MemAvailable
 JOBS = 2  # measured, docs/dev/guides/build.md "Two lanes": 560 s for six targets, against 1017-1150 s at -j 3 and -j 4
 PI_JOBS = 2  # --headless over ssh: targets at once by default
-KVM_OVERSUB = 2  # vCPUs per host CPU a KVM VM host may carry
 HEADROOM_MB = 1024  # of the VM host's MemAvailable left to the host itself and a GUI: the guests' RAM fits in the rest
+# the measured peaks of the lanes' QEMUs, on the machine that runs this script (lanemem.Peaks): what
+# a headless lane books against MemAvailable once its target has one (lanemem.booking)
+PEAKS = os.path.join(TOP, "build", "regress", "peaks.json")
 INSTANCE_DEFAULTS = {
     "NET_LINK": "nat",
     "NET_MODE": "direct",
@@ -624,9 +633,9 @@ def start_env(a, fw, net_dump=""):
     return env
 
 
-def cap_jobs(jobs, n_targets, cpus, avail_kb, mems, smp=4, oversub=1, headroom_mb=HEADROOM_MB):
+def cap_jobs(jobs, n_targets, cpus, avail_kb, mems, smp=4, headroom_mb=HEADROOM_MB):
     """(the targets to run at once, why it is fewer than jobs or ""): no more than the targets, the
-    host's CPUs (times oversub: KVM's idle vCPUs cost nothing, TCG's threads are busy) over each VM's SMP vCPUs,
+    host's CPUs over each VM's SMP vCPUs (no overcommit: host_capacity's CPUs, fast_cpus),
     and as many as the RAM of the targets (mems: MiB each, or one number for all) allows: the sum of the n largest
     must fit in MemAvailable less headroom_mb, whichever n run together; at least one."""
     ram = sorted(mems if isinstance(mems, (list, tuple)) else [mems] * n_targets, reverse=True)
@@ -636,10 +645,10 @@ def cap_jobs(jobs, n_targets, cpus, avail_kb, mems, smp=4, oversub=1, headroom_m
         fit += 1
     limits = [
         (n_targets, f"{n_targets} target(s)"),
-        (cpus * oversub // smp, f"{cpus} CPUs x {oversub} / {smp} vCPUs per VM"),
+        (cpus // smp, f"{cpus} CPUs / {smp} vCPUs per VM"),
         (
             fit,
-            f"MemAvailable {avail_kb // 1024} MB less {headroom_mb} MB headroom, guests of up to "
+            f"MemAvailable {avail_kb // 1024} MB less {headroom_mb} MB headroom, guests booking up to "
             f"{ram[0] if ram else 0} MB",
         ),
     ]
@@ -648,6 +657,78 @@ def cap_jobs(jobs, n_targets, cpus, avail_kb, mems, smp=4, oversub=1, headroom_m
         if limit < n:
             n, why = limit, text
     return max(n, 1), why
+
+
+def host_state(a, host, lanes):
+    """lanemem.parse_state of the VM host now: MemAvailable, swap and the named lanes' QEMUs'
+    VmRSS; None if it cannot be read (a dry run)."""
+    rc, text = Host(host, a.dest, a.dry_run).run(lanemem.state_cmd(lanes), 30)
+    if rc or a.dry_run:
+        return None
+    return lanemem.parse_state(text)
+
+
+def keep_peak(a, store, r):
+    """The lane's QEMU's peak into the store (lanemem.Peaks), for the target, mode and its host's
+    architecture: a lane that passed, at its model's RAM (not under MEM); one whose own QEMU an OOM
+    killed (r.oom's own) as its full RAM."""
+    if a.vm_env.get("MEM") or not r.memory.get("ram_mb"):
+        return
+    oom = bool(r.oom and r.oom["own"])
+    peak = r.memory.get("peak_mb")
+    if not oom and not (r.ok and peak):
+        return
+    try:
+        kept = store.record(
+            r.target,
+            r.mode,
+            a.traits[r.host]["arch"],
+            peak,
+            r.memory["ram_mb"],
+            a.run,
+            r.host or machine_name(),
+            oom=oom,
+        )
+    except OSError as e:
+        say(f"{r.target}: keeping its peak: {e}")
+        return
+    say(
+        f"{r.target}: QEMU peak {peak if peak else '-'} MB"
+        + (" (OOM: raised to its full RAM)" if oom else "")
+        + f"; stored peak {kept['peak_mb']} MB ({kept['run']}, {kept['lanes']} lane(s))"
+    )
+
+
+def machine_name():
+    return os.uname().nodename
+
+
+def memory_table(results):
+    """The summary's memory lines: each lane's QEMU peak, its booking and RAM, the host's swap at
+    its start and end, and any OOM kill."""
+    rows = [r for r in results if r.memory.get("ram_mb")]
+    if not rows:
+        return ""
+    mb = lambda v: "-" if v is None else str(v)  # noqa: E731
+    out = ["", "memory (MB): QEMU peak (VmHWM) / booked (rule) / RAM; host swap start -> end"]
+    for r in rows:
+        m = r.memory
+        out.append(
+            f"  {r.target}: {mb(m.get('peak_mb'))} / {m['booked_mb']} ({m['rule']}) / {m['ram_mb']}; "
+            f"swap {mb(m.get('swap_start_mb'))} -> {mb(m.get('swap_end_mb'))}"
+            + (
+                "; OOM kill: "
+                + (
+                    ", ".join(
+                        f"{k['victim']} {k['pid']} {mb(k['rss_mb'])} MB" for k in r.oom["kills"]
+                    )
+                    or "victim unknown"
+                )
+                if r.oom
+                else ""
+            )
+        )
+    return "\n".join(out)
 
 
 # Targets whose core-boot-done takes ~20 s or more on KVM (the rest 3-7 s): a parallel run starts
@@ -668,15 +749,35 @@ def interleave(items, heavy=HEAVY):
     return out
 
 
+def fast_cpus(n, freqs):
+    """The CPUs of a VM host that count for its lanes: n (nproc), or on a big.LITTLE host (its CPUs'
+    cpuinfo_max_freq not all the same) only the fastest ones, at most n. The lanes get them without
+    overcommit (cap_jobs: CPUs over each VM's vCPUs), so an SBC runs one 4-vCPU lane at a time: a
+    ROCK Pi 4 (RK3399: two A72 at 1.8 GHz, four A53 at 1.4 GHz) and a Pi 5 (four A76) one each, the
+    lanes spread across the hosts. Measured on the ROCK Pi 4 with two 4-vCPU headless lanes at once:
+    core-boot-done 20-55 % later than alone (o18k-goldilocks2 31-33 s alone, 32-44 s paired;
+    k24-ombre 39-41 s, 62 s) and one h13-afro of two paired failed bootd's timeout."""
+    freqs = [f for f in freqs if f > 0]
+    if len(set(freqs)) < 2:
+        return n
+    return max(1, min(n, freqs.count(max(freqs))))
+
+
 def host_capacity(h):
-    """(CPUs, MemAvailable kB) of the VM host h (this machine without a host, the VM host over ssh)."""
+    """(CPUs, MemAvailable kB) of the VM host h (this machine without a host, the VM host over ssh;
+    its CPUs: fast_cpus)."""
     if not h.host:
         return os.cpu_count() or 1, meminfo_kb()
-    rc, out = h.run("nproc; grep MemAvailable /proc/meminfo", 30)
+    rc, out = h.run(
+        "nproc; grep MemAvailable /proc/meminfo; "
+        "cat /sys/devices/system/cpu/cpu[0-9]*/cpufreq/cpuinfo_max_freq 2>/dev/null; true",
+        30,
+    )
     f = out.split()
     if rc or len(f) < 3 or not f[0].isdigit() or not f[2].isdigit():
         raise RuntimeError(f"cannot read the VM host's CPUs and MemAvailable: {out.strip()}")
-    return int(f[0]), int(f[2])
+    freqs = [int(x) for x in f[4:] if x.isdigit()]
+    return fast_cpus(int(f[0]), freqs), int(f[2])
 
 
 def parse(argv, found=None, env=None):
@@ -895,6 +996,11 @@ class Result:
         # guest restarts followed (follow_restart: a firmware's first-boot restart)
         self.restarts = 0
         self.restart = ""  # a guest restart that failed the target, said
+        self.qemu_pid = None  # its QEMU's pid once started (an OOM kill's victim is told by it)
+        # its memory: ram_mb, booked_mb and rule (lanemem.booking), peak_mb and rss_mb (its QEMU's
+        # VmHWM and VmRSS before the stop), swap_start_mb and swap_end_mb (the host's)
+        self.memory = {}
+        self.oom = None  # an OOM kill on the host during the lane: {count, kills, own}
 
     @property
     def ok(self):
@@ -904,6 +1010,7 @@ class Result:
             or all(v in ("PASS", "WARN", "SKIP", "dry", "not run") for v in self.steps.values())
             and not self.orphans
             and not self.restart
+            and not self.oom
         )
 
     def row(self):
@@ -1347,6 +1454,53 @@ def meminfo(h, out, when):
         f"{{ date -u +%FT%TZ; free -m; cat /proc/meminfo; }} > {out}/host/meminfo-{when}.txt 2>&1; true",
         30,
     )
+
+
+def qemu_status(h, r, out):
+    """The lane's QEMU's VmHWM and VmRSS (lanemem.STATUS_CMD) into r.memory, before the VM stops;
+    its status lines in the target's host/qemu-status.txt."""
+    _, text = h.run(
+        f"{{ {lanemem.STATUS_CMD}; }} > {out}/host/qemu-status.txt 2>&1; cat {out}/host/qemu-status.txt",
+        30,
+    )
+    peak = lanemem.qemu_peak(text)
+    if peak:
+        r.memory.update(peak)
+
+
+def oom_count(h):
+    """The VM host's OOM kills since its boot (/proc/vmstat oom_kill), or None."""
+    _, text = h.run(lanemem.OOM_COUNT_CMD, 30)
+    return int(text.strip()) if text.strip().isdigit() else None
+
+
+def check_oom(h, r, out, since, before):
+    """An OOM kill on the VM host since the lane started (oom_count went up) into r.oom: the kernel
+    log's victims where it can be read (its lines in the target's host/oom.txt), and whether the
+    victim was this lane's own QEMU (own; also when it cannot be told: no readable log, or a victim
+    that is no QEMU)."""
+    after = oom_count(h)
+    if before is None or after is None or after <= before:
+        return
+    _, text = h.run(
+        f"{{ {lanemem.oom_log_cmd(since - 5)}; }} > {out}/host/oom.txt 2>&1; cat {out}/host/oom.txt",
+        30,
+    )
+    kills = lanemem.oom_kills(text)
+    own = (
+        not kills
+        or any(k["pid"] == r.qemu_pid for k in kills)
+        or any(not k["victim"].startswith("qemu-system") for k in kills)
+    )
+    r.oom = {"count": after - before, "kills": kills, "own": own}
+    said = (
+        ", ".join(
+            f"{k['victim']} ({k['pid']}{', ' + str(k['rss_mb']) + ' MB' if k['rss_mb'] else ''})"
+            for k in kills
+        )
+        or "victim unknown (the kernel log is not readable)"
+    )
+    say(f"{r.target}: OOM kill on the VM host during the lane ({after - before}): {said}: FAIL")
 
 
 def tv_suite(h, a, r, out, target, fw):
@@ -2196,6 +2350,7 @@ def run_target(h, a, target, fw):
     verdict = {0: "PASS", 124: "TIMEOUT"}
     if a.dry_run:
         verdict[0] = "dry"
+    oom_since = oom_before = None
     try:
         say(f"{target}: start ({fw})")
         rc, _ = h.run(
@@ -2208,6 +2363,7 @@ def run_target(h, a, target, fw):
             r.steps["start"] = "FAIL"
             return r
         meminfo(h, out, "start")
+        oom_since, oom_before = time.time(), oom_count(h)
         rc, _ = h.run(
             f"{env} timeout {a.timeout} host/scripts/vm-launcher start > {out}/start.txt 2>&1",
             a.timeout + 30,
@@ -2215,6 +2371,8 @@ def run_target(h, a, target, fw):
         r.steps["start"] = verdict.get(rc, "FAIL")
         if rc:
             return r
+        _, pid = h.run('cat "$RUN_DIR/qemu.pid" 2>/dev/null; true', 30)
+        r.qemu_pid = int(pid.strip()) if pid.strip().isdigit() else None
         r.identity = vm_identity(h, a)
         if a.viewer:
             viewer(h, out, True)
@@ -2235,6 +2393,7 @@ def run_target(h, a, target, fw):
         if a.viewer:
             viewer(h, out, False)
         meminfo(h, out, "end")
+        qemu_status(h, r, out)
         rc, _ = h.run(
             f'SAVED_LOG_DIR="$PWD/{out}/saved" LOG_TAG=regress timeout {a.timeout} host/scripts/vm-launcher stop '
             f"> {out}/stop.txt 2>&1",
@@ -2281,6 +2440,8 @@ def run_target(h, a, target, fw):
         if r.orphans:
             h.run(f"cat > {out}/orphans.txt <<'EOF'\n{r.orphans}\nEOF", 30)
             say(f"{target}: left running on the VM host:\n{r.orphans}")
+        if oom_before is not None:
+            check_oom(h, r, out, oom_since, oom_before)
         r.window = (r.window[0], now())
         r.seconds = time.monotonic() - began
         if h.host:
@@ -2297,6 +2458,11 @@ def run_target(h, a, target, fw):
                     r.steps["capture"] = (
                         "FAIL"  # the capture/report are not retained with this run's results here
                     )
+        if not a.dry_run:
+            for when in ("start", "end"):
+                r.memory[f"swap_{when}_mb"] = lanemem.swap_of_file(
+                    os.path.join(TOP, out, "host", f"meminfo-{when}.txt")
+                )
         if not a.dry_run and r.idle is not None:
             try:
                 with open(os.path.join(TOP, out, "idle-cpu.json"), "w") as f:
@@ -2343,6 +2509,9 @@ def schedule(items, jobs, work, stop=lambda r: False):
     return schedule_hosts(items, [(None, jobs)], lambda item, _host: work(item), stop=stop)
 
 
+REFUSED = object()  # work's answer for an item its host will not start: it goes back to the queue
+
+
 def schedule_hosts(
     items, slots, work, can=lambda item, host: True, stop=lambda r: False, ready=None
 ):
@@ -2353,7 +2522,8 @@ def schedule_hosts(
     failed, while the other hosts' go on. Once stop(result) holds for one, no further item starts
     (those running finish). [(item, result)] of the items that ran, in items' order. A
     KeyboardInterrupt starts nothing more and waits for the running ones (each ends by stopping
-    its VM)."""
+    its VM). work may answer REFUSED: the host takes no more items and this one goes back in its
+    place in the queue, for another host that can run it."""
     lock = threading.Lock()
     pending = list(enumerate(items))
     done, halted = {}, []
@@ -2370,6 +2540,11 @@ def schedule_hosts(
                     return
                 i, item = pending.pop(k)
             r = work(item, host)
+            if r is REFUSED:
+                with lock:
+                    pending.append((i, item))
+                    pending.sort(key=lambda p: p[0])
+                return
             with lock:
                 done[i] = (item, r)
                 if stop(r):
@@ -2843,14 +3018,17 @@ def placement(a, sel):
 
 def fit_ram(where, ram, capacity, headroom_mb=HEADROOM_MB):
     """Narrow where ({target: [hosts]}) to the hosts whose room (capacity: {host: (CPUs,
-    MemAvailable kB)}, less headroom_mb) holds the target's RAM (ram: {target: MiB}), where there
-    are any; a target that fits none keeps its hosts (the launcher's admission decides there)."""
+    MemAvailable kB)}, less headroom_mb: MiB, or {host: MiB}) holds the target's RAM (ram: {target: MiB}, or
+    {(target, host): MiB}: its booking there), where there are any; a target that fits none keeps
+    its hosts (the launcher's admission decides there)."""
+    need = lambda p, h: ram[p, h] if (p, h) in ram else ram[p]  # noqa: E731
+    keep = lambda h: headroom_mb[h] if isinstance(headroom_mb, dict) else headroom_mb  # noqa: E731
     for p, hs in where.items():
-        fits = [h for h in hs if ram[p] <= capacity[h][1] // 1024 - headroom_mb]
+        fits = [h for h in hs if need(p, h) <= capacity[h][1] // 1024 - keep(h)]
         if fits and len(fits) < len(hs):
             say(
-                f"{p}: on {', '.join(fits)} only (its {ram[p]} MB is more than the others' "
-                f"MemAvailable less {headroom_mb} MB)"
+                f"{p}: on {', '.join(fits)} only (its {need(p, next(h for h in hs if h not in fits))} MB is more than the others' "
+                "MemAvailable less their reserve)"
             )
             where[p] = fits
 
@@ -3034,9 +3212,24 @@ def lanes(a, sel, run, skipped, hosts):
     # it can run. A target whose RAM does not fit a host's room (MemAvailable less HEADROOM_MB) goes
     # to the hosts it fits, where there are any (else it is tried as on one host: the launcher's
     # admission decides).
+    # Each lane books what it is expected to take of MemAvailable: a headless lane whose target has a
+    # measured peak (PEAKS, this host's architecture) that peak and a margin, any other its RAM
+    # (lanemem.booking); the slots are planned on the bookings, and each lane is admitted on the
+    # host's state as it starts (lanemem.HostGate).
     smp = int(a.vm_env.get("SMP") or 4)
     ram = {p: int(a.vm_env.get("MEM") or nvm.board_ram(targets.by_name(p))) for p, _fw in run}
-    capacity = {}
+    store = lanemem.Peaks(PEAKS)
+    stored = store.load()
+    book = {}  # {(target, host): (MiB booked, rule, the stored peak or None)}
+    for p, _fw in run:
+        for host in hosts:
+            peak = (
+                None
+                if a.vm_env.get("MEM")
+                else store.get(p, a.mode, a.traits[host]["arch"], stored)
+            )
+            book[p, host] = lanemem.booking(ram[p], a.mode, peak) + (peak,)
+    capacity, swap_base, reserve = {}, {}, {}
     for host in hosts:
         mems = [ram[p] for p, _fw in run if p not in missing and host in where.get(p, ())]
         if mems:
@@ -3045,24 +3238,63 @@ def lanes(a, sel, run, skipped, hosts):
                 if a.dry_run and host
                 else host_capacity(Host(host, a.dest, a.dry_run))
             )
-    fit_ram(where, ram, capacity)
-    slots = {}
+            state = host_state(a, host, []) or {}
+            swap_base[host] = state.get("swap_mb")
+            # the host's own reserve: HEADROOM_MB, less on a host without swap (lanemem.reserve_mb)
+            reserve[host] = lanemem.reserve_mb(
+                state.get("total_mb"), state.get("swap_total_mb"), HEADROOM_MB
+            )
+    fit_ram(where, {(p, h): book[p, h][0] for p, h in book}, capacity, reserve)
+    slots, slots_ram = {}, {}
     for host in hosts:
         mine = [p for p, _fw in run if p not in missing and host in where.get(p, ())]
         if not mine:
-            slots[host] = 0
+            slots[host] = slots_ram[host] = 0
             continue
         cpus, avail = capacity[host]
         n, why = cap_jobs(
-            a.jobs, len(mine), cpus, avail, [ram[p] for p in mine], smp, KVM_OVERSUB if host else 1
+            a.jobs,
+            len(mine),
+            cpus,
+            avail,
+            [book[p, host][0] for p in mine],
+            smp,
+            reserve[host],
         )
         slots[host] = n
+        # the rule before measured peaks: each target's full RAM and HEADROOM_MB
+        slots_ram[host] = cap_jobs(a.jobs, len(mine), cpus, avail, [ram[p] for p in mine], smp)[0]
+        peaked = [p for p in mine if book[p, host][1] == "peak"]
         say(
             (f"{host}: " if len(hosts) > 1 else "")
             + f"{n} VM(s) at once, each in an instance of its own (INSTANCE=<target>, build/instances/<target>)"
             + (f"; -j {a.jobs} capped by {why}" if n < a.jobs and why else "")
         )
+        say(
+            (f"{host}: " if len(hosts) > 1 else "")
+            + f"memory: {len(peaked)} of {len(mine)} target(s) booked from measured peaks"
+            + (
+                " (" + ", ".join(f"{p} {book[p, host][0]} of {ram[p]} MB" for p in peaked) + ")"
+                if peaked
+                else ""
+            )
+            + f"; {reserve[host]} MB reserve; {n} slot(s), {slots_ram[host]} with each target's "
+            f"full RAM and {HEADROOM_MB} MB"
+            + (f"; swap {swap_base[host]} MB in use" if swap_base.get(host) is not None else "")
+        )
     jobs = sum(slots.values())
+    gate = lanemem.HostGate(
+        swap_base,
+        (lambda host, lanes: None)
+        if a.dry_run
+        else (lambda host, lanes: host_state(a, host, lanes)),
+        {h: reserve.get(h, HEADROOM_MB) for h in hosts},
+        say=say,
+    )
+    say(
+        "each lane starts once its host's MemAvailable holds its booking and the host's reserve, and "
+        f"while the host's swap has grown by no more than {lanemem.SWAP_GROWTH_MB} MB since the run began"
+    )
 
     def work(item, host):
         target, fw = item
@@ -3070,14 +3302,28 @@ def lanes(a, sel, run, skipped, hosts):
             return skipped[target]
         if target in missing:
             return missing[target]
-        r = run_target(
-            Host(host, a.dest, a.dry_run, Instance(target) if a.instances else None),
-            a,
-            target,
-            fw,
-        )
+        booked, rule, peak = book[target, host]
+        if not gate.admit(host, target, booked):
+            return REFUSED
+        try:
+            r = run_target(
+                Host(host, a.dest, a.dry_run, Instance(target) if a.instances else None),
+                a,
+                target,
+                fw,
+            )
+        finally:
+            gate.done(host, target)
         r.instance = target if a.instances else None
         r.host = host
+        r.memory.update(
+            ram_mb=ram[target],
+            booked_mb=booked,
+            rule=rule,
+            stored_peak_mb=peak["peak_mb"] if peak else None,
+        )
+        if not a.dry_run:
+            keep_peak(a, store, r)
         return r
 
     def can(item, host):
@@ -3126,10 +3372,21 @@ def lanes(a, sel, run, skipped, hosts):
     ran = {r.target for r in results}
     for target, fw in run:
         hs = where.get(target, [])
-        if target not in ran and hs and set(hs) <= failed_hosts:
+        if target not in ran and hs and set(hs) <= failed_hosts | set(gate.closed):
             r = Result(target, fw, a.mode, a.tv)
             r.steps["start"] = "FAIL"
-            r.failed = f"no VM host that could run it got ready ({', '.join(hs)} failed)"
+            if set(hs) <= failed_hosts:
+                r.failed = f"no VM host that could run it got ready ({', '.join(hs)} failed)"
+            else:
+                r.failed = (
+                    "no VM host would run it ("
+                    + "; ".join(
+                        f"{h or 'this machine'}: "
+                        + ("its preparation failed" if h in failed_hosts else gate.closed[h])
+                        for h in hs
+                    )
+                    + ")"
+                )
             say(f"{target}: FAIL ({r.failed})")
             results.append(r)
     wall = time.monotonic() - began
@@ -3149,6 +3406,14 @@ def lanes(a, sel, run, skipped, hosts):
         table(results, a.mode, a.tv, hosts=bool(a.hosts))
         + f"\n\nwall {wall:.0f} s, {jobs} at once"
         + (f" ({per_host})" if per_host else "")
+        + "\nslots: "
+        + ", ".join(
+            f"{h or 'this machine'} {slots[h]} booked, {slots_ram[h]} with full RAM"
+            + (f", swap {swap_base[h]} MB at the start" if swap_base.get(h) is not None else "")
+            for h in hosts
+            if h in slots
+        )
+        + memory_table(results)
         + f"\nsource: {describe(a.source)}"
     )
     say_raw(summary)
@@ -3189,6 +3454,10 @@ def lanes(a, sel, run, skipped, hosts):
                         instance=r.instance,
                         host=r.host,
                         jobs=slots.get(r.host, 0),
+                        jobs_full_ram=slots_ram.get(r.host, 0),
+                        swap_run_start_mb=swap_base.get(r.host),
+                        memory=r.memory,
+                        oom=r.oom,
                         commit=a.source["commit"],
                         device_census=r.device_census,
                         checklist=[dict(item=i, status=s, reason=why) for i, s, why in r.checklist],

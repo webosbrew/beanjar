@@ -294,7 +294,7 @@ cross-built `build/publish-arm64` (`scripts/build.sh host-arm64`), which must be
 would. The targets go from one queue, in their order, to the first host with a free slot that can run
 them; each host takes `-j N` at once (graphics: one), capped by its own CPUs and `MemAvailable` as a
 single host's are, and a target whose RAM is more than a host's `MemAvailable` less `HEADROOM_MB` goes to
-the hosts it fits where there are any (a 4 GB board ends up with one VM at a time). A failure without
+the hosts it fits where there are any (a 4 GB board ends up with one VM at a time; a headless target with a measured peak books less than its RAM: "Memory per lane" below). A failure without
 `--keep-going`, or a leftover, starts no further target on any host. The summary of a run over ssh has a `host`
 column, and the slots per host on its `wall` line when there are several; `summary.json` has each target's `host` and its host's
 `jobs`.
@@ -426,10 +426,10 @@ there. The parallel run uses `NET_LINK=nat NET_MODE=direct` by default, QEMU's o
 process; `NET_LINK=off` or `NET_MODE=mitm` (each lane's inspector on its own address) may be given instead. The guest's RAM is its model's, as every VM's (its board.cmdline's hwopt=, `nvm.board_ram`; `MEM` and `SMP` pass through).
 
 `-j` is capped by the VM host (this PC, or the Pi, whose `nproc` and `MemAvailable` it reads over
-ssh, at the start of the run): by the host's CPUs over 4 vCPUs per VM (`SMP`; on the Pi, KVM, two vCPUs per CPU),
+ssh, at the start of the run): by the host's CPUs over 4 vCPUs per VM (`SMP`; no overcommit, and on a big.LITTLE host only its fast CPUs: one 4-vCPU VM at a time on the Pi and on a ROCK Pi 4 board, "Memory per lane" below),
 by the number of targets, and by memory: the RAM of the guests that run together (each target's model RAM,
 `targets.ram` through `nvm.board_ram`, or `MEM` for all) must fit in `MemAvailable` less a headroom of 1 GiB
-for the host and a GUI (`HEADROOM_MB`). The test is on the worst case: the `-j` largest guests among the targets. The vCPU and the memory caps both
+for the host and a GUI (`HEADROOM_MB`); a headless target whose peak has been measured counts its booking instead of its RAM ("Memory per lane" below). The test is on the worst case: the `-j` largest guests among the targets. The vCPU and the memory caps both
 apply, on the Pi and with `--local`, and the run says which one capped. (A Pi running two guests by vCPUs alone has been seen 1.8 GB into swap with a standby 9.3 s late; the memory cap prevents that.)
 On this PC (24 threads, 31 GB) that is at most 6. Targets start in `TARGETS` order as slots free up; a failure (without
 `--keep-going`) or a leftover process starts no further target, and the running ones finish. Each target's
@@ -439,13 +439,84 @@ same-named instances for its own; after the run the whole host is checked as bef
 seconds (start to stopped) and the run's wall time; `<target>/host/meminfo-{start,ready,end}.txt`
 hold the host's `free -m` and `/proc/meminfo` at the start, at ready and before the stop.
 
+#### Memory per lane
+
+Every lane, headless and graphics on every host, records what its QEMU held: just before the VM stops
+the run reads `VmHWM` (the peak resident set: the guest RAM it has touched, its shared memfd included,
+and QEMU's own) and `VmRSS` from `/proc/<pid>/status` of `$RUN_DIR/qemu.pid`, into the target's
+`host/qemu-status.txt`. With the host's swap in use at the lane's start and end (from its
+`meminfo-{start,end}.txt`) they are the target's `memory` in `summary.json` (`peak_mb`, `rss_mb`,
+`swap_start_mb`, `swap_end_mb`, and `ram_mb`, `booked_mb`, `rule`, `stored_peak_mb` below), and a line
+each under "memory (MB)" in the summary.
+
+The largest peak seen is kept per target, mode and host architecture in `build/regress/peaks.json` on
+the machine that runs `scripts/regress` (ignored by git, as all of `build/`), from lanes that passed at
+their model's RAM (not under `MEM`):
+
+```json
+{"schema": 1, "peaks": {"h13-afro": {"headless": {"aarch64": {
+  "peak_mb": 848, "ram_mb": 3072, "run": "20261125T112128Z", "host": "board1",
+  "date": "2026-11-25", "lanes": 4}}}}}
+```
+
+`run`, `host` and `date` are those of the largest; `lanes` counts the lanes recorded. An entry measured at
+another RAM is started over by the first lane at the new one. Runs side by side record under an `flock`
+of `peaks.json.lock`, and a write replaces the file whole. Deleting an entry (or the file) measures again
+from the next run on.
+
+What a lane books against its host's `MemAvailable` (`tests/regress/lib/lanemem.py`, `booking`): a
+headless lane whose target has a stored peak at its RAM books peak × 1.15 + 128 MB, at most its RAM;
+every other lane, every graphics lane included, books its full RAM as before. The numbers: headless guests touch 33–81 % of their RAM at most and 3 GB guests about 1 GB,
+while graphics guests touch 94–96 % and cost the host more than their RAM (end-of-lane guest
+`/proc/meminfo` over 553 lanes), so graphics gains nothing; a target's touched memory varies by up to
+about 10 % from run to run, which the 15 % covers (QEMU's `VmHWM` of the same target on the boards
+differed by 2–5 % between runs); and on the ROCK Pi boards (no swap, one lane at a
+time) a headless lane cost the host 70–97 MB beyond its QEMU's `VmHWM` (the launcher's helpers, the
+test tools, the page cache of the guest's images; six targets of 2 and 3 GB), which the 128 MB covers. The slots (`cap_jobs`, `fit_ram`) are planned on the bookings; the run says per
+host how many targets it booked from peaks and the slots that gives against those with each target's
+full RAM and the 1 GiB headroom, and the summary's `slots:` line and `summary.json`'s `jobs` and
+`jobs_full_ram` say both.
+
+The host keeps `HEADROOM_MB` (1 GiB) of its `MemAvailable` for itself as before, except a host without
+swap, which keeps an eighth of its RAM, at least 512 MB and at most 1 GiB (`lanemem.reserve_mb`; a
+3.85 GB ROCK Pi 4 board, which uses about 250 MB itself: 512 MB). Nothing pages out to slow a lane
+there, and the admission and OOM check below stand guard: two lanes on a board booked 3009 MB against
+the 3094 MB room this leaves (k24-ombre and o18k-goldilocks2), and `MemAvailable` sampled every 2 s
+went no lower than 1184 MB, with no OOM kill.
+
+On a big.LITTLE host only the fastest CPUs count for the vCPU cap (`fast_cpus`: the CPUs with the
+highest `cpuinfo_max_freq`). On a ROCK Pi 4 (two A72, four A53) two 4-vCPU headless lanes at once took
+20–55 % longer to `core-boot-done` than alone (o18k-goldilocks2 31–33 s alone, 32–44 s paired;
+k24-ombre 39–41 s, 62 s; the lanes' totals did not change), and one h13-afro of two paired failed
+bootd's timeout. With no vCPU overcommit (`cap_jobs`: CPUs over each VM's vCPUs) a board runs one
+lane at a time, as does the Pi (four A76), and a run spreads its lanes across its hosts; with the
+bookings a 3 GB target now fits on a board at all, where its RAM did not.
+
+Each lane is admitted on its host's state as it starts (`HostGate`): the host's `MemAvailable` now, less
+what the running lanes have booked and their QEMUs do not yet hold (booking − `VmRSS`), must cover its
+booking and the host's reserve, or it waits for a running lane to end (a host with none running starts it, as
+the slots' "at least one"); this is what protects the ROCK Pi boards, which have no swap. And a host
+whose swap use has grown by more than 512 MB since the run began (`SWAP_GROWTH_MB`) starts no lane while
+its running ones finish (a stopped QEMU's swapped pages go with it), and takes no more lanes if it is
+still over then; its targets go to another host, or fail under "not run:". Within about 100 earlier
+Pi runs the growth was at most 252 MB, over a swap that sat at 1–2 GB from before the runs, so 512 MB is
+a host short of memory and not noise.
+
+An OOM kill on the host during a lane (`/proc/vmstat`'s `oom_kill` went up) fails it, with the kernel's
+`Killed process` lines in `host/oom.txt` and the victims and their RSS in `summary.json`'s `oom`
+where the user may read the kernel log (`journalctl -k`: the `adm` or `systemd-journal` group; the ROCK Pi
+boards' user may not, and there the victim is unknown). A lane whose own QEMU was killed, or that cannot
+tell whose was, has its target's stored peak raised to its full RAM (the entry's `oom` names the run),
+so later runs book it all until the entry is deleted.
+
 #### Parallel headless runs on the Pi
 
-`scripts/regress --headless` runs two KVM VMs at once on the Pi (`-j 2`, the default; `-j 1` is serial), each in an instance of its own
+`scripts/regress --headless` on the Pi asks for two KVM VMs at once (`-j 2`, the default; `-j 1` is serial), each in an instance of its own
 as above (`NET_MODE=direct`, each model's RAM; the instance's directories are under the Pi's checkout). The
-cap reads the Pi's `nproc` (4) and `MemAvailable` (about 5.9 GB with a desktop session running): CPUs at
-two vCPUs each (KVM's idle vCPUs cost nothing), so `SMP=4` gives 2 VMs and `SMP=2` up to 4, and
-each VM's RAM. Targets are started alternately heavy and light (`HEAVY`: h13-afro, m16p-dreadlocks2,
+cap reads the Pi's `nproc` (4) and `MemAvailable` (about 5.9 GB with a desktop session running): its CPUs
+without overcommit, so `SMP=4` gives 1 VM and `SMP=2` 2, and each VM's booking. One VM per single-board
+host, the lanes spread across the hosts of a run: two 4-vCPU lanes on one ROCK Pi 4 reached
+`core-boot-done` 20–55 % later than one alone, and one of them failed bootd's timeout ("Memory per lane"). Targets are started alternately heavy and light (`HEAVY`: h13-afro, m16p-dreadlocks2,
 m3-goldilocks, `core-boot-done` about 20 s; the others 3 to 8 s), so two heavy VMs boot side by
 side only at the end of the list. Graphics stays one at a time, and one regress run on the Pi at
 a time (a `-j 2` run counts as one).
