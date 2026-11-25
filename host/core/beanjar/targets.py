@@ -1499,10 +1499,33 @@ def _target(target):
     return TARGETS.get(tuple(target)) or Target((), (), None, False, False, False)
 
 
+# LG's v4l2_vsc names its chip in QUERYCAP's driver by the chip revision's high byte (the O24
+# ombre kernel's table; O26's kernels add 0x29)
+LG_VSC_SOC = {0x24: "o20", 0x25: "e60", 0x26: "o22", 0x27: "m23", 0x28: "o24", 0x29: "o26"}
+
+
+def _lg_chip_rev(target):
+    """lg115x.ko's chip_rev= of the target's SoC, else None (MStar's LM21)."""
+    for m in soc(target).modules:
+        if m.name == "lg115x":
+            for word in m.params:
+                if word.startswith("chip_rev="):
+                    return int(word.split("=", 1)[1], 0)
+    return None
+
+
 def _lg_scaler(target):
     """lgemu.ko's V4L2 scaler parameters for the target (Target.lg_scaler), else none."""
     screen = _target(target).lg_scaler
-    return ("v4l2_vsc=1", f"vsc_screen={screen[0]},{screen[1]}") if screen else ()
+    if not screen:
+        return ()
+    rev = _lg_chip_rev(target)
+    name = LG_VSC_SOC.get(rev >> 8) if rev is not None else None
+    return (
+        "v4l2_vsc=1",
+        f"vsc_screen={screen[0]},{screen[1]}",
+        *((f"vsc_soc={name}",) if name else ()),
+    )
 
 
 # The light sensor's 7-bit address (libdile_i2c's 8-bit slave 0x20) and lgemu's device for each

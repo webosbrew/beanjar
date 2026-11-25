@@ -15,6 +15,8 @@
 #include <linux/slab.h>
 #include <linux/timekeeping.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
+#include <linux/videodev2.h>
 #include <linux/unaligned.h>
 #include "lgemu.h"
 #include "lgemu-drv.h"
@@ -31,6 +33,7 @@
 #define SUBSCRIBE      0x4020565a
 #define UNSUBSCRIBE    0x4020565b
 #define DQEVENT        0x80805659
+#define QUERYCAP       0x80685600
 #define REGION         0x00982900
 #define CONNECT        0x0098290c
 #define ORBIT_WINDOW   0x00982911
@@ -45,6 +48,10 @@
 static bool v4l2_vsc;
 module_param(v4l2_vsc, bool, 0444);
 MODULE_PARM_DESC(v4l2_vsc, "enable the modeled MAIN/SUB V4L2 scaler (video30,video31)");
+static char *vsc_soc = "lg-vsc";
+module_param(vsc_soc, charp, 0444);
+MODULE_PARM_DESC(vsc_soc, "QUERYCAP's driver: the chip's name as LG's v4l2_vsc gives it (o22, o24, "
+                          "o26), from its chip revision");
 static unsigned int vsc_screen[2];
 static int vsc_screen_count;
 module_param_array(vsc_screen, uint, &vsc_screen_count, 0444);
@@ -281,6 +288,22 @@ static long vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     if (f->vdo)
         return vdo_ioctl(f, cmd, ptr);
     switch (cmd) {
+    case QUERYCAP: {
+        /* LG's v4l2_vsc (O24 ombre, O24N, O26 kernels): driver the chip's name, card the window's,
+         * no bus_info, VIDEO_CAPTURE as registered, with the core's DEVICE_CAPS and EXT_PIX_FORMAT,
+         * the version its 5.4 kernels' driver writes. gst-plugin-scanner and udev's v4l_id ask. */
+        static const char *const cards[] = {"scaler_main", "scaler_sub0", "scaler_sub1",
+                                            "scaler_sub2"};
+        struct v4l2_capability cap = {};
+
+        strscpy(cap.driver, vsc_soc, sizeof(cap.driver));
+        if (f->index < ARRAY_SIZE(cards))
+            strscpy(cap.card, cards[f->index], sizeof(cap.card));
+        cap.version = KERNEL_VERSION(5, 4, 255);
+        cap.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_EXT_PIX_FORMAT;
+        cap.capabilities = cap.device_caps | V4L2_CAP_DEVICE_CAPS;
+        return copy_to_user(ptr, &cap, sizeof(cap)) ? -EFAULT : 0;
+    }
     case S_EXT:
     case G_EXT:
         return extended(f, cmd, ptr);

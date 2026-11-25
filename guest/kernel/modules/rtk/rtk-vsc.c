@@ -25,6 +25,8 @@
 #include <linux/sysfs.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
+#include <linux/version.h>
+#include <linux/videodev2.h>
 #include <linux/workqueue.h>
 #include <linux/unaligned.h>
 
@@ -194,6 +196,7 @@ long rtk_vsc_legacy_ioctl(unsigned int cmd, unsigned long arg)
 #define V4L2_SUBSCRIBE_EVENT   0x4020565a
 #define V4L2_UNSUBSCRIBE_EVENT 0x4020565b
 #define V4L2_DQEVENT           0x80805659
+#define V4L2_QUERYCAP          0x80685600
 #define V4L2_EVENT_CTRL        3
 #define CID_BG_COLOR           0x00980923
 #define CID_WIN_REGION         0x00982900
@@ -415,6 +418,23 @@ long rtk_vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     long ret = 0;
 
     switch (cmd) {
+    case V4L2_QUERYCAP: {
+        /* K24's and K8LP's scaler (W24H 23.23.30, W24P 33.20.23 kernels): driver rtk_<node>; card
+         * and bus_info "platform k8lp" or "platform k8hp" by a platform id not resolved here, so
+         * the driver's other branch; VIDEO_OUTPUT_MPLANE | STREAMING with the core's DEVICE_CAPS
+         * and EXT_PIX_FORMAT; the version of their 5.4 kernels. gst-plugin-scanner and udev's
+         * v4l_id ask it. */
+        struct v4l2_capability cap = {};
+
+        snprintf(cap.driver, sizeof(cap.driver), "rtk_%s", v4l2_vsc[idx]);
+        strscpy(cap.card, "platform k8hp", sizeof(cap.card));
+        strscpy(cap.bus_info, "platform k8hp", sizeof(cap.bus_info));
+        cap.version = KERNEL_VERSION(5, 4, 255);
+        cap.device_caps =
+            V4L2_CAP_VIDEO_OUTPUT_MPLANE | V4L2_CAP_STREAMING | V4L2_CAP_EXT_PIX_FORMAT;
+        cap.capabilities = cap.device_caps | V4L2_CAP_DEVICE_CAPS;
+        return copy_to_user(uarg, &cap, sizeof(cap)) ? -EFAULT : 0;
+    }
     case V4L2_S_EXT_CTRLS:
     case V4L2_G_EXT_CTRLS: {
         u32 ctrls[6], ctrl[5];
