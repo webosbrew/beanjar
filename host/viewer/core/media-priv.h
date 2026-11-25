@@ -79,6 +79,7 @@ struct stream {
     struct received_frame *current;
     int uploaded;
     GLuint tex[3];
+    int tex_oes; /* tex[0] bound as GL_TEXTURE_EXTERNAL_OES (a DRM frame's), not GL_TEXTURE_2D */
     EGLImageKHR image;
     /* statistics */
     /* shown: pictures drawn into a video window (once each); picked: pictures that came due,

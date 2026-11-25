@@ -99,6 +99,17 @@ check_media_mix = executable('check-viewer-mix', 'viewer/check-media-mix.c',
                  dependency('threads'), meson.get_compiler('c').find_library('m')],
   override_options: ['c_std=c11'])
 test('check-media-mix', check_media_mix, suite: ['unit', 'viewer'], timeout: 20)
+# a stream's software picture after hardware ones (host/viewer/core/media.c): no texture reused
+# across targets; a surfaceless EGL GLES 2 context (llvmpipe), skipped without one
+check_media_draw = executable('check-viewer-media-draw', 'viewer/check-media-draw.c',
+  '../../host/viewer/core/media-frame.c',
+  '../../host/viewer/core/media-ipc.c', '../../host/viewer/core/sdl-audio.c',
+  '../../host/media/ipc.c',
+  dependencies: [dependency('sdl2'), dependency('egl'), dependency('glesv2'),
+                 dependency('threads'), meson.get_compiler('c').find_library('m')],
+  override_options: ['c_std=c11'])
+test('check-media-draw', check_media_draw, suite: ['unit', 'viewer'], timeout: 20,
+  env: {'LIBGL_ALWAYS_SOFTWARE': '1'})
 check_sound_status = executable('check-viewer-sound-status', 'viewer/check-sound-status.c',
   '../../host/viewer/core/sound-status.c',
   dependencies: meson.get_compiler('c').find_library('m'),

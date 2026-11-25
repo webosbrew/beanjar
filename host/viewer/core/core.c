@@ -107,6 +107,7 @@ struct wv {
      * wv_frame*). recopy: the cache was reallocated and is copied again at the next draw. */
     int cache_w, cache_h, out_w, out_h, recopy;
     unsigned recopies;
+    unsigned gl_errors; /* GL errors found at a capture: logged, never fatal */
     /* the scene changed (what dirty marks, and updates skipped while idle): wv_counter changes */
     unsigned long changes;
     int width, height, y0_top, valid, dma, dirty, straight, osd_dump, bgra, no_osd;
@@ -807,8 +808,12 @@ static int capture_fenced(struct wv *v, int fenced)
     int fd = fenced ? fence_fd(v) : -1;
     if (fd < 0)
         glFinish();
-    if (glGetError() != GL_NO_ERROR)
-        die("scanout rendering failed");
+    /* The flag holds the first error since the last check, which may be any draw's (a media
+     * frame's) rather than this copy's. One picture gone wrong must not end the viewer: log the
+     * first few, count them all, and go on with the next. */
+    for (GLenum e; (e = glGetError()) != GL_NO_ERROR;)
+        if (v->gl_errors++ < 8)
+            fprintf(stderr, "viewer: GL error 0x%x at a scanout copy (frame %u)\n", e, v->frames);
     v->valid = 1;
     touch(v);
     v->recopy = 0;
@@ -2102,6 +2107,7 @@ long wv_counter(struct wv *v, const char *name)
         {"cache_w", v->cache_w},
         {"cache_h", v->cache_h},
         {"recopies", v->recopies},
+        {"gl_errors", v->gl_errors},
         {"changes", (long)v->changes},
         {"dma", v->dma},
         {"cursor_blank_sets", v->cursor.blank_sets},

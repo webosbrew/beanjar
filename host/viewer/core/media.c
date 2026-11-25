@@ -554,9 +554,24 @@ static void draw_stream(struct media *m, struct stream *s)
     static const GLfloat xy[] = {-1, -1, 1, -1, -1, 1, 1, 1};
     struct received_frame *f = s->current;
     int first = !s->uploaded; /* this picture's first draw */
-    if (!s->tex[0])
+    int oes = f->format == HM_DRM;
+    /* A texture name keeps the target it was first bound to: binding a DRM frame's external
+     * texture as GL_TEXTURE_2D fails (GL_INVALID_OPERATION). A stream can go from hardware
+     * frames to software ones (the next clip on the same port, or a helper that falls back), so
+     * new names where the kind changes. */
+    if (s->tex[0] && s->tex_oes != oes) {
+        if (s->image != EGL_NO_IMAGE_KHR) {
+            m->destroy_image(m->display, s->image);
+            s->image = EGL_NO_IMAGE_KHR;
+        }
+        glDeleteTextures(3, s->tex);
+        s->tex[0] = 0;
+    }
+    if (!s->tex[0]) {
         glGenTextures(3, s->tex);
-    if (f->format == HM_DRM) {
+        s->tex_oes = oes;
+    }
+    if (oes) {
         if (!s->uploaded && !import_drm(m, s, f)) {
             pthread_mutex_lock(&s->lock);
             if (s->current)
