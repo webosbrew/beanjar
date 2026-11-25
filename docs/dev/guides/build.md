@@ -549,7 +549,7 @@ steady. 30 s at 100 ticks a second resolves 0.1 % of a core. For each flagged pr
 guest step, `idle-threads`, samples its busiest threads 10 times 0.2 s apart (state, `wchan`, the syscall
 from `/proc/TID/syscall`, named for arm or x86-64), and the report lists its busiest threads with
 their CPU and wakeups per second: a busy loop holds the CPU with few voluntary switches, a
-short-sleep poll has many. The step adds about 65 s to a lane (2 s more for a flagged process).
+short-sleep poll has many. The step adds about 63 s to a lane (measured on the Pi under KVM), and about 4 s more when a process is flagged.
 The numbers of every process above 0.5 % of a core go into `<target>/idle-cpu.json`, the raw
 snapshots into `<target>/idle-cpu.txt`; the table's `idle cpu` column names the busiest process
 (`PASS tvservice:3%`) or the flagged ones (`WARN(legacy-broadcas)`, the comm as the kernel cuts
