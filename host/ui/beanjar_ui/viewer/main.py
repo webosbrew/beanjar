@@ -12,6 +12,7 @@ USAGE = """usage: beanjar-viewer BUS_ADDRESS [--size WxH] [--remote] [--remote-l
   [--no-statusbar] [--seconds N] [--straight-alpha] [--cursor-socket PATH] [--video-socket PATH]
   [--ir-socket PATH] [--media-socket PREFIX] [--capture-socket PATH]
   [--no-media] [--hwdec auto|none|TYPE] [--media-wav OUT.wav] [--media-latency MS] [--media-volume 0..2] [--media-mute]
+  [--sound-status PATH]
   [--no-audio] [--audio-wav OUT.wav] [--sdl-audio] [--media-silent] [--ui-dir DIR]
   [--capture OUT.ppm --capture-every MS] [--capture-control FILE --capture-every MS]
   [--hide-planes video,ui,cursor] (planes left out at start; More shows or hides them)
@@ -31,6 +32,7 @@ VALUED = (
     "media-wav",
     "media-latency",
     "media-volume",
+    "sound-status",
     "audio-wav",
     "hide-planes",
 )

@@ -99,6 +99,11 @@ check_media_mix = executable('check-viewer-mix', 'viewer/check-media-mix.c',
                  dependency('threads'), meson.get_compiler('c').find_library('m')],
   override_options: ['c_std=c11'])
 test('check-media-mix', check_media_mix, suite: ['unit', 'viewer'], timeout: 20)
+check_sound_status = executable('check-viewer-sound-status', 'viewer/check-sound-status.c',
+  '../../host/viewer/core/sound-status.c',
+  dependencies: meson.get_compiler('c').find_library('m'),
+  override_options: ['c_std=c11'])
+test('check-sound-status', check_sound_status, suite: ['unit', 'viewer'], timeout: 20)
 check_capture = executable('check-viewer-capture',
   'viewer/check-capture.c', '../../host/viewer/core/capture.c',
   dependencies: dependency('glib-2.0'),

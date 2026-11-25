@@ -139,12 +139,22 @@ static void fill(struct media *m, float *out, int frames, int64_t when)
     }
     /* The virtual AMP: compressed data always flows at standard volume; the
      * master gain and mute apply once, here, to what is heard and recorded,
-     * before the sum is clipped. */
+     * before the sum is clipped. The TV's own master volume and speaker mute
+     * (media_tv_gain) apply here too, as the guest's sound card applies them to
+     * the TV's own sound; a change ramps over this block instead of stepping. */
+    float tv = (float)m->tv_gain / 65536.0f, from = m->tv_applied;
+    m->tv_applied = tv;
     if (m->cfg.mute)
         memset(out, 0, (size_t)frames * 2 * sizeof(float));
-    else if (m->cfg.volume != 1.0)
+    else if (from != tv && frames > 0)
+        for (int i = 0; i < frames; i++) {
+            float g = (float)m->cfg.volume * (from + (tv - from) * (float)(i + 1) / (float)frames);
+            out[2 * i] *= g;
+            out[2 * i + 1] *= g;
+        }
+    else if (m->cfg.volume * tv != 1.0)
         for (int i = 0; i < frames * 2; i++)
-            out[i] *= (float)m->cfg.volume;
+            out[i] *= (float)m->cfg.volume * tv;
     for (int i = 0; i < frames * 2; i++)
         out[i] = out[i] > 1 ? 1 : out[i] < -1 ? -1 : out[i];
     if (m->probe)
@@ -172,6 +182,12 @@ static void callback(void *data, Uint8 *stream, int len)
 void media_fill(struct media *m, float *out, int frames, long long when)
 {
     fill(m, out, frames, (int64_t)when + m->latency_ns);
+}
+
+void media_tv_gain(struct media *m, unsigned q16)
+{
+    if (m)
+        m->tv_gain = q16 > 0x10000 ? 0x10000 : q16;
 }
 
 /* Without an SDL device: consume in real time, 10 ms at a time. */
@@ -637,6 +653,8 @@ struct media *media_open(const struct media_config *cfg)
     m->cfg = *cfg;
     if (!(m->cfg.volume > 0))
         m->cfg.volume = 1.0; /* non-positive: standard volume */
+    m->tv_gain = 0x10000;    /* unity until the TV's volume is known */
+    m->tv_applied = 1.0f;
     m->cfg.prefix = strdup(cfg->prefix);
     m->cfg.wav = cfg->wav ? strdup(cfg->wav) : NULL;
     pthread_mutex_init(&m->audio_lock, NULL);

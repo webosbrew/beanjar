@@ -15,6 +15,7 @@
 #include "capture.h"
 #include "pace.h"
 #include "disable.h"
+#include "sound-status.h"
 #include <errno.h>
 #include "../../../include/webos-ir.h"
 #include <EGL/egl.h>
@@ -69,6 +70,9 @@ static const char listener_xml[] =
 struct wv {
     /* options */
     char *addr, *cursor_path, *video_path, *ir_path, *media_prefix, *hwdec, *audio_wav, *media_wav;
+    char *sound_path;
+    /* the TV's master volume for the media mix (sound-status.h) */
+    struct sound_status sound;
     int no_audio, sdl_audio, no_media, media_latency, headless, media_silent, media_mute;
     double media_volume;
     /* callbacks */
@@ -299,6 +303,7 @@ int wv_option(struct wv *v, const char *name, const char *value)
         {"hwdec", &v->hwdec},
         {"audio-wav", &v->audio_wav},
         {"media-wav", &v->media_wav},
+        {"sound-status", &v->sound_path},
     };
     struct {
         const char *name;
@@ -1520,6 +1525,8 @@ void wv_start(struct wv *v)
         if (comma)
             *comma = 0;
         char *dir = g_path_get_dirname(buspath);
+        if (!v->sound_path)
+            v->sound_path = g_build_filename(dir, "sound-status", NULL);
         int hz = vm_info_int(dir, "panel_hz");
         if (hz > 0)
             v->panel_hz = hz;
@@ -1547,6 +1554,10 @@ void wv_start(struct wv *v)
                                   .mute = v->media_mute,
                                   .external_clock = v->sink != NULL};
         v->video.media = media_open(&mc);
+        /* the TV's master volume and speaker mute, as the guest's sound card applies them */
+        sound_status_init(&v->sound, v->sound_path);
+        if (sound_status_poll(&v->sound, g_get_monotonic_time()))
+            media_tv_gain(v->video.media, v->sound.gain);
     }
     g_free(default_cursor);
     g_free(default_video);
@@ -1638,6 +1649,8 @@ int wv_poll(struct wv *v)
         touch(v);
     if (media_update(v->video.media))
         touch(v);
+    if (v->video.media && sound_status_poll(&v->sound, g_get_monotonic_time()))
+        media_tv_gain(v->video.media, v->sound.gain);
     capture_poll(&v->capture, capture_render_frame, v);
     reconnect_poll(v);
     if (signalled)
@@ -2395,6 +2408,7 @@ int wv_finish(struct wv *v, const char *extra)
     ir_close(&v->ir);
     media_close(v->video.media);
     v->video.media = NULL;
+    sound_status_close(&v->sound);
     video_close(&v->video);
     frame_drop(v);
     turn_drop(v);
@@ -2418,6 +2432,7 @@ int wv_finish(struct wv *v, const char *extra)
     g_free(v->hwdec);
     g_free(v->audio_wav);
     g_free(v->media_wav);
+    g_free(v->sound_path);
     g_free(v);
     return failed;
 }

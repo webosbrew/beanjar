@@ -536,9 +536,12 @@ raw compressed sockets cannot be fed directly to this viewer.
   latency to compensate (default: two SDL buffers). Headless without `--sdl-audio`, or when no
   device opens, a thread consumes it in real time instead, as it does with `--media-silent` in a
   window too (heard nowhere: `scripts/regress --tv --viewer`'s decode step). `--media-wav OUT.wav`
-  records the mix (48 kHz float stereo). Media audio does not go through the guest's volume:
-  compressed data always flows at standard volume, and the viewer's virtual AMP (`--media-volume`,
-  `--media-mute`) is the only gain on its final mix.
+  records the mix (48 kHz float stereo). Compressed data always flows at standard volume; the
+  TV's master volume and speaker mute apply to the final mix as the guest's sound card applies
+  them to the TV's own sound: the gain the firmware set (lgemu.ko's `snd.c`) comes as a line at
+  each change in `sound-status` beside the bus socket (`--sound-status PATH` for another bus
+  address; none: unity), looked at every 100 ms, and a change ramps over one mixing block. The
+  viewer's virtual AMP (`--media-volume`, `--media-mute`) multiplies on top.
 - The helper's `RUN_DIR/media-helper.log` (rotated to `media-helper.log.1` at 4 MiB,
   rate-limited per line kind and port: docs/dev/architecture/video.md) records codec selection,
   lifecycle and decoder statistics (`decode N video session=S: h264 sw packets= decoded= dropped= errors= decode=...`).

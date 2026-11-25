@@ -48,6 +48,8 @@ static void setup(double volume, int mute)
     memset(&m, 0, sizeof m);
     m.cfg.volume = volume;
     m.cfg.mute = mute;
+    m.tv_gain = 0x10000; /* as media_open leaves it */
+    m.tv_applied = 1.0f;
     pthread_mutex_init(&m.audio_lock, NULL);
     add_stream(0, 0.5f);
 }
@@ -80,9 +82,49 @@ int main(void)
     check(out, 0.0f, "mute silences the mix while consuming");
     assert(m.streams[0].audio_frames == FRAMES);
 
+    /* the TV's volume: the gain the guest's sound card applies (Q16), held from block to block */
+    setup(1.0, 0);
+    media_tv_gain(&m, 0x8000);
+    m.tv_applied = 0.5f; /* already there: no ramp */
+    fill(&m, out, FRAMES, WHEN);
+    check(out, 0.25f, "TV volume at Q16 0x8000 halves the mix");
+
+    /* on top of the virtual AMP's volume */
+    setup(0.5, 0);
+    media_tv_gain(&m, 0x8000);
+    m.tv_applied = 0.5f;
+    fill(&m, out, FRAMES, WHEN);
+    check(out, 0.125f, "TV volume and the virtual AMP multiply");
+
+    /* the TV muted (gain 0) silences while still consuming */
+    setup(1.0, 0);
+    media_tv_gain(&m, 0);
+    m.tv_applied = 0.0f;
+    fill(&m, out, FRAMES, WHEN);
+    check(out, 0.0f, "TV mute silences the mix");
+    assert(m.streams[0].audio_frames == FRAMES);
+
+    /* values above unity are unity, as on the guest's card */
+    media_tv_gain(&m, 0x20000);
+    assert(m.tv_gain == 0x10000);
+
+    /* a change ramps over one block to the new gain, then holds */
+    setup(1.0, 0);
+    media_tv_gain(&m, 0);
+    fill(&m, out, FRAMES, WHEN);
+    for (int i = 0; i < FRAMES; i++) {
+        float want = 0.5f * (1.0f - (float)(i + 1) / FRAMES);
+        assert(fabsf(out[2 * i] - want) < 1e-6f && out[2 * i] == out[2 * i + 1]);
+        assert(i == 0 || out[2 * i] < out[2 * (i - 1)]);
+    }
+    assert(out[2 * FRAMES - 1] == 0.0f && m.tv_applied == 0.0f);
+    printf("PASS a TV volume change ramps over one block\n");
+
     /* the gain applies to the sum before it is clipped: 0.75 + 0.75 at 0.5 is 0.75, not 0.5 */
     memset(&m, 0, sizeof m);
     m.cfg.volume = 0.5;
+    m.tv_gain = 0x10000;
+    m.tv_applied = 1.0f;
     pthread_mutex_init(&m.audio_lock, NULL);
     add_stream(0, 0.75f);
     add_stream(1, 0.75f);

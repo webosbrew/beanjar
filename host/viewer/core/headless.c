@@ -194,7 +194,7 @@ static const char usage[] =
     "  [--cursor-socket PATH] [--video-socket PATH] [--ir-socket PATH] [--media-socket PREFIX] "
     "[--capture-socket PATH]\n"
     "  [--no-media] [--hwdec auto|none|TYPE] [--media-wav OUT.wav] [--media-latency MS] "
-    "[--media-volume 0..2] [--media-mute]\n"
+    "[--media-volume 0..2] [--media-mute] [--sound-status PATH]\n"
     "  [--no-audio] [--audio-wav OUT.wav] [--sdl-audio] [--media-silent] [--replay FILE]\n"
     "  [--screenshot OUT.ppm [--screenshot-every MS | --screenshot-after MS] [--osd-alpha]] "
     "[--capture-sink] [--capture-control FILE "
@@ -210,9 +210,19 @@ int main(int argc, char **argv)
     wv_signals();
     struct wv *v = wv_new();
     wv_option(v, "headless", NULL);
-    static const char *const valued[] = {
-        "cursor-socket", "video-socket",  "ir-socket",    "media-socket", "capture-socket", "hwdec",
-        "media-wav",     "media-latency", "media-volume", "audio-wav",    "hide-planes",    NULL};
+    static const char *const valued[] = {"cursor-socket",
+                                         "video-socket",
+                                         "ir-socket",
+                                         "media-socket",
+                                         "capture-socket",
+                                         "hwdec",
+                                         "media-wav",
+                                         "media-latency",
+                                         "media-volume",
+                                         "audio-wav",
+                                         "hide-planes",
+                                         "sound-status",
+                                         NULL};
     static const char *const flags[] = {"straight-alpha", "no-media", "no-audio",     "sdl-audio",
                                         "osd-alpha",      "no-osd",   "media-silent", "media-mute",
                                         "no-cursor",      NULL};

@@ -111,6 +111,11 @@ struct media {
     FILE *wav;
     unsigned long long wav_frames;
     pthread_mutex_t audio_lock;
+    /* the TV's master volume and speaker mute (media_tv_gain): the gain the guest's sound card
+     * applies, Q16, set by the main thread; and the gain the mix last ended at, the mixing
+     * thread's, from which a change ramps over one block */
+    volatile unsigned tv_gain;
+    float tv_applied;
     /* GL */
     GLuint yuv, oes;
     GLint yuv_planes, yuv_scale_y, yuv_scale_c, yuv_matrix, yuv_offset, oes_flip;

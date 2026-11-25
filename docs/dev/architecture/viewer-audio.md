@@ -23,6 +23,19 @@ decoded host IPC. The viewer maps/copies those samples, releases the storage, an
 playback and drift correction against the helper's snapshot of the guest pipeline clock.
 Without a sound device the headless path consumes and records samples in real time.
 
+LG's master volume and speaker mute apply to media audio as they do to guest PCM, at one place
+on the host: the viewer's final media mix (`core/media.c`). The guest's card scales its own PCM
+in the guest kernel, so the same value has to leave the guest: lgemu.ko's `snd.c` gives the gain
+it sets on the card (Q16, 0 when muted) on `/dev/lgemu-sound` as a line at each change, the
+initramfs's `virtio-sound` pump copies it to the `webos.sound` port, and QEMU writes it to
+`sound-status` beside `qemu.pid`. The core (`core/sound-status.c`) reads the file's last whole
+line every 100 ms, beside the bus socket by default or `--sound-status PATH`; a missing or empty
+file is unity, as the card is before the firmware sets a volume. A change ramps over one mixing
+block. The viewer's own virtual AMP (`--media-volume`, `--media-mute`) multiplies on top. A viewer
+whose bus address is not a unix socket in the run directory, with no `--sound-status`, plays
+media at unity. Which firmware lines reach the card's gain at all is listed in
+[viewer audio research](../../research/viewer-audio.md#implemented-the-volume-after-the-pcm-2026-10-04).
+
 The helper continues decoding and retiring expired output without a viewer; the viewer has no
 codec or resampler dependency. `MEDIAHUB=0` supplies no media decoder. See
 [the video architecture](video.md#transport-and-session-ownership)

@@ -34,5 +34,9 @@ int media_decoding(const struct media *m);
 /* With external_clock: the media mix for frames 48 kHz float stereo frames due at host monotonic
  * time when (ns; the configured latency is added), written over out. Any one thread. */
 void media_fill(struct media *m, float *out, int frames, long long when);
+/* The TV's master volume and speaker mute, as the gain in Q16 (0x10000 unity, 0 silence) the
+ * guest's sound card applies to the TV's own sound (sound-status.h), for the media mix too, on
+ * top of the virtual AMP's volume and mute. Unity until it is set. Main thread. */
+void media_tv_gain(struct media *m, unsigned q16);
 void media_close(struct media *m);
 #endif

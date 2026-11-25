@@ -1,1 +1,1 @@
-core/core.c core/input.c core/ir.c core/cursor.c core/audio.c core/pcm-out.c core/video.c core/media.c core/media-ipc.c core/media-frame.c core/peer.c core/sdl-audio.c core/capture.c ../media/ipc.c
+core/core.c core/input.c core/ir.c core/cursor.c core/audio.c core/pcm-out.c core/video.c core/media.c core/media-ipc.c core/media-frame.c core/peer.c core/sdl-audio.c core/capture.c core/sound-status.c ../media/ipc.c
