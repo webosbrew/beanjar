@@ -121,10 +121,13 @@ fbdev.
   window. Measured under TCG: fxui's first 1920x1080 frame took 116 ms to read back and 65 ms to
   copy into the window's two surfaces.
 
-Measured on the PC (TCG), without the packed `/dev/lg` nodes: after HOME the screen shows RELEASE's
-first-use wizard ("Welcome! Press the WHEEL(OK) button"), a full-panel 1280x720 OSD whose top and
-bottom bands are a translucent black shade over the (black) video plane; it takes no key, since
-none reaches RELEASE without the micom (below).
+Measured on the PC (TCG), without the packed `/dev/lg` nodes: on a VM whose eMMC NVM earlier boots
+had written (its ring's magic valid), procmgr showed its OSD about 20 s after start and RELEASE drew
+its first-use wizard ("Welcome! Press the WHEEL(OK) button"), a full-panel 1280x720 OSD whose top and
+bottom bands are a translucent black shade over the (black) video plane; it took no key, since none
+reaches RELEASE without the micom (below). On a new VM (the NVM ring blank, "initialize with
+0xFF") procmgr sets only its cursor plane and the screen stays black, 40 minutes after start too:
+RELEASE gets no further than where the micom would answer.
 
 ## Secure boot and the micom
 
