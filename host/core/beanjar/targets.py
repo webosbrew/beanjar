@@ -1502,6 +1502,9 @@ def _target(target):
 # LG's v4l2_vsc names its chip in QUERYCAP's driver by the chip revision's high byte (the O24
 # ombre kernel's table; O26's kernels add 0x29)
 LG_VSC_SOC = {0x24: "o20", 0x25: "e60", 0x26: "o22", 0x27: "m23", 0x28: "o24", 0x29: "o26"}
+# its windows, video30 on: four on O24 and O26 (their kernels register video30 to video33 and
+# answer the plane count 4 for these chips), two elsewhere
+LG_VSC_WINDOWS = {0x28: 4, 0x29: 4}
 
 
 def _lg_chip_rev(target):
@@ -1520,9 +1523,10 @@ def _lg_scaler(target):
     if not screen:
         return ()
     rev = _lg_chip_rev(target)
-    name = LG_VSC_SOC.get(rev >> 8) if rev is not None else None
+    chip = rev >> 8 if rev is not None else None
+    name = LG_VSC_SOC.get(chip)
     return (
-        "v4l2_vsc=1",
+        f"v4l2_vsc={LG_VSC_WINDOWS.get(chip, 2)}",
         f"vsc_screen={screen[0]},{screen[1]}",
         *((f"vsc_soc={name}",) if name else ()),
     )

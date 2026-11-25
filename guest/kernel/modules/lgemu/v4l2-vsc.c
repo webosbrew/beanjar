@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-only
-/* LG's V4L2 scaler (v4l2-ext VSC) as libval-starfish's V4l2vsc drives it, control-only: MAIN and
- * SUB at /dev/video30 and video31, their VDO routes at video28 and video29. The stock videooutputd
+/* LG's V4L2 scaler (v4l2-ext VSC) as libval-starfish's V4l2vsc drives it, control-only: its
+ * windows MAIN, SUB0.. at /dev/video30 on (two, four on O24 and O26, as their kernels register),
+ * the VDO routes of MAIN and SUB0 at video28 and video29. The stock videooutputd
  * sets the regions and VDEC ports; lgemu transports that real state to host decoding. Unsupported
  * image processing and frame readback return errors. LG's own interface, the same calls on every
  * SoC whose VAL uses it (O22..O22N2 over lg115x.ko, LM21AN..LM21ANN over mstar-utopia.ko):
- * v4l2_vsc=1 and the panel's coordinates (vsc_screen) turn it on. */
+ * v4l2_vsc=<windows> and the panel's coordinates (vsc_screen) turn it on. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": vsc: " fmt
 #include <linux/compat.h>
 #include <linux/fs.h>
@@ -22,8 +23,8 @@
 #include "lgemu-drv.h"
 #include "../../../../include/webos-video.h"
 
-#define WINDOWS        2
-#define NODES          (WINDOWS * 2)
+#define WINDOWS        4 /* at most */
+#define VDO_NODES      2
 #define EVENTS         16
 #define SUBS           8
 #define S_EXT          0xc0185648
@@ -45,9 +46,10 @@
 #define EV_MUTE_OFF    0x0098291e
 #define EV_APPLIED     0x00982922
 
-static bool v4l2_vsc;
-module_param(v4l2_vsc, bool, 0444);
-MODULE_PARM_DESC(v4l2_vsc, "enable the modeled MAIN/SUB V4L2 scaler (video30,video31)");
+static unsigned int v4l2_vsc;
+module_param(v4l2_vsc, uint, 0444);
+MODULE_PARM_DESC(v4l2_vsc, "the modelled V4L2 scaler's windows, video30 on (0: none; 2, or 4 on "
+                           "O24 and O26; at most 4)");
 static char *vsc_soc = "lg-vsc";
 module_param(vsc_soc, charp, 0444);
 MODULE_PARM_DESC(vsc_soc, "QUERYCAP's driver: the chip's name as LG's v4l2_vsc gives it (o22, o24, "
@@ -196,11 +198,11 @@ static long extended(struct vsc_file *f, unsigned int cmd, void __user *arg)
     size = control[1];
     /* libval-starfish's V4l2vsc::getPlaneNum (webOS 24 and 25) sizes its scalers by this into an
      * uninitialised word, failure or not; nyxVscaler (webOS 26) takes 1 to 6 and falls back to 2.
-     * The scaler has WINDOWS windows. */
+     * The scaler has v4l2_vsc windows (O24's and O26's kernels: 4, keyed on the chip). */
     if (id == PLANE_NUM) {
         if (cmd != G_EXT || size != 4)
             return -EINVAL;
-        return put_user(WINDOWS, (u32 __user *)compat_ptr(control[3])) ? -EFAULT : 0;
+        return put_user(v4l2_vsc, (u32 __user *)compat_ptr(control[3])) ? -EFAULT : 0;
     }
     if (id != REGION && id != CONNECT && id != ORBIT_WINDOW && id != ORBIT_MOVE)
         return -EOPNOTSUPP;
@@ -376,13 +378,13 @@ static int vsc_open(struct inode *inode, struct file *file)
 {
     unsigned int index = iminor(inode) - MINOR(cdev.dev);
     struct vsc_file *f;
-    if (index >= NODES)
+    if (index >= v4l2_vsc + VDO_NODES)
         return -ENODEV;
     f = kzalloc(sizeof(*f), GFP_KERNEL);
     if (!f)
         return -ENOMEM;
-    f->index = index % WINDOWS;
-    f->vdo = index >= WINDOWS;
+    f->vdo = index >= v4l2_vsc;
+    f->index = f->vdo ? index - v4l2_vsc : index;
     init_waitqueue_head(&f->wait);
     mutex_lock(&lock);
     list_add(&f->link, &files);
@@ -422,21 +424,23 @@ int lgemu_vsc_init(void)
     int err;
     if (!v4l2_vsc)
         return 0;
+    if (v4l2_vsc > WINDOWS)
+        return -EINVAL;
     if (vsc_screen_count != 2 || !vsc_screen[0] || !vsc_screen[1])
         return -EINVAL;
     err = class_register(&vsc_class);
     if (err)
         return err;
     class_added = true;
-    err = lgemu_cdev_add(&cdev, 0, 0, NODES, "v4l2-vsc", &fops);
+    err = lgemu_cdev_add(&cdev, 0, 0, v4l2_vsc + VDO_NODES, "v4l2-vsc", &fops);
     if (err) {
         class_unregister(&vsc_class);
         class_added = false;
         return err;
     }
-    for (unsigned int i = 0; i < NODES; i++) {
+    for (unsigned int i = 0; i < v4l2_vsc + VDO_NODES; i++) {
         struct device *dev = device_create(&vsc_class, NULL, cdev.dev + i, NULL, "video%u",
-                                           i < WINDOWS ? 30 + i : 28 + i - WINDOWS);
+                                           i < v4l2_vsc ? 30 + i : 28 + i - v4l2_vsc);
         if (IS_ERR(dev)) {
             while (i--)
                 device_destroy(&vsc_class, cdev.dev + i);
@@ -454,7 +458,7 @@ void lgemu_vsc_exit(void)
 {
     if (!cdev.added)
         return;
-    for (unsigned int i = 0; i < NODES; i++)
+    for (unsigned int i = 0; i < v4l2_vsc + VDO_NODES; i++)
         device_destroy(&vsc_class, cdev.dev + i);
     lgemu_cdev_del(&cdev);
     if (class_added) {

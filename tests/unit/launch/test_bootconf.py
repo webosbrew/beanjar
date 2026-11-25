@@ -59,17 +59,21 @@ class BootConfTest(unittest.TestCase):
             ("lm21ann", "number1"),
             ("lm21u", "kisscurl"),
             ("lm21u", "ombre"),
+            ("o24", "ombre"),
         ):
             with tempfile.NamedTemporaryFile("w", suffix=".conf") as f:
                 f.write(targets.boot_conf((chip, release), []))
                 f.flush()
                 conf = boot_conf(f.name, ("MODULE_PARAMS_lgemu", "MODULE_PARAMS_lg115x"))
             params = conf["MODULE_PARAMS_lgemu"].split()
-            self.assertIn("v4l2_vsc=1", params)
+            # its windows: four on O24 (its kernel's video30 to video33), two elsewhere
+            self.assertIn(f"v4l2_vsc={4 if chip == 'o24' else 2}", params)
             # The scaler's panel space: UHD, but the StanbyME's (lm21u) panel is FHD.
             screen = "1920,1080" if chip == "lm21u" else "3840,2160"
             self.assertIn(f"vsc_screen={screen}", params)
-            self.assertNotIn("v4l2_vsc=1", conf["MODULE_PARAMS_lg115x"].split())
+            self.assertFalse(
+                any(w.startswith("v4l2_vsc=") for w in conf["MODULE_PARAMS_lg115x"].split())
+            )
 
     def test_v4l2_capture(self):
         """video60 (v4l2_capture=1) is the chip's vendor module's, on every captureservice target
