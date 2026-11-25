@@ -402,6 +402,16 @@ ORPHANS = (
 )
 _print = threading.Lock()
 
+# set once the run is interrupted (Ctrl-C, SIGTERM, SIGHUP; schedule_hosts): each lane stops at its
+# next command (Host.run), its guest step's wait at once, and goes to the stop of its VM
+INTERRUPT = threading.Event()
+
+
+class Interrupted(BaseException):
+    """A lane's command not run, or its wait cut short, because the run was interrupted (INTERRUPT).
+    Not an Exception: nothing on the way to run_target, which stops the VM, may take it for a
+    step's failure."""
+
 
 def regress_unit(iid):
     """The unit of the regress VM iid (a target; None: the checkout VM), the same on every VM host:
@@ -941,6 +951,9 @@ class Host:
     def __init__(self, host, dest, dry, inst=None):
         self.host, self.dest, self.dry = host, dest, dry
         self.inst = inst or Instance()
+        # a lane's steps run (run_target): once INTERRUPT is set, a command that is not protected
+        # raises Interrupted instead of running; False again for the lane's stop
+        self.lane = False
 
     def argv(self, cmd):
         prefix = "".join(f"{k}={shlex.quote(v)} " for k, v in self.inst.env.items())
@@ -958,16 +971,23 @@ class Host:
             ]
         return ["sh", "-c", cmd]
 
-    def run(self, cmd, timeout, protected=False):
+    def run(self, cmd, timeout, protected=False, abort=False):
         """(exit status, output); 124 when timeout passes (the command killed). protected: in a
         session of its own, so an interrupt of the run (Ctrl-C reaches the whole foreground group)
-        cannot cut it short: the stop of a VM must finish."""
+        cannot cut it short: the stop of a VM must finish. In a lane's steps (self.lane), an
+        interrupted run (INTERRUPT) raises Interrupted instead of starting the command, and abort
+        ends one already running then too (its process group here; a remote command loses its ssh,
+        so abort is only for one that ends by itself once the VM is gone: guest_step's waits)."""
+        if self.lane and not protected and INTERRUPT.is_set():
+            raise Interrupted(cmd)
         where = self.host or "local"
         if self.inst.iid:
             where += f" {self.inst.iid}"
         if self.dry:
             say_raw(f"  [{where}] {cmd}")
             return 0, ""
+        if abort and self.lane and not protected:
+            return self._run_abortable(cmd, timeout)
         try:
             r = subprocess.run(
                 self.argv(cmd),
@@ -983,6 +1003,47 @@ class Host:
             out = e.output or b""
             return 124, out.decode(errors="replace")
         return r.returncode, r.stdout.decode(errors="replace")
+
+    ABORT_POLL = 0.5  # s between looks at INTERRUPT while an abortable command runs
+
+    def _run_abortable(self, cmd, timeout):
+        """Host.run's abort: the command in a session of its own (Ctrl-C does not reach it), its
+        process group ended (TERM, then KILL) once INTERRUPT is set, and Interrupted raised."""
+        p = subprocess.Popen(
+            self.argv(cmd),
+            cwd=TOP,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=dict(os.environ, **self.inst.env) if not self.host else None,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                try:
+                    out, _ = p.communicate(timeout=self.ABORT_POLL)
+                    return p.returncode, out.decode(errors="replace")
+                except subprocess.TimeoutExpired:
+                    pass
+                if INTERRUPT.is_set():
+                    raise Interrupted(cmd)
+                if time.monotonic() >= deadline:
+                    p.kill()
+                    out, _ = p.communicate()
+                    return 124, (out or b"").decode(errors="replace")
+        except BaseException:
+            for sig, wait in ((signal.SIGTERM, 5), (signal.SIGKILL, 5)):
+                try:
+                    os.killpg(p.pid, sig)
+                except ProcessLookupError:
+                    break
+                try:
+                    p.communicate(timeout=wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+            raise
 
 
 def local(cmd, dry, env=None):
@@ -1026,6 +1087,7 @@ class Result:
         # VmHWM and VmRSS before the stop), swap_start_mb and swap_end_mb (the host's)
         self.memory = {}
         self.oom = None  # an OOM kill on the host during the lane: {count, kills, own}
+        self.interrupted = ""  # the step the run's interrupt stopped the lane at (INTERRUPT)
 
     @property
     def ok(self):
@@ -1036,7 +1098,15 @@ class Result:
             and not self.orphans
             and not self.restart
             and not self.oom
+            and not self.interrupted
         )
+
+    @property
+    def verdict(self):
+        """The target's result: SKIP, INTERRUPTED (the run's interrupt stopped it), PASS or FAIL."""
+        if self.skipped:
+            return "SKIP"
+        return "INTERRUPTED" if self.interrupted else "PASS" if self.ok else "FAIL"
 
     def row(self):
         if self.tv:
@@ -1049,7 +1119,7 @@ class Result:
                 + [
                     f"{self.window[0]}-{self.window[1]}",
                     "-" if self.seconds is None else f"{self.seconds:.0f} s",
-                    "SKIP" if self.skipped else "PASS" if self.ok else "FAIL",
+                    self.verdict,
                 ]
             )
         last = self.shot if self.mode == "graphics" else self.steps["tvservice"]
@@ -1071,7 +1141,7 @@ class Result:
             self.steps["capture"],
             f"{self.window[0]}-{self.window[1]}",
             "-" if self.seconds is None else f"{self.seconds:.0f} s",
-            "SKIP" if self.skipped else "PASS" if self.ok else "FAIL",
+            self.verdict,
         ]
 
 
@@ -1222,6 +1292,7 @@ def guest_step(h, a, r, step, arg, out):
     rc, _ = h.run(
         f"timeout {wait} sh -c '{restart_check(seen)}until [ -f {f} ]; do sleep 2; {restart_check(seen)}done'",
         wait + 30,
+        abort=True,
     )
     if rc:
         h.run(f"{GET_OUT} {rel}.txt {out}/{step}.txt 2>/dev/null; true", 30)
@@ -1247,7 +1318,9 @@ def guest_step(h, a, r, step, arg, out):
         # shows on the host
         settle = int(RESTART_SETTLE * a.scale)
         rc, _ = h.run(
-            f"timeout {settle} sh -c 'while :; do {restart_check(seen)}sleep 2; done'", settle + 30
+            f"timeout {settle} sh -c 'while :; do {restart_check(seen)}sleep 2; done'",
+            settle + 30,
+            abort=True,
         )
         check_restart(h, step, rc)
     return status
@@ -2467,6 +2540,7 @@ def follow_restart(h, a, r, target, e):
         f'timeout {wait} sh -c \'until n=$(cat "$RUN_DIR/restarts" 2>/dev/null); '
         f'[ "${{n:-0}}" = {n} ] && [ ! -e "$RUN_DIR/restarting" ]; do sleep 2; done\'',
         wait + 30,
+        abort=True,
     )
     if rc:
         r.restart = (
@@ -2483,6 +2557,16 @@ def follow_restart(h, a, r, target, e):
     r.idle, r.idle_item = None, None
     r.boot_done, r.tvservice, r.shot, r.standby = "-", "", "-", "-"
     return True
+
+
+def interrupted(r, target):
+    """The run's interrupt stopped the lane: the step it was at (the first not yet judged; the
+    start's own when it ran to its end) is INTERRUPTED, and so is the target (r.interrupted)."""
+    step = next((s for s, v in r.steps.items() if v == "-" and s != "stop"), "stop")
+    if step != "stop":
+        r.steps[step] = "INTERRUPTED"
+    r.interrupted = step
+    say(f"{target}: interrupted at {step}: stopping its VM")
 
 
 def run_target(h, a, target, fw):
@@ -2503,6 +2587,7 @@ def run_target(h, a, target, fw):
     if a.dry_run:
         verdict[0] = "dry"
     oom_since = oom_before = None
+    h.lane = True
     try:
         say(f"{target}: start ({fw})")
         rc, _ = h.run(
@@ -2540,7 +2625,11 @@ def run_target(h, a, target, fw):
                 if not follow_restart(h, a, r, target, e):
                     break
         return r
+    except Interrupted:
+        interrupted(r, target)
+        return r
     finally:
+        h.lane = False  # the stop and what follows run whatever happened
         say(f"{target}: stop")
         if a.viewer:
             viewer(h, out, False)
@@ -2655,7 +2744,7 @@ def run_target(h, a, target, fw):
                 r.device_census = {"status": "report-error", "error": type(e).__name__}
                 say(f"{target}: device census report error: {type(e).__name__}")
         say(
-            f"{target}: {'PASS' if r.ok else 'FAIL'} in {r.seconds:.0f} s "
+            f"{target}: {r.verdict} in {r.seconds:.0f} s "
             + " ".join(f"{s}={v}" for s, v in r.steps.items())
             + (f" restarts={r.restarts}" if r.restarts else "")
             + (f" ({r.restart})" if r.restart else "")
@@ -2666,6 +2755,14 @@ def schedule(items, jobs, work, stop=lambda r: False):
     """work(item) for each of items in their order, at most jobs at once (schedule_hosts with one
     host)."""
     return schedule_hosts(items, [(None, jobs)], lambda item, _host: work(item), stop=stop)
+
+
+class RunInterrupted(KeyboardInterrupt):
+    """schedule_hosts was interrupted: results, the [(item, result)] of the items that ran."""
+
+    def __init__(self, results):
+        super().__init__()
+        self.results = results
 
 
 REFUSED = object()  # work's answer for an item its host will not start: it goes back to the queue
@@ -2680,8 +2777,9 @@ def schedule_hosts(
     prepared and says whether it is}: a host's slots take items only once it is, and none if it
     failed, while the other hosts' go on. Once stop(result) holds for one, no further item starts
     (those running finish). [(item, result)] of the items that ran, in items' order. A
-    KeyboardInterrupt starts nothing more and waits for the running ones (each ends by stopping
-    its VM). work may answer REFUSED: the host takes no more items and this one goes back in its
+    KeyboardInterrupt starts nothing more, sets INTERRUPT (each running lane stops at its next
+    command and stops its VM), waits for the running ones and raises RunInterrupted with the
+    results so far. work may answer REFUSED: the host takes no more items and this one goes back in its
     place in the queue, for another host that can run it."""
     lock = threading.Lock()
     pending = list(enumerate(items))
@@ -2714,22 +2812,24 @@ def schedule_hosts(
         for host, n in slots
         for _ in range(min(n, len(items)))
     ]
-    for t in threads:
-        t.start()
     try:
+        # started inside: an interrupt as they start still stops the ones already running
+        for t in threads:
+            t.start()
         for t in threads:
             t.join()
     except KeyboardInterrupt:
+        INTERRUPT.set()
         with lock:
             halted.append(None)
-        say("interrupted: waiting for the running targets to stop their VMs")
+        say("interrupted: the running targets stop at their current step and stop their VMs")
         for t in threads:
             while t.is_alive():
                 try:
                     t.join()
                 except KeyboardInterrupt:
                     pass
-        raise
+        raise RunInterrupted([done[i] for i in sorted(done)]) from None
     return [done[i] for i in sorted(done)]
 
 
@@ -3536,6 +3636,8 @@ def lanes(a, sel, run, skipped, hosts):
         return item[0] in skipped or item[0] in missing or host in where[item[0]]
 
     def stop(r):
+        if r.interrupted:
+            return True  # the run is interrupted: nothing more starts anyway
         if r.orphans:
             say(f"{r.target}: left processes behind; starting no more targets")
             return True
@@ -3568,7 +3670,9 @@ def lanes(a, sel, run, skipped, hosts):
         # a slot for a host with nothing to run still reports the skipped and not-run targets
         busy = [(host, n) for host, n in slots.items() if n] or [(hosts[0], 1)]
         results = [r for _, r in schedule_hosts(order, busy, work, can, stop, ready=ready)]
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as e:
+        # the lanes that ran, the interrupted ones among them, are in the summary
+        results = [r for _, r in getattr(e, "results", [])]
         say("interrupted")
     for host in a.hosts:
         if host in prepared and not prepared[host]:
@@ -3652,6 +3756,7 @@ def lanes(a, sel, run, skipped, hosts):
                         orphans=r.orphans,
                         restarts=r.restarts,
                         restart=r.restart,
+                        interrupted=r.interrupted,
                         ok=r.ok,
                         skipped=r.skipped,
                         failed=r.failed,

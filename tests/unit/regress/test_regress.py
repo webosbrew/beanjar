@@ -1376,7 +1376,7 @@ class IdentityTest(unittest.TestCase):
         """The started VM's MAC, serial and identity directory, as its launcher prints them."""
 
         class H:
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 self.cmd = cmd
                 return (
                     0,
@@ -1419,7 +1419,7 @@ class HostFirmwareTest(unittest.TestCase):
             os.chmod(launcher, 0o755)
 
             class H:
-                def run(self, cmd, timeout, protected=False):
+                def run(self, cmd, timeout, protected=False, abort=False):
                     r = subprocess.run(["sh", "-c", cmd], cwd=d, capture_output=True, text=True)
                     return r.returncode, r.stdout + r.stderr
 
@@ -1435,7 +1435,7 @@ class HostFirmwareTest(unittest.TestCase):
             def __init__(self, *args, **kw):
                 pass
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 return 0, f"dir /srv/beanjar/firmware\nfw {WT1H} /srv/beanjar/firmware/{WT1H}\n"
 
         a, sel = regress.parse(["--target", "h13-afro,m2-dreadlocks"], found=FOUND, env={})
@@ -1461,7 +1461,7 @@ class HostFirmwareTest(unittest.TestCase):
             def __init__(self, host, *args, **kw):
                 self.host = host
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 fws = (WT1H, W16R) if self.host == "pi" else (WT1H,)
                 return 0, "dir /srv/fw\n" + "".join(f"fw {n} /srv/fw/{n}\n" for n in fws)
 
@@ -1512,7 +1512,7 @@ class HostFirmwareTest(unittest.TestCase):
             def __init__(self, rc, out):
                 self.r = (rc, out)
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 return self.r
 
         self.assertEqual(
@@ -1807,7 +1807,7 @@ class JobsTest(unittest.TestCase):
             def __init__(self, rc, out):
                 self.r = (rc, out)
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 return self.r
 
         self.assertEqual(
@@ -2019,7 +2019,7 @@ class MemoryBookingTest(unittest.TestCase):
         class H:
             host = "rock"
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 return 0, "6\nMemAvailable:    3700000 kB\n" + "1416000\n" * 4 + "1800000\n" * 2
 
         cpus, avail = regress.host_capacity(H())
@@ -2287,7 +2287,7 @@ class ReadyLineTest(unittest.TestCase):
             inst = regress.Instance("fake")
             host = None
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 return 0, ""
 
         def step(h, a, r, name, arg, out):
@@ -2369,7 +2369,7 @@ class FirstBootRestartTest(unittest.TestCase):
             inst = regress.Instance("fake")
             host = None
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 return (back, "") if "until n=" in cmd else (0, "")
 
         def step(h, a, r, name, arg, out):
@@ -2469,7 +2469,7 @@ class GuestStepTest(unittest.TestCase):
         said = []
 
         class H(regress.Host):
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 console = " && host/scripts/vm-launcher console "
                 if console in cmd:
                     rc, text = super().run(cmd.split(console)[0], timeout)
@@ -2680,7 +2680,7 @@ class DeviceCensusIntegrationTest(unittest.TestCase):
             def __init__(self, root, target):
                 self.root, self.target = root, target
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 out = os.path.join(self.root, "build/regress/census-integration", self.target)
                 os.makedirs(os.path.join(out, "host"), exist_ok=True)
                 if "host/scripts/vm-launcher start" in cmd:
@@ -2732,7 +2732,7 @@ class CaptureTest(unittest.TestCase):
             def __init__(self, stop_rc, capture_rc):
                 self.stop_rc, self.capture_rc, self.commands = stop_rc, capture_rc, []
 
-            def run(self, cmd, timeout, protected=False):
+            def run(self, cmd, timeout, protected=False, abort=False):
                 self.commands.append(cmd)
                 if "host/scripts/vm-launcher start" in cmd:
                     return 1, "start failed"
@@ -2848,6 +2848,142 @@ class CaptureTest(unittest.TestCase):
             ):
                 r = check(broken)
                 self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
+class InterruptTest(unittest.TestCase):
+    """An interrupted run (Ctrl-C, SIGTERM, SIGHUP: regress.INTERRUPT) stops each lane at its next
+    command, cuts its guest step's wait short, stops its VM at once and reports the target as
+    INTERRUPTED."""
+
+    def tearDown(self):
+        regress.INTERRUPT.clear()
+
+    def lane(self, at):
+        """run_target of a headless lane whose run is interrupted at: "wait" (while the boot step
+        waits for the guest) or "end" (as the boot step ends); its Result, commands and output."""
+        out = "build/regress/intr-test/h13-afro"
+
+        class H(regress.Host):
+            """Every command through Host.run's checks (dry: nothing runs); the guest's answers
+            faked."""
+
+            def __init__(self):
+                super().__init__(None, "dest", True, regress.Instance("fake"))
+                self.commands = []
+
+            def run(self, cmd, timeout, protected=False, abort=False):
+                rc, _ = super().run(cmd, timeout, protected, abort)
+                self.commands.append((cmd, protected))
+                if at == "wait" and "until [ -f" in cmd:
+                    regress.INTERRUPT.set()
+                if f"cat {out}/ready.rc" in cmd:
+                    regress.INTERRUPT.set()
+                    return 0, "0\nREADY 41.5 s 123,456\n"
+                return rc, ""
+
+        a, _ = regress.parse(["--local", "--headless", "--run", "intr-test"], found=FOUND, env={})
+        h = H()
+        with (
+            tempfile.TemporaryDirectory() as top,
+            mock.patch.object(regress, "TOP", top),
+            contextlib.redirect_stdout(io.StringIO()) as said,
+        ):
+            r = regress.run_target(h, a, "h13-afro", WT1H)
+        cmds = [c for c, _ in h.commands]
+        stop = next(i for i, c in enumerate(cmds) if "host/scripts/vm-launcher stop" in c)
+        # the VM is stopped (protected: not cut short) and the lane's leftovers looked for
+        self.assertTrue(h.commands[stop][1])
+        self.assertIn(regress.Instance("fake").orphans, cmds[stop:])
+        self.assertFalse(any("check-m1" in c for c in cmds))
+        self.assertFalse(h.lane)
+        self.assertFalse(r.ok)
+        self.assertEqual(
+            (r.verdict, r.steps["start"], r.steps["stop"]), ("INTERRUPTED", "PASS", "PASS")
+        )
+        self.assertIn("h13-afro: INTERRUPTED in", said.getvalue())
+        self.assertIn("INTERRUPTED", r.row())
+        rest = ["app-calls", "tvservice", "checklist", "ssh", "idle-cpu", "standby"]
+        self.assertEqual([s for s, v in r.steps.items() if v == "-"][-len(rest) :], rest)
+        return r
+
+    def test_lane_stops_at_the_end_of_its_step(self):
+        # the boot step ended (its verdict stands); the next one does not start
+        r = self.lane("end")
+        self.assertEqual((r.steps["ready"], r.steps["check-m1"]), ("PASS", "INTERRUPTED"))
+        self.assertEqual(r.interrupted, "check-m1")
+
+    def test_lane_stops_within_its_wait(self):
+        r = self.lane("wait")
+        self.assertEqual((r.steps["ready"], r.steps["check-m1"]), ("INTERRUPTED", "-"))
+        self.assertEqual(r.interrupted, "ready")
+
+    def test_commands_after_the_interrupt(self):
+        h = regress.Host(None, "dest", False, regress.Instance("intr-cmd"))
+        regress.INTERRUPT.set()
+        # outside a lane's steps (preparation, the run's own checks) and a lane's stop: run
+        self.assertEqual(h.run("echo x", 30), (0, "x\n"))
+        h.lane = True
+        self.assertEqual(h.run("echo y", 30, protected=True), (0, "y\n"))
+        with self.assertRaises(regress.Interrupted):
+            h.run("echo z", 30)
+        with self.assertRaises(regress.Interrupted):
+            h.run("echo z", 30, abort=True)
+
+    def test_abort_ends_the_wait_and_its_children(self):
+        h = regress.Host(None, "dest", False, regress.Instance("intr-wait"))
+        h.lane = True
+        with tempfile.TemporaryDirectory() as d:
+            pidfile = os.path.join(d, "pid")
+            threading.Timer(0.5, regress.INTERRUPT.set).start()
+            began = time.monotonic()
+            with self.assertRaises(regress.Interrupted):
+                h.run(f"sleep 60 & echo $! > {pidfile}; wait", 90, abort=True)
+            self.assertLess(time.monotonic() - began, 5)
+            with open(pidfile) as f:
+                pid = int(f.read())
+        # the wait's own children went with it (its process group)
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail(f"sleep {pid} still runs")
+
+    def test_abortable_wait_without_interrupt(self):
+        h = regress.Host(None, "dest", False, regress.Instance("intr-plain"))
+        h.lane = True
+        self.assertEqual(h.run("echo a; exit 3", 30, abort=True), (3, "a\n"))
+        self.assertEqual(h.run("sleep 5", 1, abort=True)[0], 124)
+
+    def test_schedule_sets_interrupt_and_keeps_results(self):
+        import _thread
+
+        def work(x, host):
+            if x == 0:
+                _thread.interrupt_main()  # as Ctrl-C (or SIGTERM, SIGHUP) would
+                return "stopped" if regress.INTERRUPT.wait(10) else "ran on"
+            return "started after the interrupt"
+
+        with (
+            contextlib.redirect_stdout(io.StringIO()) as said,
+            self.assertRaises(regress.RunInterrupted) as e,
+        ):
+            regress.schedule_hosts([0, 1, 2], [("a", 1)], work)
+        self.assertIsInstance(e.exception, KeyboardInterrupt)
+        self.assertEqual(e.exception.results, [(0, "stopped")])
+        self.assertIn("stop at their current step", said.getvalue())
+
+    def test_summary_says_interrupted(self):
+        r = regress.Result("h13-afro", WT1H, "headless")
+        r.steps.update({s: "PASS" for s in r.steps})
+        self.assertEqual(r.verdict, "PASS")
+        r.interrupted = "standby"
+        self.assertEqual((r.ok, r.verdict), (False, "INTERRUPTED"))
+        self.assertTrue(regress.table([r], "headless").splitlines()[1].endswith("INTERRUPTED"))
+        r.skipped = "no gl layer"
+        self.assertEqual(r.verdict, "SKIP")
 
 
 if __name__ == "__main__":
