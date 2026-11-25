@@ -129,6 +129,12 @@ def test_checkout_is_exact_and_keeps_what_is_the_hosts(tmp_path, env):
     assert (dest / "d.txt").read_text() == "d\n"
     assert int(os.stat(dest / "same.txt").st_mtime) == int(old)  # unchanged: not rewritten
     assert (dest / "build/Image").read_text() == "k"
+    # the source commit's identity, at the top of the tree: the build has no history there
+    r = on_host(env, home, hostsrc.checkout_cmd("beanjar", c2, 'version = "0.1.0"\n'))
+    assert r.returncode == 0, r.stderr
+    assert (dest / hostsrc.STAMP).read_text() == 'version = "0.1.0"\n'
+    r = on_host(env, home, hostsrc.checkout_cmd("beanjar", c2))
+    assert hostsrc.STAMP not in files(dest)  # not the commit's: cleaned
 
 
 def test_lock_is_exclusive(tmp_path, env):

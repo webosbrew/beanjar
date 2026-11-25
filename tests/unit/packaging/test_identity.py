@@ -158,10 +158,29 @@ def test_resolve_from_git(tmp_path):
     assert got["version"] == f"0.2.0+git2.g{head[:12]}"
     assert got["commit"] == head
     assert got["dirty"]
+    # a commit by name, as the regression runner resolves it for a VM host: never dirty
+    with mock.patch.dict(os.environ, env):
+        got = identity.resolve(repo, head[:8])
+    assert (got["version"], got["commit"], got["dirty"]) == (
+        f"0.2.0+git2.g{head[:12]}",
+        head,
+        False,
+    )
     (repo / "packaging/VERSION").write_text("0.3.0\n")
     git("commit", "-qam", "bump")
     with mock.patch.dict(os.environ, env):
         assert identity.resolve(repo)["version"] == "0.3.0"
+        # the VERSION of that commit, not the work tree's
+        assert identity.resolve(repo, head)["version"] == f"0.2.0+git2.g{head[:12]}"
+
+    # the same tree without its repository (a VM host's checkout): the stamp the checkout wrote
+    tree = tmp_path / "tree"
+    (tree / "packaging").mkdir(parents=True)
+    (tree / "packaging/VERSION").write_text("0.3.0\n")
+    with mock.patch.dict(os.environ, env), pytest.raises(identity.Error):
+        identity.resolve(tree)
+    (tree / identity.STAMP).write_text(identity.dump(got))
+    assert identity.resolve(tree) == got
 
 
 def test_host_depends_on_its_contracts_guests():

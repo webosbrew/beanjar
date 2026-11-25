@@ -231,6 +231,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 TOP = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+IDENTITY_PY = os.path.join(TOP, "packaging", "identity.py")
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
 from beanjar import guestlayers, launch, nvm, targets, paths, qemu, vmunits  # noqa: E402
@@ -2489,6 +2490,17 @@ def make_host_commit(a):
                 raise RuntimeError(r.stderr.strip())
             git("update-ref", ref, r.stdout.strip())
             src["host_commit"] = r.stdout.strip()
+    # the identity of the source commit (packaging/identity.py's STAMP), for the hosts' checkouts,
+    # which have no history to count; without it a host's build cannot say its version
+    r = subprocess.run(
+        [sys.executable, IDENTITY_PY, "source-version", "--top", TOP, "--rev", c, "--out", "-"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    src["identity"] = r.stdout if r.returncode == 0 else None
+    if r.returncode:
+        say(f"warning: no source identity for the VM hosts' builds: {r.stderr.strip()}")
     say(f"host commit: {src['host_commit']} ({host_ref(src)})")
 
 
@@ -2582,7 +2594,7 @@ def send_tree(a, host):
         if local(hostsrc.push_argv(TOP, host, f, host_ref(src)), a.dry_run):
             return False
     say(f"checkout: {f[:12] if src['host_commit'] else f} into {host}:{a.dest}")
-    rc, out = h.run(hostsrc.checkout_cmd(a.dest, f), 600)
+    rc, out = h.run(hostsrc.checkout_cmd(a.dest, f, src.get("identity")), 600)
     if rc:
         say(f"{host}: checkout failed: {out.strip()}")
         return False

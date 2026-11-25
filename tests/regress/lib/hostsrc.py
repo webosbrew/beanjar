@@ -63,10 +63,15 @@ def index_name(dest):
     return "index-" + "".join(c if c.isalnum() or c in "-._" else "_" for c in dest)
 
 
-def checkout_cmd(dest, sha):
+STAMP = "source-identity.toml"  # packaging/identity.py's STAMP
+
+
+def checkout_cmd(dest, sha, stamp=None):
     """Make DEST (relative to home) hold exactly the tree of commit sha, PROTECTED excepted:
     checkout -f writes what differs from DEST's index and removes what that index has and sha has
-    not; git clean removes the rest that sha has not (untracked and ignored files alike)."""
+    not; git clean removes the rest that sha has not (untracked and ignored files alike). stamp:
+    the source commit's identity (packaging/identity.py source-version --rev), written to STAMP at
+    DEST's top, where the build reads it: DEST has no repository of its own to count history in."""
     d = shlex.quote(dest)
     excludes = " ".join(f"-e {shlex.quote(p)}" for p in PROTECTED)
     return (
@@ -77,6 +82,7 @@ def checkout_cmd(dest, sha):
         # by a --working-tree sync) is not rewritten
         "{ git update-index -q --refresh >/dev/null 2>&1 || true; } && "
         f"git checkout -q -f --detach {shlex.quote(sha)} && git clean -q -ffdx {excludes}"
+        + (f" && printf %s {shlex.quote(stamp)} > {STAMP}" if stamp else "")
     )
 
 

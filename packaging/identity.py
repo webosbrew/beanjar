@@ -5,11 +5,17 @@
 (packaging/debian/README.md, "Versions and compatibility").
 
   identity.py source-version --top TOP --out FILE   resolve TOP's identity with git, into FILE
+  identity.py source-version --top TOP --rev REV --out -   commit REV's identity, to stdout
 
 packaging/VERSION holds the semver. The version is X.Y.Z at the commit that last changed that file and
 X.Y.Z+gitN.g<12 hex> N commits later. The build lanes resolve it once and publish it beside their
 artefacts (the host lane's source-version.toml, the guest lanes' guest-installation.toml); packaging
 reads those files and never runs git. A FILE is rewritten only when its content changes.
+
+A tree checked out without its repository (a regression VM host's checkout, which git writes from a
+bare repository elsewhere: tests/regress/lib/hostsrc.py) has no history to count. The checkout
+writes STAMP at its top, the identity of the commit it holds as resolved where the history is
+(--rev), and the build reads that instead.
 
 The version's major.minor while the major is 0 (0.2), the major from 1.0 (1), is the host-guest
 contract the packages' dependencies express (contract): an apt hint, not a runtime check.
@@ -25,6 +31,7 @@ import tomllib
 
 TOP = Path(__file__).resolve().parents[1]
 VERSION_FILE = "packaging/VERSION"
+STAMP = "source-identity.toml"  # at the top of a tree checked out without its repository
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
@@ -50,11 +57,16 @@ def base_version(top=TOP):
     """The X.Y.Z of packaging/VERSION."""
     path = Path(top) / VERSION_FILE
     try:
-        text = path.read_text().strip()
+        text = path.read_text()
     except OSError as e:
         raise Error(f"{path}: {e.strerror or e}") from None
+    return _semver_of(text, path)
+
+
+def _semver_of(text, where):
+    text = text.strip()
     if not SEMVER.fullmatch(text):
-        raise Error(f"{path}: {text!r} is not a <major>.<minor>.<patch> version")
+        raise Error(f"{where}: {text!r} is not a <major>.<minor>.<patch> version")
     return text
 
 
@@ -93,18 +105,29 @@ def _git(top, *args):
     return r.stdout.strip()
 
 
-def resolve(top=TOP):
-    """{version, commit, commit_epoch, dirty, shallow} of the checkout at top."""
-    base = base_version(top)
-    last = _git(top, "log", "-1", "--format=%H", "--", VERSION_FILE)
+def resolve(top=TOP, rev=None):
+    """{version, commit, commit_epoch, dirty, shallow} of the checkout at top; with rev, of that
+    commit of top's repository (never dirty). A top that is no repository's work tree (no .git)
+    and has STAMP: what STAMP says."""
+    stamp = Path(top) / STAMP
+    if rev is None and not (Path(top) / ".git").exists() and stamp.is_file():
+        return read(stamp)
+    commit = _git(top, "rev-parse", "--verify", f"{rev or 'HEAD'}^{{commit}}")
+    base = (
+        base_version(top)
+        if rev is None
+        else _semver_of(_git(top, "show", f"{commit}:{VERSION_FILE}"), f"{VERSION_FILE} at {rev}")
+    )
+    last = _git(top, "log", "-1", "--format=%H", commit, "--", VERSION_FILE)
     if not last:
         raise Error(f"{VERSION_FILE} is not committed: commit it, then build")
-    commit = _git(top, "rev-parse", "HEAD")
     return {
-        "version": version_of(base, int(_git(top, "rev-list", "--count", f"{last}..HEAD")), commit),
+        "version": version_of(
+            base, int(_git(top, "rev-list", "--count", f"{last}..{commit}")), commit
+        ),
         "commit": commit,
-        "commit_epoch": int(_git(top, "log", "-1", "--format=%ct", "HEAD")),
-        "dirty": bool(_git(top, "status", "--porcelain", "--untracked-files=no")),
+        "commit_epoch": int(_git(top, "log", "-1", "--format=%ct", commit)),
+        "dirty": rev is None and bool(_git(top, "status", "--porcelain", "--untracked-files=no")),
         "shallow": _git(top, "rev-parse", "--is-shallow-repository") == "true",
     }
 
@@ -185,10 +208,15 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("source-version")
     s.add_argument("--top", type=Path, default=TOP)
-    s.add_argument("--out", type=Path, required=True)
+    s.add_argument("--rev", help="a commit of TOP's repository instead of its checkout")
+    s.add_argument("--out", required=True, help="FILE, or - for stdout")
     a = p.parse_args(argv)
     try:
-        write(a.out, resolve(a.top), HEADER)
+        data = resolve(a.top, a.rev)
+        if a.out == "-":
+            sys.stdout.write(HEADER + dump(data))
+        else:
+            write(Path(a.out), data, HEADER)
     except Error as e:
         print(f"identity: {e}", file=sys.stderr)
         return 1
