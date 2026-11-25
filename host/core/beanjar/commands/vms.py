@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The VMs' life: list, create, start, stop, show, status, delete, rename, prepare, wipe."""
+"""The VMs' life: list, create, start, stop, show, status, log, delete, rename, prepare, wipe."""
 
 import os
+import re
 import shlex
+import stat
+import sys
 
 from .. import core, hostprocs, keys, poweroff, remote, vmsettings, vmunits
 from ..core import Error, fmt_duration
@@ -325,6 +328,44 @@ def cmd_status(lib, a):
     return emit(a, data, "\n".join(text))
 
 
+# a VM's host-side logs: its launcher's (logs/) and its helpers' while it runs (run/); never its
+# other files (run/ has sockets and mitmweb's password, identity/ its keys)
+LOG_RE = re.compile(r"(run|logs)/[A-Za-z0-9_-][A-Za-z0-9._-]*\.(?:log|out)(?:\.[0-9]+)?")
+
+
+def log_path(vm, file):
+    """FILE (run/NAME.log, logs/NAME.out, ...) of vm's directory: its path, a usage error for a
+    FILE that is not a log's, an error for one that is not there."""
+    if not LOG_RE.fullmatch(file):
+        raise Usage(
+            f"{file}: FILE is run/NAME or logs/NAME, a .log or .out file (rotated: .log.1); "
+            f"for example run/media-helper.log or logs/console.log"
+        )
+    path = os.path.join(vm.dir, file)
+    try:
+        regular = stat.S_ISREG(os.lstat(path).st_mode)
+    except FileNotFoundError:
+        regular = False
+    if not regular:
+        raise Error(f"{vm.name} has no {file}")
+    return path
+
+
+def cmd_log(lib, a):
+    """log show NAME FILE: the log as it is now, its bytes on stdout (with --json, its text)."""
+    vm = lib.vm(a.name)
+    path = log_path(vm, a.file)
+    with open(path, "rb") as f:
+        data = f.read()
+    if a.json:
+        text = data.decode("utf-8", errors="replace")
+        return emit(a, {"name": vm.name, "file": a.file, "path": path, "text": text})
+    sys.stdout.flush()
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+    return 0
+
+
 def cmd_prepare(lib, a):
     lib.prepare(a.name, out=progress, force=not a.if_stale)
     return emit(a, {"name": a.name, "prepared": True}, f"{a.name}: board data prepared")
@@ -632,6 +673,27 @@ def register_vm(cli):
     )
     vm_name(s)
     s.add_argument("items", nargs="+", metavar="KEY")
+
+    g = group(
+        "log",
+        "a VM's host-side logs: its launcher's (logs/) and, while it runs, its helpers' (run/: "
+        "the media helper, the tuner, the relays)",
+        dest="verb",
+    )
+    s = command(
+        g,
+        "show",
+        "a log as it is now: its bytes on stdout (with --json, as text in an object)",
+        cmd_log,
+        usage="beanjar log show NAME FILE [--json]",
+    )
+    vm_name(s)
+    s.add_argument(
+        "file",
+        metavar="FILE",
+        help="run/NAME or logs/NAME, a .log or .out file: run/media-helper.log, "
+        "run/media-sessions.log, logs/console.log, ...",
+    )
 
     s = command(sub, "delete", "remove a VM that is off, with its state", cmd_delete)
     vm_name(s)

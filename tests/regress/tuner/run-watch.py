@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Live TV's picture and sound on a running VM of this machine with our tuner, pass or fail with
-numbers.
+"""Live TV's picture and sound on a running VM with our tuner, pass or fail with numbers.
 
   run-watch.py NAME [--seconds S] [--shot FILE]
 
@@ -13,7 +12,11 @@ seconds (default 20): the pictures the guest's decoder read the headers of
 sessions (the VM's run/media-sessions.log names them, run/media-helper.log counts them), and
 whether the TV picture is a picture and not black or the "No Signal" screen (a screenshot with
 light in most of it). Prints the numbers as JSON and PASS or FAIL; the exit status is 0 only for
-PASS."""
+PASS.
+
+NAME may be HOST/NAME, a VM on another host: everything goes through beanjar (ares-shell, log show,
+screenshot), so that host needs only its beanjar; the screenshot comes back here and its light is
+measured here."""
 
 import argparse
 import json
@@ -72,32 +75,45 @@ def vdec(name):
     return (int(m.group(1)), m.group(2)) if m else None
 
 
-def sessions(run):
-    """{kind: media port} of the tuner's last sessions (media-sessions.log)."""
-    out = {}
+def log(name, file):
+    """The text of the VM's host-side log file (run/...), on whichever host it runs; "" for none."""
+    r = subprocess.run(
+        [BEANJAR, "log", "show", name, file, "--json"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env(),
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    if r.returncode:
+        return ""
     try:
-        with open(os.path.join(run, "media-sessions.log")) as f:
-            for line in f:
-                m = re.search(r"media (\d+): open (video|audio) tuner-", line)
-                if m:
-                    out[m.group(2)] = int(m.group(1))
-    except OSError:
-        pass
+        return json.loads(r.stdout)["text"]
+    except (ValueError, KeyError, TypeError):
+        return ""
+
+
+def sessions(text):
+    """{kind: media port} of the tuner's last sessions, from media-sessions.log's text."""
+    out = {}
+    for m in re.finditer(r"media (\d+): open (video|audio) tuner-", text):
+        out[m.group(2)] = int(m.group(1))
     return out
 
 
-def decoded(run, kind, port):
-    """The last count the media helper logged of port's decoder of kind."""
+def decoded(text, kind, port):
+    """The last count of port's decoder of kind in media-helper.log's text."""
     n = 0
-    try:
-        with open(os.path.join(run, "media-helper.log")) as f:
-            for line in f:
-                m = re.search(rf"decode {port} {kind} session=\d+.*? decoded=(\d+)", line)
-                if m:
-                    n = int(m.group(1))
-    except OSError:
-        pass
+    for m in re.finditer(rf"decode {port} {kind} session=\d+[^\n]*? decoded=(\d+)", text):
+        n = int(m.group(1))
     return n
+
+
+def helper_counts(name, s):
+    """(video, audio) decoded so far by the media helper of the sessions s."""
+    text = log(name, "run/media-helper.log")
+    return decoded(text, "video", s.get("video")), decoded(text, "audio", s.get("audio"))
 
 
 def lit(path):
@@ -111,20 +127,10 @@ def lit(path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("name")
+    ap.add_argument("name", help="the VM: NAME, or HOST/NAME for another host's")
     ap.add_argument("--seconds", type=int, default=20)
     ap.add_argument("--shot", help="keep the screenshot here")
     a = ap.parse_args()
-    info = json.loads(
-        subprocess.run(
-            [BEANJAR, "show", a.name, "--json"],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env(),
-        ).stdout
-    )
-    run = os.path.join(info["dir"], "run")
     # a just-booted set brings Home to the front once it is up, over a Live TV launched before
     for _ in range(60):
         if foreground(a.name):
@@ -149,12 +155,12 @@ def main():
         time.sleep(3)
     start_s = round(time.monotonic() - t0)
     time.sleep(5)  # past the first sequence header and the host's first pictures
-    s = sessions(run)
-    v0, a0 = decoded(run, "video", s.get("video")), decoded(run, "audio", s.get("audio"))
+    s = sessions(log(a.name, "run/media-sessions.log"))
+    v0, a0 = helper_counts(a.name, s)
     p0, t1 = vdec(a.name), time.monotonic()
     time.sleep(a.seconds)
     p1, t2 = vdec(a.name), time.monotonic()
-    v1, a1 = decoded(run, "video", s.get("video")), decoded(run, "audio", s.get("audio"))
+    v1, a1 = helper_counts(a.name, s)
     span = t2 - t1
     if a.shot:
         shot = a.shot
