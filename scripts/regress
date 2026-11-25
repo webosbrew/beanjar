@@ -175,6 +175,12 @@ boot checks, in either mode, with NET_LINK=nat NET_MODE=direct (another network 
              expected table's histogram row; else SKIP, citing it), every preset read;
              tvsuite.judge_histogram: block counts, totals and bins against a real set's region map
              (tests/regress/lib/vthist.py). Headless: SKIP
+  gles       graphics: guest.sh gles runs the gl layer's tests/gl/gles-version in webOS (each ES client
+             version, the highest context's renderer and extensions) and reads the TV's version
+             (/usr/share/beanjar/gles-version); tvsuite.judge_gles: the launcher's "gl renderer:" line
+             names one, no context above the TV's version, and the level min(TV, host) where
+             tests/regress/gles-hosts.toml has a measured level for the host's renderer (else SKIP
+             with the numbers and the ES 3.2 extensions missing)
   audio      QEMU records the card on the VM host (tests/regress/audio/capture.py: HMP wavcapture on its
              audiodev) while guest.sh audio plays a tone per phase with paplay: the set's volume,
              five volumeDown, setMuted, unmuted and five volumeUp, each read back with the Audio
@@ -301,6 +307,7 @@ TV_STEPS = {
         "tee",
         "draw",
         "histogram",
+        "gles",
         "audio",
         "decode",
         "smp",
@@ -1543,6 +1550,8 @@ def tv_suite(h, a, r, out, target, fw):
         tv_draw(h, a, r, out, target, state)
     if "histogram" in a.tv_steps:
         tv_histogram(h, a, r, out, target, ctx, state)
+    if "gles" in a.tv_steps:
+        tv_gles(h, a, r, out, target)
     if "audio" in a.tv_steps:
         tv_audio(h, a, r, out, target, ctx, state)
     if "decode" in a.tv_steps:
@@ -1917,6 +1926,21 @@ def tv_histogram(h, a, r, out, target, ctx, state):
         )
     r.items["histogram"] = items
     r.steps["histogram"] = tvsuite.verdict(items)
+
+
+def tv_gles(h, a, r, out, target):
+    """--tv gles: the OpenGL ES version an app gets (tv.sh gles, the gl layer's gles-version) and
+    the launch log's GL renderer (qemu.out), judged against the TV's version and the measured
+    host table (tvsuite.judge_gles)."""
+    say(f"{target}: gles")
+    gstep(h, a, r, out, "gles")
+    if a.dry_run:
+        r.steps["gles"] = "dry"
+        return
+    # the launcher's own output (the unit's LOG_DIR/qemu.out), with start's
+    _, launch = h.run(f"cat {out}/start.txt {h.inst.log_dir}/qemu.out 2>/dev/null", 30)
+    r.items["gles"] = tvsuite.judge_gles(r.text, launch)
+    r.steps["gles"] = tvsuite.verdict(r.items["gles"])
 
 
 def record(h, a, wav, start):

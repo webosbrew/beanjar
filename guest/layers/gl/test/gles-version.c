@@ -4,14 +4,19 @@
  * whether eglCreateContext gives a context (else its EGL error), and in the ones it gives,
  * GL_VERSION, GL_SHADING_LANGUAGE_VERSION and whether a "#version 300 es" shader compiles.
  * With the gl layer's /usr/share/beanjar/gles-version the highest is at most that version, and
- * never more than the driver gives without it (patches/mesa/0005-*).
+ * never more than the driver gives without it (patches/mesa/0005-*). Then, of the highest context
+ * made, its version, GL_RENDERER (virgl names the host's renderer in it) and GL_EXTENSIONS, which
+ * scripts/regress --tv's gles step judges (tests/regress/lib/tvsuite.py, judge_gles).
  *
- *   gles-version        (surfaceless EGL on the render node; one line per client version)
+ *   gles-version        (surfaceless EGL on the render node; one line per client version, then
+ *                        "highest:", "renderer:" and "extensions:" lines)
  */
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static const char *egl_error(EGLint e)
 {
@@ -62,6 +67,8 @@ int main(void)
     eglGetConfigAttrib(dpy, cfg, EGL_RENDERABLE_TYPE, &apis);
     printf("config: EGL_OPENGL_ES3_BIT %s\n", apis & EGL_OPENGL_ES3_BIT_KHR ? "yes" : "no");
     eglBindAPI(EGL_OPENGL_ES_API);
+    char *renderer = NULL, *extensions = NULL;
+    int highest = -1;
     for (unsigned i = 0; i < sizeof versions / sizeof versions[0]; i++) {
         const EGLint attr[] = {EGL_CONTEXT_MAJOR_VERSION_KHR, versions[i][0],
                                EGL_CONTEXT_MINOR_VERSION_KHR, versions[i][1], EGL_NONE};
@@ -83,9 +90,24 @@ int main(void)
                         "void main() { c = vec4(1.0); }\n")
                    ? "compiles"
                    : "refused");
+        const char *r = (const char *)glGetString(GL_RENDERER);
+        const char *e = (const char *)glGetString(GL_EXTENSIONS);
+        free(renderer);
+        free(extensions);
+        renderer = strdup(r ? r : "");
+        extensions = strdup(e ? e : "");
+        highest = (int)i;
         eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroyContext(dpy, ctx);
     }
+    if (highest >= 0) {
+        printf("highest: %d.%d\nrenderer: %s\nextensions: %s\n", versions[highest][0],
+               versions[highest][1], renderer, extensions);
+    } else {
+        printf("highest: none\n");
+    }
+    free(renderer);
+    free(extensions);
     eglTerminate(dpy);
     return 0;
 }

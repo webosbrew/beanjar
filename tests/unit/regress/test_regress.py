@@ -1578,6 +1578,7 @@ class ResultTest(unittest.TestCase):
                 "tee",
                 "draw",
                 "histogram",
+                "gles",
                 "audio",
                 "decode",
                 "smp",

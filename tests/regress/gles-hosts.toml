@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The OpenGL ES version a guest's virgl gives on each host GPU, as measured in a guest: scripts/regress
+# --tv's gles step (tests/regress/lib/tvsuite.py, judge_gles) expects a target's guest to give
+# min(the TV's own version, es) on the host whose GL_RENDERER is renderer (the guest's virgl
+# renderer string names it: "virgl (RENDERER)"). A host not listed here has no expectation: the step
+# SKIPs and prints what it measured, which is how a row gets here. Only measured values, each with
+# where it was measured; never one inferred from the host's own ES version or from the sources.
+
+[[host]]
+renderer = "D3D12 (Intel(R) UHD Graphics 770)"
+es = "3.0"
+source = "measured 2026-11-18: a k8hp-ombre guest (TV version 3.2) under TCG on WSL's d3d12, its default adapter, gave ES 3.0"
+
+[[host]]
+renderer = "D3D12 (NVIDIA GeForce RTX 4070 Ti)"
+es = "3.1"
+source = "measured 2026-11-18: a k8hp-ombre guest (before the TV-version cap; its TV version is 3.2) on WSL's d3d12 with MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA advertised ES 3.1"

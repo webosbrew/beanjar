@@ -38,6 +38,12 @@ it. There is no WARN: a check that fails needs treatment.
              set's region map (vthist.py, judge_histogram); SKIP where the expected table's histogram
              row says the firmware has no working calls (none, or -54's stub init); headless SKIP
              (the composed picture needs a front end)
+  gles       graphics: the OpenGL ES version an app gets (the gl layer's tests/gl/gles-version):
+             the launch log names the host's GL renderer, no context above the TV's own version
+             (the gl layer's gles-version), and the level min(the TV's, the host's) where
+             tests/regress/gles-hosts.toml has a measured level for the host's renderer, else SKIP
+             with what was measured; with the extensions Mesa's ES 3.2 rule wants that are missing
+             (judge_gles)
   audio      tones through the firmware's sound path, recorded by QEMU (judge_audio)
   decode     graphics: the test app plays each of DECODE_CASES (clips made at test time,
              tests/regress/video/make-clips.sh --decode) with <video> and with its Media Source player,
@@ -62,7 +68,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REGRESS = os.path.dirname(HERE)  # tests/regress: the suite's data, the app, the guest scripts
 TOP = os.path.dirname(os.path.dirname(REGRESS))
 EXPECT_DIR = os.path.join(REGRESS, "tv-expect")  # the expected table: a <target>.toml each
-STEPS = ("luna-info", "network", "apps", "tee", "draw", "histogram", "audio", "decode", "smp")
+STEPS = (
+    "luna-info",
+    "network",
+    "apps",
+    "tee",
+    "draw",
+    "histogram",
+    "gles",
+    "audio",
+    "decode",
+    "smp",
+)
 # The guest's network, link=nat's namespace (host/core/beanjar/netns.py, which a unit test holds these
 # to): the lease (GUEST), slirp4netns's router (ROUTER), the name server DHCP hands out (NET_DNS:
 # lg_mock.py at the TAP's own address, MOCK_DNS, with LG's services mocked, the default), and the
@@ -1484,6 +1501,130 @@ def judge_histogram(text, pat=None):
     )
     if f.get("vt_devmode_after") == "yes" and f.get("vt_devmode") == "made":
         items.append(("histogram.cleanup", "FAIL", "vt_devmode, made for the run, is still there"))
+    return items
+
+
+# --- gles ---
+
+GLES_HOSTS = os.path.join(REGRESS, "gles-hosts.toml")
+# What Mesa's compute_version_es2 (src/mesa/main/version.c) wants for ES 3.2 beyond ES 3.1, by the
+# names an ES context lists (src/mesa/main/extensions_table.h); image, atomic counter and SSBO
+# support are core ES 3.1 and have no name here
+ES32_EXTENSIONS = (
+    "GL_EXT_color_buffer_float",
+    "GL_KHR_blend_equation_advanced",
+    "GL_KHR_robustness",
+    "GL_KHR_texture_compression_astc_ldr",
+    "GL_OES_copy_image",
+    "GL_OES_draw_buffers_indexed",
+    "GL_OES_draw_elements_base_vertex",
+    "GL_OES_geometry_shader",
+    "GL_OES_primitive_bounding_box",
+    "GL_OES_sample_variables",
+    "GL_OES_tessellation_shader",
+    "GL_OES_texture_buffer",
+    "GL_OES_texture_cube_map_array",
+    "GL_OES_texture_stencil8",
+)
+GLES_LEVELS = ("2.0", "3.0", "3.1", "3.2")
+
+
+def gles_hosts(path=GLES_HOSTS):
+    """{host GL_RENDERER: (ES version, source)} of the measured table."""
+    import tomllib
+
+    with open(path, "rb") as f:
+        rows = tomllib.load(f).get("host", [])
+    return {h["renderer"]: (h["es"], h["source"]) for h in rows}
+
+
+def _level(v):
+    return tuple(int(x) for x in v.split("."))
+
+
+def gles_facts(text):
+    """The gles step's facts: the cap (the TV's version), each request's answer, the highest
+    context's GL_VERSION level, renderer (and the host's in it) and extensions."""
+    f = dict(cap=None, requests={}, level=None, renderer=None, host=None, extensions=None)
+    for line in text.splitlines():
+        m = re.match(r"^cap=(\S*)", line)
+        if m:
+            f["cap"] = m.group(1) or None
+        m = re.match(r"^request (\d\.\d): (.*)$", line)
+        if m:
+            f["requests"][m.group(1)] = m.group(2)
+            v = re.search(r'GL_VERSION "OpenGL ES (\d)\.(\d)', m.group(2))
+            if v and (f["level"] is None or _level(f["level"]) < (int(v[1]), int(v[2]))):
+                f["level"] = f"{v[1]}.{v[2]}"
+        m = re.match(r"^renderer: (.*)$", line)
+        if m:
+            f["renderer"] = m.group(1).strip()
+            h = re.match(r"^virgl \((.*)\)$", f["renderer"])
+            f["host"] = h.group(1) if h else f["renderer"]
+        m = re.match(r"^extensions: (.*)$", line)
+        if m:
+            f["extensions"] = m.group(1).split()
+    return f
+
+
+def judge_gles(text, launch="", hosts=None):
+    """[(check, PASS/FAIL/SKIP, why)] of the gles step: gles.renderer-log (the launch log's "gl
+    renderer:" line names one), gles.cap (no context above the TV's version) and gles.host (the
+    level min(TV, host) where the host's renderer has a measured level in gles-hosts.toml; SKIP
+    with the numbers where it has none)."""
+    hosts = gles_hosts() if hosts is None else hosts
+    items = []
+    m = re.search(r"gl renderer: (.*?)\s*$", launch, re.M)
+    if not m:
+        items.append(("gles.renderer-log", "FAIL", 'the launch log has no "gl renderer:" line'))
+    elif m.group(1).startswith(("unknown", "not probed")):
+        items.append(("gles.renderer-log", "FAIL", f"gl renderer: {m.group(1)}"))
+    else:
+        items.append(("gles.renderer-log", "PASS", f"gl renderer: {m.group(1)}"))
+    f = gles_facts(text)
+    if f["level"] is None:
+        tail = "; ".join(ln for ln in text.splitlines() if ln.strip())[-200:]
+        items.append(("gles.cap", "FAIL", f"gles-version made no ES context: {tail}"))
+        return items
+    cap = f["cap"]
+    if cap not in GLES_LEVELS:
+        items.append(("gles.cap", "FAIL", f"the gl layer's gles-version is {cap!r}, not a version"))
+        return items
+    above = [
+        r
+        for r in f["requests"]
+        if _level(r) > _level(cap) and not f["requests"][r].startswith("refused")
+    ]
+    if _level(f["level"]) > _level(cap) or above:
+        items.append(
+            (
+                "gles.cap",
+                "FAIL",
+                f"ES {f['level']} over the TV's {cap}"
+                + (f"; {', '.join(above)} made" if above else ""),
+            )
+        )
+    else:
+        items.append(("gles.cap", "PASS", f"ES {f['level']}, the TV's {cap} at most"))
+    exts = set(f["extensions"] or ())
+    missing = [e for e in ES32_EXTENSIONS if e not in exts]
+    facts = (
+        f"guest ES {f['level']} (TV {cap}) on {f['host']!r}; for ES 3.2 Mesa lacks "
+        + (" ".join(e[3:] for e in missing) if missing else "nothing")
+        + f"; {len(exts)} extensions"
+    )
+    if f["host"] not in hosts:
+        items.append(("gles.host", "SKIP", f"no measured level for this host: {facts}"))
+        return items
+    es, source = hosts[f["host"]]
+    want = min(cap, es, key=_level)
+    items.append(
+        (
+            "gles.host",
+            "PASS" if f["level"] == want else "FAIL",
+            f"{facts}; expected ES {want} (host {es}: {source})",
+        )
+    )
     return items
 
 

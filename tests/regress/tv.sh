@@ -30,6 +30,10 @@
 #                                   firmware's vtCaptureTestSuite, which has the library's luna role),
 #                                   with /var/luna/preferences/vt_devmode (the calls' caller gate) made
 #                                   for the run and removed after if it was not there; the crash reports
+#   tv.sh gles                      the OpenGL ES version an app gets: the gl layer's
+#                                   tests/gl/gles-version (each client version, then the highest
+#                                   context's renderer and extensions) and the TV's own version
+#                                   (/usr/share/beanjar/gles-version, the cap)
 #   tv.sh audio DIR SVC N [RB [HW]] the Audio API (SVC: its luna:// URL; RB: the read-back,
 #                                   SVC/getVolume or audiod's master/getVolume): getVolume, a tone
 #                                   (DIR/native.wav) through paplay, one (DIR/aplay.wav) through
@@ -396,6 +400,14 @@ histogram() {
 	echo "TV FACTS END"
 }
 
+gles() {
+	echo "cap=$(grep -v '^#' /usr/share/beanjar/gles-version 2>/dev/null | grep . | head -n 1)"
+	o=$($T $((60 * scale)) /mnt/host/build/tests/gl/gles-version 2>&1)
+	echo "probe_rc=$?"
+	echo "$o" | cut -c1-20000
+	echo "TV FACTS END"
+}
+
 # the audio step: the Audio API's own calls as an app makes them (the public hub where there are
 # two), one tone per phase through PulseAudio (paplay, a native client's path), a pause after each
 # so the host's recording keeps the phases apart; read-back with getVolume after every change
@@ -519,6 +531,7 @@ app-install) app_install "$2" "$3" ;;
 app-remove) app_remove "$2" ;;
 tee) shift; tee_step "$@" ;;
 histogram) histogram "$2" ;;
+gles) gles ;;
 audio) audio_step "$2" "$3" "$4" "$5" "$6" ;;
 decode-log) decode_log "$2" ;;
 smp) smp "$2" "$3" ;;

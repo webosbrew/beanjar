@@ -661,7 +661,7 @@ it), and the lines under it give each target's numbers; `summary.json` has them 
 `scripts/regress --tv` tests what the TV offers beyond the boot, separate from the default run so
 that one does not get slower. It boots as the default run does (`--headless` too, `-j` and
 `--local` as there), then runs its steps in place of the boot checks (`luna-info`, `network`,
-`apps`, `tee`, in graphics `draw` and `histogram`, `audio`, `decode` and `smp`; `--tv-steps LIST` runs only some), and stops:
+`apps`, `tee`, in graphics `draw`, `histogram` and `gles`, `audio`, `decode` and `smp`; `--tv-steps LIST` runs only some), and stops:
 
 ```sh
 scripts/regress --tv --headless --keep-going             # every target on the Pi, two at a time
@@ -833,6 +833,15 @@ judging, the generator's parsing and the files.
   table's `histogram` row (`tv-expect-gen.py`: libvtcapture exports `vtCapture_initHistogram` and
   `VtHistogram::initHistogram` is not -54's `movs r0, #7; bx lr` stub) says the firmware has no
   working calls. The screenshot is `apps/histogram.png`.
+- `gles` (graphics): the OpenGL ES version an app gets on this host. `tv.sh gles` runs the gl
+  layer's `tests/gl/gles-version` (each client version 2.0 to 3.2, then the highest context's
+  `GL_RENDERER`, which names the host's renderer, and its extensions) and reads the TV's own
+  version (`/usr/share/beanjar/gles-version`). `tvsuite.judge_gles`: the launcher's
+  `gl renderer:` line names the host's renderer (`qemu.out`); no context above the TV's version;
+  and the level is min(the TV's, the host's) where `tests/regress/gles-hosts.toml` has a measured
+  level for that renderer. A host not in the table SKIPs with the guest's level and the extensions
+  Mesa's ES 3.2 rule wants that are missing, so a run on a new host is the measurement its row
+  comes from; the table takes measured values only.
 
 - `audio`: the guest plays tones through LG's own sound path while QEMU records the card on the VM
   host: `tests/regress/audio/capture.py` starts HMP `wavcapture` (over QMP) on the card's audiodev, whatever
