@@ -1,0 +1,83 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# A paired Magic Remote, as LG's input service (lginput2, com.webos.service.mrcu) keeps one after a
+# real pairing: its record mrcu1.info on the common data partition, made once when the state has
+# none, before lginput2 starts. The remote is generated: a random locally administered BD address,
+# the newest model name the firmware's lginput2 knows, a generic firmware version. A wipe of the
+# state makes a new one, as a new pairing would; an existing record (a real pairing's, or one made
+# before) is never touched.
+#
+# The path and line format are lginput2's own, read from its format strings (lginput_db_initDevInfo
+# reads the record with fscanf; any match marks the remote paired), so this follows the release:
+#   /mnt/lg/cmn_data/mrcu/mrcu1.info   webOS 6 on (W21A and later)
+#   /mnt/lg/cmn_data/btsvc/mrcu1.info  webOS 4 and 4.5 (W18, W19)
+#   none                               webOS 3.x and older keep pairing in the BSA stack
+#   fwVer = %02d.%02X(H).%02d.%d...   W22 on: Name, BDAddr, fwVer, Battery, hidraw, Paired Time
+#   fwVer = %02d.%02d.%02d.%d...      W21A: Name, BDAddr, fwVer, Battery, Paired Time
+#   fwVer = %02d.%02d.%02d.%d          W18, W19: Name, BDAddr, fwVer
+# On webOS 6 on, lginput2 also needs bluetooth2 to list an adapter with the HID-host profile before
+# isPaired answers true; without a Bluetooth controller the record is read but not reported.
+# See docs/research/magic-remote-pairing.md. Run by etc/systemd/system/emulator-mrcu-pairing.service
+# (systemd) and etc/init/emulator-mrcu-pairing.conf (Upstart).
+
+LGINPUT=/usr/sbin/lginput2
+DATA=/mnt/lg/cmn_data
+
+log() {
+	echo "emulator-mrcu-pairing: $*"
+	logger -t emulator-mrcu-pairing "$*" 2>/dev/null
+}
+
+has() { # has STRING: lginput2 holds STRING
+	grep -aqF "$1" "$LGINPUT"
+}
+
+[ -f "$LGINPUT" ] || exit 0
+if has "$DATA/mrcu/mrcu1.info"; then
+	dir=$DATA/mrcu
+elif has "$DATA/btsvc/mrcu1.info"; then
+	dir=$DATA/btsvc
+else
+	exit 0 # no file-based pairing record in this release
+fi
+grep -q " $DATA " /proc/mounts || {
+	log "$DATA is not mounted; no record"
+	exit 0
+}
+# webOS 6 on moves btsvc/*.info into mrcu/ at start (lginput_db_moveDevInfoFile): either is a record
+for f in "$DATA/mrcu/mrcu1.info" "$DATA/btsvc/mrcu1.info"; do
+	[ -s "$f" ] && exit 0
+done
+
+# the newest plain LGE MRnn model the firmware lists (LGE MR19, MR21, MR25GA, ...)
+name=$(tr '\0' '\n' < "$LGINPUT" | grep -xE 'LGE MR[0-9]{2}(GA)?' | sort -u | tail -n 1)
+[ -n "$name" ] || name="LGE MR18"
+year=$(echo "$name" | sed 's/^LGE MR\([0-9][0-9]\).*/\1/')
+
+# a unicast, locally administered address: the first octet's low bits 10
+set -- $(od -An -N6 -tu1 /dev/urandom)
+addr=$(printf '%02x:%02x:%02x:%02x:%02x:%02x' $(($1 & 252 | 2)) "$2" "$3" "$4" "$5" "$6")
+day=$(date +%Y%m%d)
+time=$(date +%H%M%S | sed 's/^0*//')
+
+if has 'fwVer = %02d.%02X(H).'; then
+	body="fwVer = $year.11(H).01.0.0.0.0.0.0.0.0
+Battery = 100(M) 100(L)
+hidraw = /dev/hidraw0
+Paired Time = $day/${time:-0}"
+elif has 'fwVer = %02d.%02d.%02d.%d.%d.%d.%d.%d.%d.%d.%d'; then
+	body="fwVer = $year.11.01.0.0.0.0.0.0.0.0
+Battery = 100(M) 100(L)
+Paired Time = $day/${time:-0}"
+else
+	body="fwVer = $year.11.01.0"
+fi
+
+mkdir -p "$dir" || exit 0
+tmp=$dir/.mrcu1.info.$$
+printf 'Name = %s\nBDAddr = %s\n%s\n' "$name" "$addr" "$body" > "$tmp" &&
+	chmod 644 "$tmp" && sync && mv "$tmp" "$dir/mrcu1.info" && sync &&
+	log "paired $name $addr ($dir/mrcu1.info)"
+rm -f "$tmp"
+exit 0

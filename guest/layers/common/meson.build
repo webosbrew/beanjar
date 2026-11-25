@@ -14,6 +14,10 @@
 #                 usr/libexec/beanjar/pmlog-debug: webos.pmlog_debug's contexts at debug level, run by
 #                 etc/init/emulator-pmlog-debug.conf (Upstart) and etc/systemd/system/
 #                 emulator-pmlog-debug.service (systemd, with libPmLogLib's dev mode on)
+#                 usr/libexec/beanjar/emulator-mrcu-pairing: a generated paired Magic Remote's
+#                 record for lginput2 where the state has none, run before it by
+#                 etc/init/emulator-mrcu-pairing.conf and etc/systemd/system/
+#                 emulator-mrcu-pairing.service (lginput2.service.wants)
 #   src/          usr/lib/libjail-trust.so (jail-trust.c); usr/libexec/beanjar/pmlog-devmode
 #                 (pmlog-devmode.c), PmLogSetDevMode(1) for pmlog-debug --devmode
 #   jail/         the jail hooks' preload in sam, which starts LG's jailer: on systemd
