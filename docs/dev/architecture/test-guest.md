@@ -159,7 +159,8 @@ are its own clock, which the launcher scales under TCG (`webos.time_scale`).
 ## The test command
 
 `scripts/testguest-check` is what CI runs, and works the same on a workstation: it creates a VM on
-the image (`--display egl-headless --mode direct`; default name `testguest-check`, `--library` for
+the image (`--display egl-headless --link off`: the checks need no network, and a CI container has no
+unprivileged user namespaces for a NAT; default name `testguest-check`, `--library` for
 a library of its own), starts it, sends keys over QMP `input-send-event` (the keyboard the viewer
 and VNC reach) once `input-ready` appears, waits for `results.txt`, then adds the host's own checks:
 

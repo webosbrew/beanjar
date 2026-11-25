@@ -138,7 +138,7 @@ def main():
     tags = [x for t in a.tag for x in ("--tag", t)]
     beanjar(
         ["create", a.name, "--firmware", os.path.abspath(a.firmware), "--display", a.display,
-         "--mode", "direct", *tags],
+         "--link", "off", *tags],
         a.library,
     )  # fmt: skip
     _, info = beanjar(["show", a.name, "--json"], a.library)
