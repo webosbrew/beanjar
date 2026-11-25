@@ -6,7 +6,7 @@
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip= and modelName=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W15L on mtka5lr (A5LR), W16R on M2, W17H
-# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W18M on M16PP lite (a 43UK6300PJF), W19H on M16P3 (a 55SM9000PUA), W19O on O18 (an OLED65C9PUA), W19K on O18K (a 75SM9970PUA), W17R on M2R, W18R on M3, W18A on LM18A, W19R on M3R, W16P on K2LP, W17P on K3LP and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W18M on M16PP lite (a 43UK6300PJF), W19H on M16P3 (a 55SM9000PUA), W19O on O18 (an OLED65C9PUA), W19K on O18K (a 75SM9970PUA), W17R on M2R, W18R on M3, W18A on LM18A, W19R on M3R, W16K on K2L, W16P on K2LP, W17P on K3LP and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -191,6 +191,12 @@ M3*)    model=W18R ota=AFAAABAA fw=05.50.70 platform=msd94bcg sound_bad_type=SOU
 	no_keys='contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
 	tool_options='"panelInch":"32","backlightType":"directL","cameraReady":"off","headphone":"false"'
 	reset3d='"returnValue":true' ;;
+# W16K (K2L: U-Boot's chip=K2L), K2LP's sibling, the ATSC build: a 55UH7650 (US), W16P's
+# RELEASE.cfg (the UH78 defaults) with the model's inch and tool type. The rest as W16P's.
+K2L/*)  model=W16K ota=AFADATAA fw=05.70.55 platform=rtd2999l sound_bad_type=SOUND_ERROR_013
+	capture_no_video=CAPTURE_ERROR_09 max_devices= calibration= inputs=5 tv_system=atsc
+	tool_options='"panelInch":"55","backlightType":"edgeLed","cameraReady":"ready","headphone":"true"'
+	reset3d='"errorCode":"DISPLAY_ERROR_1002"' ;;
 # W16P (K2LP: U-Boot's chip=K2LP), webOS 3.4 on Realtek's RTD2999L, the ATSC build: a 43UH6030
 # (US), RELEASE.cfg's UH78 defaults with the model's inch and tool type: edge LED, camera ready, a
 # headphone output, 2D only; tvservice lists AV, component and HDMI x3. tvSystemName is atsc.

@@ -1,0 +1,60 @@
+# The Realtek RTD2999L "K2L" (U-Boot's chip=K2L), W16K's SoC: K2LP's sibling on the same Realtek
+# kernel generation (3.10.19-p.57.digya.k2l.2) and bsppart layout, in rtk.ko with K2LP's values
+# (guest/targets/soc/k2lp.toml): W16K's KADP has K2LP's PLI layout (pli_getIOAddress adds
+# 0x68000000, RBUS at base + 0x20000000; pli_allocContinuousMemoryMesg's uncached alias at
+# + 0x10000000 through the 8-byte AUTH_IOCQ_ALLOC, 0x40086b02), rtkaudio's shared states
+# (0x40046106, 0x80046107), four RPC rings and the firmware's own RPC answers.
+# The nodes are K2LP's plus watch, which W16K's KADP also opens.
+# The I2C devices: RELEASE.cfg is W16P's file ("[i2c]MICOM:1:0x52:2", "[i2c]NVM:4:0xA0:1",
+# "[i2c]NTP7515:4:0x54:1"), libhal_i2c passes the channel to KADP's RHAL_I2CRead_Mapping and
+# _Write_Mapping in mode 1, and W16K's remap table there is W16P's (1 to 2, 2 to 0, 4 to 1, 6 to 3;
+# the 8-bit address halved): the micom on bus 2, the EEPROM and the amplifier on bus 1.
+# The GPU is a PowerVR Rogue G6110 (DDK 1.6), which the gl layer replaces (the k3lp soc layer).
+
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 55UH7650's area, a US set's, the US group of W16K's tables (host/tools/research/model-config.py
+# with --set szCountryGroupCode=US): nContinentIdx 10 ("US" in its tvservice's _aDefineContinent),
+# LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, from W16K's RELEASE.cfg (the UH78 defaults), read by
+# host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6,7", "i2c_dev=micom:2:0x29,nvm:1:0x50,amp:1:0x2a",
+]
+
+[[modules]]
+name = "rtk"
+params = [
+    "rbus_phys=0x18000000",
+    "rbus_size=0x80000",
+    # the first base low enough that its 512 MiB space (RBUS at + 0x20000000) ends below 0x40000000,
+    # where a 32-bit process's mappings start: from 0x20000000 the space ran into them
+    "pli_base=0x18000000",
+    "pli_max=0x60000000",
+    "pli_step=0x8000000",
+    "pli_rbus=0x20000000",
+    "pli_window=0x10000000",
+    "pli_uncached=0x10000000",
+    "pli_pad=0x10000",
+    "dcu1_base=0x20000000",
+    "dcu1_size=0x20000000",
+    "dcu2_base=0x40000000",
+    "dcu2_size=0x20000000",
+    "clock90k=0xb801b690,0xb801b694",
+    "rpc_cpus=4",
+    """nodes=rtkaudio,rtkvdec,rtkdemux,rtkdemod,rtkademod,vscdev,vfedev,vbedev,vpqdev,vpqmemc,\
+        vpqleddev,vodev,vivtdev,sys-misc,se0,gdma_hal_gal0,hdcp2dev,mcp/core,mcp/cipher,mcp/dgst,\
+        mcp_core,mcp_cipher,mcp_dgst,venus_gpio,pwm0,dolbyvisionEDR0,tp,watch""",
+    "allocs=rtkaudio:0x4004610a:0x4004610b",
+    "stores=rtkaudio:0x80046107:0x40046106",
+    "pwms=pwm-I-0,pwm-I-1,pwm-I-2,pwm-I-3,pwm-M-0,pwm-M-1,pwm-M-2,pwm-M-3",
+    "vt=vivtdev:1920:1080:60:3",
+    # libhal_rtd2999l's SDEC thread polls rtkdemux (300 ms) for its section buffers: always
+    # readable, it ran tvservice at 128% of a core idle at Home
+    "quiet=rtkdemux",
+    "rpc_fn009=201:248",
+    "rpc_audio_config=201:16",
+    "rpc_spdifo_source=201:90",
+]
+derived = "rpc-table"

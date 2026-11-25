@@ -1,0 +1,45 @@
+# Board parameters the bootloader (Realtek's U-Boot 2012.07, LG's build for K2L) puts on the
+# kernel command line, parsed by libdile_boardinfo, tvservice, tvconfig-gen and the Upstart jobs.
+# The initramfs appends these to the real cmdline and bind-mounts the result over /proc/cmdline
+# inside webOS. Format and order follow W16K's boot.pak format strings, as W17P's
+# (guest/layers/soc/k3lp); the values describe a 55UH7650, a US model that runs W16K 05.70.55's
+# ATSC build (the models DB), in W16K's own encodings, proposed by
+# host/tools/research/model-config.py with the US group's region (--set szCountryGroupCode=US,
+# continent=10, LANG_COUNTRY_US, HWSETTING_US, tuner=none: W16K's RELEASE.cfg is a Korean
+# BOARD_K2L_ATSC_KR one); they are not read from a real set. U-Boot's kernel-only parameters,
+# sver=, bver= and modelopt= (no program of W16K's rootfs or tvservice reads that token) are left
+# out.
+#
+# chip=K2L is a constant in this U-Boot.
+ethaddr=a8:23:fe:12:34:56
+devtmpfs.mount=1
+# 18 hex digits as W16K's tvconfig-gen (SystemHdrInit) builds them from gModelOpt: country US
+# (MODELOPT_COUNTRY_US), panel interface V-by-One (digit 2), panel resolution UD (digit 3), no FRC
+# (digit 4), panel V16 (digit 5), no tuner combination (tuner=none: the US group), DDR 1.5 GB
+# (digit 11: a strap, not in the firmware), graphic resolution 1920x1080 (digit 14); the encoding
+# is the tool's, which writes what the firmware's parser reads back
+hwopt=002206001002002000
+# ToolOption1..9 (NVM ToolOptionDB). W16K's RELEASE.cfg defaults are the UH78 series' (a Korean
+# 55"), which stand in for the model's where the model name says nothing:
+#   ToolOpt1 33742: INCH_55 14, TOOL_UH76 30, MODULE_LGD 0, LVDS bit 1.
+#   ToolOpt2 18465: video and audio input index 1, BL_EDGE_LED 2, three USB ports.
+#   ToolOpt3 57682: AMP_NTP7515_1AMP 2 (RELEASE.cfg "[i2c]NTP7515:4:0x54"), headphone, DVR
+#     ready, ISF, local dimming and its menu, luminance up.
+#   ToolOpt4 64814: NO_DEMODS 2, DTV_SOC_T2 11, SI2178B 4, NO_DEMOD 14, NO_DEMOD_ANA 7.
+#   ToolOpt5 115080: CAM_READY 1, MOTION_REMOCON_MR16_MR15R 4, TVLink, scanning backlight, WOL,
+#     ClearPlus.
+#   ToolOpt6 69243: default standard backlight 11 (RELEASE.cfg's 80, scaled), MOTION_MIDDLE4 7,
+#     audio power 6, speakers 1, PWM2_DUTY_34 1.
+#   ToolOpt7 918155: MAC, ESN and Widevine AP, EDID_DTS 2, the eye sensor, PWM 100/120 Hz, Magic
+#     Space Sound, Instant Boot on by default.
+#   ToolOpt8 0 (the default record's), ToolOpt9 65666: BPL_CURRENT_130 2, PANEL_GAMUT_WCG 1, HDR.
+ToolOpt=33742:18465:57682:64814:115080:69243:918155:0:65666
+# The NVM sysdb's debug status, 3 = DEBUG; the emulator runs DEBUG on every board.
+debugMode=3
+# the ModelInfoDB's group code: 2 = US (libdile_boardinfo's countryGrpMatch)
+countryGrp=2
+modelName=55UH7650 serialNum=611RAXX00002
+chip=K2L
+# 0x + 9 hex digits (U-Boot's 0x%01lx%08lx): 7.5 GB eMMC
+emmc_size=0x1d2000000
+cmdEnd
