@@ -103,6 +103,12 @@ def vm_unit_name(vm_dir):
     return f"{UNIT_PREFIX}{library_tag(os.path.dirname(os.path.dirname(vm_dir)))}-{name}"
 
 
+def regress_unit_name(iid):
+    """The unit of the regress VM iid (a target; None: the checkout VM), the same on every VM host:
+    beanjar-vm-regress-<iid>, in beanjar-regress.slice (unit_slice)."""
+    return f"{UNIT_PREFIX}regress-{iid or 'default'}"
+
+
 def unit_tag(unit):
     """(tag, name) of a beanjar-vm-<tag>-<name> unit, else (None, unit)."""
     m = re.fullmatch(r"beanjar-vm-([A-Za-z0-9_]+)-(.+?)(?:\.service)?", unit)

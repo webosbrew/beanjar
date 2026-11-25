@@ -233,6 +233,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -391,7 +392,7 @@ _print = threading.Lock()
 def regress_unit(iid):
     """The unit of the regress VM iid (a target; None: the checkout VM), the same on every VM host:
     beanjar-vm-regress-<iid>, in beanjar-regress.slice (vmunits.unit_slice)."""
-    return f"{vmunits.UNIT_PREFIX}regress-{iid or 'default'}"
+    return vmunits.regress_unit_name(iid)
 
 
 class Usage(Exception):
@@ -943,8 +944,10 @@ class Host:
             ]
         return ["sh", "-c", cmd]
 
-    def run(self, cmd, timeout):
-        """(exit status, output); 124 when timeout passes (the command killed)."""
+    def run(self, cmd, timeout, protected=False):
+        """(exit status, output); 124 when timeout passes (the command killed). protected: in a
+        session of its own, so an interrupt of the run (Ctrl-C reaches the whole foreground group)
+        cannot cut it short: the stop of a VM must finish."""
         where = self.host or "local"
         if self.inst.iid:
             where += f" {self.inst.iid}"
@@ -960,6 +963,7 @@ class Host:
                 stderr=subprocess.STDOUT,
                 timeout=timeout,
                 env=dict(os.environ, **self.inst.env) if not self.host else None,
+                start_new_session=protected,
             )
         except subprocess.TimeoutExpired as e:
             out = e.output or b""
@@ -2444,6 +2448,7 @@ def run_target(h, a, target, fw):
             f'SAVED_LOG_DIR="$PWD/{out}/saved" LOG_TAG=regress timeout {a.timeout} host/scripts/vm-launcher stop '
             f"> {out}/stop.txt 2>&1",
             a.timeout + 30,
+            protected=True,
         )
         r.steps["stop"] = verdict.get(rc, "FAIL")
         if net_off:
@@ -2483,6 +2488,12 @@ def run_target(h, a, target, fw):
             if not r.orphans:
                 break
             time.sleep(2)
+        if r.orphans and not a.dry_run:
+            # the stop above did not end it (cut short, or its VM was started under another
+            # RUN_DIR): end the lane's unit itself, and look again
+            h.run(f"systemctl --user stop {h.inst.unit}.service", 150, protected=True)
+            _, r.orphans = h.run(h.inst.orphans, 30)
+            r.orphans = r.orphans.strip()
         if r.orphans:
             h.run(f"cat > {out}/orphans.txt <<'EOF'\n{r.orphans}\nEOF", 30)
             say(f"{target}: left running on the VM host:\n{r.orphans}")
@@ -3186,6 +3197,10 @@ def main(argv=None):
     except Usage as e:
         print(f"scripts/regress: {e}", file=sys.stderr)
         return 2
+    # a killed run (SIGTERM, a closed terminal) ends as an interrupted one does: every lane stops
+    # its VM (schedule_hosts), instead of the run dying with VMs left running
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, signal.default_int_handler)
     say(
         f"run {a.run} ({a.mode}{', TV suite' if a.tv else ''}): "
         + ", ".join(f"{p} ({fw})" for p, fw in sel)

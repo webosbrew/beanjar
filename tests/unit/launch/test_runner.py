@@ -127,6 +127,32 @@ class BgTest(unittest.TestCase):
         s2.assert_called_once_with(b)
 
 
+class RegressLaneTest(unittest.TestCase):
+    """A stop by INSTANCE alone reaches the instance's regress lane, which runs under its own
+    run directory and unit (scripts/regress), not the development VM's."""
+
+    def setUp(self):
+        self.top = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.top)
+        self.tree = mock.Mock(top=self.top)
+        self.tree.build = lambda *p: os.path.join("build", *p)
+
+    def test_lane_of_an_instance(self):
+        os.makedirs(os.path.join(self.top, "build", "instances", "k25lp-ponytail"))
+        env = launch.regress_lane_env({"INSTANCE": "k25lp-ponytail"}, self.tree)
+        self.assertEqual(env["RUN_DIR"], "build/instances/k25lp-ponytail")
+        self.assertEqual(env["LOG_DIR"], "build/instances/k25lp-ponytail")
+        self.assertEqual(env["UNIT"], "beanjar-vm-regress-k25lp-ponytail")
+
+    def test_no_lane(self):
+        os.makedirs(os.path.join(self.top, "build", "instances", "t1"))
+        self.assertIsNone(launch.regress_lane_env({}, self.tree))
+        self.assertIsNone(launch.regress_lane_env({"INSTANCE": "default"}, self.tree))
+        self.assertIsNone(launch.regress_lane_env({"INSTANCE": "other"}, self.tree))  # no directory
+        # an explicit RUN_DIR is the caller's own choice
+        self.assertIsNone(launch.regress_lane_env({"INSTANCE": "t1", "RUN_DIR": "x"}, self.tree))
+
+
 class DefaultAccelTest(unittest.TestCase):
     def accel(self, machine, kvm):
         with tempfile.TemporaryDirectory() as d:

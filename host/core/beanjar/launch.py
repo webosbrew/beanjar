@@ -930,6 +930,20 @@ def bg_start(words, env=None):
     return 0
 
 
+def regress_lane_env(env, tree=TREE):
+    """The environment of the regress lane of env's INSTANCE (scripts/regress: its run and logs
+    directories under build/instances/<INSTANCE>, its unit beanjar-vm-regress-<INSTANCE>), None
+    unless INSTANCE names one that exists and env sets no RUN_DIR of its own. A lane runs under
+    those, not under the development VM's, so a stop by INSTANCE alone would miss it."""
+    iid = env.get("INSTANCE")
+    if not iid or iid == "default" or env.get("RUN_DIR"):
+        return None
+    run = tree.build("instances", iid)
+    if not os.path.isdir(os.path.join(tree.top, run)):
+        return None
+    return dict(env, RUN_DIR=run, LOG_DIR=run, UNIT=vmunits.regress_unit_name(iid))
+
+
 def bg_stop(env=None, power_off=None):
     """Stop the VM: its logs saved, then with power_off (seconds) the power-off signal (Bg.power_off),
     else the guest synced and QEMU ended (Bg.stop). Exit status core.STOP_TIMED_OUT (4) if the guest
@@ -1267,7 +1281,12 @@ def main(argv_=None):
             if a.cmd == "status":
                 _library, directory = development.locations(os.environ)
                 return vm("status", directory, []) if os.path.isdir(directory) else 3
-            return bg_start(a.words) if a.cmd == "start" else bg_stop(power_off=power_off)
+            if a.cmd == "start":
+                return bg_start(a.words)
+            lane = regress_lane_env(original)
+            if lane is not None and Bg(dict(lane)).running():
+                return bg_stop(lane, power_off)  # the INSTANCE's regress lane runs, not its dev VM
+            return bg_stop(power_off=power_off)
         if a.cmd == "console":
             sock = log = None
             if a.dir:

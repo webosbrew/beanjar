@@ -1375,7 +1375,7 @@ class IdentityTest(unittest.TestCase):
         """The started VM's MAC, serial and identity directory, as its launcher prints them."""
 
         class H:
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 self.cmd = cmd
                 return (
                     0,
@@ -1418,7 +1418,7 @@ class HostFirmwareTest(unittest.TestCase):
             os.chmod(launcher, 0o755)
 
             class H:
-                def run(self, cmd, timeout):
+                def run(self, cmd, timeout, protected=False):
                     r = subprocess.run(["sh", "-c", cmd], cwd=d, capture_output=True, text=True)
                     return r.returncode, r.stdout + r.stderr
 
@@ -1434,7 +1434,7 @@ class HostFirmwareTest(unittest.TestCase):
             def __init__(self, *args, **kw):
                 pass
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 return 0, f"dir /srv/beanjar/firmware\nfw {WT1H} /srv/beanjar/firmware/{WT1H}\n"
 
         a, sel = regress.parse(["--target", "h13-afro,m2-dreadlocks"], found=FOUND, env={})
@@ -1460,7 +1460,7 @@ class HostFirmwareTest(unittest.TestCase):
             def __init__(self, host, *args, **kw):
                 self.host = host
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 fws = (WT1H, W16R) if self.host == "pi" else (WT1H,)
                 return 0, "dir /srv/fw\n" + "".join(f"fw {n} /srv/fw/{n}\n" for n in fws)
 
@@ -1511,7 +1511,7 @@ class HostFirmwareTest(unittest.TestCase):
             def __init__(self, rc, out):
                 self.r = (rc, out)
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 return self.r
 
         self.assertEqual(
@@ -1777,7 +1777,7 @@ class JobsTest(unittest.TestCase):
             def __init__(self, rc, out):
                 self.r = (rc, out)
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 return self.r
 
         self.assertEqual(
@@ -1989,7 +1989,7 @@ class MemoryBookingTest(unittest.TestCase):
         class H:
             host = "rock"
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 return 0, "6\nMemAvailable:    3700000 kB\n" + "1416000\n" * 4 + "1800000\n" * 2
 
         cpus, avail = regress.host_capacity(H())
@@ -2168,6 +2168,18 @@ class InstanceTest(unittest.TestCase):
                 p.wait()
         self.assertEqual(h.run(i.orphans, 30), (0, ""))
 
+    def test_protected_run_is_in_its_own_session(self):
+        # an interrupt (Ctrl-C reaches the foreground group) must not cut a VM's stop short
+        h = regress.Host(None, "dest", False, regress.Instance("sess-test"))
+        _, mine = h.run("ps -o sid= -p $$", 30)
+        _, theirs = h.run("ps -o sid= -p $$", 30, protected=True)
+        self.assertNotEqual(mine.strip(), theirs.strip())
+        self.assertEqual(theirs.strip(), str(int(theirs)))
+
+    def test_lane_unit_is_the_launchers(self):
+        self.assertEqual(regress.regress_unit("t1"), regress.vmunits.regress_unit_name("t1"))
+        self.assertEqual(regress.regress_unit(None), "beanjar-vm-regress-default")
+
     def test_orphans_on_the_vm_host(self):
         # the check runs on the VM host, against that host's checkout: the same-named instance of
         # another checkout (this PC's TCG lane beside the Pi's) is not this run's leftover
@@ -2245,7 +2257,7 @@ class ReadyLineTest(unittest.TestCase):
             inst = regress.Instance("fake")
             host = None
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 return 0, ""
 
         def step(h, a, r, name, arg, out):
@@ -2327,7 +2339,7 @@ class FirstBootRestartTest(unittest.TestCase):
             inst = regress.Instance("fake")
             host = None
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 return (back, "") if "until n=" in cmd else (0, "")
 
         def step(h, a, r, name, arg, out):
@@ -2427,7 +2439,7 @@ class GuestStepTest(unittest.TestCase):
         said = []
 
         class H(regress.Host):
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 console = " && host/scripts/vm-launcher console "
                 if console in cmd:
                     rc, text = super().run(cmd.split(console)[0], timeout)
@@ -2638,7 +2650,7 @@ class DeviceCensusIntegrationTest(unittest.TestCase):
             def __init__(self, root, target):
                 self.root, self.target = root, target
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 out = os.path.join(self.root, "build/regress/census-integration", self.target)
                 os.makedirs(os.path.join(out, "host"), exist_ok=True)
                 if "host/scripts/vm-launcher start" in cmd:
@@ -2690,7 +2702,7 @@ class CaptureTest(unittest.TestCase):
             def __init__(self, stop_rc, capture_rc):
                 self.stop_rc, self.capture_rc, self.commands = stop_rc, capture_rc, []
 
-            def run(self, cmd, timeout):
+            def run(self, cmd, timeout, protected=False):
                 self.commands.append(cmd)
                 if "host/scripts/vm-launcher start" in cmd:
                     return 1, "start failed"
