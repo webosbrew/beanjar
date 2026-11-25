@@ -18,6 +18,7 @@ static const struct {
     void (*exit)(void);
 } parts[] = {
     {"partinfo", lgemu_partinfo_init, lgemu_partinfo_exit},
+    {"emmc", lgemu_emmc_init, lgemu_emmc_exit},
     {"low_mem_notify", lgemu_low_mem_notify_init, lgemu_low_mem_notify_exit},
     {"i2c", lgemu_i2c_init, lgemu_i2c_exit},
     {"lgib", lgemu_lgib_init, lgemu_lgib_exit},

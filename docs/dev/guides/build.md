@@ -442,6 +442,7 @@ judges the facts here. Each item gets PASS, WARN or FAIL and a one-line reason:
 | `region` | Something disagrees with the firmware's broadcast line: tvservice's `tvSystemName`, `option.country`, `countryGroup`, `contiLangCountry`, tvconfig's `continentname`/`rmmgroup`/`rmmcountry` (webOS 3 on), or the smart service country's prefix. Also FAIL when the smart service country is still `other`, or when there is no country | The line is unknown |
 | `mount-readwrite` | The job failed in the kernel log; `$RWMOUNT_FLAG` was not made; or `/sys/power/pm_freeze_timeout` is not the value the job writes (webOS 4) | `preload/` is missing where the job reads it (webOS 3.5 on), or the job is not `stop/waiting` |
 | `tvservice` | Upstart restarted or ended tvservice (`init: tvservice` in dmesg), or there is a crash report of tvservice | Crash reports from other processes (`/var/log/reports/librdx`, `/var/log/crashd`, `/var/spool/rdxd`), jobs killed by a crash signal, or core files |
+| `sysprops` | luna-prefs' `getAllSysProperties` does not answer, answers an error, or has no `storageCapacity` (it fails as a whole when `/proc/partitions` has no `mmcblk0` line) | |
 | `eeprom` | tvservice's `modelName` is empty (the ModelInfoDB was not read), or it differs from the bootloader's `modelName=` | |
 | `modules` | lgemu.ko or a `SOC_MODULES` module is not loaded; its vermagic is not `uname -r`; dmesg has a stale-build sign (symbol version, unknown symbol, `i2c_adapters: cannot register`); or the kernel is tainted F (forced load) | |
 

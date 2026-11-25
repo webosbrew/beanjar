@@ -11,6 +11,7 @@ bring-up (the set misbehaves for it); WARN is worth a look but seen on working t
   mount-readwrite its flag file made, the job not failed, pm_freeze_timeout as it writes it,
                   preload/ where it reads it
   tvservice       no restart of tvservice, no crash report or core file
+  sysprops        luna-prefs' getAllSysProperties answers, with storageCapacity (the eMMC's size)
   eeprom          tvservice's model name read (not empty) and the one the bootloader passes
   modules         lgemu.ko and the SoC's modules loaded, built for the running kernel, no sign
                   of a stale build in the kernel log
@@ -33,7 +34,7 @@ sys.path.insert(
 )
 from beanjar import targets  # noqa: E402
 
-ITEMS = ("first-app", "region", "mount-readwrite", "tvservice", "eeprom", "modules")
+ITEMS = ("first-app", "region", "mount-readwrite", "tvservice", "sysprops", "eeprom", "modules")
 ORDER = {"PASS": 0, "WARN": 1, "FAIL": 2}
 
 # The broadcast standards (targets.BROADCASTS) and what belongs to them. A firmware is built for one;
@@ -227,6 +228,27 @@ def tvservice(facts):
     return "PASS", "tvservice not restarted, no crash report or core file"
 
 
+def sysprops(facts):
+    """luna-prefs' getAllSysProperties: an array of one-property objects, or an error object when
+    any property fails (storageCapacity without an mmcblk0 line in /proc/partitions)."""
+    raw = _one(facts, "sysprops")
+    try:
+        answer = json.loads(raw or "")
+    except ValueError:
+        return "FAIL", f"getAllSysProperties did not answer: {(raw or '').strip()[:80]!r}"
+    if isinstance(answer, dict):
+        why = answer.get("errorText") or answer.get("errorCode") or "no properties"
+        return "FAIL", f"getAllSysProperties: {why}"
+    props = {}
+    for p in answer if isinstance(answer, list) else []:
+        if isinstance(p, dict):
+            props.update(p)
+    cap = props.get("com.palm.properties.storageCapacity")
+    if not cap:
+        return "FAIL", "getAllSysProperties has no storageCapacity"
+    return "PASS", f"{len(props)} properties, storageCapacity {cap}"
+
+
 def eeprom(facts):
     info = _json(facts, "sysinfo")
     if not info:
@@ -283,6 +305,7 @@ def judge(text, broadcast):
         ("region", *region(facts, broadcast)),
         ("mount-readwrite", *mount_readwrite(facts)),
         ("tvservice", *tvservice(facts)),
+        ("sysprops", *sysprops(facts)),
         ("eeprom", *eeprom(facts)),
         ("modules", *modules(facts)),
     ]

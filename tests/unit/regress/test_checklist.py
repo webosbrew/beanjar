@@ -24,6 +24,7 @@ dmesg=init: pulseaudio main process (2047) terminated with status 1
 sysinfo={ "returnValue": true, "modelName": "43LH604V-ZB", "tvSystemName": "dvb", "contiLangCountry": "EU", "boardType": "M2_DVB_EU" }
 settings={ "settings": { "country": "GBR", "countryGroup": "EU", "smartServiceCountryCode2": "EU7", "smartServiceCountryCode3": "EU7" }, "returnValue": true }
 bootstatus={"firstAppLaunched":true,"returnValue":true,"bootStatus":"normal","firstAppId":"com.webos.app.livetv"}
+sysprops=[ { "com.palm.properties.machineName": "m2" }, { "com.palm.properties.storageCapacity": "3833593856" }, { "com.palm.properties.storageFreeSpace": "1919180800" } ]
 tvconfig_continentname=DE
 tvconfig_rmmgroup=EU
 tvconfig_rmmcountry=GBR
@@ -237,6 +238,20 @@ def test_tvservice():
     ]
     assert (s, "WebAppMgr" in why) == ("WARN", True)
     assert items(edit(GOOD, core="/tmp/core"))["tvservice"][0] == "WARN"
+
+
+def test_sysprops():
+    s, why = items(GOOD)["sysprops"]
+    assert (s, why) == ("PASS", "3 properties, storageCapacity 3833593856")
+    missing = (
+        '{"returnValue":false,"errorCode":-1,"errorText":"required system resource is missing"}'
+    )
+    s, why = items(edit(GOOD, sysprops=missing))["sysprops"]
+    assert (s, "required system resource is missing" in why) == ("FAIL", True)
+    one = '[ { "com.palm.properties.machineName": "m2" } ]'
+    assert items(edit(GOOD, sysprops=one))["sysprops"][0] == "FAIL"
+    assert items(edit(GOOD, sysprops=""))["sysprops"][0] == "FAIL"
+    assert items(edit(GOOD, sysprops=None))["sysprops"][0] == "FAIL"
 
 
 def test_eeprom():

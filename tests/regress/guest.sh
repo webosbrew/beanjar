@@ -331,6 +331,8 @@ checklist_webos() {
 	echo "settings=$(lq luna://com.webos.settingsservice/getSystemSettings \
 		'{"category":"option","keys":["country","countryGroup","smartServiceCountryCode2","smartServiceCountryCode3"]}')"
 	echo "bootstatus=$(lq luna://com.webos.bootManager/getBootStatus '{}')"
+	# luna-prefs' system properties: all or nothing, storageCapacity from mmcblk0's /proc/partitions line
+	echo "sysprops=$(lq luna://com.palm.preferences/systemProperties/getAllSysProperties '{}')"
 	# webOS 5's bootd keeps its first app's id as the template (its log: "Set first action (Input
 	# App) appId (${Last Input App})") and getBootStatus answers firstAppId "": the id it launched.
 	# An NMRM set's bootd (MODEL_NMRM: NmrmBootSequencer's doNmrmAppLaunching) launches Home without

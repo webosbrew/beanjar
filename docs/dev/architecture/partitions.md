@@ -16,6 +16,13 @@ disk from it. The emulator's `/proc/partinfo` and `/dev/mmcblk0pN` nodes let sto
 the declared partitions. Firmware paks remain separate read-only inputs; writable partitions
 are VM state. The boot manifest supplies the attachments and mappings to initramfs.
 
+The eMMC itself is `mmcblk0` (179:0) in `/proc/partitions` and `/sys/block`, as on a set, sized
+from the map's device size (`lgemu.ko`'s `emmc.c`): stock clients read its size, such as
+libluna-prefs' `storageCapacity`, without which `getAllSysProperties` answers nothing. It has no
+partitions of its own, since the partitions are the attached disks behind the `/dev/mmcblk0pN`
+nodes; its own blocks read as zeros and it is read-only. `firmware.updatable` replaces the
+`/dev/mmcblk0` node with its writable whole-disk device.
+
 ## Stock filesystem ownership
 
 Stock services format and mount the writable partitions they own. The emulator supplies blank

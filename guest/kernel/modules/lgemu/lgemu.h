@@ -6,6 +6,10 @@
 
 int lgemu_partinfo_init(void);
 void lgemu_partinfo_exit(void);
+/* the eMMC's size in bytes from the map (partinfo.c), 0 without one */
+u64 lgemu_partinfo_capacity(void);
+int lgemu_emmc_init(void);
+void lgemu_emmc_exit(void);
 int lgemu_low_mem_notify_init(void);
 void lgemu_low_mem_notify_exit(void);
 int lgemu_i2c_init(void);

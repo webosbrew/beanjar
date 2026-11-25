@@ -124,6 +124,24 @@ int lgemu_partinfo_init(void)
     return 0;
 }
 
+/* The eMMC's size in bytes, for emmc.c's mmcblk0: the map's device size (device_info.size, the
+ * eMMC's user area on a set: 0x1d2000000, 7634944 KiB, on UP7560's 8 GB part), or the end of the
+ * last partition it prints if that lies further out. 0 without a map. */
+u64 lgemu_partinfo_capacity(void)
+{
+    u64 size;
+    int slot;
+
+    if (!partinfo)
+        return 0;
+    size = partinfo->dev.size;
+    for (slot = 1; slot < nb_parts; slot++) {
+        struct partition_info *pi = &partinfo->partition[slot - 1];
+        size = max(size, pi->offset + pi->size);
+    }
+    return size;
+}
+
 void lgemu_partinfo_exit(void)
 {
     proc_remove(proc);
