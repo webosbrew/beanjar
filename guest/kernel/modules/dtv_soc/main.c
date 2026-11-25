@@ -450,7 +450,8 @@ static ssize_t av_read(struct file *file, char __user *buf, size_t count, loff_t
         if (err)
             return err;
     }
-    chunk = kmalloc(min_t(size_t, count, 256u << 10), GFP_KERNEL);
+    /* up to 256 KB: kvmalloc, not kmalloc, for a fragmented guest has no order-6 page free */
+    chunk = kvmalloc(min_t(size_t, count, 256u << 10), GFP_KERNEL);
     if (!chunk)
         return -ENOMEM;
     mutex_lock(&readers);
@@ -482,7 +483,7 @@ static ssize_t av_read(struct file *file, char __user *buf, size_t count, loff_t
         err = count < sizeof(struct webos_tuner_av) ? -EINVAL : -EAGAIN;
     else
         err = copy_to_user(buf, chunk, done) ? -EFAULT : 0;
-    kfree(chunk);
+    kvfree(chunk);
     return err ? err : done;
 }
 
