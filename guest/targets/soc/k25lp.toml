@@ -5,11 +5,11 @@
 # K8LPN2's without the SN5822, IT6265 and SIL9437 rows: NVM 4/0xA0, the amplifiers 0/0x54 and
 # 0x56, LIGHT_SENSOR_1/2 on 5; DILE_I2C opens /dev/i2c-0 to -5 (cmp r4, #6). libdil_tu_plugin is
 # K8LPN2's build of each release (compare_dvbfrontend_version: 2.1, property 0x68), so webos_tv
-# is K8LPN2's, with K8LPN2's carried European tuner values.
+# and dtv_soc are K8LPN2's, which carries K8LPN's ATSC tuner values (soc/k8lpn.toml): W25P queue's
+# legacy-broadcast-atsc thread tFEMain reads the post job property 0x80 and spins when webos_tv
+# does not answer it (answers=0x80:6401), as it did with the former European values.
 
 base = "k8lpn2"
-# its US board keeps the European tuner values it had (no dtv_soc) until its own firmware is checked
-broadcast_params = {}
 
 # gpio_usb_vbus and gpio_level: the USB ports' power switches and overcurrent inputs
 # (soc/k6lp.toml says how they were read): W25P 33.31.61's libdile_gpio and 43.22.74's
@@ -59,5 +59,19 @@ params = [
     "delsys=3+16+1+2+5+6+18,3+16+1+2+5+6+18",
     "version=2.1.0",
     "version_cmd=0x68",
+    "answers=0x80:6401",
+    "freq_cmd=0x5d",
+    "status_cmd=0x81",
+    "monitor_cmd=0x71",
+    "specstore_cmd=0x56",
+    "speccheck_cmd=0x55",
+    "strength_cmd=0x60",
+    "quality_cmd=0x61",
     "atv=2",
 ]
+
+[[modules]]
+name = "dtv_soc"
+
+[broadcast_params.atsc]
+webos_tv = ["frontends=1", "delsys=11+19+2"]
