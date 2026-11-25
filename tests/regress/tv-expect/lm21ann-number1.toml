@@ -180,8 +180,9 @@ clients = [
     "bsppart.pak:/bsp/usr/lib/libckteec.so.0.1.0",
     "bsppart.pak:/bsp/usr/lib/libkadaptor.so",
 ]
-node = false
-node_source = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0"
+node = true
+node_source = "lgemu.ko makes /dev/tee0 with no TA (tee=1: the rootfs has /usr/bin/tee-supplicant and no module of the chip's guest/targets/soc row has tee=1)"
+node_tas = false
 source = "ELF files naming /dev/tee: rootfs.pak:/usr/bin/tee-supplicant, rootfs.pak:/usr/sbin/legacy-broadcast-dvb, bsppart.pak:/bsp/usr/lib/libckteec.so, bsppart.pak:/bsp/usr/lib/libckteec.so.0, bsppart.pak:/bsp/usr/lib/libckteec.so.0.1, bsppart.pak:/bsp/usr/lib/libckteec.so.0.1.0, bsppart.pak:/bsp/usr/lib/libkadaptor.so"
 tas = []
 

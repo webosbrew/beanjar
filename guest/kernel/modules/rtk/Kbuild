@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# rtk.ko: Realtek's kernel drivers under its KADP userland (libkadaptor): the memory, RPC, scaler, capture, graphics and control units, and the TEE the
-# firmware's OP-TEE client opens (tee.c, the device; tee-ta.c, the stand-in TAs). The internal
+# rtk.ko: Realtek's kernel drivers under its KADP userland (libkadaptor): the memory, RPC, scaler, capture, graphics and control units, and the
+# stand-in TAs (tee-ta.c) behind lgemu.ko's TEE (lgemu-tee.h), which the firmware's OP-TEE client opens. The internal
 # micom's UCOM calls lgemu.ko's micom (lgemu-i2c.h; kbuild.sh gives modpost lgemu's Module.symvers).
 obj-m := rtk.o
-rtk-y := rtk-main.o rtk-memory.o rtk-rpc.o rtk-vsc.o rtk-vt.o rtk-graphics.o rtk-control.o tee.o tee-ta.o
+rtk-y := rtk-main.o rtk-memory.o rtk-rpc.o rtk-vsc.o rtk-vt.o rtk-graphics.o rtk-control.o tee-ta.o
 ccflags-y := -I$(src)/../lgemu

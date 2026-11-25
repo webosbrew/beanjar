@@ -13,7 +13,8 @@ development VMs and the regress instances have one too):
                   and the chip modules' parameters and host
                   share files from the firmware (targets.derived_params, targets.derived_files), with
                   lgemu's light sensor and ToF motion sensor where the board's tool options have
-                  them (targets.light_dev, targets.tof_dev)
+                  them (targets.light_dev, targets.tof_dev) and its TEE where the firmware has
+                  OP-TEE's client (targets.tee_device)
   partinfo.img    the firmware's eMMC partition map as the partinfo disk holds it (partmap.build,
                   whose cache, the VM's FW_CACHE, keeps the original)
   eeprom.img      what a blank EEPROM state disk becomes (nvm.new_chip), when there is a chip
@@ -46,7 +47,7 @@ import sys
 
 from . import fwcache, lls, nvm, targets, partmap, paths
 
-VERSION = 3
+VERSION = 4
 DIR = "prepared"
 # the panel's refresh where the firmware's own decode of the board is not run (before webOS 5)
 DEFAULT_PANEL_HZ = 60
@@ -294,6 +295,13 @@ def _make(job, new, say):
     except targets.Error as e:
         raise Error(str(e)) from None
     record["derived_files"] = files
+    # /dev/tee0 with no TA where the firmware has OP-TEE's client and no chip module has its TAs
+    try:
+        tee = targets.tee_device(job.target, job.fw)
+    except targets.Error as e:
+        raise Error(str(e)) from None
+    if tee:
+        record["derived_params"].setdefault("lgemu", []).extend(tee)
     # the board's own light sensor: where its tool options say the set has one (targets.light_dev)
     if targets.soc(job.target).light_bus is not None:
         try:

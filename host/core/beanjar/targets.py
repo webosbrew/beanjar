@@ -1432,6 +1432,29 @@ def tee_module(target):
     return next((m.name for m in soc(target).modules if "tee=1" in m.params), None)
 
 
+# OP-TEE's supplicant: in the rootfs of every firmware whose programs or libraries open /dev/tee%u
+# (a libteec, OP-TEE's client), and of no other (the firmware collection, 2026-11-25: every Realtek
+# k5lp..k25lp firmware, LM18A, LM21A, LM21AN, LM21ANN and LM21U; none of the M, O, H13, K2/K3
+# or E60N ones)
+TEE_CLIENT = "usr/bin/tee-supplicant"
+
+
+def tee_device(target, fw):
+    """lgemu.ko's parameters for a firmware fw (a directory with the paks) with OP-TEE's client
+    (TEE_CLIENT) on a chip none of whose modules stands in for its TAs (tee_module): ("tee=1",),
+    /dev/tee0 with no trusted application, where every session the client opens answers
+    TEEC_ERROR_ITEM_NOT_FOUND, as a real set's TEE answers a TA it does not have. Without the
+    device the client's TEEC_InitializeContext fails instead, which LM21ANN's legacy-broadcast-dvb
+    does not survive (docs/research/lm21ann-xcas-tee-stall.md). () otherwise. Error when the
+    rootfs cannot be listed."""
+    if tee_module(target) is not None:
+        return ()
+    try:
+        return ("tee=1",) if paths.rootfs_has(fw, TEE_CLIENT) else ()
+    except ValueError as e:
+        raise Error(f"{name(target)}: whether the firmware has OP-TEE's client: {e}") from None
+
+
 def card_module(target, broadcast=None):
     """The chip's module with an ARIB set's card device on the board of broadcast (acas=1 among its
     words there: webos_tv's /dev/dvb/adapter0/acas0), whose card_id= the VM's identity gives

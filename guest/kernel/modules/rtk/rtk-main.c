@@ -59,7 +59,6 @@
 #include "lgemu-drv.h"
 #include "lgemu-i2c.h"
 #include "rtk-internal.h"
-#include "rtk-tee.h"
 #include "../../../../include/webos-video.h"
 
 /* ---- generic node parameters ---- */

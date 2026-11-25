@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-only
-/* rtk.ko's stand-in TAs, behind tee.c's /dev/tee0.
+/* rtk.ko's stand-in TAs, behind lgemu.ko's /dev/tee0 (lgemu/tee.c).
  *
  * sstore: LG's secure-store TA (UUID a1bc890f-21dc-f54b-9745-d6f6a0e768f6, the same in W19P's,
  * W20L's and W21P's libkadaptor: KADP_SStore_* and their x* helpers, each of which opens a session,
@@ -52,7 +52,8 @@
 #include <linux/unaligned.h>
 
 #include "lgemu-drv.h"
-#include "rtk-tee.h"
+#include "lgemu-tee.h"
+#include "rtk-internal.h"
 
 static char *tee_huk;
 module_param(tee_huk, charp, 0);
@@ -130,14 +131,14 @@ static bool neq(const void *a, const void *b, size_t n)
 
 /* ---- parameters ---- */
 
-static u32 types_of(const struct rtk_ta_param *p)
+static u32 types_of(const struct lgemu_ta_param *p)
 {
     return p[0].type | p[1].type << 4 | p[2].type << 8 | p[3].type << 12;
 }
 
 /* an output of need bytes: TEEC_SUCCESS with its size set if it fits, or if its size is 0 (the
  * helpers' length probe: KADP_SStore_SetKey's xMakeKey(..., NULL, &len)); else SHORT_BUFFER */
-static u32 room(struct rtk_ta_param *out, size_t need, bool *write)
+static u32 room(struct lgemu_ta_param *out, size_t need, bool *write)
 {
     *write = out->size >= need && out->buf;
     if (out->size && !*write) {
@@ -166,7 +167,7 @@ static void blob_tag(const u8 *blob, size_t len, u8 tag[32])
     memzero_explicit(k, sizeof(k));
 }
 
-static u32 wrap(const struct rtk_ta_param *in, struct rtk_ta_param *out)
+static u32 wrap(const struct lgemu_ta_param *in, struct lgemu_ta_param *out)
 {
     size_t need = in->size + BLOB_EXTRA;
     bool write;
@@ -188,7 +189,7 @@ static u32 wrap(const struct rtk_ta_param *in, struct rtk_ta_param *out)
 }
 
 /* the blob's data length, or -1 if it is not one of ours (unaltered) */
-static long blob_len(const struct rtk_ta_param *in)
+static long blob_len(const struct lgemu_ta_param *in)
 {
     const u8 *b = in->buf;
     u8 tag[32];
@@ -205,7 +206,7 @@ static long blob_len(const struct rtk_ta_param *in)
     return len;
 }
 
-static u32 unwrap(const struct rtk_ta_param *in, struct rtk_ta_param *out)
+static u32 unwrap(const struct lgemu_ta_param *in, struct lgemu_ta_param *out)
 {
     long len = blob_len(in);
     bool write;
@@ -226,7 +227,7 @@ static u32 unwrap(const struct rtk_ta_param *in, struct rtk_ta_param *out)
 /* ---- Encryption / Decryption: p0 the 20-byte header, p1 the inputs, p2 -> p3 ---- */
 
 /* the key of a header's key id and mode (its first two words) and the inputs p1 */
-static void cipher_key(const struct rtk_ta_param *p, u8 out[32])
+static void cipher_key(const struct lgemu_ta_param *p, u8 out[32])
 {
     struct hmac_sha256_ctx c;
     u8 k[32];
@@ -253,7 +254,7 @@ static void box_tag(const u8 key[32], const u8 *nonce, const u8 *ct, size_t len,
     hmac_sha256_final(&c, tag);
 }
 
-static u32 cipher(u32 cmd, struct rtk_ta_param *p)
+static u32 cipher(u32 cmd, struct lgemu_ta_param *p)
 {
     bool box = cmd == 0x20 || cmd == 0x40;
     u8 key[32], tag[32];
@@ -296,7 +297,7 @@ static u32 cipher(u32 cmd, struct rtk_ta_param *p)
 
 #define STORE_SLOT 0x1c /* xGenerateHMACValue copies the 32-byte MAC to the image's +0x1c */
 
-static void store_mac(const struct rtk_ta_param *img, u8 mac[32])
+static void store_mac(const struct lgemu_ta_param *img, u8 mac[32])
 {
     static const u8 zeros[32];
     struct hmac_sha256_ctx c;
@@ -311,7 +312,7 @@ static void store_mac(const struct rtk_ta_param *img, u8 mac[32])
     memzero_explicit(k, sizeof(k));
 }
 
-static void hmac_of(const struct rtk_ta_param *p, u8 mac[32])
+static void hmac_of(const struct lgemu_ta_param *p, u8 mac[32])
 {
     struct hmac_sha256_ctx c;
     u8 k[32], sub[4];
@@ -357,7 +358,7 @@ static const struct {
     {0x800, T(VI, MI, MO, 0)},
 };
 
-static u32 sstore_run(u32 cmd, struct rtk_ta_param *p)
+static u32 sstore_run(u32 cmd, struct lgemu_ta_param *p)
 {
     u8 mac[32];
     bool write;
@@ -443,7 +444,7 @@ static u32 sstore_run(u32 cmd, struct rtk_ta_param *p)
     return TEEC_ERROR_NOT_SUPPORTED;
 }
 
-static u32 sstore_invoke(void *state, u32 cmd, struct rtk_ta_param *p)
+static u32 sstore_invoke(void *state, u32 cmd, struct lgemu_ta_param *p)
 {
     u32 types = types_of(p), ret;
     size_t sizes[4];
@@ -458,13 +459,13 @@ static u32 sstore_invoke(void *state, u32 cmd, struct rtk_ta_param *p)
     return ret;
 }
 
-static u32 sstore_open(void **state, struct rtk_ta_param *p)
+static u32 sstore_open(void **state, struct lgemu_ta_param *p)
 {
     lgemu_count(&tee_counts, "sstore", OPEN, TEEC_SUCCESS);
     return TEEC_SUCCESS;
 }
 
-static const struct rtk_ta tas[] = {
+static const struct lgemu_ta tas[] = {
     {.name = "sstore",
      .uuid = {0xa1, 0xbc, 0x89, 0x0f, 0x21, 0xdc, 0xf5, 0x4b, 0x97, 0x45, 0xd6, 0xf6, 0xa0, 0xe7,
               0x68, 0xf6},
@@ -472,7 +473,7 @@ static const struct rtk_ta tas[] = {
      .invoke = sstore_invoke},
 };
 
-int rtk_ta_setup(struct proc_dir_entry *dir)
+static int ta_setup(struct proc_dir_entry *dir)
 {
     if (tee_huk && strlen(tee_huk) == 64 && !hex2bin(huk, tee_huk, 32)) {
         pr_info("the VM's hardware-unique key\n");
@@ -488,7 +489,7 @@ int rtk_ta_setup(struct proc_dir_entry *dir)
     return 0;
 }
 
-const struct rtk_ta *rtk_ta_find(const u8 *uuid)
+static const struct lgemu_ta *ta_find(const u8 *uuid)
 {
     for (size_t i = 0; i < ARRAY_SIZE(tas); i++)
         if (!memcmp(tas[i].uuid, uuid, 16))
@@ -497,11 +498,31 @@ const struct rtk_ta *rtk_ta_find(const u8 *uuid)
 }
 
 /* a UUID with no TA: counted under its first word, logged once a UUID (as far as the table goes) */
-void rtk_ta_unknown(const u8 *uuid)
+static void ta_unknown(const u8 *uuid)
 {
     u32 word = get_unaligned_be32(uuid);
 
     lgemu_count(&tee_counts, "no TA", word, TEEC_ERROR_ITEM_NOT_FOUND);
     if (first(word | 1))
         pr_info("no TA %pUb (%s): item not found\n", uuid, current->comm);
+}
+
+static const struct lgemu_tee_tas rtk_tas = {.find = ta_find, .unknown = ta_unknown};
+static bool added;
+
+int rtk_tee_add(struct proc_dir_entry *dir)
+{
+    int err = ta_setup(dir);
+
+    if (!err)
+        err = lgemu_tee_add(&rtk_tas);
+    added = !err;
+    return err;
+}
+
+void rtk_tee_remove(void)
+{
+    if (added)
+        lgemu_tee_remove(&rtk_tas);
+    added = false;
 }

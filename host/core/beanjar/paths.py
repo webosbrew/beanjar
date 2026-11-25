@@ -219,6 +219,30 @@ def rootfs_entries(fw_dir, directories):
     )
 
 
+def rootfs_has(fw_dir, path):
+    """Whether fw_dir's stock rootfs image (rootfs.pak, or super.pak's logical rootfs) has path (in
+    the root, with or without a leading "/"), by unsquashfs's listing of that one path. ValueError
+    without an image unsquashfs can list."""
+    import subprocess
+    from . import superpak
+
+    src, offset = os.path.join(fw_dir, "rootfs.pak"), 0
+    logical = superpak.images(fw_dir)
+    if logical:
+        src, offset, _size = logical["rootfs"]
+    if not os.path.isfile(src):
+        raise ValueError(f"{fw_dir}: no rootfs.pak or super.pak rootfs")
+    path = path.strip("/")
+    r = subprocess.run(
+        ["unsquashfs", "-l", "-no-wildcards", "-d", "", "-o", str(offset), src, path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if r.returncode != 0:
+        raise ValueError(f"{src}: unsquashfs cannot list it")
+    return any(line.strip("/") == path for line in r.stdout.decode(errors="replace").splitlines())
+
+
 MODEL_ID = "etc/starfish/model_id.json"
 _model_ids = {}
 

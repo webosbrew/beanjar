@@ -804,18 +804,33 @@ def tee_of(fw, pak_order, target):
         else f"no TEE client: none of the {scanned} ELF files under {', '.join(EXEC_DIRS)} of {where} names "
         f"{TEE_DEV.decode()}"
     )
-    # whether the VM is expected to have the node: the chip's module with tee=1 (rtk.ko's stand-in)
+    # whether the VM is expected to have the node, and TAs behind it: the chip's module with tee=1
+    # (rtk.ko's stand-in TAs), else lgemu.ko's tee=1 with none where the rootfs has OP-TEE's client
+    # (targets.tee_device, the launcher's rule)
     module = targets.tee_module(targets.by_name(target))
+    bare = not module and targets.TEE_CLIENT in fw.files("rootfs.pak")
     init = tee_init_of(fw, pak_order)
     if module:
         node = f"{module}.ko makes /dev/tee0 (tee=1 in the chip's guest/targets/soc row)"
+    elif bare:
+        node = (
+            f"lgemu.ko makes /dev/tee0 with no TA (tee=1: the rootfs has /{targets.TEE_CLIENT} and "
+            "no module of the chip's guest/targets/soc row has tee=1)"
+        )
     else:
         node = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0"
     if init:
         node += f"; the firmware's own {', '.join(init)} opens /dev/tee0"
-    return dict(
-        clients=clients, tas=sorted(set(tas)), source=src, node=bool(module), node_source=node
+    row = dict(
+        clients=clients,
+        tas=sorted(set(tas)),
+        source=src,
+        node=bool(module or bare),
+        node_source=node,
     )
+    if bare:
+        row["node_tas"] = False
+    return row
 
 
 AUDIO_METHODS = ("getVolume", "setMuted", "volumeUp", "volumeDown")

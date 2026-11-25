@@ -698,8 +698,11 @@ judging, the generator's parsing and the files.
   every ELF file of the target's paks that names `/dev/tee`, the Realtek targets' libkadaptor and
   tee-supplicant, and the TAs in `usr/lib/optee_armtz`; elsewhere one SKIP citing that none of the
   N files does), `tests/regress/tv.sh tee` runs `tests/regress/tee/tee-probe` (`build/tests/regress/tee`) in webOS
-  through the firmware's own libteec (libkadaptor's `TEEC_*`, loaded at run time) against rtk.ko's
-  `/dev/tee0`. Checked
+  through the firmware's own libteec (libkadaptor's `TEEC_*`, loaded at run time) against lgemu.ko's
+  `/dev/tee0`. Where no chip module has TAs (the table's `node_tas = false`: lgemu.ko's bare
+  `tee=1`, the LM21A family) the step checks only that the device is there, that every open
+  answers TEEC_ERROR_ITEM_NOT_FOUND from the TEE and that no TEE client crashed
+  (`tvsuite.judge_tee_no_ta`). Otherwise checked
   (`tvsuite.judge_tee`): `/dev/tee0` is a character device; the secure-store TA's session opens and
   each TA the firmware ships answers TEEC_ERROR_ITEM_NOT_FOUND from the TEE (no stand-in, by
   design); each secure-store command the firmware's clients use answers as designed, with its round

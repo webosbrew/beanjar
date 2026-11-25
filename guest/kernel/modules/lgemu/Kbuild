@@ -6,6 +6,8 @@ lgemu-y := core.o partinfo.o emmc.o low_mem_notify.o i2c.o accel.o light.o tof.o
 # What the SoC driver modules share (lgemu-drv.h): no part of its own, only exports.
 lgemu-y += drv.o
 lgemu-y += sestore.o
+# /dev/tee0 (tee.c): its own with tee=1, or a SoC module's with that module's TAs (lgemu-tee.h).
+lgemu-y += tee.o
 # The Linux I2C adapters over i2c.c's devices, where the kernel has I2C (lgemu.h has the stubs).
 lgemu-$(CONFIG_I2C) += i2c_adapters.o
 # The board's CEC adapter on the kernel's CEC framework, where the kernel has it (lgemu.h has the stubs).

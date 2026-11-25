@@ -68,5 +68,8 @@ int rtk_fb_setup(void);
 void rtk_fb_remove(void);
 int rtk_gal_gfx_add(void);
 void rtk_gal_gfx_remove(void);
+/* tee=1: the stand-in TAs (tee-ta.c) behind lgemu.ko's /dev/tee0, which they add */
+int rtk_tee_add(struct proc_dir_entry *dir);
+void rtk_tee_remove(void);
 
 #endif

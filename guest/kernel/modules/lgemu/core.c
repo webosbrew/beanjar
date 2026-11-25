@@ -23,6 +23,7 @@ static const struct {
     {"i2c", lgemu_i2c_init, lgemu_i2c_exit},
     {"lgib", lgemu_lgib_init, lgemu_lgib_exit},
     {"sestore", lgemu_sestore_init, lgemu_sestore_exit},
+    {"tee", lgemu_tee_init, lgemu_tee_exit},
     {"gfx", lgemu_gfx_init, lgemu_gfx_exit},
     {"i2c_adapters", lgemu_i2c_adapters_init, lgemu_i2c_adapters_exit},
     {"snd", lgemu_snd_init, lgemu_snd_exit},

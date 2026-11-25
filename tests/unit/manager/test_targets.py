@@ -66,6 +66,33 @@ def test_card_only_on_arib_boards():
     assert len(a) == 12 and a.startswith("be") and int(a, 16)
 
 
+def test_tee_device_keyed_on_the_client(monkeypatch):
+    """lgemu.ko's bare /dev/tee0 (tee=1) where the firmware's rootfs has OP-TEE's supplicant and no
+    chip module has its TAs; none on a chip whose module has them (rtk.ko's tee=1)."""
+    asked = []
+
+    def has(fw, path):
+        asked.append((fw, path))
+        return fw == "with"
+
+    monkeypatch.setattr(targets.paths, "rootfs_has", has)
+    lm = ("lm21ann", "ponytail")
+    assert targets.tee_module(lm) is None
+    assert targets.tee_device(lm, "with") == ("tee=1",)
+    assert targets.tee_device(lm, "without") == ()
+    assert asked == [("with", targets.TEE_CLIENT), ("without", targets.TEE_CLIENT)]
+    k24 = ("k24", "ponytail")
+    assert targets.tee_module(k24) == "rtk"
+    assert targets.tee_device(k24, "with") == ()
+
+    def unreadable(fw, path):
+        raise ValueError("no rootfs.pak")
+
+    monkeypatch.setattr(targets.paths, "rootfs_has", unreadable)
+    with pytest.raises(targets.Error, match="OP-TEE's client"):
+        targets.tee_device(lm, "x")
+
+
 class Malformed:
     def __init__(self, tmp):
         self.dir = os.path.join(tmp, "targets")

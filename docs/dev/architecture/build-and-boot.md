@@ -553,6 +553,15 @@ Host census and memory suites cover report provenance and preparation consistenc
 they do not establish device behavior or replace live firmware checks.
 
 
+Its `tee` part (`tee.c`, `lgemu-tee.h`) is `/dev/tee0` with OP-TEE's user ABI, which the firmwares'
+libteec speaks. A SoC module that stands in for trusted applications adds it with them (rtk.ko's
+`tee=1`, the secure-store TA); lgemu.ko's own `tee=1` adds it with none, so that every session
+answers TEEC_ERROR_ITEM_NOT_FOUND, as a real set's TEE answers a TA it does not have. Prepare gives
+lgemu.ko `tee=1` (`targets.tee_device`) where the firmware's rootfs has OP-TEE's supplicant,
+`usr/bin/tee-supplicant`, and no chip module has TAs: LM18A, LM21A, LM21AN, LM21ANN and LM21U.
+Without a device the client's `TEEC_InitializeContext` fails, which LM21ANN's legacy-broadcast-dvb
+does not survive (`docs/research/lm21ann-xcas-tee-stall.md`).
+
 The initramfs carries it as `/lib/modules/lgemu.ko`, and `/init` loads it as soon as it has read
 `/host/boot.conf`; a failure is logged (`[init] lgemu.ko not loaded: ...`) and the boot goes on,
 without the interfaces. After it `/init` loads the modules boot.conf's `SOC_MODULES` names (the chip
@@ -562,8 +571,8 @@ the chip's values as parameters: `guest/kernel/modules/mstar-utopia` (`mstar-uto
 `guest/kernel/modules/lg115x` (`lg115x.ko`, LG's own kdrivers, for H13 and M14: "lg115x.ko" there) and
 `guest/kernel/modules/rtk` (`rtk.ko`, Realtek's drivers under its KADP, for K5LP: "Implemented: W19P
 headless" there; its RPC answers are the firmware's own, read at each start by
-`host/helpers/rtk/rpc-table.py`; with `tee=1` also `/dev/tee0`, `tee.c` and `tee-ta.c`: "Implemented: the
-Realtek TEE"), each built, carried and published (`build/<name>.ko`) as lgemu.ko is;
+`host/helpers/rtk/rpc-table.py`; with `tee=1` also the stand-in TAs of `tee-ta.c` behind lgemu.ko's
+`/dev/tee0`: "Implemented: the Realtek TEE"), each built, carried and published (`build/<name>.ko`) as lgemu.ko is;
 and on M3 and K5LP `guest/kernel/modules/btmtk_usb` (`btmtk_usb.ko`, MediaTek's Bluetooth driver with no
 adapter: its netlink family, `family`, 30 on W18R and 29 on W19P, which webos-bluetooth-service opens)
 and `guest/kernel/modules/webos_tv` (`webos_tv.ko`, LG's WDVB DVBv5 tuner driver with no signal: the `wdvb` platform device's frontend sysfs and `/dev/dvb/adapter0/frontend0`, its counts in `/proc/webos_tv/props`). The first three call lgemu.ko's I2C devices

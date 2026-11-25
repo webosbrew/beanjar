@@ -18,6 +18,8 @@ int lgemu_lgib_init(void);
 void lgemu_lgib_exit(void);
 int lgemu_sestore_init(void);
 void lgemu_sestore_exit(void);
+int lgemu_tee_init(void);
+void lgemu_tee_exit(void);
 int lgemu_gfx_init(void);
 void lgemu_gfx_exit(void);
 int lgemu_snd_init(void);

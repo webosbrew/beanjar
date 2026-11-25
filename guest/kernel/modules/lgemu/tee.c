@@ -1,8 +1,17 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-only
-/* rtk.ko's TEE: /dev/tee0 with the OP-TEE driver's user ABI (linux/tee.h, TEE_IOC_*), which the
- * Realtek firmwares' TEE client speaks (libkadaptor's statically linked libteec, OP-TEE's), and
- * behind it stand-in trusted applications for the sessions the firmware opens (tee-ta.c).
+/* The TEE: /dev/tee0 with the OP-TEE driver's user ABI (linux/tee.h, TEE_IOC_*), which the
+ * firmwares' OP-TEE client speaks (libteec, statically linked into Realtek's libkadaptor and into
+ * legacy-broadcast-dvb, MStar's libkadaptor and libckteec), and behind it the trusted applications
+ * a SoC driver module stands in for (rtk.ko's tee-ta.c), or none.
+ *
+ * Who adds it (lgemu-tee.h): lgemu.ko itself with tee=1, with no TA, where the firmware has
+ * OP-TEE's client (the launcher's targets.tee_device: its rootfs has /usr/bin/tee-supplicant) and
+ * no SoC module stands in for a TA; or a SoC driver module with its TAs (rtk.ko's tee=1). A real
+ * set's TEE answers OPEN_SESSION of a TA it does not have with TEEC_ERROR_ITEM_NOT_FOUND, and its
+ * clients take that cleanly; with no device at all TEEC_InitializeContext fails instead, which some
+ * of them do not survive (lm21ann's legacy-broadcast-dvb: its XCAS init then blocks the broadcast
+ * service's start for good, docs/research/lm21ann-xcas-tee-stall.md).
  *
  * The device: TEE_IOC_VERSION (OP-TEE, GlobalPlatform; no registered memory, so the client takes
  * its shared memory from SHM_ALLOC and copies registered buffers through it), SHM_ALLOC (an fd
@@ -22,20 +31,27 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/tee.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 
 #include "lgemu-drv.h"
-#include "rtk-tee.h"
+#include "lgemu-tee.h"
+#include "lgemu.h"
 
 #define SHM_MAX    (16u << 20)
 #define PARAMS_MAX 4
 
-/* every context's shared memory and sessions, and the TAs' state, under one lock: a TA answers
- * at once, so nothing waits long */
+static bool tee;
+module_param(tee, bool, 0444);
+MODULE_PARM_DESC(tee, "/dev/tee0 with no trusted application (a SoC module may add its own)");
+
+/* every context's shared memory and sessions, the TAs' state and which TAs there are, under one
+ * lock: a TA answers at once, so nothing waits long */
 static DEFINE_MUTEX(tee_lock);
+static const struct lgemu_tee_tas *tee_tas;
 
 struct tee_ctx {
     struct kref ref;
@@ -52,7 +68,7 @@ struct tee_shm {
 };
 
 struct tee_sess {
-    const struct rtk_ta *ta;
+    const struct lgemu_ta *ta;
     void *state;
 };
 
@@ -146,10 +162,10 @@ fail:
     return fd;
 }
 
-/* ---- parameters: the client's (struct tee_ioctl_param) to a TA's (struct rtk_ta_param) ---- */
+/* ---- parameters: the client's (struct tee_ioctl_param) to a TA's (struct lgemu_ta_param) ---- */
 
 static u32 params_in(struct tee_ctx *ctx, const struct tee_ioctl_param *up, u32 n,
-                     struct rtk_ta_param *p)
+                     struct lgemu_ta_param *p)
 {
     memset(p, 0, sizeof(*p) * PARAMS_MAX);
     for (u32 i = 0; i < n; i++) {
@@ -187,7 +203,7 @@ static u32 params_in(struct tee_ctx *ctx, const struct tee_ioctl_param *up, u32 
     return TEEC_SUCCESS;
 }
 
-static void params_out(struct tee_ioctl_param *up, u32 n, const struct rtk_ta_param *p)
+static void params_out(struct tee_ioctl_param *up, u32 n, const struct lgemu_ta_param *p)
 {
     for (u32 i = 0; i < n; i++) {
         switch (p[i].type) {
@@ -232,13 +248,27 @@ static void *arg_in(void __user *uarg, size_t head, u32 *nparams, size_t *len,
     return arg;
 }
 
+/* a UUID with no TA where no SoC module has TAs: logged once a UUID (as far as the table goes) */
+static void ta_unknown(const u8 *uuid)
+{
+    static u8 seen[16][16];
+    static unsigned int n;
+
+    for (unsigned int i = 0; i < n; i++)
+        if (!memcmp(seen[i], uuid, 16))
+            return;
+    if (n < ARRAY_SIZE(seen))
+        memcpy(seen[n++], uuid, 16);
+    pr_info("no TA %pUb (%s): item not found\n", uuid, current->comm);
+}
+
 static long open_session(struct tee_ctx *ctx, void __user *uarg)
 {
-    struct rtk_ta_param p[PARAMS_MAX];
+    struct lgemu_ta_param p[PARAMS_MAX];
     struct tee_ioctl_open_session_arg *arg;
     struct tee_ioctl_param *up;
     struct tee_sess *sess = NULL;
-    const struct rtk_ta *ta;
+    const struct lgemu_ta *ta;
     u64 __user *ubuf;
     size_t len;
     long err = 0;
@@ -250,10 +280,13 @@ static long open_session(struct tee_ctx *ctx, void __user *uarg)
     arg->ret_origin = TEEC_ORIGIN_TEE;
     arg->session = 0;
     mutex_lock(&tee_lock);
-    ta = rtk_ta_find(arg->uuid);
+    ta = tee_tas ? tee_tas->find(arg->uuid) : NULL;
     if (!ta) {
         arg->ret = TEEC_ERROR_ITEM_NOT_FOUND;
-        rtk_ta_unknown(arg->uuid);
+        if (tee_tas)
+            tee_tas->unknown(arg->uuid);
+        else
+            ta_unknown(arg->uuid);
         goto out;
     }
     arg->ret = params_in(ctx, up, n, p);
@@ -290,7 +323,7 @@ out:
 
 static long invoke(struct tee_ctx *ctx, void __user *uarg)
 {
-    struct rtk_ta_param p[PARAMS_MAX];
+    struct lgemu_ta_param p[PARAMS_MAX];
     struct tee_ioctl_invoke_arg *arg;
     struct tee_ioctl_param *up;
     struct tee_sess *sess;
@@ -419,30 +452,9 @@ static char *tee_devnode(const struct device *dev, umode_t *mode)
 static const struct class tee_class = {.name = "tee", .devnode = tee_devnode};
 static struct lgemu_cdev tee_cdev;
 static bool tee_class_registered, tee_made;
+static unsigned int tee_users; /* lgemu's own tee=1 and each SoC module's add */
 
-int rtk_tee_add(struct proc_dir_entry *dir)
-{
-    struct device *d;
-    int err;
-
-    err = rtk_ta_setup(dir);
-    if (err)
-        return err;
-    err = lgemu_cdev_add(&tee_cdev, 0, 0, 1, "tee", &tee_fops);
-    if (err)
-        return err;
-    err = class_register(&tee_class);
-    if (err)
-        return err;
-    tee_class_registered = true;
-    d = device_create(&tee_class, NULL, tee_cdev.dev, NULL, "tee0");
-    if (IS_ERR(d))
-        return PTR_ERR(d);
-    tee_made = true;
-    return 0;
-}
-
-void rtk_tee_remove(void)
+static void tee_device_remove(void)
 {
     if (tee_made)
         device_destroy(&tee_class, tee_cdev.dev);
@@ -451,4 +463,78 @@ void rtk_tee_remove(void)
         class_unregister(&tee_class);
     tee_class_registered = false;
     lgemu_cdev_del(&tee_cdev);
+}
+
+static int tee_device_add(void)
+{
+    struct device *d;
+    int err;
+
+    err = lgemu_cdev_add(&tee_cdev, 0, 0, 1, "tee", &tee_fops);
+    if (!err)
+        err = class_register(&tee_class);
+    if (err)
+        goto fail;
+    tee_class_registered = true;
+    d = device_create(&tee_class, NULL, tee_cdev.dev, NULL, "tee0");
+    if (IS_ERR(d)) {
+        err = PTR_ERR(d);
+        goto fail;
+    }
+    tee_made = true;
+    return 0;
+fail:
+    tee_device_remove();
+    return err;
+}
+
+int lgemu_tee_add(const struct lgemu_tee_tas *tas)
+{
+    int err = 0;
+
+    mutex_lock(&tee_lock);
+    if (tas && tee_tas) {
+        err = -EBUSY;
+        goto out;
+    }
+    if (!tee_users)
+        err = tee_device_add();
+    if (err)
+        goto out;
+    tee_users++;
+    if (tas)
+        tee_tas = tas;
+out:
+    mutex_unlock(&tee_lock);
+    return err;
+}
+EXPORT_SYMBOL_GPL(lgemu_tee_add);
+
+void lgemu_tee_remove(const struct lgemu_tee_tas *tas)
+{
+    mutex_lock(&tee_lock);
+    if (tas && tee_tas == tas)
+        tee_tas = NULL;
+    if (tee_users && !--tee_users)
+        tee_device_remove();
+    mutex_unlock(&tee_lock);
+}
+EXPORT_SYMBOL_GPL(lgemu_tee_remove);
+
+int lgemu_tee_init(void)
+{
+    int err;
+
+    if (!tee)
+        return 0;
+    err = lgemu_tee_add(NULL);
+    if (!err)
+        pr_info("/dev/tee0, no trusted application: every session is item not found\n");
+    return err;
+}
+
+void lgemu_tee_exit(void)
+{
+    if (tee)
+        lgemu_tee_remove(NULL);
 }

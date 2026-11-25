@@ -7,7 +7,7 @@
 # is built after lgemu.ko, with its Module.symvers and lgemu-i2c.h, as mstar-utopia.ko is.
 rtk_dir = kernel_root / 'rtk'
 rtk_inputs = kbuild + [files('Kbuild', 'rtk-main.c', 'rtk-memory.c', 'rtk-rpc.c', 'rtk-vsc.c',
-    'rtk-vt.c', 'rtk-graphics.c', 'rtk-control.c', 'rtk-internal.h', 'tee.c', 'tee-ta.c', 'rtk-tee.h'), lgemu_h]
+    'rtk-vt.c', 'rtk-graphics.c', 'rtk-control.c', 'rtk-internal.h', 'tee-ta.c'), lgemu_h]
 rtk_ko = custom_target('rtk',
   output: 'rtk.ko',
   depfile: 'rtk.ko.d',

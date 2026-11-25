@@ -1315,6 +1315,56 @@ class TeeTest(unittest.TestCase):
         real = dict(tee=dict(TEE_ROW["tee"], node=True))
         self.assertIn("tee.key.blob", items_of(tvsuite.judge_tee(tee_guest(huk), real, huk.hex())))
 
+    def test_no_ta_judge(self):
+        """A chip with no module's TAs whose firmware has OP-TEE's client (lgemu.ko tee=1, MStar's
+        LM21A family): a character device, every open TEEC_ERROR_ITEM_NOT_FOUND from the TEE, no
+        crash."""
+        row = dict(
+            tee=dict(
+                clients=["bsppart.pak:/bsp/usr/lib/libkadaptor.so"],
+                tas=["f235e3dc-b4a5-11e8-96f8-529269fb1459"],
+                source="test",
+                node=True,
+                node_source="lgemu.ko makes /dev/tee0 with no TA",
+                node_tas=False,
+            )
+        )
+        facts = (
+            "tee_dev=char\nlib=/usr/lib/libkadaptor.so\n"
+            f"open.{tvsuite.SSTORE_UUID}=0xffff0008 3\n"
+            "open.f235e3dc-b4a5-11e8-96f8-529269fb1459=0xffff0008 3\nprobe_open_rc=0\n"
+            "sstore.fails=7\nprobe_sstore_rc=1\ntee_crashes=\nTV FACTS END"
+        )
+        items = items_of(tvsuite.judge_tee(facts, row))
+        self.assertEqual(
+            set(items),
+            {
+                "tee.device",
+                "tee.open.sstore",
+                "tee.open.f235e3dc-b4a5-11e8-96f8-529269fb1459",
+                "tee.crashes",
+            },
+        )
+        self.assertEqual({st for st, _ in items.values()}, {"PASS"}, items)
+        # no device: the device's FAIL alone
+        gone = tvsuite.judge_tee(
+            facts.replace("tee_dev=char", "tee_dev=ls: /dev/tee0: No such file or directory"), row
+        )
+        self.assertEqual([c for c, st, _ in gone], ["tee.device"])
+        self.assertEqual(gone[0][1], "FAIL")
+        # a TA that opened, or an init failure: FAIL
+        opened = items_of(
+            tvsuite.judge_tee(
+                facts.replace(
+                    f"{tvsuite.SSTORE_UUID}=0xffff0008 3", f"{tvsuite.SSTORE_UUID}=0x0 4"
+                ),
+                row,
+            )
+        )
+        self.assertEqual(opened["tee.open.sstore"][0], "FAIL")
+        crashed = items_of(tvsuite.judge_tee(facts.replace("tee_crashes=", "tee_crashes=x.1"), row))
+        self.assertEqual(crashed["tee.crashes"][0], "FAIL")
+
     def test_skip_without_a_client(self):
         row = dict(
             tee=dict(
@@ -1340,11 +1390,17 @@ class TeeTest(unittest.TestCase):
         for target, row in table.items():
             self.assertTrue(row["tee"]["source"], target)
             plan = tvsuite.tee_plan(row, target)
-            # a row with a client and a chip without rtk.ko's TEE says so: the judge expects no node
+            # a row with a client says whether the VM has the node: a chip module's with its TAs
+            # (rtk.ko's tee=1), else lgemu.ko's with none where the rootfs has OP-TEE's
+            # supplicant (node_tas false), else none
             if row["tee"]["clients"]:
+                module = targets.tee_module(targets.by_name(target)) is not None
+                bare = row["tee"].get("node_tas") is False
+                self.assertFalse(module and bare, target)
+                self.assertEqual(row["tee"].get("node", True), module or bare, target)
                 self.assertEqual(
-                    row["tee"].get("node", True),
-                    targets.tee_module(targets.by_name(target)) is not None,
+                    bare,
+                    not module and f"rootfs.pak:/{targets.TEE_CLIENT}" in row["tee"]["clients"],
                     target,
                 )
             # every Realtek firmware has a client library (others may: LM21A's)

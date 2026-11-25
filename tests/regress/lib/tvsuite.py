@@ -1857,6 +1857,8 @@ def judge_tee(text, row, huk=None):
     f = parse(text, r"[A-Za-z0-9_.-]+")  # open.UUID
     if tee.get("node") is False:
         return judge_tee_no_node(f, text, tee)
+    if tee.get("node_tas") is False:
+        return judge_tee_no_ta(f, text, tee)
     items = []
 
     def check(name, ok, why_ok, why_bad):
@@ -2045,6 +2047,52 @@ def judge_tee(text, row, huk=None):
         "tee-probe's round trips all held",
         f"tee-probe: fails {f.get('sstore.fails')}, exit {f.get('probe_sstore_rc')}",
     )
+    crashed = f.get("tee_crashes", "").split()
+    check(
+        "crashes",
+        "tee_crashes" in f and not crashed,
+        "no crash report of a TEE client (TEEC_*, sstore) since the boot",
+        f"crash reports of TEE clients: {' '.join(crashed) or 'not looked at'}",
+    )
+    return items
+
+
+def judge_tee_no_ta(f, text, tee):
+    """The tee step where the VM is expected to have /dev/tee0 with no trusted application behind it
+    (the expected table's tee.node_tas is false: lgemu.ko's tee=1, where the firmware has OP-TEE's
+    client and the chip no module with TAs, as MStar's LM21A family): every session the firmware's
+    libteec opens answers TEEC_ERROR_ITEM_NOT_FOUND from the TEE, as a real set's TEE answers a TA
+    it does not have. PASS when the device is a character device, the secure-store UUID and each of
+    the firmware's TAs answer that, and no crash report names a TEE client."""
+    items = []
+
+    def check(name, ok, why_ok, why_bad):
+        items.append((f"tee.{name}", "PASS" if ok else "FAIL", why_ok if ok else why_bad))
+
+    check(
+        "device",
+        f.get("tee_dev") == "char",
+        "/dev/tee0 is a character device: " + tee.get("node_source", "lgemu.ko tee=1"),
+        f"/dev/tee0: {f.get('tee_dev', 'not looked at')}",
+    )
+    if "lib" not in f or not f["lib"].startswith("/"):
+        check(
+            "client",
+            False,
+            "",
+            f"tee-probe could not use the firmware's libteec: {f.get('lib', text.strip()[-200:])}",
+        )
+        return items
+    if f.get("tee_dev") != "char":
+        return items
+    for name, uuid in [("sstore", SSTORE_UUID)] + [(ta, ta) for ta in tee.get("tas", [])]:
+        v = f.get(f"open.{uuid}", "")
+        check(
+            f"open.{name}",
+            _words(v) == [ITEM_NOT_FOUND, TEEC_ORIGIN_TEE],
+            "no TA behind the device: TEEC_ERROR_ITEM_NOT_FOUND from the TEE",
+            f"open of {uuid}: {v or 'no answer'} (wanted {ITEM_NOT_FOUND:#x} {TEEC_ORIGIN_TEE})",
+        )
     crashed = f.get("tee_crashes", "").split()
     check(
         "crashes",
