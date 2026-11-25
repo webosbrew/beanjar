@@ -1164,6 +1164,16 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         "-device",
         "virtserialport,chardev=micom,name=webos.micom",
     ]
+    # the master volume and speaker mute the firmware sets (the gain lgemu.ko's snd.c gives the
+    # guest's sound card), a line at each change, which the guest's sound pump writes
+    # (guest/initramfs/src/virtio-sound.c) and the viewer core applies to the media audio it plays
+    # (host/viewer/core/sound-status.c); beside qemu.pid, QEMU truncates it at each start
+    devices += [
+        "-chardev",
+        f"file,id=sound,path={os.path.join(os.path.dirname(socks['QEMU_PIDFILE']), 'sound-status')}",
+        "-device",
+        "virtserialport,chardev=sound,name=webos.sound",
+    ]
     # a model that turns to portrait (targets.Soc.portrait): the guest's screen rotation, a line at
     # each change of msc's orientation (guest/initramfs/rootfs/bin/beanjar-rotation), which `beanjar
     # rotate` waits for and the viewers read beside qemu.pid (rotation.py); QEMU truncates it at

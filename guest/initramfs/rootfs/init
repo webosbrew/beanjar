@@ -743,6 +743,9 @@ virtio-tuner > /run/virtio-tuner.log 2>&1 || log "tuner pump failed: see /run/vi
 # the webos.video port (guest/initramfs/src/virtio-video.c)
 virtio-video > /run/virtio-video.log 2>&1 || log "video window pump failed: see /run/virtio-video.log"
 fi
+# the master volume and speaker mute the firmware sets, lgemu.ko to the webos.sound port, which the
+# viewer applies to the media audio (guest/initramfs/src/virtio-sound.c)
+virtio-sound > /run/virtio-sound.log 2>&1 || log "sound pump failed: see /run/virtio-sound.log"
 # the guest's swap to the webos.memory port every 2 s, the viewer's memory meter (guest/initramfs/src/virtio-meminfo.c)
 virtio-meminfo > /run/virtio-meminfo.log 2>&1 || log "memory pump failed: see /run/virtio-meminfo.log"
 # `beanjar shell`: webos-enter for each session the host opens on the webos.shell port (guest/initramfs/src/virtio-shell.c)

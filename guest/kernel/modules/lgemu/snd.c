@@ -16,14 +16,27 @@
  *     W18R's audio HAL shim writes them too).
  * lgemu_snd_osd_level() and lgemu_snd_speaker_mute() are the stand-ins' entry points; what the
  * firmware selects for the other outputs is kept below (lgemu_snd_out_set, /proc/lgemu/sound_out).
+ *
+ * The host decodes the media streams' sound itself (include/webos-media.h), past this card, so the
+ * same gain goes to it as well: /dev/lgemu-sound gives a line of text at each change, "level=0x7f00
+ * mute=0 gain=65536" (the level as the firmware set it, the speaker mute, the gain in Q16 the card
+ * applies, 0 when muted). A file's first read has the state as it is; the next waits for a change.
+ * The initramfs's pump (guest/initramfs/src/virtio-sound.c) copies the lines to the webos.sound
+ * port, and the viewer applies the last one to the media audio.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": snd: " fmt
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/miscdevice.h>
 #include <linux/mutex.h>
+#include <linux/poll.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/uaccess.h>
+#include <linux/wait.h>
 #include <sound/core.h>
 #include <sound/control.h>
 #include "lgemu.h"
@@ -42,6 +55,9 @@ static u32 osd_level = LEVEL_UNITY; /* unity until the firmware sets its volume 
 static bool speaker_mute;
 static u32 fn009[2] = {LEVEL_UNITY, 100}, mute_output[2];
 static struct snd_card *card;
+/* the gain the card applies, and the change it came with for /dev/lgemu-sound (1: the default) */
+static u32 gain = 0x10000, changes = 1;
+static DECLARE_WAIT_QUEUE_HEAD(readers);
 
 /* 10^(-d/20) and 10^(-f/320) in Q30: whole dB and sixteenths */
 static const u32 db_q30[20] = {
@@ -76,7 +92,10 @@ static void apply(void)
     bool mute = speaker_mute || !(osd_level & 0xffff);
     u32 n = attenuation(osd_level);
 
-    virtsnd_set_playback_gain(mute ? 0 : gain_q16(osd_level));
+    gain = mute ? 0 : gain_q16(osd_level);
+    virtsnd_set_playback_gain(gain);
+    WRITE_ONCE(changes, changes + 1);
+    wake_up_interruptible(&readers);
     pr_info("level 0x%04x (-%u.%04u dB)%s\n", osd_level & 0xffff, n / 16, n % 16 * 625,
             mute ? ", muted" : "");
 }
@@ -392,6 +411,71 @@ static int add_kept(void)
     return 0;
 }
 
+/* ---- /dev/lgemu-sound: the gain for the host's media audio ---- */
+
+/* each open file: the change it read last (0: none yet) */
+static int sound_open(struct inode *inode, struct file *file)
+{
+    u32 *seen = kzalloc(sizeof(*seen), GFP_KERNEL);
+
+    if (!seen)
+        return -ENOMEM;
+    file->private_data = seen;
+    return stream_open(inode, file);
+}
+
+static int sound_release(struct inode *inode, struct file *file)
+{
+    kfree(file->private_data);
+    return 0;
+}
+
+static ssize_t sound_read(struct file *file, char __user *buf, size_t n, loff_t *pos)
+{
+    u32 *seen = file->private_data;
+    char line[64];
+    int len;
+
+    if (file->f_flags & O_NONBLOCK) {
+        if (READ_ONCE(changes) == *seen)
+            return -EAGAIN;
+    } else if (wait_event_interruptible(readers, READ_ONCE(changes) != *seen)) {
+        return -ERESTARTSYS;
+    }
+    mutex_lock(&lock);
+    len = scnprintf(line, sizeof(line), "level=0x%04x mute=%d gain=%u\n", osd_level & 0xffff,
+                    speaker_mute, gain);
+    if (n < len) {
+        mutex_unlock(&lock);
+        return -EINVAL;
+    }
+    *seen = changes;
+    mutex_unlock(&lock);
+    return copy_to_user(buf, line, len) ? -EFAULT : len;
+}
+
+static __poll_t sound_poll(struct file *file, poll_table *wait)
+{
+    poll_wait(file, &readers, wait);
+    return READ_ONCE(changes) != *(u32 *)file->private_data ? EPOLLIN | EPOLLRDNORM : 0;
+}
+
+static const struct file_operations sound_fops = {
+    .owner = THIS_MODULE,
+    .open = sound_open,
+    .release = sound_release,
+    .read = sound_read,
+    .poll = sound_poll,
+};
+
+static struct miscdevice sound_device = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name = "lgemu-sound",
+    .fops = &sound_fops,
+    .mode = 0400,
+};
+static bool sound_registered;
+
 int lgemu_snd_init(void)
 {
     int err;
@@ -399,6 +483,10 @@ int lgemu_snd_init(void)
     proc_dir = proc_mkdir("lgemu", NULL);
     if (!proc_dir || !proc_create_single("sound_out", 0444, proc_dir, sound_out_show))
         pr_err("cannot add /proc/lgemu/sound_out\n");
+    err = misc_register(&sound_device);
+    if (err)
+        pr_err("cannot add /dev/lgemu-sound (%d)\n", err);
+    sound_registered = !err;
     if (!snd_ctls)
         return 0;
     card = snd_card_ref(0);
@@ -444,5 +532,8 @@ void lgemu_snd_exit(void)
     if (proc_dir)
         proc_remove(proc_dir);
     proc_dir = NULL;
+    if (sound_registered)
+        misc_deregister(&sound_device);
+    sound_registered = false;
     virtsnd_set_playback_gain(0x10000);
 }

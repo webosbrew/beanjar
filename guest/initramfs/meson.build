@@ -27,6 +27,7 @@ initramfs_args = [
   '--var', 'VIRTIO_IR', virtio_bins['virtio-ir'],
   '--var', 'VIRTIO_TUNER', virtio_bins['virtio-tuner'],
   '--var', 'VIRTIO_VIDEO', virtio_bins['virtio-video'],
+  '--var', 'VIRTIO_SOUND', virtio_bins['virtio-sound'],
   '--var', 'VIRTIO_MEMINFO', virtio_bins['virtio-meminfo'],
   '--var', 'VIRTIO_CAPTURE', virtio_bins['virtio-capture'],
   '--var', 'VIRTIO_SHELL', virtio_bins['virtio-shell'],
