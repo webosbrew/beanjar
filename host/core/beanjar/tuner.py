@@ -3,12 +3,15 @@
 """The antenna of a VM whose board has our tuner (targets: the dtv_soc module): which physical
 channels carry a signal, and the transport stream of the one the set is tuned to.
 
-`beanjar io tuner list NAME` lists the lineup's physical channels (Lineup: the one of the board's
-broadcast standard, the US ATSC channels of tuner_stream.LINEUP or the Japanese ISDB-T one of
-tuner_stream_arib), which of them are mapped and what the set is tuned to; `beanjar io tuner map
-NAME RF...` and `unmap NAME RF...|all` change the map, which is kept in the VM's state (tuner.json)
-for its next starts. A mapped channel's stream is made (Lineup.make, into the cache's tuner/) when
-it is mapped.
+`beanjar io tuner list NAME` lists the lineup's physical channels (Lineup: the lineup in effect,
+the VM's own, `io tuner lineup set`, kept in its state's tuner-lineup/, else the built-in one of
+the board's broadcast standard, lineups/atsc.toml or arib.toml; tuner_lineup.py reads them) and
+those of the user's streams, which of them are mapped and what the set is tuned to; `beanjar io
+tuner map NAME RF...` and `unmap NAME RF...|all` change the map, which is kept in the VM's state
+(tuner.json) for its next starts. A mapped channel's stream is made (Lineup.make, into the cache's
+tuner/) when it is mapped; `map NAME RF --stream FILE` instead copies a transport stream of the
+user's into the state's tuner-streams/ (checked by tuner_ts.inspect) and loops it as it is
+(RecordedStream), only its clock tables set to now.
 
 Two halves, which may run on two machines:
 
@@ -27,8 +30,10 @@ Two halves, which may run on two machines:
   generator itself, on this host's tools and cache.
 
 A VM on another host (`beanjar io tuner map HOST/NAME RF...`) is fed from this machine: the host's
-beanjar keeps the map without making streams (--fed), and a feed process here (`python -m
-beanjar.tuner feed HOST URI NAME SOCKET CACHE`, started detached by start_feed) reaches its
+beanjar keeps the map without making streams (--fed; of an own lineup only the file, of a user's
+stream only its name), this machine keeps the VM's own lineup and streams with their files
+(remote_dir), and a feed process here (`python -m beanjar.tuner feed HOST URI NAME SOCKET CACHE
+DIR`, started detached by start_feed) reaches its
 tuner-feed.sock through a forward of the host's shared ssh connection (ares.Forward), so only the
 tuned channel crosses the network, encrypted, over the connection beanjar already has. The feed
 lives as long as that connection to the feeder: it ends when the VM stops (the feeder ends with
@@ -38,6 +43,7 @@ unmap and the sweep that cancels the forward of one killed outright."""
 
 import json
 import os
+import shutil
 import signal
 import socket
 import struct
@@ -47,7 +53,7 @@ import tempfile
 import threading
 import time
 
-from . import tuner_stream, tuner_stream_arib
+from . import tuner_lineup, tuner_stream, tuner_stream_arib, tuner_ts
 from .base import Error
 
 MAGIC = 0x4E555457
@@ -96,15 +102,18 @@ def ts_frames(freq, packets):
 class Lineup:
     """A broadcast's physical channels with a signal: their delivery system, centre frequencies
     and services, how a channel's stream is made into a cache and which of its packets carry the
-    time, rewritten to now as they are sent (clock: {PID: rewrite(packet, now)})."""
+    time, rewritten to now as they are sent (clock: {PID: rewrite(packet, now)}). spec: the parsed
+    lineup file (tuner_lineup), own: a VM's own rather than the built-in one."""
 
-    def __init__(self, name, delsys, rate, channels, center_hz, services, make, clock):
+    def __init__(self, name, delsys, rate, channels, center_hz, services, make, clock, spec=None,
+                 own=False):  # fmt: skip
         self.name, self.delsys, self.rate = name, delsys, rate
         self.channels = channels  # the physical channel numbers, sorted
-        self.center_hz = center_hz  # channel -> Hz; Error for one the band lacks
+        self.center_hz = center_hz  # channel -> Hz, of any channel of the band; Error for another
         self.services = services  # channel -> ["name", ...]
         self.make = make  # (cache, channel, now) -> the stream's path
         self.clock = clock
+        self.spec, self.own = spec, own
 
     def check(self, ch):
         if ch not in self.channels:
@@ -112,45 +121,160 @@ class Lineup:
                 f"the lineup has no physical channel {ch} ({', '.join(map(str, self.channels))})"
             )
 
+    def check_band(self, ch):
+        """Error for a channel number the band does not have."""
+        try:
+            self.center_hz(ch)
+        except tuner_stream.Error as e:
+            raise Error(str(e)) from None
 
-def _atsc_services(ch):
-    return [f"{s['major']}.{s['minor']} {s['name']}" for s in tuner_stream.channel(ch)["services"]]
+
+def fed_make(cache, ch, now):
+    raise tuner_stream.Error(
+        "the lineup's files are on the machine that feeds this VM: map the channel from there "
+        "(beanjar io tuner map HOST/NAME RF...)"
+    )
 
 
-# the lineups by broadcast standard (targets.BROADCASTS); a board of another standard (a DVB one:
-# no lineup of its own yet) gets the US one. The callables are looked up when called, so a test can
-# stand in for the generators.
-ATSC = Lineup(
-    "atsc",
-    SYS_ATSC,
-    tuner_stream.MUX_RATE,
-    sorted(rf["channel"] for rf in tuner_stream.LINEUP["rf"]),
-    lambda ch: tuner_stream.rf_center_hz(ch),
-    _atsc_services,
-    lambda cache, ch, now: tuner_stream.make(cache, ch, now),
-    {tuner_stream.BASE_PID: lambda p, now: tuner_stream.stt_rewrite(p, now)},
-)
-ARIB = Lineup(
-    "arib",
-    SYS_ISDBT,
-    tuner_stream_arib.MUX_RATE,
-    [tuner_stream_arib.SERVICE["uhf"]],
-    lambda ch: tuner_stream_arib.uhf_center_hz(ch),
-    lambda ch: [f"{tuner_stream_arib.SERVICE['remote_key']} {tuner_stream_arib.SERVICE['name']}"],
-    lambda cache, ch, now: tuner_stream_arib.make_cached(cache, ch, now),
-    {tuner_stream_arib.TOT_PID: lambda p, now: tuner_stream_arib.time_rewrite(p, now)},
-)
+def from_spec(spec, own=False, fed=False):
+    """The Lineup of a parsed lineup file (tuner_lineup.load); fed: its files are with a feed on
+    another machine, which makes its streams. The generators are looked up when called, so a test
+    can stand in for them."""
+    channels = [rf["channel"] for rf in spec["rf"]]
+    if spec["broadcast"] == "arib":
+        return Lineup(
+            "arib",
+            SYS_ISDBT,
+            tuner_stream_arib.MUX_RATE,
+            channels,
+            lambda ch: tuner_stream_arib.uhf_center_hz(ch),
+            lambda ch: [
+                f"{rf['remote_key']} {s['name']}"
+                for rf in spec["rf"]
+                if rf["channel"] == ch
+                for s in rf["services"]
+            ],
+            fed_make
+            if fed
+            else lambda cache, ch, now: tuner_stream_arib.make_cached(cache, spec, ch, now),
+            {tuner_stream_arib.TOT_PID: lambda p, now: tuner_stream_arib.time_rewrite(p, now)},
+            spec,
+            own,
+        )
+    return Lineup(
+        "atsc",
+        SYS_ATSC,
+        tuner_stream.MUX_RATE,
+        channels,
+        lambda ch: tuner_stream.rf_center_hz(ch),
+        lambda ch: [
+            f"{s['major']}.{s['minor']} {s['name']}"
+            for rf in spec["rf"]
+            if rf["channel"] == ch
+            for s in rf["services"]
+        ],
+        fed_make if fed else lambda cache, ch, now: tuner_stream.make(cache, spec, ch, now),
+        {tuner_stream.BASE_PID: lambda p, now: tuner_stream.stt_rewrite(p, now)},
+        spec,
+        own,
+    )
+
+
+# the built-in lineups by broadcast standard (targets.BROADCASTS): lineups/atsc.toml and arib.toml;
+# a board of another standard (a DVB one: no lineup of its own yet) gets the US one.
+ATSC = from_spec(tuner_lineup.default("atsc"))
+ARIB = from_spec(tuner_lineup.default("arib"))
 LINEUPS = {"atsc": ATSC, "arib": ARIB}
 
 
 def lineup(broadcast):
-    """The lineup of the broadcast standard (None: the board names none)."""
+    """The built-in lineup of the broadcast standard (None: the board names none)."""
     return LINEUPS.get(broadcast, ATSC)
 
 
 def lineup_of_delsys(delsys):
-    """The lineup whose delivery system delsys is, else the US one."""
+    """The built-in lineup whose delivery system delsys is, else the US one."""
     return next((x for x in LINEUPS.values() if x.delsys == delsys), ATSC)
+
+
+# ---- a VM's own lineup and streams, in its state (or, for a VM on another host, in the
+# directory of this machine that feeds it: remote_dir) ----
+
+LINEUP_DIR = "tuner-lineup"  # the own lineup: lineup.toml and the files it names
+FED_MARK = "fed"  # in LINEUP_DIR: its files are with a feed on another machine
+STREAMS_DIR = "tuner-streams"  # the user's streams: rfNN.ts
+
+
+def remote_dir(root, host, name):
+    """Where this machine keeps the own lineup and streams of VM name on host, which it feeds."""
+    return os.path.join(root, "remote", host, name)
+
+
+_own = {}  # lineup file: ((size, mtime), Lineup)
+
+
+def own_lineup(state_dir, broadcast=None):
+    """The VM's own lineup (Lineup), None if it has none; Error if it is not one, or not of the
+    broadcast standard (when given)."""
+    d = os.path.join(state_dir, LINEUP_DIR)
+    path = os.path.join(d, tuner_lineup.FILE)
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    fed = os.path.exists(os.path.join(d, FED_MARK))
+    memo = (st.st_size, st.st_mtime_ns, fed)
+    hit = _own.get(path)
+    if hit is None or hit[0] != memo:
+        hit = (memo, from_spec(tuner_lineup.load(path, check_files=not fed), True, fed))
+        _own[path] = hit
+    lu = hit[1]
+    if broadcast is not None and lu.name != broadcast:
+        raise Error(
+            f"the VM's own lineup is {lu.name} and its board's broadcast standard is {broadcast}: "
+            "beanjar io tuner lineup reset NAME, or set one of its standard"
+        )
+    return lu
+
+
+def vm_lineup(state_dir, broadcast=None):
+    """The lineup in effect: the VM's own if it has one of its board's standard, else the built-in
+    one of the standard."""
+    base = lineup(broadcast)
+    try:
+        own = own_lineup(state_dir, base.name)
+    except Error:
+        own = None
+    return own or base
+
+
+def lineup_for_delsys(state_dir, delsys):
+    """A feed's lineup for its feeder's delivery system: the own one in state_dir (None: none) if it
+    is of that delivery system, else the built-in one."""
+    try:
+        own = own_lineup(state_dir) if state_dir else None
+    except Error:
+        own = None
+    if own is not None and own.delsys == delsys:
+        return own
+    return lineup_of_delsys(delsys)
+
+
+def streams(state_dir):
+    """{channel: record} of the user's streams in the VM's state (tuner_ts.inspect's record, with
+    "path"; a fed one, played by a feed on another machine, has "fed" and no file here)."""
+    try:
+        with open(os.path.join(state_dir, STATE)) as f:
+            got = json.load(f).get("streams", {})
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for ch, rec in got.items():
+        rec = dict(rec)
+        if not rec.get("fed"):
+            rec["path"] = os.path.join(state_dir, STREAMS_DIR, rec["file"])
+        out[int(ch)] = rec
+    return out
 
 
 class FrameReader:
@@ -235,6 +359,67 @@ class Stream:
         return b"".join(out)
 
 
+class RecordedStream(Stream):
+    """A user's stream (tuner_ts.inspect's record rec) looped at its own rate, mapped rather than
+    read, so a long recording costs no memory. So that the set keeps its picture over the wrap:
+    each PID plays from its first PES or section start to before its last (rec's cuts: no part of
+    one is cut off), its continuity counters run on over the wrap, and after each wrap the first
+    PCR of each PCR PID has the discontinuity indicator set (its time base starts again)."""
+
+    def __init__(self, path, rec, clock=None):
+        import mmap
+
+        self.path = path
+        with open(path, "rb") as f:
+            self.data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        self.count = len(self.data) // tuner_stream.PACKET
+        self.rate = rec["rate"]
+        self.clock = ATSC.clock if clock is None else clock
+        self.cuts = {int(pid): cut for pid, cut in rec.get("cuts", {}).items()}
+        self.pcr_pids = set(rec.get("pcr_pids", ()))
+        self.at = 0
+        self.owed = 0.0
+        self.cc = {}  # PID: the next continuity counter
+        self.discontinuity = set()  # PCR PIDs whose next PCR follows a wrap
+        self.loops = 0
+
+    def next(self, seconds, now=None):
+        self.owed += seconds * self.rate / 8 / tuner_stream.PACKET
+        n = int(self.owed)
+        self.owed -= n
+        out = []
+        size = tuner_stream.PACKET
+        for _ in range(n):
+            i = self.at
+            p = self.data[i * size : (i + 1) * size]
+            self.at = (i + 1) % self.count
+            if self.at == 0:
+                self.loops += 1
+                self.discontinuity = set(self.pcr_pids)
+            pid = ((p[1] & 0x1F) << 8) | p[2]
+            if pid == tuner_stream.NULL_PID:
+                continue
+            cut = self.cuts.get(pid)
+            if cut is not None and not cut[0] <= i < cut[1]:
+                continue
+            b = bytearray(p)
+            cc = self.cc.get(pid, b[3] & 0xF)
+            if b[3] & 0x10:  # a payload: the counter moves on
+                b[3] = (b[3] & 0xF0) | cc
+                self.cc[pid] = (cc + 1) & 0xF
+            else:
+                b[3] = (b[3] & 0xF0) | ((cc - 1) & 0xF)
+            if pid in self.discontinuity and b[3] & 0x20 and b[4] and b[5] & 0x10:
+                b[5] |= 0x80  # discontinuity_indicator, on the PCR's packet
+                self.discontinuity.discard(pid)
+            p = bytes(b)
+            rewrite = self.clock.get(pid)
+            if rewrite is not None:
+                p = rewrite(p, now if now is not None else time.time())
+            out.append(p)
+        return b"".join(out)
+
+
 # ---- the map, kept in the VM's state ----
 
 
@@ -247,20 +432,38 @@ def mapped(state_dir):
         return []
 
 
-def save_map(state_dir, channels):
+def save_map(state_dir, channels, streams=None):
+    """Keeps the map: the mapped channels and (unless None: as they are) the user's streams,
+    {channel: record}."""
     os.makedirs(state_dir, exist_ok=True)
+    try:
+        with open(os.path.join(state_dir, STATE)) as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        old = {}
+    data = {"channels": sorted(set(channels))}
+    if streams is None:
+        kept = old.get("streams") or {}
+    else:
+        kept = {
+            str(ch): {k: v for k, v in rec.items() if k != "path"} for ch, rec in streams.items()
+        }
+    if kept:
+        data["streams"] = kept
     tmp = os.path.join(state_dir, STATE + ".tmp")
     with open(tmp, "w") as f:
-        json.dump({"channels": sorted(set(channels))}, f)
+        json.dump(data, f)
         f.write("\n")
     os.replace(tmp, os.path.join(state_dir, STATE))
 
 
-def channels_of(freqs, lu=ATSC):
-    """The lineup's physical channels whose centre frequencies are among freqs (within
-    TOLERANCE_HZ), sorted; frequencies of none are left out."""
+def channels_of(freqs, lu=ATSC, extra=()):
+    """The physical channels, of the lineup and extra (the user's streams' channels), whose centre
+    frequencies are among freqs (within TOLERANCE_HZ), sorted; frequencies of none are left out."""
     return [
-        ch for ch in lu.channels if any(abs(lu.center_hz(ch) - f) <= TOLERANCE_HZ for f in freqs)
+        ch
+        for ch in sorted(set(lu.channels) | set(extra))
+        if any(abs(lu.center_hz(ch) - f) <= TOLERANCE_HZ for f in freqs)
     ]
 
 
@@ -286,11 +489,16 @@ def vm_broadcast(vm):
         return None
 
 
+def stream_services(rec):
+    return [f"program {p}" for p in rec.get("programs", [])]
+
+
 def status(vm):
-    """{"name", "tuner", "broadcast", "delsys", "channels": [{"channel", "center_hz", "mapped",
-    "services"}], "tuned_hz", "sent_packets", "connected", "fed", "feed_socket"} of the VM: the
-    lineup of its board's broadcast; fed while a generator elsewhere feeds it, feed_socket where
-    one connects."""
+    """{"name", "tuner", "broadcast", "delsys", "lineup", "channels": [{"channel", "center_hz",
+    "mapped", "services", "stream"}], "tuned_hz", "sent_packets", "connected", "fed",
+    "feed_socket"} of the VM: the lineup in effect (lineup: "own" or "built-in") on its board's
+    broadcast, and the channels of the user's streams (stream: the file's name, else None); fed
+    while a generator elsewhere feeds it, feed_socket where one connects."""
     st = {}
     try:
         with open(os.path.join(vm.run_dir, STATUS)) as f:
@@ -298,20 +506,23 @@ def status(vm):
     except (OSError, ValueError):
         pass
     on = mapped(vm.state_dir)
-    lu = lineup(vm_broadcast(vm))
+    lu = vm_lineup(vm.state_dir, vm_broadcast(vm))
+    recorded = streams(vm.state_dir)
     return {
         "name": vm.name,
         "tuner": has_tuner(vm.target()),
         "broadcast": lu.name,
         "delsys": lu.delsys,
+        "lineup": "own" if lu.own else "built-in",
         "channels": [
             {
                 "channel": ch,
                 "center_hz": lu.center_hz(ch),
                 "mapped": ch in on,
-                "services": lu.services(ch),
+                "services": stream_services(recorded[ch]) if ch in recorded else lu.services(ch),
+                "stream": recorded[ch]["name"] if ch in recorded else None,
             }
-            for ch in lu.channels
+            for ch in sorted(set(lu.channels) | set(recorded))
         ],
         "tuned_hz": st.get("tuned_hz"),
         "sent_packets": st.get("sent_packets", 0),
@@ -321,9 +532,10 @@ def status(vm):
     }
 
 
-def check_channels(channels, lu=ATSC):
+def check_channels(channels, lu=ATSC, recorded=()):
     for ch in channels:
-        lu.check(ch)
+        if ch not in recorded:
+            lu.check(ch)
 
 
 def make(cache, channels, hint="", lu=ATSC):
@@ -332,62 +544,195 @@ def make(cache, channels, hint="", lu=ATSC):
     for ch in channels:
         try:
             lu.make(cache, ch, now)
-        except tuner_stream.Error as e:
+        except (tuner_stream.Error, Error, OSError) as e:
             raise Error(f"tuner: {e}{hint}") from None
 
 
-def change(vm, tree, add=(), remove=(), clear=False, fed=False):
+MAKE_HINT = "; or map them from a machine that has the tools: beanjar io tuner map HOST/NAME RF..."
+
+
+def inspect_stream(path, lu, ch):
+    """tuner_ts.inspect of a user's stream for the lineup's standard and RF ch."""
+    lu.check_band(ch)
+    return tuner_ts.inspect(path, lu.name, lu.center_hz(ch), ch)
+
+
+def put_stream(state_dir, ch, path, rec):
+    """Copies the stream at path into state_dir as RF ch's; the record, with its file."""
+    d = os.path.join(state_dir, STREAMS_DIR)
+    os.makedirs(d, exist_ok=True)
+    name = f"rf{ch:02d}.ts"
+    tmp = os.path.join(d, name + ".tmp")
+    shutil.copyfile(path, tmp)
+    os.replace(tmp, os.path.join(d, name))
+    return {k: v for k, v in rec.items() if k != "warnings"} | {"file": name}
+
+
+def drop_streams(state_dir, recorded, channels):
+    """Removes the files of the user's streams of channels; recorded without them."""
+    for ch in channels:
+        rec = recorded.pop(ch, None)
+        if rec and rec.get("file"):
+            try:
+                os.unlink(os.path.join(state_dir, STREAMS_DIR, rec["file"]))
+            except FileNotFoundError:
+                pass
+    return recorded
+
+
+def change(vm, tree, add=(), remove=(), clear=False, fed=False, stream=None):
     """Maps the physical channels add (making their streams, unless fed: a feed from another
-    machine makes them) and unmaps remove (or all with clear); the VM's status after."""
+    machine makes them) and unmaps remove (or all with clear); the VM's status after, with
+    "warnings". stream: add's one channel plays this file instead (copied into the VM's state; with
+    fed, the file's name: a feed on another machine plays it); a channel mapped without one goes
+    back to the lineup's stream. Unmapping a stream's channel removes its file."""
     if not has_tuner(vm.target()):
         raise Error(f"VM {vm.name}: its board has no tuner of ours (no dtv_soc)")
-    lu = lineup(vm_broadcast(vm))
-    check_channels(list(add) + list(remove), lu)
-    if not fed:
-        make(
-            cache_dir(tree),
-            add,
-            "; or map them from a machine that has the tools: beanjar io tuner map HOST/NAME RF...",
-            lu,
-        )
+    lu = vm_lineup(vm.state_dir, vm_broadcast(vm))
+    recorded = streams(vm.state_dir)
+    warnings = []
+    if stream is not None:
+        if len(add) != 1:
+            raise Error("io tuner map --stream: one physical channel, the stream's")
+        (ch,) = add
+        if fed:
+            lu.check_band(ch)
+            rec = {"name": os.path.basename(stream), "fed": True}
+        else:
+            rec = inspect_stream(stream, lu, ch)
+            warnings = rec["warnings"]
+            rec = put_stream(vm.state_dir, ch, stream, rec)
+        drop_streams(vm.state_dir, recorded, [ch])
+        recorded[ch] = rec
+    else:
+        check_channels(add, lu)
+        check_channels(remove, lu, recorded)
+        if not fed:
+            make(cache_dir(tree), add, MAKE_HINT, lu)
+        recorded = drop_streams(vm.state_dir, recorded, list(add))
     channels = [] if clear else mapped(vm.state_dir)
+    gone = list(recorded) if clear else [c for c in remove if c in recorded]
+    recorded = drop_streams(vm.state_dir, recorded, gone)
     channels = [c for c in channels if c not in remove] + list(add)
-    save_map(vm.state_dir, channels)
-    return status(vm)
+    save_map(vm.state_dir, channels, recorded)
+    return status(vm) | {"warnings": warnings}
+
+
+def prune(vm, lu):
+    """Unmaps the channels that neither lu nor a user's stream has; the ones unmapped."""
+    recorded = streams(vm.state_dir)
+    on = mapped(vm.state_dir)
+    keep = [c for c in on if c in lu.channels or c in recorded]
+    if keep != on:
+        save_map(vm.state_dir, keep)
+    return [c for c in on if c not in keep]
+
+
+def lineup_show(vm):
+    """{"name", "broadcast", "lineup": "own"|"built-in", "file", "text", "values"} of the lineup
+    in effect."""
+    lu = vm_lineup(vm.state_dir, vm_broadcast(vm))
+    spec = lu.spec
+    return {
+        "name": vm.name,
+        "broadcast": lu.name,
+        "lineup": "own" if lu.own else "built-in",
+        "file": spec["source"],
+        "text": spec["text"],
+        "values": tuner_lineup.public(spec),
+    }
+
+
+def lineup_set(vm, tree, path, text=None, fed=False):
+    """Checks the lineup file at path (or TOML text) against the VM's board and makes the streams of
+    its mapped channels (unless fed), then copies it and the files it names into the VM's state, for
+    its next starts; the lineup shown after, with "unmapped": the channels it lacks, unmapped.
+    fed: only the file; a feed on another machine has its files and makes its streams."""
+    if not has_tuner(vm.target()):
+        raise Error(f"VM {vm.name}: its board has no tuner of ours (no dtv_soc)")
+    board = vm_broadcast(vm)
+    broadcast = lineup(board).name
+    dest = os.path.join(vm.state_dir, LINEUP_DIR)
+    if fed:
+        spec = tuner_lineup.parse(text, path, os.getcwd(), broadcast, check_files=False)
+        os.makedirs(vm.state_dir, exist_ok=True)
+        tmp = dest + ".new"
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp)
+        with open(os.path.join(tmp, tuner_lineup.FILE), "w", encoding="utf-8") as f:
+            f.write(spec["text"])
+        with open(os.path.join(tmp, FED_MARK), "w") as f:
+            f.write("")
+        shutil.rmtree(dest, ignore_errors=True)
+        os.replace(tmp, dest)
+    else:
+        spec = (
+            tuner_lineup.load(path, broadcast)
+            if text is None
+            else tuner_lineup.parse(text, path, os.getcwd(), broadcast)
+        )
+        recorded = streams(vm.state_dir)
+        new = from_spec(spec)
+        wanted = [c for c in mapped(vm.state_dir) if c in new.channels and c not in recorded]
+        make(cache_dir(tree), wanted, MAKE_HINT, new)
+        os.makedirs(vm.state_dir, exist_ok=True)
+        tuner_lineup.install(path, dest, broadcast, text)
+    return lineup_show(vm) | {"unmapped": prune(vm, vm_lineup(vm.state_dir, board))}
+
+
+def lineup_reset(vm):
+    """Back to the built-in lineup: the own one removed; the lineup shown after, with "unmapped"."""
+    shutil.rmtree(os.path.join(vm.state_dir, LINEUP_DIR), ignore_errors=True)
+    lu = vm_lineup(vm.state_dir, vm_broadcast(vm))
+    return lineup_show(vm) | {"unmapped": prune(vm, lu)}
 
 
 # ---- the generator: needs TSDuck and ffmpeg, or the streams already in its cache ----
 
 
 class Player:
-    """The streams of the wanted channels of the lineup, made into cache when they are not there
-    (a new EIT block, a cache cleared) and looped; a channel whose stream cannot be made is left
-    out, its reason logged once."""
+    """The streams of the wanted channels: a user's stream (streams() gives them: {channel:
+    record}) looped as it is, else the lineup's, made into cache when it is not there (a new EIT
+    block, a cache cleared, a changed lineup) and looped; a channel whose stream cannot be had is
+    left out, its reason logged once."""
 
-    def __init__(self, cache, log, lu=ATSC):
+    def __init__(self, cache, log, lu=ATSC, streams=None):
         self.cache, self.log, self.lineup = cache, log, lu
+        self.streams_of = streams or dict
         self.streams = {}  # centre Hz -> Stream
         self.failed = {}  # channel -> the reason last logged
 
     def ready(self, channels):
-        """{centre Hz: Stream} of channels whose streams are made."""
+        """{centre Hz: Stream} of channels whose streams are there."""
         out = {}
         now = time.time()
         lu = self.lineup
+        recorded = self.streams_of()
         for ch in channels:
+            rec = recorded.get(ch)
             try:
                 f = lu.center_hz(ch)
-                path = lu.make(self.cache, ch, now)
-            except tuner_stream.Error as e:
+                if rec is not None and rec.get("fed"):
+                    raise Error(f"{rec['name']} is played by the machine that feeds this VM")
+                path = rec["path"] if rec is not None else lu.make(self.cache, ch, now)
+                old = self.streams.get(f)
+                if (
+                    old is not None
+                    and old.path == path
+                    and isinstance(old, RecordedStream) == (rec is not None)
+                ):
+                    s = old
+                elif rec is not None:
+                    s = RecordedStream(path, rec, lu.clock)
+                else:
+                    s = Stream(path, lu.rate, lu.clock)
+            except (tuner_stream.Error, Error, OSError, ValueError) as e:
                 if self.failed.get(ch) != str(e):
                     self.log(f"rf{ch}: {e}")
                 self.failed[ch] = str(e)
                 continue
             self.failed.pop(ch, None)
-            old = self.streams.get(f)
-            out[f] = (
-                old if old is not None and old.path == path else Stream(path, lu.rate, lu.clock)
-            )
+            out[f] = s
         self.streams = out
         return out
 
@@ -429,8 +774,9 @@ class Sender:
 class Tuner:
     def __init__(self, run_dir, state_dir, cache, broadcast=None):
         self.run_dir, self.state_dir, self.cache = run_dir, state_dir, cache
-        self.lineup = lineup(broadcast)
-        self.player = Player(cache, self.log, self.lineup)
+        self.broadcast = broadcast
+        self.lineup = vm_lineup(state_dir, broadcast)
+        self.player = Player(cache, self.log, self.lineup, lambda: streams(self.state_dir))
         self.reader = TuneReader()
         self.sent = 0
         self.connected = False
@@ -450,9 +796,19 @@ class Tuner:
         with self.lock:
             self.sent += n
 
+    def refresh(self):
+        """The lineup in effect again: the VM's own may have been set or reset."""
+        lu = vm_lineup(self.state_dir, self.broadcast)
+        if lu is not self.lineup:
+            self.log(f"{'own' if lu.own else 'built-in'} {lu.name} lineup")
+            self.lineup = self.player.lineup = lu
+
     def wanted(self):
+        recorded = streams(self.state_dir)
         return [
-            self.lineup.center_hz(ch) for ch in mapped(self.state_dir) if ch in self.lineup.channels
+            self.lineup.center_hz(ch)
+            for ch in mapped(self.state_dir)
+            if ch in self.lineup.channels or ch in recorded
         ]
 
     def to_qemu(self, data):
@@ -605,6 +961,8 @@ class Tuner:
             while not stop.is_set():
                 now = time.monotonic()
                 feed = self.feed
+                if now - last_check >= 1.0:
+                    self.refresh()
                 if feed is not None:
                     local = None
                     fed = feed
@@ -692,11 +1050,12 @@ def main(argv):
 # ---- a feed: the generator for a VM on another host ----
 
 
-def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT):
+def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT, content=None):
     """Serves the feeder at the other end of sock (the channels its MAP frames want, of the lineup
-    of their delivery system; the tune its TUNE frames pass on) until the connection ends; Error if
-    it says nothing within wait seconds (no feeder there). on_status(dict) is told what it does each
-    second."""
+    of their delivery system: the VM's own in content, this machine's directory for it, if it is of
+    that system, else the built-in one; the tune its TUNE frames pass on) until the connection ends;
+    Error if it says nothing within wait seconds (no feeder there). on_status(dict) is told what it
+    does each second."""
     reader = TuneReader()
     heard = threading.Event()
     stop = threading.Event()
@@ -738,8 +1097,8 @@ def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT):
             with lock:
                 wanted, tuned, delsys = reader.wanted, reader.tuned, reader.delsys
                 if reader.wanted_delsys is not None:
-                    player.lineup = lineup_of_delsys(reader.wanted_delsys)
-            sender.tick(channels_of(wanted, player.lineup), tuned, delsys, now)
+                    player.lineup = lineup_for_delsys(content, reader.wanted_delsys)
+            sender.tick(channels_of(wanted, player.lineup, player.streams_of()), tuned, delsys, now)
             if on_status and now - last_status >= 1.0:
                 last_status = now
                 on_status(
@@ -790,12 +1149,14 @@ def find_feed(host, name, parent=None):
     return next((f for f in feeds(parent) if f["host"] == host and f["name"] == name), None)
 
 
-def feed_argv(host, uri, name, address, cache):
-    return [sys.executable, "-m", "beanjar.tuner", "feed", host, uri, name, address, cache]
+def feed_argv(host, uri, name, address, cache, content=None):
+    return [sys.executable, "-m", "beanjar.tuner", "feed", host, uri, name, address, cache] + (
+        [content] if content else []
+    )
 
 
 def start_feed(host, uri, name, address, cache, spawn=subprocess.Popen, parent=None,
-               wait=FEED_START_WAIT):  # fmt: skip
+               wait=FEED_START_WAIT, content=None):  # fmt: skip
     """A feed of VM name on host from this machine, started if none runs: its feed.json once it
     is connected. Error if it ends first or does not connect within wait seconds (its log's last
     lines)."""
@@ -812,7 +1173,7 @@ def start_feed(host, uri, name, address, cache, spawn=subprocess.Popen, parent=N
     env["PYTHONPATH"] = os.pathsep.join(x for x in (here, env.get("PYTHONPATH")) if x)
     with open(log_path, "ab") as out:
         proc = spawn(
-            feed_argv(host, uri, name, address, cache),
+            feed_argv(host, uri, name, address, cache, content),
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=out,
@@ -857,15 +1218,16 @@ def stop_feed(host, name, parent=None, wait=5.0):
 
 
 def feed_main(argv, connect=socket.create_connection):
-    """python -m beanjar.tuner feed HOST URI NAME SOCKET CACHE: feeds VM name on host through a
-    forward of the shared ssh connection to SOCKET there (its tuner-feed.sock), with the streams
-    made into CACHE here, until the feeder ends the connection or SIGTERM or SIGHUP; status 0 when
+    """python -m beanjar.tuner feed HOST URI NAME SOCKET CACHE [DIR]: feeds VM name on host through
+    a forward of the shared ssh connection to SOCKET there (its tuner-feed.sock), with the streams
+    made into CACHE here (of the VM's own lineup and the user's streams in DIR, remote_dir), until the feeder ends the connection or SIGTERM or SIGHUP; status 0 when
     the connection ended, 1 when it could not be made."""
     import shutil
 
     from . import ares
 
-    host, uri, name, address, cache = argv
+    host, uri, name, address, cache = argv[:5]
+    content = argv[5] if len(argv) > 5 else None
 
     def log(text):
         print(f"{time.strftime('%H:%M:%S')} feed {host}/{name}: {text}", flush=True)
@@ -888,7 +1250,8 @@ def feed_main(argv, connect=socket.create_connection):
             sock = connect((ares.FORWARD_HOST, port))
             sock.settimeout(None)
             try:
-                sent = feed_session(sock, Player(cache, log), log, put)
+                player = Player(cache, log, streams=lambda: streams(content) if content else {})
+                sent = feed_session(sock, player, log, put, content=content)
                 log(f"the tuner ended the connection; {sent} packets sent")
             finally:
                 sock.close()

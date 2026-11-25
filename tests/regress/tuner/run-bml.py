@@ -10,11 +10,11 @@ After a scan (run-scan.py), with the ISDB-T channel mapped and a front end that 
 keys (beanjar vnc start NAME, or the viewer): brings Live TV to the front without
 closing it, and launches it again while Home covers it (Home comes over Live TV once after a
 boot, and the set runs the page only with Live TV in front). Then waits, up to S seconds (default 300), for the generator's page
-(host/core/beanjar/tuner_stream_arib.py: a blue panel over the lower third, white text on it, the
+(the built-in lineup's host/core/beanjar/lineups/arib-bml: a blue panel over the lower third, white text on it, the
 video above it): screenshots are measured, nothing is read from the guest's logs. Then presses
 d twice: the first hides the page, the second shows it again. Then the blue key, which opens the
 page's second document (menu.bml): the video scaled into a window of a quarter of the screen near
-the top left (tuner_stream_arib.WINDOW), the page's navy around it; the blue key again goes back.
+the top left (menu.bml's video div), the page's navy around it; the blue key again goes back.
 
 Prints the numbers as JSON and PASS or FAIL; the exit status is 0 only for PASS:
   page_s     seconds from the first launch until the page is seen
@@ -45,7 +45,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "host", "core")
 )
 
-from beanjar import tuner_stream_arib as arib
+from beanjar import tuner_lineup
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 LIVETV = "com.webos.app.livetv"
@@ -53,8 +53,21 @@ LIVETV = "com.webos.app.livetv"
 PANEL = (0, 480, 1280, 720)
 ABOVE = (0, 0, 1280, 470)
 MIN_PANEL, MIN_TEXT, MIN_LIT = 0.6, 0.01, 0.5
+
+
+def menu_window():
+    """The built-in menu.bml's video window (x, y, w, h) in the page's 960x540: its video div."""
+    import re
+
+    with open(os.path.join(tuner_lineup.DEFAULTS_DIR, "arib-bml", "menu.bml"), "rb") as f:
+        text = f.read().decode("euc_jp")
+    style = re.search(r'<div id="video" style="([^"]*)"', text).group(1)
+    v = dict(kv.split(":") for kv in style.split(";") if ":" in kv)
+    return tuple(int(v[k].removesuffix("px")) for k in ("left", "top", "width", "height"))
+
+
 # the menu's video window, from the page's 960x540 to the 1280x720 screenshot
-WINDOW = tuple(round(v * 4 / 3) for v in arib.WINDOW)
+WINDOW = tuple(round(v * 4 / 3) for v in menu_window())
 # the bars' dark bottom rows leave about 2/3 of a full picture lit, and a 4:3 picture may be
 # pillarboxed in the 16:9 window
 MIN_PAGE_OUT, MAX_PAGE_IN, MIN_WINDOW_LIT = 0.6, 0.1, 0.35
@@ -133,9 +146,9 @@ def measure(path):
         px = list(im.crop(box).getdata())
         return [sum(1 for p in px if t(p)) / len(px) for t in tests]
 
-    blue = lambda p: p[0] < 40 and p[1] < 40 and p[2] > 200  # noqa: E731
-    white = lambda p: min(p) > 200  # noqa: E731
-    lit = lambda p: (p[0] * 299 + p[1] * 587 + p[2] * 114) / 1000 > 48  # noqa: E731
+    blue = lambda p: p[0] < 40 and p[1] < 40 and p[2] > 200
+    white = lambda p: min(p) > 200
+    lit = lambda p: (p[0] * 299 + p[1] * 587 + p[2] * 114) / 1000 > 48
     panel, text = shares(PANEL, blue, white)
     (above,) = shares(ABOVE, lit)
     return panel, text, above

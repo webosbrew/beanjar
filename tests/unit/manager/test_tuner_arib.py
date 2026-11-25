@@ -22,8 +22,14 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import tuner_stream
+from beanjar import tuner_lineup, tuner_stream
 from beanjar import tuner_stream_arib as arib
+
+LINEUP = tuner_lineup.default("arib")
+SERVICE = LINEUP["rf"][0]["services"][0]
+PARTS = tuner_lineup.bml_parts(SERVICE["bml"])
+DOCUMENTS = {name: body for name, _type, body in PARTS}
+WINDOW = (48, 36, 480, 270)  # the built-in menu.bml's video window (run-bml.py measures it)
 
 
 def parse_dii(msg):
@@ -86,15 +92,16 @@ def multipart(entity):
 
 class CarouselTest(unittest.TestCase):
     def test_page(self):
-        for render, words in (
-            (arib.startup_bml, (arib.PAGE_TEXT, "menu.bml")),
-            (arib.menu_bml, (arib.MENU_TEXT, "startup.bml")),
+        for name, words in (
+            ("startup.bml", ("ビーンジャー データ放送テスト", "menu.bml")),
+            ("menu.bml", ("データ放送メニュー", "startup.bml")),
         ):
-            text = render().decode("euc_jp")
+            text = DOCUMENTS[name].decode("euc_jp")
             self.assertTrue(text.startswith('<?xml version="1.0" encoding="EUC-JP" ?>'))
             self.assertIn("+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA", text)
             self.assertIn("resolution: 960x540", text)
             self.assertIn("used-key-list: basic data-button", text)
+            self.assertIn("\r\n", text)  # CRLF lines, kept as they are
             for w in words:
                 self.assertIn(w, text)
             root = ET.fromstring(text[text.index("<bml>") :])  # well-formed past the prolog
@@ -104,11 +111,11 @@ class CarouselTest(unittest.TestCase):
             self.assertEqual(div.find("object").get("type"), "video/X-arib-mpeg2")
 
     def test_menu_window(self):
-        text = arib.menu_bml().decode("euc_jp")
+        text = DOCUMENTS["menu.bml"].decode("euc_jp")
         root = ET.fromstring(text[text.index("<bml>") :])
         div = root.find("body").find("div")
         style = dict(kv.strip().split(":") for kv in div.get("style").split(";") if ":" in kv)
-        x, y, w, h = arib.WINDOW
+        x, y, w, h = WINDOW
         self.assertEqual(
             [style[k] for k in ("left", "top", "width", "height")],
             [f"{x}px", f"{y}px", f"{w}px", f"{h}px"],
@@ -116,16 +123,42 @@ class CarouselTest(unittest.TestCase):
         obj = div.find("object").get("style")
         self.assertIn(f"width:{w}px;height:{h}px", obj)
 
+    def test_folder(self):
+        self.assertEqual([n for n, _t, _b in PARTS], ["startup.bml", "menu.bml"])
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(tuner_lineup.Error) as e:
+                tuner_lineup.bml_parts(d)
+            self.assertIn("no startup.bml", str(e.exception))
+            for name, body in (("startup.bml", b"<bml/>"), ("logo.png", b"png"), ("a.bml", b"a")):
+                with open(os.path.join(d, name), "wb") as f:
+                    f.write(body)
+            parts = tuner_lineup.bml_parts(d)
+            self.assertEqual(
+                [(n, t) for n, t, _b in parts],
+                [("startup.bml", "text/X-arib-bml; charset=euc-jp"), ("a.bml", "text/X-arib-bml; charset=euc-jp"),
+                 ("logo.png", "image/X-arib-png")],
+            )  # fmt: skip
+            mod = arib.module(parts)
+            self.assertEqual(
+                [(h[b"content-location"], b) for h, b in multipart(mod)[1:]],
+                [(n.encode(), b) for n, _t, b in parts],
+            )
+            with open(os.path.join(d, "notes.txt"), "w") as f:
+                f.write("x")
+            with self.assertRaises(tuner_lineup.Error) as e:
+                tuner_lineup.bml_parts(d)
+            self.assertIn("notes.txt: not a file type of BML", str(e.exception))
+
     def test_module(self):
+        mod = arib.module(PARTS)
         # the sets' BML browser parses only a quoted boundary right
-        head = arib.module().split(b"\r\n\r\n")[0]
+        head = mod.split(b"\r\n\r\n")[0]
         self.assertTrue(head.endswith(f'boundary="{arib.BOUNDARY}"'.encode()))
-        mod = arib.module()
         ((list_headers, rlist), *docs) = multipart(mod)
         self.assertEqual(list_headers[b"content-type"], arib.RESOURCE_LIST_TYPE.encode())
         self.assertEqual(
             [(h[b"content-location"], b) for h, b in docs],
-            [(n.encode(), render()) for n, render in arib.DOCUMENTS],
+            [(n.encode(), body) for n, _t, body in PARTS],
         )
         for h, _ in docs:
             self.assertTrue(h[b"content-type"].startswith(b"text/X-arib-bml"))
@@ -133,7 +166,7 @@ class CarouselTest(unittest.TestCase):
         # line), and the header lines are the part's
         self.assertEqual(rlist[0], len(docs))
         at = 1
-        for (_, body), (name, _) in zip(docs, arib.DOCUMENTS):
+        for (_, body), (name, _t, _b) in zip(docs, PARTS):
             size, offset, header, length = (
                 rlist[at],
                 *struct.unpack(">IHI", rlist[at + 1 : at + 11]),
@@ -148,7 +181,7 @@ class CarouselTest(unittest.TestCase):
         self.assertEqual(at, len(rlist))
 
     def test_dii(self):
-        mod = arib.module()
+        mod = arib.module(PARTS)
         d = parse_dii(arib.dii_message(mod))
         self.assertEqual(d["download_id"] >> 28, arib.DATA_EVENT_ID)
         self.assertEqual(d["block_size"], 4066)
@@ -192,7 +225,7 @@ class StreamTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.dir = tempfile.mkdtemp(prefix="arib-")
-        cls.ts = arib.make(os.path.join(cls.dir, "bml.ts"), time.time())
+        cls.ts = arib.make(os.path.join(cls.dir, "bml.ts"), LINEUP, 27, time.time())
         xml = subprocess.run(
             ["tstables", "--japan", "--xml-output", "-", cls.ts], capture_output=True, check=True
         ).stdout
@@ -253,7 +286,7 @@ class StreamTest(unittest.TestCase):
         self.assertIsNotNone(ts.find("TS_information_descriptor"))
         sdt = self.table("SDT")
         self.assertEqual(
-            sdt.find("service/service_descriptor").get("service_name"), arib.SERVICE["name"]
+            sdt.find("service/service_descriptor").get("service_name"), SERVICE["name"]
         )
         eit = self.table("EIT")
         self.assertEqual(eit.get("type"), "pf")
@@ -281,10 +314,10 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(sorted(blocks), list(range(-(-size // info["block_size"]))))
         mod = b"".join(blocks[n] for n in sorted(blocks))
         self.assertEqual(len(mod), size)
-        self.assertEqual(mod, arib.module())
+        self.assertEqual(mod, arib.module(PARTS))
         (_rlist, (headers, body), *_menu) = multipart(mod)
         self.assertEqual(headers[b"content-location"], b"startup.bml")
-        self.assertEqual(body, arib.startup_bml())
+        self.assertEqual(body, DOCUMENTS["startup.bml"])
 
 
 if __name__ == "__main__":

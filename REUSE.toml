@@ -35,6 +35,7 @@ path = [
   "**.diff",
   "**.iobench",
   "**.cfg",
+  "**.bml",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Mariotaku <git@mariotaku.me> and the Beanjar contributors"

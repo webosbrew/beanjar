@@ -1,10 +1,12 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""A Japanese digital terrestrial (ISDB-T) transport stream with an ARIB BML data broadcast: one
-service whose PMT carries MPEG-2 video (also the PCR), AAC (ADTS) audio and a data component, the
-DSM-CC data carousel on that component's PID (one DII and the DDBs of module 0, a multipart/mixed
-module holding startup.bml), and the SI a set needs around it: NIT with the ISDB-T terrestrial
-delivery and TS information descriptors, SDT, EIT present/following, TOT and TDT in JST.
+"""Japanese digital terrestrial (ISDB-T) transport streams with ARIB BML data broadcasts, one per
+physical channel of an ARIB lineup (tuner_lineup.py: the built-in lineups/arib.toml or a VM's
+own). Each service's PMT carries MPEG-2 video (also its PCR), AAC (ADTS) audio and, for a service
+with a BML folder, a data component: the DSM-CC data carousel on that component's PID (one DII
+and the DDBs of module 0, a multipart/mixed module holding the folder's files, startup.bml first).
+Around them the SI a set needs: NIT with the ISDB-T terrestrial delivery and TS information
+descriptors, SDT, EIT present/following, TOT and TDT in JST.
 
 Made like the ATSC streams (tuner_stream.py): ffmpeg encodes the A/V loop, tsp injects the tables
 (with --japan: ARIB STD-B24 strings, JST times). TSDuck's own DII model writes the moduleInfo of a
@@ -13,9 +15,9 @@ TR-B14), so the DII and DDB sections are made here (TSDuck's XML also caps them 
 and tsp only repeats them. Byte layout cross-checked against denpa's
 packages/arib synth.ts (MIT) and web-bml's server/decode_ts.ts (MIT); no code taken from either.
 
-The page is EUC-JP with the ARIB BML 1.0 DOCTYPE and `<?bml bml-version="100.0" ?>`, as terrestrial
-broadcasts and denpa's test documents are written; whether LG's NetFront would take UTF-8 or no
-DOCTYPE is not known, so nothing is left out that a broadcast carries."""
+The built-in page (lineups/arib-bml) is EUC-JP with the ARIB BML 1.0 DOCTYPE and `<?bml
+bml-version="100.0" ?>`, as terrestrial broadcasts and denpa's test documents are written; a
+folder's .bml files go into the module as they are, declared EUC-JP."""
 
 import hashlib
 import json
@@ -28,14 +30,30 @@ from xml.sax.saxutils import escape, quoteattr
 from .tuner_stream import PACKET, Error, crc32_mpeg
 
 MUX_RATE = 5_000_000  # bits a second
-VERSION = 8  # of the generator: part of a stream's key (stream_key)
+VERSION = 9  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
-LOOP_SECONDS = 5  # of the A/V loop
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
 
 PAT_PID, NIT_PID, SDT_PID, EIT_PID, TOT_PID = 0x00, 0x10, 0x11, 0x12, 0x14
 TABLE_TDT, TABLE_TOT = 0x70, 0x73
-PMT_PID, VIDEO_PID, AUDIO_PID, DATA_PID = 0x1F0, 0x111, 0x112, 0x740
+PMT_PID, VIDEO_PID, AUDIO_PID, DATA_PID = 0x1F0, 0x111, 0x112, 0x740  # the first service's
+
+
+def pmt_pid(i):
+    return PMT_PID + i
+
+
+def video_pid(i):
+    return VIDEO_PID + 0x10 * i
+
+
+def audio_pid(i):
+    return AUDIO_PID + 0x10 * i
+
+
+def data_pid(i):
+    return DATA_PID + i
+
 
 TAG_VIDEO, TAG_AUDIO, TAG_DATA = 0x00, 0x10, 0x40  # component tags; 0x40 is the entry component
 # the video, 720x480 progressive 4:3: video_encode_format 3 (480p) and component_type 0xA1 (480p 4:3)
@@ -47,134 +65,6 @@ TRANSACTION_ID = 0x80000002  # originator 0b10 (network), DII identification 2, 
 BLOCK_SIZE = 4066  # what broadcasts use: a full DDB section is 4096 bytes
 MODULE_ID, MODULE_VERSION = 0x0000, 0
 BOUNDARY = "beanjar-bml"
-
-# The service: an ISDB-T multiplex on UHF 27 with one SD service and its BML page. The
-# network, TS and area numbers are picked in the terrestrial ranges, not taken from a station.
-SERVICE = {
-    "uhf": 27,
-    "network_id": 0x7FD0,
-    "tsid": 0x7FD0,
-    "service_id": 0x0400,
-    "area_code": 0x5A5,
-    "remote_key": 1,
-    "network_name": "ビーンジャー",
-    "provider": "ビーンジャー",
-    "name": "ビーンジャー１",
-    "video": {"size": "720x480", "fps": "30000/1001", "bitrate": 2000000},
-    "audio": {"bitrate": 128000, "tone_hz": 1000},
-    "events": [
-        ("データ放送テスト", 60, "BML のデータ放送ページを載せた試験放送です。"),
-        ("試験放送", 60, "カラーバーと試験音。"),
-    ],
-}
-
-PAGE_TEXT = "ビーンジャー データ放送テスト"
-PAGE_TEXT_2 = "Beanjar ARIB BML test page"
-MENU_TEXT = "データ放送メニュー"
-MENU_TEXT_2 = "青ボタンで戻る"
-# The second document's video window, in the page's 960x540 (x2 on a 1920x1080 plane): a quarter
-# of the screen near the top left, as broadcasters' menu pages place the picture
-WINDOW = (48, 36, 480, 270)
-KEY_BLUE = 21  # ARIB STD-B24 vol. 2, A2 table 5-9 (TR-B14 vol. 2 table 5-5)
-
-_PROLOG = """<?xml version="1.0" encoding="EUC-JP" ?>
-<!DOCTYPE bml PUBLIC "+//ARIB STD-B24:1999//DTD BML Document for Japanese//JA" "http://www.arib.or.jp/B24/DTD/bml_1_0.dtd">
-<?bml bml-version="100.0" ?>
-"""
-
-# a blue key handler for the element that has the focus: the key goes to the focused element's
-# onkeydown (STD-B24 vol. 2, 5.4.2.3), so each document focuses one with a nav-index on load. The
-# document's name is in the function: LG's NetFront passed a string argument given in the
-# onkeydown attribute (key('...')) to the function as undefined, and launchDocument("undefined")
-# ended the page as an unavailable document.
-_KEY_SCRIPT = """function key() {{
-  if (document.currentEvent.keyCode == {blue}) browser.launchDocument("{to}", "cut");
-}}"""
-
-
-def _doc(text):
-    return (_PROLOG + text).replace("\n", "\r\n").encode("euc_jp")
-
-
-def startup_bml():
-    """The startup document's bytes: EUC-JP, the layout terrestrial pages use (960x540, the body's
-    used-key-list), the video full screen and two lines of text on a blue panel over it, colours
-    from the default CLUT. A BML document shows the video only through a video object whose data
-    names the video component (/00: component tag 0x00 of this service); LG's NetFront reports a
-    video object without one as not visible and the set mutes the video while the page shows. The
-    object sits in a div: NetFront lays out only the div elements among the body's children. The d
-    button hides and shows the panel, as broadcast pages do it: the set sends the document a
-    DataButtonPressed event. The page's window gets the d key only with data-button in the
-    used-key-list; without it the key goes to Live TV, which does nothing with it. The blue key
-    (also in data-button) opens menu.bml (menu_bml), the video in a small window."""
-    script = _KEY_SCRIPT.format(blue=KEY_BLUE, to=f"/{TAG_DATA:02x}/{MODULE_ID:04x}/menu.bml")
-    return _doc(f"""<bml>
-<head>
-<title>{PAGE_TEXT_2}</title>
-<style><![CDATA[
-body {{ resolution: 960x540; display-aspect-ratio: 16v9; used-key-list: basic data-button; background-color-index: 8; }}
-p {{ font-family: 丸ゴシック; font-size: 36px; line-height: 48px; color-index: 7; }}
-]]></style>
-<script><![CDATA[
-function toggle() {{
-  var panel = document.getElementById("panel");
-  panel.normalStyle.visibility = panel.normalStyle.visibility == "hidden" ? "visible" : "hidden";
-}}
-{script}
-]]></script>
-<bevent><beitem id="d" type="DataButtonPressed" subscribe="subscribe" onoccur="toggle();"/></bevent>
-</head>
-<body onload="document.getElementById('video').focus();">
-<div id="video" style="left:0px;top:0px;width:960px;height:540px;nav-index:0;" onkeydown="key();">
-<object type="video/X-arib-mpeg2" data="/{TAG_VIDEO:02x}" streamstatus="play" style="left:0px;top:0px;width:960px;height:540px;"/>
-</div>
-<div id="panel" style="left:0px;top:360px;width:960px;height:180px;background-color-index:4;">
-<p style="left:48px;top:30px;width:864px;height:48px;">{PAGE_TEXT}</p>
-<p style="left:48px;top:96px;width:864px;height:48px;font-size:28px;">{PAGE_TEXT_2}</p>
-</div>
-</body>
-</bml>
-""")
-
-
-def menu_bml():
-    """The second document, as broadcasters' data pages lay out their menus: the video in a
-    quarter-screen window (WINDOW) near the top left and the page around it, a navy background
-    (default CLUT 19) with white text to the right of the window and under it. The video object
-    has the window's size in a div at the window's place (NetFront lays out only the body's divs);
-    the set scales the picture into it. The blue key goes back to startup.bml."""
-    x, y, w, h = WINDOW
-    script = _KEY_SCRIPT.format(blue=KEY_BLUE, to=f"/{TAG_DATA:02x}/{MODULE_ID:04x}/startup.bml")
-    right = x + w + 32
-    return _doc(f"""<bml>
-<head>
-<title>{MENU_TEXT}</title>
-<style><![CDATA[
-body {{ resolution: 960x540; display-aspect-ratio: 16v9; used-key-list: basic data-button; background-color-index: 19; }}
-p {{ font-family: 丸ゴシック; font-size: 28px; line-height: 40px; color-index: 7; }}
-]]></style>
-<script><![CDATA[
-{script}
-]]></script>
-</head>
-<body onload="document.getElementById('video').focus();">
-<div id="video" style="left:{x}px;top:{y}px;width:{w}px;height:{h}px;nav-index:0;" onkeydown="key();">
-<object type="video/X-arib-mpeg2" data="/{TAG_VIDEO:02x}" streamstatus="play" style="left:0px;top:0px;width:{w}px;height:{h}px;"/>
-</div>
-<div style="left:{right}px;top:{y}px;width:{960 - 48 - right}px;height:{h}px;">
-<p style="left:0px;top:0px;width:{960 - 48 - right}px;height:40px;">{MENU_TEXT}</p>
-<p style="left:0px;top:56px;width:{960 - 48 - right}px;height:40px;font-size:24px;">Beanjar BML menu</p>
-</div>
-<div style="left:{x}px;top:{y + h + 40}px;width:{960 - 2 * x}px;height:{540 - y - h - 80}px;">
-<p style="left:0px;top:0px;width:{960 - 2 * x}px;height:40px;">{PAGE_TEXT}</p>
-<p style="left:0px;top:56px;width:{960 - 2 * x}px;height:40px;font-size:24px;">{MENU_TEXT_2}</p>
-</div>
-</body>
-</bml>
-""")
-
-
-DOCUMENTS = (("startup.bml", startup_bml), ("menu.bml", menu_bml))
 
 RESOURCE_LIST_TYPE = "application/x-arib-resourcelist"
 
@@ -199,35 +89,33 @@ def resource_list(entries):
     return out
 
 
-def module():
-    """Module 0: a multipart/mixed entity (ARIB STD-B24 vol. 2, 9.3) with a resource list first and
-    the documents (DOCUMENTS). The boundary is quoted: the sets' NetFront BML browser reads an
-    unquoted one wrong (it repeats its first character) and then finds no part. Without the
-    resource list it finds the module but not startup.bml in it; both end in "unavailable
-    document"."""
+def module(parts):
+    """Module 0 of a BML folder's files, parts [(name, content type, bytes)] (tuner_lineup.bml_parts,
+    startup.bml first): a multipart/mixed entity (ARIB STD-B24 vol. 2, 9.3) with a resource list
+    first and the files. The boundary is quoted: the sets' NetFront BML browser reads an unquoted
+    one wrong (it repeats its first character) and then finds no part. Without the resource list
+    it finds the module but not startup.bml in it; both end in "unavailable document"."""
     top = f'Content-Type: multipart/mixed; boundary="{BOUNDARY}"\r\n\r\n'.encode()
     delim = f"--{BOUNDARY}\r\n".encode()
     list_head = f"Content-Type: {RESOURCE_LIST_TYPE}\r\n\r\n".encode()
     docs = [
         (
             name,
-            b"Content-Type: text/X-arib-bml; charset=euc-jp\r\nContent-Location: "
-            + name.encode()
-            + b"\r\n",
-            render(),
+            f"Content-Type: {ctype}\r\nContent-Location: {name}\r\n".encode(),
+            body,
         )
-        for name, render in DOCUMENTS
+        for name, ctype, body in parts
     ]
     list_len = len(resource_list([(name, 0, 0, 0) for name, _, _ in docs]))
     # each document's header lines start after the list part (or the document before) and the
     # next delimiter
     at = len(top) + len(delim) + len(list_head) + list_len + 2 + len(delim)
-    entries, parts = [], b""
+    entries, out = [], b""
     for name, head, doc in docs:
         entries.append((name, at, len(head), len(doc)))
-        parts += head + b"\r\n" + doc + b"\r\n" + delim
+        out += head + b"\r\n" + doc + b"\r\n" + delim
         at += len(head) + 2 + len(doc) + 2 + len(delim)
-    parts = parts[: -len(delim)]
+    out = out[: -len(delim)]
     return (
         top
         + delim
@@ -235,9 +123,16 @@ def module():
         + resource_list(entries)
         + b"\r\n"
         + delim
-        + parts
+        + out
         + f"--{BOUNDARY}--\r\n".encode()
     )
+
+
+def service_module(svc):
+    """Module 0 of the service's BML folder; None for a service without one."""
+    from .tuner_lineup import bml_parts
+
+    return module(bml_parts(svc["bml"])) if svc.get("bml") else None
 
 
 def data_component_info(auto_start=True):
@@ -310,13 +205,14 @@ def _jst(t, fmt="%Y-%m-%d %H:%M:%S"):
     return datetime.fromtimestamp(int(t), JST).strftime(fmt)
 
 
-def events(now):
-    """(start, minutes, title, text) of the present and following events: the cycle repeated from
-    local (JST) midnight."""
+def events(svc, now):
+    """(start, minutes, title, text) of the service's present and following events: its cycle
+    repeated from local (JST) midnight."""
     day = datetime.fromtimestamp(now, JST).replace(hour=0, minute=0, second=0, microsecond=0)
-    t, cycle, out, i = day.timestamp(), SERVICE["events"], [], 0
+    t, cycle, out, i = day.timestamp(), svc["events"], [], 0
     while len(out) < 2:
-        title, minutes, text = cycle[i % len(cycle)]
+        e = cycle[i % len(cycle)]
+        title, minutes, text = e["title"], e["minutes"], e["text"]
         if t + minutes * 60 > now:
             out.append((int(t), minutes, title, text))
         t += minutes * 60
@@ -332,67 +228,89 @@ def _hex(data):
     return data.hex().upper()
 
 
-def _tables(now):
-    """{name: TSDuck XML body} of the stream's tables at now."""
-    s, t = SERVICE, {}
-    sid, tsid, onid = s["service_id"], s["tsid"], s["network_id"]
+def _tables(rf, now, modules):
+    """{name: TSDuck XML body} of the physical channel's tables at now; modules: each service's
+    BML module, or None."""
+    t, services = {}, rf["services"]
+    tsid, onid = rf["tsid"], rf["network_id"]
     t["pat"] = (
         f'<PAT version="0" transport_stream_id="{tsid}" network_PID="0x{NIT_PID:X}">\n'
-        f'  <service service_id="{sid}" program_map_PID="0x{PMT_PID:X}"/>\n</PAT>\n'
+        + "".join(
+            f'  <service service_id="{s["service_id"]}" program_map_PID="0x{pmt_pid(i):X}"/>\n'
+            for i, s in enumerate(services)
+        )
+        + "</PAT>\n"
     )
-    t["pmt"] = (
-        f'<PMT version="0" service_id="{sid}" PCR_PID="0x{VIDEO_PID:X}">\n'
-        f'  <component stream_type="0x02" elementary_PID="0x{VIDEO_PID:X}">\n'
-        f'    <stream_identifier_descriptor component_tag="0x{TAG_VIDEO:02X}"/>\n'
-        # ARIB STD-B10: the video's format, which a set takes before the decoder's; 3 is 480p
-        '    <video_decode_control_descriptor still_picture="false" sequence_end_code="false" '
-        f'video_encode_format="{VIDEO_ENCODE_FORMAT}"/>\n  </component>\n'
-        f'  <component stream_type="0x0F" elementary_PID="0x{AUDIO_PID:X}">\n'
-        f'    <stream_identifier_descriptor component_tag="0x{TAG_AUDIO:02X}"/>\n  </component>\n'
-        f'  <component stream_type="0x0D" elementary_PID="0x{DATA_PID:X}">\n'
-        f'    <stream_identifier_descriptor component_tag="0x{TAG_DATA:02X}"/>\n'
-        f'    <data_component_descriptor data_component_id="0x{DATA_COMPONENT_BML_TERRESTRIAL:04X}">'
-        f"<additional_data_component_info>{_hex(data_component_info())}</additional_data_component_info>"
-        "</data_component_descriptor>\n  </component>\n</PMT>\n"
-    )
+    for i, s in enumerate(services):
+        pmt = (
+            f'<PMT version="0" service_id="{s["service_id"]}" PCR_PID="0x{video_pid(i):X}">\n'
+            f'  <component stream_type="0x02" elementary_PID="0x{video_pid(i):X}">\n'
+            f'    <stream_identifier_descriptor component_tag="0x{TAG_VIDEO:02X}"/>\n'
+            # ARIB STD-B10: the video's format, which a set takes before the decoder's; 3 is 480p
+            '    <video_decode_control_descriptor still_picture="false" sequence_end_code="false" '
+            f'video_encode_format="{VIDEO_ENCODE_FORMAT}"/>\n  </component>\n'
+            f'  <component stream_type="0x0F" elementary_PID="0x{audio_pid(i):X}">\n'
+            f'    <stream_identifier_descriptor component_tag="0x{TAG_AUDIO:02X}"/>\n  </component>\n'
+        )
+        if modules[i] is not None:
+            pmt += (
+                f'  <component stream_type="0x0D" elementary_PID="0x{data_pid(i):X}">\n'
+                f'    <stream_identifier_descriptor component_tag="0x{TAG_DATA:02X}"/>\n'
+                f'    <data_component_descriptor data_component_id="0x{DATA_COMPONENT_BML_TERRESTRIAL:04X}">'
+                f"<additional_data_component_info>{_hex(data_component_info())}</additional_data_component_info>"
+                "</data_component_descriptor>\n  </component>\n"
+            )
+        t[f"pmt{i}"] = pmt + "</PMT>\n"
     t["nit"] = (
         f'<NIT version="0" network_id="{onid}">\n'
-        f"  <network_name_descriptor network_name={_q(s['network_name'])}/>\n"
+        f"  <network_name_descriptor network_name={_q(rf['network_name'])}/>\n"
         # terrestrial (broadcasting identifier 3), standard broadcast
         '  <system_management_descriptor broadcasting_flag="0" broadcasting_identifier="3" '
         'additional_broadcasting_identification="0x01"/>\n'
         f'  <transport_stream transport_stream_id="{tsid}" original_network_id="{onid}">\n'
-        f'    <ISDB_terrestrial_delivery_system_descriptor area_code="0x{s["area_code"]:03X}" '
+        f'    <ISDB_terrestrial_delivery_system_descriptor area_code="0x{rf["area_code"]:03X}" '
         'guard_interval="1/8" transmission_mode="mode3">'
-        f'<frequency value="{uhf_center_hz(s["uhf"])}"/></ISDB_terrestrial_delivery_system_descriptor>\n'
-        f'    <TS_information_descriptor remote_control_key_id="{s["remote_key"]}" ts_name={_q(s["name"])}>'
-        f'<transmission_type transmission_type_info="0x0F"><service id="{sid}"/></transmission_type>'
-        "</TS_information_descriptor>\n"
-        f'    <service_list_descriptor><service service_id="{sid}" service_type="0x01"/></service_list_descriptor>\n'
+        f'<frequency value="{uhf_center_hz(rf["channel"])}"/></ISDB_terrestrial_delivery_system_descriptor>\n'
+        f'    <TS_information_descriptor remote_control_key_id="{rf["remote_key"]}" ts_name={_q(rf["ts_name"])}>'
+        '<transmission_type transmission_type_info="0x0F">'
+        + "".join(f'<service id="{s["service_id"]}"/>' for s in services)
+        + "</transmission_type></TS_information_descriptor>\n"
+        "    <service_list_descriptor>"
+        + "".join(
+            f'<service service_id="{s["service_id"]}" service_type="0x01"/>' for s in services
+        )
+        + "</service_list_descriptor>\n"
         "  </transport_stream>\n</NIT>\n"
     )
     t["sdt"] = (
         f'<SDT version="0" transport_stream_id="{tsid}" original_network_id="{onid}">\n'
-        f'  <service service_id="{sid}" EIT_present_following="true" running_status="running">\n'
-        f'    <service_descriptor service_type="0x01" service_provider_name={_q(s["provider"])} '
-        f"service_name={_q(s['name'])}/>\n  </service>\n</SDT>\n"
-    )
-    eit = f'<EIT type="pf" version="0" service_id="{sid}" transport_stream_id="{tsid}" original_network_id="{onid}">\n'
-    for k, (start, minutes, title, text) in enumerate(events(now)):
-        eit += (
-            f'  <event event_id="{(start // 60) & 0xFFFF}" start_time="{_jst(start)}" '
-            f'duration="{minutes // 60:02d}:{minutes % 60:02d}:00" '
-            f'running_status="{"running" if k == 0 else "not-running"}">\n'
-            f'    <short_event_descriptor language_code="jpn"><event_name>{escape(title)}</event_name>'
-            f"<text>{escape(text)}</text></short_event_descriptor>\n"
-            # the event's video and audio, as broadcasts describe them (STD-B10 6.2.3, 6.2.26)
-            f'    <component_descriptor stream_content="1" component_type="0x{COMPONENT_VIDEO:02X}" '
-            f'component_tag="0x{TAG_VIDEO:02X}" language_code="jpn"/>\n'
-            f'    <audio_component_descriptor component_type="0x03" component_tag="0x{TAG_AUDIO:02X}" '
-            'stream_type="0x0F" quality_indicator="1" sampling_rate="7" ISO_639_language_code="jpn"/>\n'
-            "  </event>\n"
+        + "".join(
+            f'  <service service_id="{s["service_id"]}" EIT_present_following="true" running_status="running">\n'
+            f'    <service_descriptor service_type="0x01" service_provider_name={_q(s["provider"])} '
+            f"service_name={_q(s['name'])}/>\n  </service>\n"
+            for s in services
         )
-    t["eit"] = eit + "</EIT>\n"
+        + "</SDT>\n"
+    )
+    eit = ""
+    for s in services:
+        eit += f'<EIT type="pf" version="0" service_id="{s["service_id"]}" transport_stream_id="{tsid}" original_network_id="{onid}">\n'
+        for k, (start, minutes, title, text) in enumerate(events(s, now)):
+            eit += (
+                f'  <event event_id="{(start // 60) & 0xFFFF}" start_time="{_jst(start)}" '
+                f'duration="{minutes // 60:02d}:{minutes % 60:02d}:00" '
+                f'running_status="{"running" if k == 0 else "not-running"}">\n'
+                f'    <short_event_descriptor language_code="jpn"><event_name>{escape(title)}</event_name>'
+                f"<text>{escape(text)}</text></short_event_descriptor>\n"
+                # the event's video and audio, as broadcasts describe them (STD-B10 6.2.3, 6.2.26)
+                f'    <component_descriptor stream_content="1" component_type="0x{COMPONENT_VIDEO:02X}" '
+                f'component_tag="0x{TAG_VIDEO:02X}" language_code="jpn"/>\n'
+                f'    <audio_component_descriptor component_type="0x03" component_tag="0x{TAG_AUDIO:02X}" '
+                'stream_type="0x0F" quality_indicator="1" sampling_rate="7" ISO_639_language_code="jpn"/>\n'
+                "  </event>\n"
+            )
+        eit += "</EIT>\n"
+    t["eit"] = eit
     t["tot"] = f'<TOT UTC_time="{_jst(now)}"/>\n'
     t["tdt"] = f'<TDT UTC_time="{_jst(now)}"/>\n'
     return t
@@ -408,9 +326,8 @@ def dsmcc_section(table_id, table_id_ext, version, number, last, payload):
     return sec + _be(crc32_mpeg(sec), 4)
 
 
-def carousel():
-    """{name: sections} of the data PID: the DII and the DDBs of module 0."""
-    mod = module()
+def carousel(mod):
+    """{name: sections} of a data PID: the DII and the DDBs of module 0, mod."""
     ddb = ddb_messages(mod)
     return {
         "dii": dsmcc_section(0x3B, TRANSACTION_ID & 0xFFFF, 0, 0, 0, dii_message(mod)),
@@ -427,20 +344,23 @@ def _run(cmd):
         raise Error(f"{' '.join(cmd[:2])} failed: {(r.stderr or r.stdout).strip()[-400:]}")
 
 
-def _make_loop(path):
-    """The A/V loop: colour bars labelled with the service, MPEG-2 video and AAC (ADTS) audio."""
-    v, a = SERVICE["video"], SERVICE["audio"]
+def _make_loop(lu, rf, path):
+    """The A/V loop: each service's picture and sound, MPEG-2 video and AAC (ADTS) audio; with more
+    than one service a program each, so each video carries its own PCR."""
+    from .tuner_stream import av_inputs
+
+    v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     vb = str(v["bitrate"])
+    inputs, maps = av_inputs(rf["services"], v, dur, lambda s: s["name"])
+    progs = []
+    if len(rf["services"]) > 1:
+        for i in range(len(rf["services"])):
+            progs += ["-program", f"st={2 * i}:st={2 * i + 1}"]
     _run(
         ["ffmpeg", "-v", "error", "-y"]
-        + ["-f", "lavfi", "-i", f"smptebars=s={v['size']}:r={v['fps']}:d={LOOP_SECONDS}"]
-        + [
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency={a['tone_hz']}:sample_rate=48000:duration={LOOP_SECONDS}",
-        ]
-        + ["-map", "0:v", "-map", "1:a"]
+        + inputs
+        + maps
+        + progs
         + ["-c:v", "mpeg2video", "-b:v", vb, "-minrate", vb, "-maxrate", vb, "-bufsize", "1835008"]
         + [
             "-g",
@@ -460,14 +380,18 @@ def _make_loop(path):
     )
 
 
-def _tsp(d, loop, out, now):
+def _tsp(lu, rf, d, loop, out, now, modules):
     """The loop with the tables injected at their rates: PAT/PMT 100 ms, NIT and SDT 1 s (ARIB:
     at most 10 s and 2 s), EIT p/f 500 ms, TOT and TDT 1 s (at most 30 s), DII 500 ms, DDB 250 ms."""
-    repeat = max(1, -(-SECONDS // LOOP_SECONDS))
+    services = rf["services"]
+    repeat = max(1, -(-SECONDS // lu["loop_seconds"]))
     a = ["tsp", "--japan", "--bitrate", str(MUX_RATE), "-I", "file", loop, "--repeat", str(repeat)]
-    a += ["-P", "filter", "--stuffing", "--pid", str(FF_PID0), "--pid", str(FF_PID0 + 1)]
-    a += ["--pid", "0x1FFF", "-P", "continuity", "--fix"]
-    a += ["-P", "remap", "--no-psi", f"{FF_PID0}={VIDEO_PID}", f"{FF_PID0 + 1}={AUDIO_PID}"]
+    a += ["-P", "filter", "--stuffing"]
+    for i in range(len(services)):
+        a += ["--pid", str(FF_PID0 + 2 * i), "--pid", str(FF_PID0 + 2 * i + 1)]
+    a += ["--pid", "0x1FFF", "-P", "continuity", "--fix", "-P", "remap", "--no-psi"]
+    for i in range(len(services)):
+        a += [f"{FF_PID0 + 2 * i}={video_pid(i)}", f"{FF_PID0 + 2 * i + 1}={audio_pid(i)}"]
 
     def inject(pid, files):
         return ["-P", "inject", "--stuffing", "--pid", f"0x{pid:X}"] + [
@@ -475,7 +399,8 @@ def _tsp(d, loop, out, now):
         ]
 
     a += inject(PAT_PID, [("pat.xml", 100)])
-    a += inject(PMT_PID, [("pmt.xml", 100)])
+    for i in range(len(services)):
+        a += inject(pmt_pid(i), [(f"pmt{i}.xml", 100)])
     a += inject(NIT_PID, [("nit.xml", 1000)])
     a += inject(SDT_PID, [("sdt.xml", 1000)])
     # TSDuck puts both events in one section; ARIB, like DVB, has present in section 0 and
@@ -483,7 +408,9 @@ def _tsp(d, loop, out, now):
     a += ["-P", "inject", "--stuffing", "--pid", f"0x{EIT_PID:X}", "--eit-normalization"]
     a += ["--eit-actual-pf", "--eit-base-date", _jst(now, "%Y/%m/%d %H:%M:%S"), f"{d}/eit.xml=500"]
     a += inject(TOT_PID, [("tot.xml", 1000), ("tdt.xml", 1000)])
-    a += inject(DATA_PID, [("dii.bin", 500), ("ddb.bin", 250)])
+    for i, m in enumerate(modules):
+        if m is not None:
+            a += inject(data_pid(i), [(f"dii{i}.bin", 500), (f"ddb{i}.bin", 250)])
     _run(a + ["-O", "file", out])
 
 
@@ -492,55 +419,68 @@ def tools():
     return [t for t in ("tsp", "ffmpeg") if not shutil.which(t)]
 
 
-def make(path, now):
-    """Makes the stream into path for the time now (EIT p/f, TOT, TDT); returns path."""
+def make(path, lu, ch, now):
+    """Makes the stream of the lineup's physical channel ch into path for the time now (EIT p/f,
+    TOT, TDT); returns path."""
+    from .tuner_stream import channel
+
     missing = tools()
     if missing:
         raise Error(f"no {', '.join(missing)} on this host: install TSDuck and ffmpeg")
+    rf = channel(lu, ch)
+    modules = [service_module(s) for s in rf["services"]]
     work = path + ".work"
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work)
     try:
-        for name, body in _tables(now).items():
+        for name, body in _tables(rf, now, modules).items():
             with open(os.path.join(work, name + ".xml"), "w", encoding="utf-8") as f:
                 f.write('<?xml version="1.0" encoding="UTF-8"?>\n<tsduck>\n' + body + "</tsduck>\n")
-        for name, sections in carousel().items():
-            with open(os.path.join(work, name + ".bin"), "wb") as f:
-                f.write(sections)
-        _make_loop(os.path.join(work, "loop.ts"))
-        _tsp(work, os.path.join(work, "loop.ts"), os.path.join(work, "out.ts"), now)
+        for i, m in enumerate(modules):
+            if m is not None:
+                for name, sections in carousel(m).items():
+                    with open(os.path.join(work, f"{name}{i}.bin"), "wb") as f:
+                        f.write(sections)
+        _make_loop(lu, rf, os.path.join(work, "loop.ts"))
+        _tsp(
+            lu, rf, work, os.path.join(work, "loop.ts"), os.path.join(work, "out.ts"), now, modules
+        )
         os.replace(os.path.join(work, "out.ts"), path)
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return path
 
 
-def stream_key(now):
-    """What the stream depends on: the generator, the service, its page and the present and
-    following events (EIT p/f), so it is made again when the present event ends."""
+def stream_key(lu, ch, now):
+    """What the stream depends on: the generator, the lineup (its values and its files' content:
+    its key) and the present and following events (EIT p/f) of the channel's services, so it is
+    made again when a present event ends."""
+    from .tuner_stream import channel
+
+    rf = channel(lu, ch)
     text = json.dumps(
-        [VERSION, SERVICE, module().hex(), [e[:2] for e in events(now)]], sort_keys=True
+        [VERSION, lu["key"], ch, [[e[:2] for e in events(s, now)] for s in rf["services"]]],
+        sort_keys=True,
     )
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
-def stream_path(cache, ch, now):
-    return os.path.join(cache, f"isdbt{ch:02d}-{stream_key(now)}.ts")
+def stream_path(cache, lu, ch, now):
+    return os.path.join(cache, f"isdbt{ch:02d}-{lu['key'][:8]}-{stream_key(lu, ch, now)}.ts")
 
 
-def make_cached(cache, ch, now):
+def make_cached(cache, lu, ch, now):
     """The path of physical channel ch's stream for now, made into the directory cache if it is not
-    there yet; older streams of the channel go. Error for a channel that carries nothing."""
-    if ch != SERVICE["uhf"]:
-        raise Error(f"the lineup has no physical channel {ch} ({SERVICE['uhf']})")
-    path = stream_path(cache, ch, now)
+    there yet; older streams of the channel of the lineup go (other lineups' stay: VMs share the
+    cache). Error for a channel that carries nothing."""
+    path = stream_path(cache, lu, ch, now)
     if os.path.exists(path):
         return path
     os.makedirs(cache, exist_ok=True)
-    make(path + ".tmp", now)
+    make(path + ".tmp", lu, ch, now)
     os.replace(path + ".tmp", path)
     for name in os.listdir(cache):
-        if name.startswith(f"isdbt{ch:02d}-") and os.path.join(cache, name) != path:
+        if name.startswith(f"isdbt{ch:02d}-{lu['key'][:8]}-") and os.path.join(cache, name) != path:
             os.unlink(os.path.join(cache, name))
     return path
 

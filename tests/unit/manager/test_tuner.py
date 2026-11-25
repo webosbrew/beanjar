@@ -26,8 +26,10 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import ares, cli, remote, tuner, tuner_stream  # noqa: E402
+from beanjar import ares, cli, remote, tuner, tuner_lineup, tuner_stream
 from beanjar import tuner_stream_arib as arib
+
+ATSC = tuner_lineup.default("atsc")
 
 
 def section(table_id, body, long=True):
@@ -144,10 +146,10 @@ class LineupTest(unittest.TestCase):
         with self.assertRaises(tuner_stream.Error):
             tuner_stream.rf_center_hz(37)
         with self.assertRaises(tuner_stream.Error):
-            tuner_stream.channel(8)
+            tuner_stream.channel(ATSC, 8)
 
     def test_events_cover_now(self):
-        svc = tuner_stream.channel(7)["services"][0]
+        svc = tuner_stream.channel(ATSC, 7)["services"][0]
         now = 1_800_000_000
         for t in range(now, now + 86400, 1800):
             on_air = tuner_stream.events(svc, t, t + 1)
@@ -162,9 +164,9 @@ class LineupTest(unittest.TestCase):
             self.assertEqual(tuner.mapped(d), [7, 14])
 
 
-def fake_make(cache, ch, now):
+def fake_make(cache, lu, ch, now):
     """tuner_stream.make without the tools: the stream if it is in cache."""
-    path = tuner_stream.stream_path(cache, ch, now)
+    path = tuner_stream.stream_path(cache, lu, ch, now)
     if os.path.exists(path):
         return path
     raise tuner_stream.Error("no tsp, tstabcomp, ffmpeg on this host: install TSDuck and ffmpeg")
@@ -173,7 +175,7 @@ def fake_make(cache, ch, now):
 def put_stream(cache, ch):
     os.makedirs(cache, exist_ok=True)
     pkts = [packet(0x31, b"video")] * 40 + [packet(0x1FFF)] * 10
-    with open(tuner_stream.stream_path(cache, ch, time.time()), "wb") as f:
+    with open(tuner_stream.stream_path(cache, ATSC, ch, time.time()), "wb") as f:
         f.write(b"".join(pkts))
 
 
@@ -570,22 +572,18 @@ class AribTest(unittest.TestCase):
         self.assertEqual(tuner.channels_of([557143000]), [])
 
     def test_each_channel_has_its_own_picture_and_tone(self):
-        services = [s for rf in tuner_stream.LINEUP["rf"] for s in rf["services"]]
+        services = [s for rf in ATSC["rf"] for s in rf["services"]]
         self.assertGreater(len(services), 1)
-        for key in ("picture", "tone_hz"):
-            values = [s[key] for s in services]
+        for key in ("picture", "sound"):
+            values = [json.dumps(s[key]) for s in services]
             self.assertEqual(len(set(values)), len(values), key)
-        # the stream's key follows a service's picture and tone
+        # the stream's key follows a service's picture and tone: the lineup's
         now = time.time()
-        a = tuner_stream.stream_key(7, now)
-        svc = tuner_stream.LINEUP["rf"][0]["services"][0]
-        for key, other in (("picture", "life"), ("tone_hz", 123)):
-            old = svc[key]
-            svc[key] = other
-            try:
-                self.assertNotEqual(tuner_stream.stream_key(7, now), a, key)
-            finally:
-                svc[key] = old
+        a = tuner_stream.stream_key(ATSC, 7, now)
+        for old, new in (('"testsrc2"', '"zoneplate"'), ("tone = 440", "tone = 123")):
+            text = ATSC["text"].replace(old, new, 1)
+            other = tuner_lineup.parse(text, "t.toml", tuner_lineup.DEFAULTS_DIR)
+            self.assertNotEqual(tuner_stream.stream_key(other, 7, now), a, new)
 
     def test_map_frame_and_reader(self):
         f = tuner.map_frame([557142857], tuner.SYS_ISDBT)

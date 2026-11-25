@@ -20,19 +20,27 @@ def tuner_words(a):
     if verb == "unmap" and rest == ["all"]:
         return verb, None
     try:
-        return verb, [int(w) for w in rest]
+        channels = [int(w) for w in rest]
     except ValueError:
         raise Usage(f"io tuner {verb}: {' '.join(rest)}: physical channel numbers") from None
+    if verb == "map" and getattr(a, "stream", None) is not None and len(channels) != 1:
+        raise Usage("io tuner map --stream FILE: one physical channel, RF, the stream's")
+    return verb, channels
 
 
 def tuner_text(name, data):
     if not data["tuner"]:
         return f"{name}: no tuner of ours on its board (no dtv_soc)"
-    lines = [f"{data.get('broadcast', 'atsc').upper()} lineup"] + [
-        f"RF{c['channel']:<3} {c['center_hz'] / 1e6:7.1f} MHz  {'mapped  ' if c['mapped'] else 'unmapped'}  "
-        + ", ".join(c["services"])
-        for c in data["channels"]
-    ]
+    own = " (the VM's own)" if data.get("lineup") == "own" else ""
+    lines = [f"{data.get('broadcast', 'atsc').upper()} lineup{own}"]
+    for c in data["channels"]:
+        what = ", ".join(c["services"])
+        if c.get("stream"):
+            what = f"stream {c['stream']}" + (f": {what}" if what else "")
+        lines.append(
+            f"RF{c['channel']:<3} {c['center_hz'] / 1e6:7.1f} MHz  "
+            f"{'mapped  ' if c['mapped'] else 'unmapped'}  {what}"
+        )
     tuned = data["tuned_hz"]
     lines.append(
         "tuned: "
@@ -49,50 +57,167 @@ def tuner_text(name, data):
     return "\n".join(lines)
 
 
+def lineup_text(name, data):
+    """lineup set's and reset's text: what the VM's antenna carries now."""
+    values = data["values"]
+    rfs = ", ".join(
+        f"RF{rf['channel']} ({len(rf['services'])} service{'s' if len(rf['services']) > 1 else ''})"
+        for rf in values["rf"]
+    )
+    which = "its own" if data["lineup"] == "own" else "the built-in"
+    return f"{name}: {which} {data['broadcast'].upper()} lineup: {rfs}"
+
+
+def lineup_done(a, name, data):
+    for w in data.pop("warnings", []):
+        warn(w)
+    if data.get("unmapped"):
+        warn(
+            f"{name}: RF {', '.join(map(str, data['unmapped']))} unmapped: the lineup has no such "
+            "channel"
+        )
+    return emit(a, data, lineup_text(name, data))
+
+
+def read_lineup_file(path):
+    """(name, TOML text or None) of lineup set's FILE: "-" reads stdin."""
+    import sys
+
+    if path == "-":
+        return "-", sys.stdin.read()
+    return path, None
+
+
 def cmd_tuner(lib, a):
     from .. import paths, tuner
 
     vm = lib.vm(a.name)
+    if a.verb == "lineup":
+        if a.lineup_verb == "show":
+            data = tuner.lineup_show(vm)
+            return emit(a, data, data["text"].rstrip("\n"))
+        if a.lineup_verb == "set":
+            path, text = read_lineup_file(a.file)
+            if a.fed and text is None:
+                with open(path, encoding="utf-8") as f:
+                    text = f.read()
+            data = tuner.lineup_set(vm, paths.Tree(vm.library.repo), path, text, a.fed)
+        else:
+            data = tuner.lineup_reset(vm)
+        return lineup_done(a, a.name, data)
     verb, channels = tuner_words(a)
     if verb == "list":
         data = tuner.status(vm)
     else:
         tree = paths.Tree(vm.library.repo)
         if verb == "map":
-            data = tuner.change(vm, tree, add=channels, fed=a.fed)
+            data = tuner.change(vm, tree, add=channels, fed=a.fed, stream=a.stream)
         else:
             data = tuner.change(vm, tree, remove=channels or (), clear=channels is None, fed=a.fed)
+        for w in data.pop("warnings", []):
+            warn(w)
     return emit(a, data, tuner_text(a.name, data))
+
+
+def remote_lineup(a, host, name, uri, mirror, listed):
+    """io tuner lineup for VM name on host: the host keeps the file (--fed), this machine, which
+    feeds the VM, the file and the files it names (mirror) and makes the streams."""
+    from .. import paths, tuner, tuner_lineup
+
+    words = ["io", "tuner", "lineup", a.lineup_verb, remote.own(name)]
+    if a.lineup_verb == "show":
+        data = remote.call_json(host, uri, words)
+        return emit(a, data, data["text"].rstrip("\n"))
+    dest = os.path.join(mirror, tuner.LINEUP_DIR)
+    if a.lineup_verb == "reset":
+        data = remote.call_json(host, uri, words)
+        import shutil
+
+        shutil.rmtree(dest, ignore_errors=True)
+        return lineup_done(a, f"{host}/{name}", data)
+    path, text = read_lineup_file(a.file)
+    broadcast = listed.get("broadcast", "atsc")
+    spec = (
+        tuner_lineup.load(path, broadcast)
+        if text is None
+        else tuner_lineup.parse(text, path, os.getcwd(), broadcast)
+    )
+    # the mapped channels' streams, made here, where the feed makes them: their errors now
+    recorded = tuner.streams(mirror)
+    new = tuner.from_spec(spec)
+    wanted = [
+        c["channel"]
+        for c in listed["channels"]
+        if c["mapped"] and c["channel"] in new.channels and c["channel"] not in recorded
+    ]
+    cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
+    tuner.make(cache, wanted, lu=new)
+    os.makedirs(mirror, exist_ok=True)
+    tuner_lineup.install(path, dest, broadcast, text)
+    rc, out, err = remote.call(
+        host, uri, [*words, "-", "--fed", "--json"], stdin=spec["text"].encode()
+    )
+    if rc:
+        raise remote.HostError(host, err.strip() or f"io tuner lineup set: status {rc}")
+    return lineup_done(a, f"{host}/{name}", json.loads(out))
 
 
 def remote_tuner(a, host, name):
     """tuner for VM name on host: map and unmap change the map there (--fed: no streams made
     there) and keep a feed from this machine running while anything is mapped and the VM runs
-    (tuner.start_feed, stop_feed)."""
+    (tuner.start_feed, stop_feed). The VM's own lineup and the user's streams are kept here too,
+    in this machine's directory for it (tuner.remote_dir), where the feed reads them."""
     from .. import paths, tuner
 
-    verb, channels = tuner_words(a)
     uri = remote.hosts()[host]
+    mirror = tuner.remote_dir(Library(a.library, a.repo).root, host, name)
+    if a.verb == "lineup":
+        listed = {}
+        if a.lineup_verb == "set":
+            listed = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
+        return remote_lineup(a, host, name, uri, mirror, listed)
+    verb, channels = tuner_words(a)
+    warnings = []
     if verb == "list":
         data = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
     else:
-        # the host's board's lineup: its broadcast standard
+        # the host's board's lineup: its broadcast standard, and the VM's own lineup, kept here
         listed = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
-        lu = tuner.lineup(listed.get("broadcast") if isinstance(listed, dict) else None)
-        tuner.check_channels(channels or [], lu)
+        broadcast = listed.get("broadcast") if isinstance(listed, dict) else None
+        lu = tuner.vm_lineup(mirror, broadcast)
         cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
-        if verb == "map":
-            tuner.make(cache, channels, lu=lu)  # here, where the feed makes them: its errors now
+        recorded = tuner.streams(mirror)
+        stream = getattr(a, "stream", None)
         words = [*(map(str, channels) if channels is not None else ["all"]), "--fed"]
+        if verb == "map" and stream is not None:
+            (ch,) = channels
+            rec = tuner.inspect_stream(stream, lu, ch)
+            warnings = rec["warnings"]
+            tuner.drop_streams(mirror, recorded, [ch])
+            recorded[ch] = tuner.put_stream(mirror, ch, stream, rec)
+            words += ["--stream", os.path.basename(stream)]
+        elif verb == "map":
+            tuner.check_channels(channels, lu)
+            tuner.make(cache, channels, lu=lu)  # here, where the feed makes them: its errors now
+            tuner.drop_streams(mirror, recorded, channels)
+        else:
+            tuner.check_channels(channels or [], lu, recorded)
+            tuner.drop_streams(mirror, recorded, list(recorded) if channels is None else channels)
+        tuner.save_map(mirror, [], recorded)
         data = remote.call_json(host, uri, ["io", "tuner", verb, remote.own(name), *words])
         if not isinstance(data, dict) or "feed_socket" not in data:
             raise remote.HostError(host, "its beanjar io tuner has no feeds: update it")
+        data.pop("warnings", None)
         if not any(c["mapped"] for c in data["channels"]):
             tuner.stop_feed(host, name)
         elif verb == "map" and data["connected"]:
-            tuner.start_feed(host, uri, name, data["feed_socket"], cache)
+            tuner.start_feed(host, uri, name, data["feed_socket"], cache, content=mirror)
         elif verb == "map":
-            warn(f"{host}/{name} is not running: map again once it runs to feed it from here")
+            warnings.append(
+                f"{host}/{name} is not running: map again once it runs to feed it from here"
+            )
+    for w in warnings:
+        warn(w)
     if isinstance(data, dict) and data.get("tuner"):
         info = tuner.find_feed(host, name)
         data["feed"] = {"pid": info["pid"]} if info else {}
@@ -280,36 +405,93 @@ def register(cli):
     )
     tuner = group(
         "tuner",
-        "the antenna of a set with our tuner: list the lineup of its board's broadcast standard "
-        "(US ATSC channels, or a Japanese ISDB-T one on an ARIB board), its physical channels "
-        "and what the set is tuned to, map RF... to put a signal on them (their transport "
-        "streams, with the channel tables and guide, are made with TSDuck and ffmpeg; for HOST/NAME on this machine, fed to the host over ssh while the VM runs), or "
-        "unmap RF... or all; kept for the VM's next starts",
+        "the antenna of a set with our tuner: its lineup (the built-in one of its board's broadcast "
+        "standard, US ATSC channels or a Japanese ISDB-T one on an ARIB board, or the VM's own: "
+        "lineup set), its physical channels and what the set is tuned to (list); map RF... to put "
+        "a signal on them (their transport streams, with the channel tables and guide, made with "
+        "TSDuck and ffmpeg; or a recording of yours, --stream, looped), unmap RF... or all; kept "
+        "for the VM's next starts. For HOST/NAME the streams are made on this machine and fed to "
+        "the host over ssh while the VM runs",
         under=io,
         dest="verb",
     )
     s = command(
         tuner,
         "list",
-        "the lineup's physical channels, which are mapped, and what the set is tuned to",
+        "the lineup's physical channels and those of your streams, which are mapped, and what the "
+        "set is tuned to",
         cmd_tuner,
     )
     vm_name(s, "tuner")
-    for verb, text, metavar in (
-        ("map", "put a signal on physical channels RF...", "RF"),
-        ("unmap", "take the signal off physical channels RF..., or all", "RF|all"),
-    ):
-        s = command(
-            tuner,
-            verb,
-            text,
-            cmd_tuner,
-            usage=f"beanjar io tuner {verb} NAME {metavar}... [--json]",
-        )
-        vm_name(s, "tuner")
-        s.add_argument("channels", nargs="+", metavar=metavar)
-        # from another machine's map and unmap (remote_tuner): its feed makes the streams
-        s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
+    s = command(
+        tuner,
+        "map",
+        "put a signal on physical channels RF...: the lineup's streams, or with --stream one RF "
+        "that plays your transport stream",
+        cmd_tuner,
+        usage="beanjar io tuner map NAME RF... [--stream FILE] [--json]",
+    )
+    vm_name(s, "tuner")
+    s.add_argument("channels", nargs="+", metavar="RF")
+    s.add_argument(
+        "--stream",
+        metavar="FILE",
+        help="a transport stream (.ts, 188-byte packets, not scrambled, with a PAT and a PCR) for "
+        "the one RF, copied into the VM's state and looped at its own rate with the time tables set "
+        "to now (ATSC STT, ARIB TDT and TOT); its own tables are kept as they are, so they should "
+        "be of the board's standard and name the RF's frequency (warnings otherwise). Map the RF "
+        "again without it to go back to the lineup's stream",
+    )
+    s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
+    s = command(
+        tuner,
+        "unmap",
+        "take the signal off physical channels RF..., or all; a stream of yours on one is removed",
+        cmd_tuner,
+        usage="beanjar io tuner unmap NAME RF|all... [--json]",
+    )
+    vm_name(s, "tuner")
+    s.add_argument("channels", nargs="+", metavar="RF|all")
+    # from another machine's map and unmap (remote_tuner): its feed makes the streams
+    s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
+
+    lineup = group(
+        "lineup",
+        "the VM's lineup: the physical channels, services, programme events, pictures and sounds "
+        "(and, on ARIB, BML data broadcasts) its antenna carries, as a TOML file "
+        "(docs/user/tuner.md); the built-in one of its board's broadcast standard unless set",
+        under=tuner,
+        dest="lineup_verb",
+    )
+    s = command(
+        lineup,
+        "show",
+        "the lineup in effect, the VM's own or the built-in one, as TOML (with --json, its values "
+        "as JSON)",
+        cmd_tuner,
+    )
+    vm_name(s, "tuner")
+    s = command(
+        lineup,
+        "set",
+        "give the VM its own lineup: FILE is checked (its broadcast is the board's standard, the "
+        "files it names are there), the streams of the mapped channels are made, then FILE and the "
+        "files it names are copied into the VM's state, for its next starts; mapped channels the "
+        "lineup lacks are unmapped. FILE - reads the TOML from stdin, its paths relative to the "
+        "current folder",
+        cmd_tuner,
+        usage="beanjar io tuner lineup set NAME FILE [--json]",
+    )
+    vm_name(s, "tuner")
+    s.add_argument("file", metavar="FILE")
+    s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
+    s = command(
+        lineup,
+        "reset",
+        "back to the built-in lineup of the board's broadcast standard",
+        cmd_tuner,
+    )
+    vm_name(s, "tuner")
 
     g = group(
         "usb",

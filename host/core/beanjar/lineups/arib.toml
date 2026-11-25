@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# The built-in Japanese digital terrestrial (ISDB-T) lineup: the antenna of a VM on an ARIB board
+# unless `beanjar io tuner lineup set` gave it another. One multiplex on UHF 27 with one SD
+# service and its BML data broadcast (the arib-bml folder). The network, TS and area numbers are
+# picked in the terrestrial ranges, not taken from a station. docs/user/tuner.md describes the
+# format; host/core/beanjar/tuner_lineup.py reads it.
+
+broadcast = "arib"
+loop_seconds = 5  # of the picture and sound, looped
+
+[video]
+size = "720x480"
+fps = "30000/1001"
+bitrate = 2000000
+
+[audio]
+bitrate = 128000
+
+[[rf]]
+channel = 27
+network_id = 0x7FD0
+network_name = "ビーンジャー"
+tsid = 0x7FD0
+area_code = 0x5A5
+remote_key = 1
+ts_name = "ビーンジャー１"
+
+[[rf.services]]
+service_id = 0x0400
+name = "ビーンジャー１"
+provider = "ビーンジャー"
+picture = "smptebars"
+sound = { tone = 1000 }
+bml = "arib-bml"
+events = [
+  { title = "データ放送テスト", minutes = 60, text = "BML のデータ放送ページを載せた試験放送です。" },
+  { title = "試験放送", minutes = 60, text = "カラーバーと試験音。" },
+]

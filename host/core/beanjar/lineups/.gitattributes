@@ -1,0 +1,4 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# BML documents are broadcast byte for byte: EUC-JP with CRLF lines, never converted
+*.bml -text

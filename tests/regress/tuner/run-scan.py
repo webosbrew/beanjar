@@ -5,8 +5,9 @@
 
   run-scan.py NAME [--timeout S]
 
-Takes the VM's channel map (beanjar io tuner list NAME) and the lineup's services on it as what the scan
-must find (the lineup of the VM's board: US ATSC, or the Japanese ISDB-T one on an ARIB board),
+Takes the VM's channel map (beanjar io tuner list NAME) and the services of the lineup in effect on
+it (beanjar io tuner lineup show NAME: the VM's own, or the built-in one of its board's standard,
+US ATSC or the Japanese ISDB-T one on an ARIB board) as what the scan must find,
 waits for its legacy-broadcast (legacy-broadcast-atsc, legacy-broadcast-arib) to run, runs tests/regress/tuner/scan.sh in the guest as root
 (beanjar ares-shell --root: the VM needs the rootssh layer), and checks its answers: every mapped
 virtual channel in iepg/getChannelList, no other, and a current event for each in
@@ -20,7 +21,6 @@ numbers and PASS or FAIL; the exit status is 0 only for PASS."""
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
-from beanjar import tuner_stream  # noqa: E402
+from beanjar import tuner_stream
 from beanjar import tuner_stream_arib as arib
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
@@ -57,21 +57,22 @@ def shell(name, command, timeout):
 ARIB_WATCH = '"channelId":"1_[^"]*"'
 
 
-def expected(channels, now, broadcast="atsc"):
-    """{"major.minor": current title} of the lineup's services on the mapped channels; for ARIB
-    {"NNN": title}, the three-digit number a Japanese set gives a service (remote control key
-    times ten plus the service's number within the TS)."""
+def expected(channels, now, lineup):
+    """{"major.minor": current title} of the lineup's services on the mapped channels (lineup: the
+    values of beanjar io tuner lineup show NAME --json); for ARIB {"NNN": title}, the three-digit
+    number a Japanese set gives a service (remote control key times ten plus the service's number
+    within the TS). The channels of a stream of the user's are not the lineup's: not expected."""
     out = {}
-    if broadcast == "arib":
-        s = arib.SERVICE
-        if s["uhf"] in channels:
-            number = s["remote_key"] * 10 + (s["service_id"] & 7) + 1
-            out[f"{number:03d}"] = arib.events(now)[0][2]
-        return out
-    for ch in channels:
-        for s in tuner_stream.channel(ch)["services"]:
-            on_air = [e for e in tuner_stream.events(s, now, now + 1)]
-            out[f"{s['major']}.{s['minor']}"] = on_air[0][2] if on_air else None
+    for rf in lineup["rf"]:
+        if rf["channel"] not in channels:
+            continue
+        for s in rf["services"]:
+            if lineup["broadcast"] == "arib":
+                number = rf["remote_key"] * 10 + (s["service_id"] & 7) + 1
+                out[f"{number:03d}"] = arib.events(s, now)[0][2]
+            else:
+                on_air = tuner_stream.events(s, now, now + 1, lineup["timezone"])
+                out[f"{s['major']}.{s['minor']}"] = on_air[0][2] if on_air else None
     return out
 
 
@@ -99,7 +100,16 @@ def main():
             env=env(),
         ).stdout
     )
-    mapped = [c["channel"] for c in st["channels"] if c["mapped"]]
+    mapped = [c["channel"] for c in st["channels"] if c["mapped"] and not c.get("stream")]
+    lineup = json.loads(
+        subprocess.run(
+            [BEANJAR, "io", "tuner", "lineup", "show", a.name, "--json"],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env(),
+        ).stdout
+    )["values"]
     broadcast = st.get("broadcast", "atsc")
     service = f"legacy-broadcast-{broadcast}"
     if not mapped:
@@ -131,7 +141,7 @@ def main():
     out = shell(a.name, f"sh /tmp/scan.sh {a.timeout}{watch}", a.timeout + 300)
     now = time.time()
     r = parse(out)
-    want = expected(mapped, now, broadcast)
+    want = expected(mapped, now, lineup)
     got_channels, ids = {}, {}
     for v in r.get("channel", []):
         number, cname, cid = (v.split(" ", 2) + ["", ""])[:3]

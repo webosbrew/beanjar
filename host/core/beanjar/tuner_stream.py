@@ -1,14 +1,16 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The broadcast the host's tuner sends: one ATSC transport stream per physical channel of
-the lineup, with the PSIP tables a US set scans and builds its guide from (PAT, PMT, MGT, TVCT,
-RRT, STT, EIT-0 to EIT-3 with their ETTs) and a test pattern with a tone per service.
+an ATSC lineup (tuner_lineup.py: the built-in lineups/atsc.toml or a VM's own), with the PSIP
+tables a US set scans and builds its guide from (PAT, PMT, MGT, TVCT, RRT, STT, EIT-0 to EIT-3
+with their ETTs) and each service's picture and sound.
 
 Made with TSDuck (tsp, tstabcomp; upstream's Debian 13 package) and ffmpeg: ffmpeg encodes the
-A/V loop (MPEG-2 video, AC-3 audio) once per lineup, tsp injects the tables at their usual
+A/V loop (MPEG-2 video, AC-3 audio) once per lineup and channel, tsp injects the tables at their usual
 repetition rates (PAT and PMT every 100 ms, MGT 120 ms, TVCT 340 ms, STT 850 ms, EIT-0 500 ms,
 ETT-0 1 s, the later blocks 3 s). A stream holds the guide of the four 3-hour blocks from the one
-it is made in, so it is made again when a new block starts (stream_path's key). The tuner
+it is made in, so it is made again when a new block starts or the lineup changes (stream_path's
+key). The tuner
 (tuner.py) loops the file and rewrites the STT's time as it sends it (stt_rewrite), so the set's
 clock follows the host's.
 
@@ -24,7 +26,7 @@ import re
 import shutil
 import subprocess
 import zlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from xml.sax.saxutils import quoteattr
 from zoneinfo import ZoneInfo
 
@@ -41,7 +43,7 @@ TABLE_STT = 0xCD
 PACKET = 188
 MUX_RATE = 5_000_000  # bits a second
 SECONDS = 20  # of a made stream, looped
-VERSION = 3  # of the generator: part of a stream's key
+VERSION = 4  # of the generator: part of a stream's key
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # fonts-dejavu-core
 
 
@@ -68,99 +70,6 @@ def audio_pid(i):
 FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
 
 
-# The lineup: physical channels, their transport stream IDs and virtual channels, and each
-# service's programme cycle (repeated from local midnight).
-LINEUP = {
-    "timezone": "America/New_York",
-    "video": {"size": "704x480", "fps": "30000/1001", "bitrate": 1500000},
-    "audio": {"bitrate": 192000},
-    "loop_seconds": 10,
-    "rf": [
-        {
-            "channel": 7,
-            "tsid": 1007,
-            "services": [
-                {
-                    "major": 7,
-                    "minor": 1,
-                    "name": "BJ7",
-                    "long_name": "Beanjar Seven",
-                    "source_id": 7001,
-                    "program": 1,
-                    "tone_hz": 440,
-                    "picture": "testsrc2",
-                    "events": [
-                        (
-                            "Test Pattern Hour",
-                            60,
-                            "A synthetic colour test pattern with a 440 Hz tone.",
-                        ),
-                        ("Morning Signal", 30, "Short programme with generated content."),
-                        ("Beanjar News", 30, "Nothing happened, in high definition."),
-                        ("Midday Movie", 120, "A long feature film that is only colour bars."),
-                    ],
-                },
-                {
-                    "major": 7,
-                    "minor": 2,
-                    "name": "BJ7-2",
-                    "long_name": "Beanjar Seven Two",
-                    "source_id": 7002,
-                    "program": 2,
-                    "tone_hz": 660,
-                    "picture": "smptehdbars",
-                    "events": [
-                        ("Subchannel Loop", 45, "Looping content on the second subchannel."),
-                        ("Weather", 15, "Clear skies in the emulated region."),
-                    ],
-                },
-            ],
-        },
-        {
-            "channel": 14,
-            "tsid": 1014,
-            "services": [
-                {
-                    "major": 14,
-                    "minor": 1,
-                    "name": "BJ14",
-                    "long_name": "Beanjar Fourteen",
-                    "source_id": 14001,
-                    "program": 1,
-                    "tone_hz": 880,
-                    "picture": "rgbtestsrc",
-                    "events": [
-                        ("Fourteen Live", 90, "Programme on the second physical channel."),
-                        ("Quiz Night", 30, "Questions, answers and a test tone."),
-                        ("Late Show", 60, "Late programme."),
-                    ],
-                },
-            ],
-        },
-        {
-            "channel": 33,
-            "tsid": 1033,
-            "services": [
-                {
-                    "major": 33,
-                    "minor": 1,
-                    "name": "BJ33",
-                    "long_name": "Beanjar Thirty-Three",
-                    "source_id": 33001,
-                    "program": 1,
-                    "tone_hz": 1000,
-                    "picture": "gradients",
-                    "events": [
-                        ("Documentary", 60, "Colour bars in their natural habitat."),
-                        ("Sports Desk", 30, "Scores from the emulated league."),
-                    ],
-                },
-            ],
-        },
-    ],
-}
-
-
 def rf_center_hz(ch):
     """The US (ATSC) physical channel's centre frequency in Hz."""
     if 2 <= ch <= 4:
@@ -174,13 +83,13 @@ def rf_center_hz(ch):
     raise Error(f"no US physical channel {ch} (2 to 36)")
 
 
-def channel(ch):
+def channel(lu, ch):
     """The lineup's physical channel ch; Error if it has none."""
-    for rf in LINEUP["rf"]:
+    for rf in lu["rf"]:
         if rf["channel"] == ch:
             return rf
     raise Error(
-        f"the lineup has no physical channel {ch} ({', '.join(str(r['channel']) for r in LINEUP['rf'])})"
+        f"the lineup has no physical channel {ch} ({', '.join(str(r['channel']) for r in lu['rf'])})"
     )
 
 
@@ -190,7 +99,7 @@ def gps_seconds(unix):
 
 def gps_naive(unix):
     """The time string TSDuck turns into a GPS-seconds field."""
-    return datetime.fromtimestamp(unix + GPS_UTC_OFFSET, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(unix + GPS_UTC_OFFSET, UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def block0(now):
@@ -198,16 +107,18 @@ def block0(now):
     return (gps_seconds(now) // 10800) * 10800 + GPS_EPOCH - GPS_UTC_OFFSET
 
 
-def events(svc, t_from, t_to):
-    """(start, minutes, title, text) of the service's events overlapping [t_from, t_to)."""
-    tz = ZoneInfo(LINEUP["timezone"])
+def events(svc, t_from, t_to, timezone="America/New_York"):
+    """(start, minutes, title, text) of the service's events overlapping [t_from, t_to), its cycle
+    repeated from midnight in the lineup's time zone."""
+    tz = ZoneInfo(timezone)
     out = []
     day = datetime.fromtimestamp(t_from, tz).replace(hour=0, minute=0, second=0, microsecond=0)
     day -= timedelta(days=1)
     for _ in range(4):
         t, end = day.timestamp(), (day + timedelta(days=1)).timestamp()
         while t < end:
-            for title, minutes, text in svc["events"]:
+            for e in svc["events"]:
+                title, minutes, text = e["title"], e["minutes"], e["text"]
                 if t < t_to and t + minutes * 60 > t_from:
                     out.append((int(t), minutes, title, text))
                 t += minutes * 60
@@ -225,7 +136,7 @@ def _q(s):
     return quoteattr(str(s))
 
 
-def _tables(rf, now):
+def _tables(rf, now, timezone):
     """{name: TSDuck XML body} of the physical channel's tables at now (without the MGT)."""
     t = {}
     t["pat"] = (
@@ -283,7 +194,7 @@ def _tables(rf, now):
         eit, ett = "", ""
         for s in rf["services"]:
             eit += f'<ATSC_EIT source_id="{s["source_id"]}" version="@V@">\n'
-            for start, minutes, title, text in events(s, t0, t1):
+            for start, minutes, title, text in events(s, t0, t1, timezone):
                 eid = event_id(start)
                 eit += (
                     f'  <event event_id="{eid}" start_time="{gps_naive(start)}" ETM_location="1" '
@@ -309,9 +220,9 @@ def _run(cmd):
         raise Error(f"{' '.join(cmd[:2])} failed: {(r.stderr or r.stdout).strip()[-400:]}")
 
 
-def _write_tables(rf, d, now):
+def _write_tables(rf, d, now, timezone):
     os.makedirs(d, exist_ok=True)
-    tables = _tables(rf, now)
+    tables = _tables(rf, now, timezone)
 
     def put(name, body):
         with open(os.path.join(d, name + ".xml"), "w") as f:
@@ -336,26 +247,74 @@ def _write_tables(rf, d, now):
     put("mgt", mgt + "</MGT>\n")
 
 
-def _make_loop(rf, path):
-    """The A/V loop of the physical channel: each service's own built-in FFmpeg picture, labelled
-    with the virtual channel, and its own tone, MPEG-2 and AC-3 at the mux rate."""
-    v, a, dur = LINEUP["video"], LINEUP["audio"], LINEUP["loop_seconds"]
+def _label_text(text):
+    """text for drawtext inside single quotes: the characters the filter graph or drawtext would
+    take as their own made look-alikes."""
+    return text.replace("'", "\u2019").replace("\\", "/").replace("%", "\uff05")
+
+
+def av_inputs(services, v, dur, label_of):
+    """ffmpeg's inputs and maps of the services' pictures and sounds, dur seconds each: a test
+    pattern or a tone is a lavfi source; an image, or a video or audio file (looped), an input
+    whose picture is scaled into the size (letterboxed) at the rate. A service with label has
+    label_of(service) drawn in the middle. (args, maps): the maps a video and an audio stream a
+    service, in order."""
+    args, maps, graphs = [], [], []
+    n = 0
+    for i, s in enumerate(services):
+        pic, snd = s["picture"], s["sound"]
+        draw = ""
+        if s["label"]:
+            draw = (
+                f",drawtext=fontfile={FONT}:text='{_label_text(label_of(s))}':"
+                "fontsize=44:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h/2-th"
+            )
+        if "pattern" in pic:
+            args += [
+                "-f",
+                "lavfi",
+                "-i",
+                f"{pic['pattern']}=s={v['size']}:r={v['fps']}:d={dur}{draw}",
+            ]
+            maps += ["-map", f"{n}:v"]
+        else:
+            if "image" in pic:
+                args += ["-loop", "1", "-framerate", v["fps"], "-t", str(dur), "-i", pic["image"]]
+            else:
+                args += ["-stream_loop", "-1", "-t", str(dur), "-i", pic["video"]]
+            w, h = v["size"].split("x")
+            graphs.append(
+                f"[{n}:v:0]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={v['fps']},format=yuv420p{draw}[v{i}]"
+            )
+            maps += ["-map", f"[v{i}]"]
+        n += 1
+        if "tone" in snd:
+            args += [
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency={snd['tone']}:sample_rate=48000:duration={dur}",
+            ]
+            maps += ["-map", f"{n}:a"]
+        else:
+            args += ["-stream_loop", "-1", "-t", str(dur), "-i", snd["file"]]
+            maps += ["-map", f"{n}:a:0"]
+        n += 1
+    return args + (["-filter_complex", ";".join(graphs)] if graphs else []), maps
+
+
+def _make_loop(lu, rf, path):
+    """The A/V loop of the physical channel: each service's picture, labelled with the virtual
+    channel where the lineup says so, and its sound, MPEG-2 and AC-3 at the mux rate."""
+    v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     cmd = ["ffmpeg", "-v", "error", "-y"]
-    maps, progs = [], []
+    inputs, maps = av_inputs(
+        rf["services"], v, dur, lambda s: f"{s['major']}.{s['minor']} {s['name']}"
+    )
+    cmd += inputs
+    progs = []
     for i, s in enumerate(rf["services"]):
-        label = f"{s['major']}.{s['minor']} {s['name']}"
-        cmd += [
-            "-f",
-            "lavfi",
-            "-i",
-            f"{s['picture']}=s={v['size']}:r={v['fps']}:d={dur},drawtext=fontfile={FONT}:text='{label}':"
-            "fontsize=44:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h/2-th",
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency={s['tone_hz']}:sample_rate=48000:duration={dur}",
-        ]
-        maps += ["-map", f"{2 * i}:v", "-map", f"{2 * i + 1}:a"]
         progs += ["-program", f"title={s['name']}:st={2 * i}:st={2 * i + 1}"]
     vb = str(v["bitrate"])
     cmd += (
@@ -404,8 +363,8 @@ def _make_loop(rf, path):
     _run(cmd)
 
 
-def _tsp(rf, d, loop, out):
-    repeat = max(1, -(-SECONDS // LINEUP["loop_seconds"]))
+def _tsp(lu, rf, d, loop, out):
+    repeat = max(1, -(-SECONDS // lu["loop_seconds"]))
     a = ["tsp", "--bitrate", str(MUX_RATE), "-I", "file", loop, "--repeat", str(repeat)]
     keep, remap = [NULL_PID], []
     for i in range(len(rf["services"])):
@@ -434,44 +393,47 @@ def tools():
     return [t for t in ("tsp", "tstabcomp", "ffmpeg") if not shutil.which(t)]
 
 
-def stream_key(ch, now):
-    """What a physical channel's stream depends on: the generator, the lineup and the EIT block."""
-    text = json.dumps([VERSION, LINEUP, channel(ch), block0(now)], sort_keys=True)
+def stream_key(lu, ch, now):
+    """What a physical channel's stream depends on: the generator, the lineup (its values and its
+    files' content: its key) and the EIT block."""
+    text = json.dumps([VERSION, lu["key"], ch, block0(now)], sort_keys=True)
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
-def stream_path(cache, ch, now):
-    return os.path.join(cache, f"rf{ch:02d}-{stream_key(ch, now)}.ts")
+def stream_prefix(lu, ch):
+    """A channel's streams' names start with the lineup's key: VMs of other lineups share the cache
+    without removing each other's."""
+    return f"rf{ch:02d}-{lu['key'][:8]}-"
 
 
-def make(cache, ch, now):
-    """The path of the physical channel's stream for the EIT block of now, made into the directory
-    cache if it is not there yet (validated before it is kept)."""
-    path = stream_path(cache, ch, now)
+def stream_path(cache, lu, ch, now):
+    return os.path.join(cache, f"{stream_prefix(lu, ch)}{stream_key(lu, ch, now)}.ts")
+
+
+def make(cache, lu, ch, now):
+    """The path of the lineup's physical channel's stream for the EIT block of now, made into the
+    directory cache if it is not there yet (validated before it is kept)."""
+    path = stream_path(cache, lu, ch, now)
     if os.path.exists(path):
         return path
     missing = tools()
     if missing:
         raise Error(f"no {', '.join(missing)} on this host: install TSDuck and ffmpeg")
-    rf = channel(ch)
+    rf = channel(lu, ch)
     os.makedirs(cache, exist_ok=True)
     work = path + ".work"
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work)
     try:
         loop_key = hashlib.sha256(
-            json.dumps(
-                [VERSION, LINEUP["video"], LINEUP["audio"], LINEUP["loop_seconds"], rf["services"]],
-                sort_keys=True,
-                default=str,
-            ).encode()
+            json.dumps([VERSION, lu["key"], ch], sort_keys=True).encode()
         ).hexdigest()[:16]
         loop = os.path.join(cache, f"loop{ch:02d}-{loop_key}.ts")
         if not os.path.exists(loop):
-            _make_loop(rf, loop + ".tmp")
+            _make_loop(lu, rf, loop + ".tmp")
             os.replace(loop + ".tmp", loop)
-        _write_tables(rf, work, now)
-        _tsp(rf, work, loop, work + "/out.ts")
+        _write_tables(rf, work, now, lu["timezone"])
+        _tsp(lu, rf, work, loop, work + "/out.ts")
         report = validate(work + "/out.ts")
         if report["bad_crc"] or not report["ok_crc"] or report["mgt_mismatch"]:
             raise Error(f"rf{ch}: the made stream does not validate: {report}")
@@ -481,14 +443,11 @@ def make(cache, ch, now):
         os.replace(work + "/out.ts", path)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    # older blocks of this channel go
+    # the older blocks of this channel of the lineup go
     for name in os.listdir(cache):
-        if (
-            name.startswith(f"rf{ch:02d}-")
-            and name.endswith(".ts")
-            and os.path.join(cache, name) != path
-        ):
-            os.unlink(os.path.join(cache, name))
+        full = os.path.join(cache, name)
+        if name.endswith(".ts") and full != path and name.startswith(stream_prefix(lu, ch)):
+            os.unlink(full)
     return path
 
 

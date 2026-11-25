@@ -1,0 +1,93 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# The built-in US over-the-air lineup: the antenna of a VM on an ATSC board (or on a board of a
+# standard that has no lineup of its own) unless `beanjar io tuner lineup set` gave it another.
+# docs/user/tuner.md describes the format; host/core/beanjar/tuner_lineup.py reads it.
+
+broadcast = "atsc"
+timezone = "America/New_York"  # each service's programme cycle repeats from local midnight
+loop_seconds = 10              # of the picture and sound, looped
+
+[video]
+size = "704x480"
+fps = "30000/1001"
+bitrate = 1500000
+
+[audio]
+bitrate = 192000
+
+[[rf]]
+channel = 7
+tsid = 1007
+
+[[rf.services]]
+major = 7
+minor = 1
+name = "BJ7"
+long_name = "Beanjar Seven"
+source_id = 7001
+program = 1
+picture = "testsrc2"
+label = true
+sound = { tone = 440 }
+events = [
+  { title = "Test Pattern Hour", minutes = 60, text = "A synthetic colour test pattern with a 440 Hz tone." },
+  { title = "Morning Signal", minutes = 30, text = "Short programme with generated content." },
+  { title = "Beanjar News", minutes = 30, text = "Nothing happened, in high definition." },
+  { title = "Midday Movie", minutes = 120, text = "A long feature film that is only colour bars." },
+]
+
+[[rf.services]]
+major = 7
+minor = 2
+name = "BJ7-2"
+long_name = "Beanjar Seven Two"
+source_id = 7002
+program = 2
+picture = "smptehdbars"
+label = true
+sound = { tone = 660 }
+events = [
+  { title = "Subchannel Loop", minutes = 45, text = "Looping content on the second subchannel." },
+  { title = "Weather", minutes = 15, text = "Clear skies in the emulated region." },
+]
+
+[[rf]]
+channel = 14
+tsid = 1014
+
+[[rf.services]]
+major = 14
+minor = 1
+name = "BJ14"
+long_name = "Beanjar Fourteen"
+source_id = 14001
+program = 1
+picture = "rgbtestsrc"
+label = true
+sound = { tone = 880 }
+events = [
+  { title = "Fourteen Live", minutes = 90, text = "Programme on the second physical channel." },
+  { title = "Quiz Night", minutes = 30, text = "Questions, answers and a test tone." },
+  { title = "Late Show", minutes = 60, text = "Late programme." },
+]
+
+[[rf]]
+channel = 33
+tsid = 1033
+
+[[rf.services]]
+major = 33
+minor = 1
+name = "BJ33"
+long_name = "Beanjar Thirty-Three"
+source_id = 33001
+program = 1
+picture = "gradients"
+label = true
+sound = { tone = 1000 }
+events = [
+  { title = "Documentary", minutes = 60, text = "Colour bars in their natural habitat." },
+  { title = "Sports Desk", minutes = 30, text = "Scores from the emulated league." },
+]
