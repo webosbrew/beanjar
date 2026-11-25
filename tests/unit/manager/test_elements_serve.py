@@ -22,7 +22,19 @@ import pytest
 from beanjar import elements
 
 TOP = Path(__file__).resolve().parents[3]
-FIXTURE = TOP / "host/tools/research/textshot/testdata/continue.png"
+# A 640 x 240 PNG header: the stand-in server never decodes the picture, only elements.read() checks
+# the signature and size
+FIXTURE = Path()
+PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + (640).to_bytes(4, "big") + (240).to_bytes(4, "big")
+
+
+@pytest.fixture(autouse=True)
+def _fixture_png(tmp_path_factory):
+    global FIXTURE
+    FIXTURE = tmp_path_factory.mktemp("png") / "continue.png"
+    FIXTURE.write_bytes(PNG)
+
+
 DATA = json.loads((Path(__file__).parent / "data" / "elements.json").read_text())
 
 # A stand-in textshot-serve: the real one's flags and protocol; each start appends a line to
