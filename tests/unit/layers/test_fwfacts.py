@@ -21,6 +21,7 @@ from beanjar import fwfacts  # noqa: E402
 
 FACTS = """# demo
 defines bsppart:bsp/usr/lib/libdemo.so:demo_f yes
+exports etc/demo.env:DEMO_PLATFORM=demo yes
 lib usr/lib/libdemo.so.1 libdemo.so.1
 path usr/lib/nyx/modules/nyxDrm.module no
 path usr/lib/libsestore.so.0.1.0 yes
@@ -64,6 +65,7 @@ class Format(unittest.TestCase):
         self.assertEqual(f["version"], {"usr/lib/libwayland-client.so.0": "20.0"})
         self.assertEqual(f["lib"], {"usr/lib/libdemo.so.1": "libdemo.so.1"})
         self.assertEqual(f["defines"], {"bsppart:bsp/usr/lib/libdemo.so:demo_f": True})
+        self.assertEqual(f["exports"], {"etc/demo.env:DEMO_PLATFORM=demo": True})
         self.assertEqual(
             f["sym"]["usr/lib/libdemo.so.1"],
             {"demo_f": ("DEMO_2", "func", None), "demo_var": (None, "object", 8)},
@@ -82,6 +84,8 @@ class Format(unittest.TestCase):
             "defines usr/lib/libdemo.so:demo_f yes",  # no image
             "defines kernel:usr/lib/libdemo.so:demo_f yes",  # not an image it reads
             "defines bsppart:bsp/usr/lib/libdemo.so:demo_f maybe",
+            "exports etc/demo.env yes",  # no name
+            "exports etc/demo.env:1X=a yes",  # not a shell name
             "whatever",
         ):
             with self.assertRaisesRegex(fwfacts.Error, "facts:1: not a fact"):
@@ -92,7 +96,7 @@ class Format(unittest.TestCase):
     def test_questions(self):
         q = fwfacts.parse_questions(
             "lib usr/lib/libdemo.so.1\npath a/b\npath a/b\nversion usr/lib/w.so.0\n"
-            "defines rootfs:usr/lib/x.so:f\n"
+            "defines rootfs:usr/lib/x.so:f\nexports etc/x.env:X=\n"
         )
         self.assertEqual(
             q,
@@ -101,17 +105,25 @@ class Format(unittest.TestCase):
                 "version": ["usr/lib/w.so.0"],
                 "lib": ["usr/lib/libdemo.so.1"],
                 "defines": ["rootfs:usr/lib/x.so:f"],
+                "exports": ["etc/x.env:X="],
             },
         )
         f = fwfacts.parse(FACTS)
         self.assertEqual(
             fwfacts.unanswered(f, q),
-            ["path a/b", "version usr/lib/w.so.0", "defines rootfs:usr/lib/x.so:f"],
+            [
+                "path a/b",
+                "version usr/lib/w.so.0",
+                "defines rootfs:usr/lib/x.so:f",
+                "exports etc/x.env:X=",
+            ],
         )
         with self.assertRaises(fwfacts.Error):
             fwfacts.parse_questions("sym x\n")
         with self.assertRaises(fwfacts.Error):
             fwfacts.parse_questions("defines usr/lib/x.so\n")
+        with self.assertRaises(fwfacts.Error):
+            fwfacts.parse_questions("exports etc/x.env\n")
 
 
 class Reading(unittest.TestCase):
@@ -338,6 +350,31 @@ class Firmware(unittest.TestCase):
         os.remove(self.t / "fw/rootfs.pak")
         with self.assertRaisesRegex(fwfacts.Error, "no rootfs.pak or super.pak rootfs"):
             fwfacts.answer(str(self.t / "fw"), q, {})
+
+    def test_exports(self):
+        """An exports question is answered from the rootfs image's shell file: an export of that
+        value, bare or quoted, not a commented one, another value or an assignment alone."""
+        etc = self.t / "rootfs/etc"
+        etc.mkdir()
+        (etc / "demo.env").write_text(
+            "# export DEMO_C=yes\n"
+            "export DEMO_A=eglfs_demo\n"
+            '  export DEMO_B="two words"  # quoted\n'
+            "DEMO_D=plain\n"
+            "export DEMO_E=\n"
+        )
+        self.squash(self.t / "rootfs", self.t / "fw/rootfs.pak")
+        want = {
+            "etc/demo.env:DEMO_A=eglfs_demo": True,
+            "etc/demo.env:DEMO_A=eglfs": False,
+            "etc/demo.env:DEMO_B=two words": True,
+            "etc/demo.env:DEMO_C=yes": False,
+            "etc/demo.env:DEMO_D=plain": False,
+            "etc/demo.env:DEMO_E=": True,
+            "etc/none.env:DEMO_A=eglfs_demo": False,
+        }
+        q = {"path": [], "version": [], "lib": [], "exports": list(want)}
+        self.assertEqual(fwfacts.answer(str(self.t / "fw"), q, {})["exports"], want)
 
     def test_mount_cleaned_up(self):
         """The rootfs image is mounted for the answers only: no mount or mount point is left, also

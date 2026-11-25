@@ -1,5 +1,6 @@
 # o22n3-ponytail: what the guest build asks of its firmware (beanjar/fwfacts.py).
 # Generated: host/scripts/vm-launcher firmware-facts o22n3-ponytail (from 33.31.68.01-HE_DTV_W25G_AFABATAA)
+exports etc/surface-manager.d/product.env:QT_QPA_EGLFS_INTEGRATION=eglfs_starfish yes
 lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
 lib usr/lib/libgobject-2.0.so.0 libgobject-2.0.so.0
 lib usr/lib/libgstaudio-1.0.so.0 libgstaudio-1.0.so.0

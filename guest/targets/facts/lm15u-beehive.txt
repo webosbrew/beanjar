@@ -12,6 +12,7 @@ path usr/lib/libkadaptor.so.1.0.0 yes
 path usr/lib/libsestore.so.0.1.0 no
 path usr/lib/nyx/modules/nyxSecureStore.module no
 path usr/lib/openmax/libOMX.MStar.so.1.0.0 yes
+path usr/lib/plugins/egldeviceintegrations/libeglfs-starfish-integration.so no
 path usr/palm/services/com.webos.service.secondscreen.gateway/helpers/bus/ssl-cert-getter.js no
 sym usr/lib/libglib-2.0.so.0 __bss_end__ notype
 sym usr/lib/libglib-2.0.so.0 __bss_start notype

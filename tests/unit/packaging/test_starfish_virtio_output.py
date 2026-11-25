@@ -9,7 +9,7 @@ import subprocess
 import pytest
 
 TOP = Path(__file__).resolve().parents[3]
-HELPER = TOP / "guest/layers/soc/o22/starfish/usr/libexec/beanjar/starfish-virtio-output"
+HELPER = TOP / "guest/layers/soc/eglfs-starfish/usr/libexec/beanjar/starfish-virtio-output"
 # The lines the helper changes, as in W24G 33.20.23 and 33.31.68 (and O24's, O22N3's).
 PRODUCT = (
     b"export X=1\nexport WEBOS_COMPOSITOR_DISPLAYS=2\nexport QT_QPA_EGLFS_FB=/dev/fb0:/dev/fb1\n"
@@ -47,6 +47,21 @@ class TestStarfishVirtioOutput:
             b'"format":"abgr8888"', b'"format":"xrgb8888"'
         )
         assert not list(self.runtime.glob("*.tmp"))
+
+    def test_argb_outputs(self):
+        """W25P's outputs are argb8888, the others' abgr8888: either becomes xrgb8888."""
+        argb = EGLFS.replace(b'"format":"abgr8888"', b'"format":"argb8888"')
+        (self.conf / "eglfs_starfish.env").write_bytes(argb)
+        self.run_helper()
+        assert (self.runtime / "eglfs_starfish.env").read_bytes() == argb.replace(
+            b'"format":"argb8888"', b'"format":"xrgb8888"'
+        )
+
+    def test_mixed_output_formats_fail(self):
+        (self.conf / "eglfs_starfish.env").write_bytes(
+            EGLFS.replace(b'"format":"abgr8888"}', b'"format":"argb8888"}')
+        )
+        assert self.run_helper(check=False).returncode != 0
 
     def test_unexpected_output_formats_fail(self):
         (self.conf / "eglfs_starfish.env").write_bytes(

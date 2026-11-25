@@ -49,7 +49,9 @@ firmware, and nothing else: whether its rootfs image has a path a shim rule deci
 (`path usr/lib/nyx/modules/nyxDrm.module no`), the version suffix of a library a rule checks
 (`version usr/lib/libwayland-client.so.0 20.0`), whether a stock library of the rootfs or bsppart
 image defines a symbol, read from the image itself
-(`defines bsppart:bsp/usr/lib/libkadaptor.so:RHAL_SE_Init yes`), and for each firmware library the guest code links
+(`defines bsppart:bsp/usr/lib/libkadaptor.so:RHAL_SE_Init yes`), whether a shell file of the rootfs
+exports a variable with a value
+(`exports etc/surface-manager.d/product.env:QT_QPA_EGLFS_INTEGRATION=eglfs_starfish yes`), and for each firmware library the guest code links
 against, its SONAME (`lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0`) and the symbols the guest code
 uses of it, with their default version where the library versions them, their type and a data
 symbol's size (`sym usr/lib/libgstreamer-1.0.so.0 _gst_debug_min object 4`). One fact per line,

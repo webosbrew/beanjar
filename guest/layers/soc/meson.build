@@ -59,6 +59,29 @@ if fw_path.get(sestore_stock, false) and (fw_path.get(ssg_getter, false) or fw_s
   hal_stock += {'libsestore': ['libsestore.so.0', 'libsestore.so.0.1.0', []]}
 endif
 
+# The Qt EGLFS Starfish setup (eglfs-starfish/): wherever the firmware's compositor is Qt with LG's
+# eglfs_starfish integration, whatever the chip: the rootfs ships the plugin, product.env exports
+# QT_QPA_EGLFS_INTEGRATION=eglfs_starfish, and no Weston reads them (weston.ini: the queue firmwares
+# keep plugin and env file beside a Weston compositor). W23O's, W24G's, W24O's, W25G's and W25O's
+# ombre and ponytail, W23A's, W25H's and W25P's ponytail; not W22O's, W22H's, W23H's, W23M's, W23P's,
+# W24H's or W24P's ombre and ponytail, which export an empty integration (the legacy starfish QPA
+# through the gl layer's libegl-kms.so) and have no plugin. The plugin reads the planes' IN_FORMATS
+# blob without a check: the tree's usr/share/beanjar/kernel.cmdline gives the launcher
+# virtio_gpu.modifiers=1 (docs/research/k24n-starfish-in-formats.md).
+starfish_plugin = 'usr/lib/plugins/egldeviceintegrations/libeglfs-starfish-integration.so' # usr/lib/qt5 links to usr/lib
+starfish_env = 'etc/surface-manager.d/product.env:QT_QPA_EGLFS_INTEGRATION=eglfs_starfish'
+weston_ini = 'usr/share/weston/weston.ini'
+fw_questions += 'path ' + starfish_plugin
+if fw_path.get(starfish_plugin, false)
+  fw_questions += 'path ' + weston_ini
+  if not fw_path.get(weston_ini, false)
+    fw_questions += 'exports ' + starfish_env
+    if fw_exports.get(starfish_env, false)
+      soc_layer_trees += ['--tree', meson.current_source_dir() / 'eglfs-starfish', '.']
+    endif
+  endif
+endif
+
 # A chip's table names the shims its stock libraries may need; one whose stock file the rootfs does
 # not have is not built (a 'bsppart' one is bsppart's, not listed here).
 #

@@ -10,6 +10,7 @@ lib usr/lib/libluna-service2.so.3 libluna-service2.so.3
 path usr/lib/libdile_gal.so.1.0.2 yes
 path usr/lib/libsestore.so.0.1.0 yes
 path usr/lib/nyx/modules/nyxSecureStore.module no
+path usr/lib/plugins/egldeviceintegrations/libeglfs-starfish-integration.so no
 path usr/palm/services/com.webos.service.secondscreen.gateway/helpers/bus/ssl-cert-getter.js no
 sym usr/lib/libglib-2.0.so.0 g_ascii_strtoll func
 sym usr/lib/libglib-2.0.so.0 g_free func

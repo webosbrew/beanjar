@@ -78,19 +78,6 @@ fw_questions += 'path usr/lib/nyx/modules/nyxDrm.module'
 if fw_path.get('usr/lib/nyx/modules/nyxDrm.module', false)
   kadaptor_source += 'kadaptor-securetime.c'
 endif
-# The Qt EGLFS Starfish setup (starfish/): wherever the firmware's compositor is Qt with LG's
-# eglfs_starfish integration (QT_QPA_EGLFS_INTEGRATION=eglfs_starfish in product.env, which ships
-# that plugin with it): W23O's, W24G's, W24O's, W25G's and W25O's ombre and ponytail. W22O's ombre
-# and ponytail have neither (the legacy starfish QPA through libegl-kms.so, gl layer), and the
-# queue firmwares keep the plugin and env file beside a Weston compositor (weston.ini), which
-# never reads them. The layer's usr/share/beanjar/kernel.cmdline gives the launcher the kernel
-# words the plugin needs (virtio_gpu.modifiers=1).
-starfish_plugin = 'usr/lib/plugins/egldeviceintegrations/libeglfs-starfish-integration.so' # usr/lib/qt5 links to usr/lib
-weston_ini = 'usr/share/weston/weston.ini'
-fw_questions += ['path ' + starfish_plugin, 'path ' + weston_ini]
-if fw_path.get(starfish_plugin, false) and not fw_path.get(weston_ini, false)
-  soc_layer_trees += ['--tree', meson.current_source_dir() / 'starfish', '.']
-endif
 soc_phys_base = '0xA0000000u' # emulator scratch arena, not a retail memory layout
 gl_vendor_stubs = []
 gl_vendor_gl = 'mali'

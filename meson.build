@@ -240,7 +240,8 @@ if guest_lane
   fw_unanswered = []
   foreach q : fw_questions
     w = q.split(' ')
-    if w[1] not in {'path': fw_path, 'version': fw_version, 'lib': fw_stubs, 'defines': fw_defines}[w[0]] and q not in fw_unanswered
+    if w[1] not in {'path': fw_path, 'version': fw_version, 'lib': fw_stubs, 'defines': fw_defines,
+                    'exports': fw_exports}[w[0]] and q not in fw_unanswered
       fw_unanswered += q
     endif
   endforeach

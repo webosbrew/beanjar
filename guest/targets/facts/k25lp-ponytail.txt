@@ -1,5 +1,6 @@
 # k25lp-ponytail: what the guest build asks of its firmware (beanjar/fwfacts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k25lp-ponytail (from 33.31.61.01-HE_DTV_W25P_AFADATAA)
+exports etc/surface-manager.d/product.env:QT_QPA_EGLFS_INTEGRATION=eglfs_starfish yes
 lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
 lib usr/lib/libgobject-2.0.so.0 libgobject-2.0.so.0
 lib usr/lib/libgstaudio-1.0.so.0 libgstaudio-1.0.so.0
@@ -12,7 +13,9 @@ path usr/lib/libdile_crypto.so.0.1.1 yes
 path usr/lib/libdile_gal.so.1.0.2 yes
 path usr/lib/libsestore.so.0.1.0 yes
 path usr/lib/nyx/modules/nyxSecureStore.module no
+path usr/lib/plugins/egldeviceintegrations/libeglfs-starfish-integration.so yes
 path usr/palm/services/com.webos.service.secondscreen.gateway/helpers/bus/ssl-cert-getter.js yes
+path usr/share/weston/weston.ini no
 sym usr/lib/libglib-2.0.so.0 g_ascii_strtoll func
 sym usr/lib/libglib-2.0.so.0 g_ascii_toupper func
 sym usr/lib/libglib-2.0.so.0 g_build_filename func
