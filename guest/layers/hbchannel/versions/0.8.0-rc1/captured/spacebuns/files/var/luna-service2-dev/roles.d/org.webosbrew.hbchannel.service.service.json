@@ -1,1 +1,0 @@
-{"appId":"org.webosbrew.hbchannel.service","type":"regular","allowedNames":["org.webosbrew.hbchannel.service","*","com.webos.service.capture.client*"],"trustLevel":"public","permissions":[{"service":"org.webosbrew.hbchannel.service","outbound":["*"]},{"service":"*","inbound":["*"],"outbound":["*"]},{"service":"com.webos.service.capture.client*","inbound":["*"],"outbound":["*"]}]}

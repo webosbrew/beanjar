@@ -2287,21 +2287,30 @@ def vm_identity(h, a):
     }
 
 
+# What the guest's steps run from the host share (/mnt/host/PATH in webOS), put into it once the VM
+# has started (vm-launcher put): every run's, the boot checks', and the TV suite's in either lane and
+# in graphics only (the gl layer's gles-version, which a target without the gl layer has not; the
+# histogram probe, whose step needs a front end)
+PUT_ALWAYS = ("tests/regress/guest.sh", "tests/regress/lb-exit.sh", "tests/regress/idle-cpu.sh")
+PUT_BOOT = ("tests/regress/tvservice/app-calls.sh",)
+PUT_TV = ("tests/regress/tv.sh", "build/tests/regress/tee")
+PUT_TV_GRAPHICS = ("build/tests/regress/histogram", "build/tests/gl/gles-version")
+
+
+def share_paths(a):
+    """The checkout paths a run's steps need in the VM's host share (PUT_*)."""
+    if not a.tv:
+        return PUT_ALWAYS + PUT_BOOT
+    return PUT_ALWAYS + PUT_TV + (PUT_TV_GRAPHICS if a.mode == "graphics" else ())
+
+
 def boot_and_check(h, a, r, out, rel, target, fw):
     """A started VM's steps, from the guest's scripts put into its share and the boot step to the
     standby (--tv: the suite); each step's verdict in r.steps. Raises GuestRestarted from the step
     that a guest restart interrupted."""
     verdict = {0: "dry" if a.dry_run else "PASS", 124: "TIMEOUT"}
     net_off = a.vm_env.get("NET_LINK", "nat") == "off"
-    put = (
-        "tests/regress/tv.sh build/tests/regress/tee"
-        if a.tv
-        else "tests/regress/tvservice/app-calls.sh"
-    )
-    rc, _ = h.run(
-        f"host/scripts/vm-launcher put tests/regress/guest.sh tests/regress/lb-exit.sh tests/regress/idle-cpu.sh {put} >/dev/null",
-        60,
-    )
+    rc, _ = h.run(f"host/scripts/vm-launcher put {' '.join(share_paths(a))} >/dev/null", 60)
     if rc:
         r.steps["boot"] = "FAIL"
         return

@@ -12,6 +12,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -1565,6 +1566,33 @@ class ResultTest(unittest.TestCase):
         r.steps.update({s: "PASS" for s in r.steps})
         self.assertTrue(r.ok)
         self.assertEqual(regress.Result("h13-afro", WT1H).steps["shot"], "-")
+
+    def test_tv_share_has_what_tv_sh_runs(self):
+        """Every checkout file tv.sh runs from the host share (/mnt/host/PATH) is put there for the
+        lane whose steps use it; PUT_TV_GRAPHICS's only by graphics steps (gles, histogram)."""
+        sys.path.insert(0, os.path.join(TOP, "host", "core"))
+        from beanjar import share
+
+        with open(os.path.join(TOP, "tests", "regress", "tv.sh")) as f:
+            used = set(re.findall(r"/mnt/host/((?:build|tests)/[A-Za-z0-9_./-]+)", f.read()))
+        self.assertIn("build/tests/gl/gles-version", used)
+        self.assertIn("build/tests/regress/histogram/hist-probe.so", used)
+
+        def covered(path, paths):
+            return any(path == p or path.startswith(p.rstrip("/") + "/") for p in paths)
+
+        graphics = regress.share_paths(argparse.Namespace(tv=True, mode="graphics"))
+        headless = regress.share_paths(argparse.Namespace(tv=True, mode="headless"))
+        for path in used:
+            self.assertTrue(covered(path, graphics), path)
+            if not covered(path, regress.PUT_TV_GRAPHICS):
+                self.assertTrue(covered(path, headless), path)
+        for step in ("gles", "histogram"):
+            self.assertNotIn(step, regress.TV_STEPS["headless"])
+        boot = regress.share_paths(argparse.Namespace(tv=False, mode="graphics"))
+        self.assertIn("tests/regress/tvservice/app-calls.sh", boot)
+        for p in set(graphics) | set(boot):
+            self.assertTrue(any(p.startswith(a) for a in share.PUT_ALLOWED), p)
 
     def test_tv_steps(self):
         self.assertEqual(

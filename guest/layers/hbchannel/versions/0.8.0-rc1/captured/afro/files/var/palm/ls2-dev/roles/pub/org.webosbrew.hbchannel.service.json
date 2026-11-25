@@ -1,1 +1,0 @@
-{"role":{"exeName":"js","type":"regular","allowedNames":["org.webosbrew.hbchannel.service","*","com.webos.service.capture.client*"]},"permissions":[{"service":"org.webosbrew.hbchannel.service","inbound":["*"],"outbound":["*"]},{"service":"*","inbound":["*"],"outbound":["*"]},{"service":"com.webos.service.capture.client*","inbound":["*"],"outbound":["*"]}]}
