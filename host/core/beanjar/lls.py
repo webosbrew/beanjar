@@ -366,29 +366,65 @@ def _large_pages():
 
 
 # ---------------------------------------------------------------------------- running LLS's code
+def _probe_build(src, exe, preload):
+    """The SDK compiler's argv that makes exe from src."""
+    return [
+        SDK_GCC,
+        "-O2",
+        "-Wall",
+        *(["-shared", "-fPIC", "-DLLS_PRELOAD"] if preload else []),
+        "-o",
+        exe + ".new",
+        src,
+        "-ldl",
+    ]
+
+
+def _probe_stamp(src, preload):
+    """What a probe is made from: the sha256 of its source (lls-probe.c includes no file of this
+    tree) and of how it is compiled."""
+    h = hashlib.sha256()
+    with open(src, "rb") as f:
+        h.update(f.read())
+    h.update(b"\0" + " ".join(_probe_build("lls-probe.c", "lls-probe", preload)[1:]).encode())
+    return h.hexdigest()
+
+
 def probe(tree=paths.TREE, preload=False):
     """build/lls/lls-probe, built from guest/helpers/lls/lls-probe.c with the webOS SDK when missing or
-    older than its source."""
+    not made from that source. Its .sha256 beside it says what it was made from (_probe_stamp), so a
+    probe the build machine shipped (host/scripts/sync-pi.sh) stays current on a VM host whatever
+    times a checkout gave the source (scripts/regress checks a commit out from git, which writes new
+    times); a probe without one (made before the stamp) is current when it is newer than its source.
+    A VM host without the SDK and a probe not made from its source fails, naming the fix."""
     src = tree.src("guest", "helpers", "lls", "lls-probe.c")
     exe = tree.build("lls", "lls-probe.so" if preload else "lls-probe")
-    if os.path.isfile(exe) and (tree.installed or os.path.getmtime(exe) >= os.path.getmtime(src)):
+    if os.path.isfile(exe) and tree.installed:
         return exe
     if tree.installed:
         raise Error(f"packaged ARM LLS probe missing: {exe}")
+    stamp = _probe_stamp(src, preload)
+    if os.path.isfile(exe):
+        try:
+            with open(exe + ".sha256") as f:
+                current = f.read().strip() == stamp
+        except FileNotFoundError:
+            current = os.path.getmtime(exe) >= os.path.getmtime(src)
+        if current:
+            return exe
     if not os.access(SDK_GCC, os.X_OK):
-        raise Error(f"no {SDK_GCC} to build guest/helpers/lls/lls-probe.c")
+        raise Error(
+            f"no {SDK_GCC} to build guest/helpers/lls/lls-probe.c"
+            + (
+                f", and {os.path.relpath(exe, tree.top)} was not made from it: build it where the SDK is "
+                "(its next LLS EEPROM does) and sync it here (host/scripts/sync-pi.sh)"
+                if os.path.isfile(exe)
+                else ""
+            )
+        )
     os.makedirs(os.path.dirname(exe), exist_ok=True)
     r = subprocess.run(
-        [
-            SDK_GCC,
-            "-O2",
-            "-Wall",
-            *(["-shared", "-fPIC", "-DLLS_PRELOAD"] if preload else []),
-            "-o",
-            exe + ".new",
-            src,
-            "-ldl",
-        ],
+        _probe_build(src, exe, preload),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -396,6 +432,9 @@ def probe(tree=paths.TREE, preload=False):
     if r.returncode:
         raise Error(f"lls-probe.c: {r.stdout.strip()}")
     os.replace(exe + ".new", exe)
+    with open(exe + ".sha256.new", "w") as f:
+        f.write(stamp + "\n")
+    os.replace(exe + ".sha256.new", exe + ".sha256")
     return exe
 
 

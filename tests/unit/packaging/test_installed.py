@@ -514,3 +514,33 @@ def test_soc_board_files_keep_the_released_paths(tmp_path):
         assert (g / "boards" / chip / name).read_bytes() == board.read_bytes()
     chips = {b.parts[-5] for b in boards}
     assert {p.name for p in (g / "boards").iterdir()} == chips | {"guest"}
+
+
+def test_probe_current_by_source_hash_not_mtime(tmp_path):
+    """A checkout writes new times on lls-probe.c; the probe's .sha256 keeps a shipped probe current,
+    and a probe not made from the source fails without the SDK, naming the fix."""
+    src = tmp_path / "guest/helpers/lls/lls-probe.c"
+    src.parent.mkdir(parents=True)
+    src.write_text("int main(void) { return 0; }\n")
+    tree = paths.Tree(tmp_path)
+    gcc = tmp_path / "gcc"
+    gcc.write_text('#!/bin/sh\nwhile [ "$1" != -o ]; do shift; done\necho probe > "$2"\n')
+    gcc.chmod(0o755)
+    with mock.patch.object(lls, "SDK_GCC", str(gcc)):
+        exe = lls.probe(tree)
+    stamp = Path(exe + ".sha256")
+    assert stamp.read_text().strip() == lls._probe_stamp(str(src), False)
+    os.utime(src, (2e9, 2e9))  # newer than the probe, as a fresh checkout makes it
+    nosdk = str(tmp_path / "missing-gcc")
+    with mock.patch.object(lls, "SDK_GCC", nosdk):
+        assert lls.probe(tree) == exe
+        src.write_text("int main(void) { return 1; }\n")
+        with pytest.raises(lls.Error, match="was not made from it.*sync-pi.sh"):
+            lls.probe(tree)
+        stamp.unlink()  # a probe from before the stamp: its time decides
+        os.utime(exe, (3e9, 3e9))
+        assert lls.probe(tree) == exe
+    with mock.patch.object(lls, "SDK_GCC", str(gcc)):
+        os.utime(exe, (1e9, 1e9))
+        lls.probe(tree)
+    assert stamp.read_text().strip() == lls._probe_stamp(str(src), False)
