@@ -197,6 +197,22 @@ class Snapshots(unittest.TestCase):
         # CCThreadProc's 200/s stays under TCG's lower limit
         self.assertNotIn("tvservice", [p["comm"] for p in r["flagged"]])
 
+    def test_wakeup_allowance(self):
+        # lginput2 wakes about 1980/s on a real set too: under its allowance, not flagged
+        data = idlecpu.parse(self.text)
+        for _, procs, threads in data["snaps"]:
+            procs[500] = (procs[500][0], "lginput2")
+            for t in threads.values():
+                if t[0] == 500:
+                    t[2] = "lginput2"
+        r = idlecpu.measure(data, "kvm")
+        self.assertNotIn("lginput2", [p["comm"] for p in r["flagged"]])
+        self.assertEqual(r["limits"]["wakeup_allowance"], {"lginput2": 4000.0})
+        for _, _, threads in data["snaps"]:
+            threads[501][3] *= 5  # 4500/s: over it
+        r = idlecpu.measure(data, "kvm")
+        self.assertIn("lginput2", [p["comm"] for p in r["flagged"]])
+
     def test_one_burst_is_not_a_flag(self):
         data = idlecpu.parse(self.text)
         (_, p1, k1), (_, p2, k2) = data["snaps"][1:]

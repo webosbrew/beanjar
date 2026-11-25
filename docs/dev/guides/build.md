@@ -542,6 +542,7 @@ works out the CPU per process (% of one core) and the wakeups per thread for bot
 | process CPU, default | 25 % | 100 % | 100 % | the busiest healthy process on 34 targets under KVM is servicemanager at 10-11 % on three ponytail boards, then pqcontroller at 4 %; k25lp's busy loop was 86 %. Emulation costs several times the CPU (o18's tvservice about 11 % under qemu-user against 2-4 % on KVM) |
 | surface-manager | 50 % | 200 % | 200 % | 15-20 % on real sets |
 | thread wakeups | 500/s | 500/s | 250/s | the busiest stock thread wakes 142/s (W19P's CCThreadProc, a 5 ms sleep); o18's 1 ms poll woke 640-800/s, and only 290-596/s under TCG: emulation lowers the rate, so it is never scaled up |
+| lginput2's threads' wakeups | 4000/s | 4000/s | 4000/s | it polls the input devices: about 1980/s on a real webOS 6 set at idle, 1840-1960/s on k24 and k24n under KVM |
 
 The two windows rule out a one-off burst (the Home page settling, a once-a-minute job); a spin is
 steady. 30 s at 100 ticks a second resolves 0.1 % of a core. For each flagged process a second
