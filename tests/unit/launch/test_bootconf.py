@@ -724,7 +724,8 @@ class BootConfTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("mksquashfs"), "needs squashfs-tools")
     def test_rootfs_entries(self):
-        """The shim rules' listing comes from the rootfs pak, not from an extracted tree beside it."""
+        """The shim rules' listing comes from the rootfs pak; a directory that already shows the pak's
+        files beside it is listed as it is."""
         with tempfile.TemporaryDirectory() as d:
             root = Path(d, "src")
             (root / "usr/lib/nyx/modules").mkdir(parents=True)
@@ -737,6 +738,11 @@ class BootConfTest(unittest.TestCase):
                 ["mksquashfs", str(root), str(fw / "rootfs.pak"), "-quiet", "-noappend"],
                 check=True, stdout=subprocess.DEVNULL,
             )  # fmt: skip
+            self.assertEqual(
+                paths.rootfs_entries(str(fw), ["usr/lib"]),
+                ["usr/lib/extracted-only.so"],
+            )  # fmt: skip
+            shutil.rmtree(fw / "rootfs")
             self.assertEqual(
                 paths.rootfs_entries(str(fw), ["usr/lib", "/usr/lib/nyx/modules/"]),
                 ["usr/lib/libsestore.so.0.1.0", "usr/lib/nyx", "usr/lib/nyx/modules/nyxSecureStore.module"],
