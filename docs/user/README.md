@@ -20,6 +20,8 @@ Topics:
   VM and its password.
 - [Boot a global firmware as another region's model](board-profiles.md): the `broadcast` and
   `country` settings.
+- [Your own broadcast on the tuner](tuner.md): a lineup file of channels, guide, pictures and BML
+  pages, or a transport stream of yours, on a VM's antenna.
 - [Configure secure-store items](sestore.md): a VM's model key and other secure-store values.
 - [Run Beanjar on Windows with WSL](wsl.md): KVM, the groups, the GPU through Mesa's d3d12 and
   windows through WSLg.

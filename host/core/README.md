@@ -768,15 +768,30 @@ with `noMotionAutoOff` when its `addNoMotionAndNoOperationTimer` (5 minutes or l
 
 ### Tuner
 
-`beanjar io tuner list NAME` lists the physical channels of a small US over-the-air lineup
-(`beanjar/tuner_stream.py`: RF 7, 14 and 33 with four virtual channels), which of them are mapped
-and what the set is tuned to; `beanjar io tuner map NAME RF...` and `unmap NAME RF...|all` change the
-map, kept in the VM's state for its next starts. Only boards whose SoC data loads
+`beanjar io tuner list NAME` lists the physical channels of the VM's lineup and which of them are
+mapped and what the set is tuned to; `beanjar io tuner map NAME RF...` and `unmap NAME RF...|all`
+change the map, kept in the VM's state for its next starts. Only boards whose SoC data loads
 `dtv_soc` have the tuner (`targets.Soc.modules`; `k7lp`, `k8lp`, `k8lpn` but its number1, `k8lpn2`,
-`k24` ponytail and queue and `o22` ponytail and queue). Mapping a channel makes
-its transport stream with TSDuck and ffmpeg into the cache's `tuner/`: PAT, PMT, the ATSC PSIP
-tables (MGT, TVCT, RRT, STT, EIT-0 to 3 and their ETTs) and a test pattern with a tone, 5 Mbit/s,
-20 s, looped.
+`k24` ponytail and queue and `o22` ponytail and queue). The lineup is a TOML file
+(`beanjar/tuner_lineup.py`, the format in [docs/user/tuner.md](../../docs/user/tuner.md)): the
+built-in one of the board's broadcast standard, `beanjar/lineups/atsc.toml` (RF 7, 14 and 33 with
+four virtual channels) or `arib.toml` (UHF 27, one service with the BML pages of
+`lineups/arib-bml`), unless `beanjar io tuner lineup set NAME FILE` gave the VM its own: checked
+against the board's standard, then copied with the files it names into the state's
+`tuner-lineup/`; `lineup show NAME` prints the one in effect (TOML; `--json` its values) and
+`lineup reset NAME` goes back to the built-in one. Mapping a channel makes its transport stream
+with TSDuck and ffmpeg into the cache's `tuner/` (keyed on the lineup's values and its files'
+content, so an edit makes it again): for ATSC PAT, PMT, the PSIP tables (MGT, TVCT, RRT, STT,
+EIT-0 to 3 and their ETTs) and each service's picture and sound, 5 Mbit/s, 20 s, looped.
+
+`beanjar io tuner map NAME RF --stream FILE` puts a transport stream of the user's on one RF
+instead (`beanjar/tuner_ts.py`): refused if it is not whole 188-byte packets, is scrambled in its
+first seconds, or has no PAT or PCR; warned about if its NIT or PSIP is of another standard than
+the board's, its delivery descriptor names another frequency, or it has no clock tables. It is
+copied into the state's `tuner-streams/` and looped at its PCR's rate, its tables as they are but
+the clock (STT; TDT and TOT) set to now; at the wrap each PID restarts at a PES or section start,
+the continuity counters run on and the first PCR after it has the discontinuity indicator
+(`tuner.RecordedStream`). `unmap` removes the copy.
 
 Beside QEMU a helper (`python -m beanjar.tuner`, `run/tuner.log`, `run/tuner-status.json`) sends
 the map and, while frontend 0 is tuned within 1 MHz of a mapped channel with the ATSC delivery
@@ -799,7 +814,8 @@ another machine connected to `run/tuner-feed.sock`, which it tells the channels 
 the guest's tunes, and whose map and stream frames it passes on to the guest whole. Without a feed
 it makes and sends the streams itself. `beanjar io tuner map HOST/NAME RF...` uses that for a VM
 on a host without the tools (the Pi, the ROCK Pi boards): it makes the streams here, keeps the map
-on the host (no streams made there) and, while the VM runs, starts a detached feed here (`python
+on the host (no streams made there; of an own lineup the host keeps only the file, of a stream
+only its name, and this machine the files, in the library's `remote/HOST/NAME/`) and, while the VM runs, starts a detached feed here (`python
 -m beanjar.tuner feed`, its log in the cache's `tuner/feeds/`) that reaches the socket through a
 forward of the host's shared ssh connection (`ares.Forward`). Only the tuned channel crosses the
 network, under 5 Mbit/s. The feed ends when the VM stops (the helper ends with QEMU and closes the
@@ -812,6 +828,8 @@ beanjar io tuner list tv --json
 tests/regress/tuner/run-scan.py tv        # an automatic scan by Luna: PASS or FAIL with numbers
 tests/regress/tuner/run-watch.py tv       # Live TV's picture and sound after it: PASS or FAIL
 beanjar io tuner map rk-1/tv 7 14 33   # made here, fed over ssh
+beanjar io tuner lineup set tv mine.toml
+beanjar io tuner map tv 30 --stream rec.ts
 ```
 
 ### USB devices
