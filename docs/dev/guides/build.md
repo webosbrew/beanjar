@@ -274,8 +274,12 @@ from this checkout.
 
 One run can spread its targets across several KVM hosts: `--host` repeated or comma-separated, or
 `REGRESS_HOST` as a comma- or space-separated list (`--host pi,board1,board2`). Every host
-gets the same commit, is held and checked for leftovers before and after,
-and has its targets copied back into the one run directory here. At the start the runner reads over
+gets the same commit, is held and checked for leftovers before and after. The trees go first, host by
+host, which is quick; then each host syncs the build's outputs and builds its host side on its own,
+side by side with the others, and starts its lanes as soon as its own preparation ends, so a slow first
+sync (the components to a board's NFS home) holds back only that host. A host whose preparation fails
+runs nothing, and a target that only it could run fails and says so. Each host
+has its targets copied back into the one run directory here. At the start the runner reads over
 ssh what each host can do (`TRAITS` in `scripts/regress`): its architecture; a toolchain (`meson`,
 `ninja`, `cc`, which `scripts/build.sh host` needs); `/dev/dri/renderD128`, the render node the
 launcher gives a KVM guest's virgl display (`RENDERNODE`'s default under KVM, `qemu.py`), without which

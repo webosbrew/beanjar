@@ -42,8 +42,11 @@ FIRMWARE_DIRS` there), by the name chosen here; nothing is copied to it, and a t
 is not there fails without booting.
 Several VM hosts (--host repeated or comma-separated; REGRESS_HOST a comma- or space-separated list)
 share one run: each gets the same commit, each is held and checked as one would be, and the targets go
-from one queue, in their order, to whichever host has a free slot and
-can run the target. What each host can do is read over ssh at the start (TRAITS: uname -m; a toolchain,
+from one queue, in their order, to whichever host has a free slot and can run the target. The trees
+go first, host by host (quick); then each host syncs the build's outputs and builds its host side in a
+thread of its own, and takes targets as soon as its own preparation ends, so a slow first sync holds
+back only that host (a host whose preparation fails runs nothing; a target only it could run fails,
+saying so). What each host can do is read over ssh at the start (TRAITS: uname -m; a toolchain,
 meson, ninja and cc, which `scripts/build.sh host` needs; the render node the launcher gives a KVM
 guest's virgl display, /dev/dri/renderD128, without which a graphics start fails; a desktop session, a
 Wayland socket in XDG_RUNTIME_DIR or X :0, where the --viewer window opens). A graphics target runs
@@ -2277,10 +2280,14 @@ def schedule(items, jobs, work, stop=lambda r: False):
     return schedule_hosts(items, [(None, jobs)], lambda item, _host: work(item), stop=stop)
 
 
-def schedule_hosts(items, slots, work, can=lambda item, host: True, stop=lambda r: False):
+def schedule_hosts(
+    items, slots, work, can=lambda item, host: True, stop=lambda r: False, ready=None
+):
     """work(item, host) for each of items in their order, on the hosts of slots ([(host, n)]: at
     most n at once on host), each item on the first host with a free slot that can(item, host) run
-    it; an item no host can run is left out. Once stop(result) holds for one, no further item starts
+    it; an item no host can run is left out. ready: {host: a callable that blocks until the host is
+    prepared and says whether it is}: a host's slots take items only once it is, and none if it
+    failed, while the other hosts' go on. Once stop(result) holds for one, no further item starts
     (those running finish). [(item, result)] of the items that ran, in items' order. A
     KeyboardInterrupt starts nothing more and waits for the running ones (each ends by stopping
     its VM)."""
@@ -2289,6 +2296,8 @@ def schedule_hosts(items, slots, work, can=lambda item, host: True, stop=lambda 
     done, halted = {}, []
 
     def worker(host):
+        if ready and host in ready and not ready[host]():
+            return
         while True:
             with lock:
                 if halted:
@@ -2586,36 +2595,61 @@ def prepare(a, sel):
                 + ("" if t["arch"] == "aarch64" else f", which a {t['arch']} host cannot run")
             )
             return False
-    # Every VM host gets the same tree: the host commit, pushed and checked out exactly (send_tree),
-    # or with --working-tree this checkout (SRC); then the sync command sends what the build
-    # published here (SRC=none: no tree). The run holds each host's lock (HostLock), so the sync
-    # takes none of its own (REGRESS_LOCKED).
-    for host in a.hosts:
-        if a.tree != "working-tree" and not send_tree(a, host):
-            return False
-        say(f"sync: to {host}" + ("" if a.tree == "working-tree" else " (the build's outputs)"))
-        env = {
-            "SRC": TOP if a.tree == "working-tree" else "none",
-            "HOST": host,
-            "DEST": a.dest,
-            "REGRESS_LOCKED": "1",
-        }
-        if local([a.sync], a.dry_run, env):
-            return False
-    if a.no_build:
+    return True
+
+
+def sync_outputs(a, host):
+    """The sync command to host (REGRESS_SYNC): what the build published here (SRC=none: no tree),
+    or with --working-tree this checkout too (SRC=TOP). The run holds the host's lock (HostLock),
+    so the sync takes none of its own (REGRESS_LOCKED). False on a failure."""
+    say(f"sync: to {host}" + ("" if a.tree == "working-tree" else " (the build's outputs)"))
+    env = {
+        "SRC": TOP if a.tree == "working-tree" else "none",
+        "HOST": host,
+        "DEST": a.dest,
+        "REGRESS_LOCKED": "1",
+    }
+    return not local([a.sync], a.dry_run, env)
+
+
+def host_tree(a, host):
+    """The VM host's source tree, first and host by host (it is quick: only what the host lacks
+    goes): the host commit, pushed and checked out exactly (send_tree), or with --working-tree this
+    checkout, through the sync command with the build's outputs. Every host gets the same tree.
+    False on a failure."""
+    if a.no_sync:
         return True
-    for host in a.hosts:
-        if not a.traits[host]["toolchain"]:
-            say(f"build: none on {host} (no toolchain): its host side is {PUBLISH_ARM64}'s")
-            continue
-        say(f"build: host side on {host}")
-        rc, text = Host(host, a.dest, a.dry_run).run(
-            "scripts/build.sh host > build/regress-host-build.log 2>&1 || { tail -n 20 build/regress-host-build.log; "
-            "exit 1; }",
-            3600,
-        )
-        if rc:
-            print(text)
+    if a.tree == "working-tree":
+        return sync_outputs(a, host)
+    return send_tree(a, host)
+
+
+def host_side(a, host, files=()):
+    """The rest of a VM host's preparation, each host's in a thread of its own while the others go
+    on and its lanes wait (main): what the build published (sync_outputs; --working-tree sent it with
+    the tree), the host side's build where the host has a toolchain (one without runs the shipped
+    build/publish-arm64), and the run's files (files: paths in this checkout, the test apps) to the
+    same paths there. False on a failure."""
+    if not a.no_sync:
+        if a.tree != "working-tree" and not sync_outputs(a, host):
+            return False
+        if not a.no_build:
+            if not a.traits[host]["toolchain"]:
+                say(f"build: none on {host} (no toolchain): its host side is {PUBLISH_ARM64}'s")
+            else:
+                say(f"build: host side on {host}")
+                rc, text = Host(host, a.dest, a.dry_run).run(
+                    "scripts/build.sh host > build/regress-host-build.log 2>&1 || "
+                    "{ tail -n 20 build/regress-host-build.log; exit 1; }",
+                    3600,
+                )
+                if rc:
+                    say(f"{host}: scripts/build.sh host failed:\n{text.strip()}")
+                    return False
+    for path in files:
+        if Host(host, a.dest, a.dry_run).run(f"mkdir -p {os.path.dirname(path)}", 30)[0] or local(
+            ["rsync", "-a", path, f"{host}:{a.dest}/{path}"], a.dry_run
+        ):
             return False
     return True
 
@@ -2747,19 +2781,10 @@ def fit_ram(where, ram, capacity, headroom_mb=HEADROOM_MB):
             where[p] = fits
 
 
-def send_to_hosts(a, path):
-    """path (in this checkout) to the same path in every VM host's checkout; False on a failure."""
-    return not any(
-        Host(host, a.dest, a.dry_run).run(f"mkdir -p {os.path.dirname(path)}", 30)[0]
-        or local(["rsync", "-a", path, f"{host}:{a.dest}/{path}"], a.dry_run)
-        for host in a.hosts
-    )
-
-
 def pack_smp_app(a):
     """--tv graphics smp: the SMP check app packed here (tests/regress/smp/pack.sh: ares-package, with the
-    guest build's build/tests/regress/smp/smpcheck and its clip) into the run's directory, and copied to
-    the VM host's."""
+    guest build's build/tests/regress/smp/smpcheck and its clip) into the run's directory; its path
+    (host_side copies it to each VM host), or False."""
     ipk = SMP_IPK.format(run=a.run)
     tmp = os.path.join(os.path.dirname(ipk), "smp-pkg")
     if local(
@@ -2771,12 +2796,12 @@ def pack_smp_app(a):
         a.dry_run,
     ):
         return False
-    return send_to_hosts(a, ipk)
+    return ipk
 
 
 def pack_test_app(a):
     """--tv graphics: the test web app (tests/regress/tvapp) packed here with the SDK's ares-package
-    into the run's directory, and copied to the VM host's."""
+    into the run's directory; its path (host_side copies it to each VM host), or False."""
     ipk = TV_IPK.format(run=a.run)
     tmp = os.path.join(os.path.dirname(ipk), "tvapp-pkg")
     tool = shutil.which("ares-package") or os.path.expanduser("~/.cargo/bin/ares-package")
@@ -2801,7 +2826,7 @@ def pack_test_app(a):
             return False
         os.replace(os.path.join(TOP, tmp, built[0]), os.path.join(TOP, ipk))
         os.rmdir(os.path.join(TOP, tmp))
-    return send_to_hosts(a, ipk)
+    return ipk
 
 
 def gallery(d, results):
@@ -2898,23 +2923,27 @@ def main(argv=None):
 def lanes(a, sel, run, skipped, hosts):
     """main's run once the VM hosts are held: build and sync, then the targets; its exit status."""
     if not prepare(a, run):
-        say("build or sync failed")
+        say("build failed")
         return 1
+    for host in a.hosts:
+        if not host_tree(a, host):
+            say(f"{host}: sending its tree failed")
+            return 1
     placed = placement(a, run)
     if placed is None:
         return 1
     where, missing = placed
-    if (
-        a.tv
-        and {"apps", "draw", "audio", "decode"} & set(a.tv_steps)
-        and a.mode == "graphics"
-        and not pack_test_app(a)
-    ):
-        say("packing the test app failed")
-        return 1
-    if a.tv and "smp" in a.tv_steps and a.mode == "graphics" and not pack_smp_app(a):
-        say("packing the SMP check app failed")
-        return 1
+    files = []
+    if a.tv and {"apps", "draw", "audio", "decode"} & set(a.tv_steps) and a.mode == "graphics":
+        files.append(pack_test_app(a))
+        if not files[-1]:
+            say("packing the test app failed")
+            return 1
+    if a.tv and "smp" in a.tv_steps and a.mode == "graphics":
+        files.append(pack_smp_app(a))
+        if not files[-1]:
+            say("packing the SMP check app failed")
+            return 1
     if a.scale != 1:
         say(
             f"{a.accel}: the run's deadlines x{a.scale} (step limit {a.timeout} s), as the guest's bootd timers"
@@ -2991,14 +3020,44 @@ def lanes(a, sel, run, skipped, hosts):
         return False
 
     began = time.monotonic()
+    # each VM host's own preparation (host_side) in a thread of its own; its lanes start once it is
+    # done, while the other hosts' run: a slow first sync holds back only its own host
+    prepared, ready = {}, {}
+    for host in a.hosts:
+        done = threading.Event()
+
+        def prep(host=host, done=done):
+            try:
+                prepared[host] = host_side(a, host, files)
+            except Exception as e:  # noqa: BLE001 - a host's failure, said; the others go on
+                say(f"{host}: {e}")
+                prepared[host] = False
+            finally:
+                done.set()
+
+        threading.Thread(target=prep, daemon=True).start()
+        ready[host] = lambda host=host, done=done: done.wait() and prepared[host]
     results = []
     try:
         order = interleave(sel) if jobs > 1 else sel
         # a slot for a host with nothing to run still reports the skipped and not-run targets
         busy = [(host, n) for host, n in slots.items() if n] or [(hosts[0], 1)]
-        results = [r for _, r in schedule_hosts(order, busy, work, can, stop)]
+        results = [r for _, r in schedule_hosts(order, busy, work, can, stop, ready=ready)]
     except KeyboardInterrupt:
         say("interrupted")
+    for host in a.hosts:
+        if host in prepared and not prepared[host]:
+            say(f"{host}: its preparation failed; no target ran there")
+    failed_hosts = {h for h, ok in prepared.items() if not ok}
+    ran = {r.target for r in results}
+    for target, fw in run:
+        hs = where.get(target, [])
+        if target not in ran and hs and set(hs) <= failed_hosts:
+            r = Result(target, fw, a.mode, a.tv)
+            r.steps["start"] = "FAIL"
+            r.failed = f"no VM host that could run it got ready ({', '.join(hs)} failed)"
+            say(f"{target}: FAIL ({r.failed})")
+            results.append(r)
     wall = time.monotonic() - began
     left = ""
     if a.instances and not a.dry_run:
@@ -3071,7 +3130,13 @@ def lanes(a, sel, run, skipped, hosts):
             )
         say(f"results: {os.path.relpath(d, os.getcwd())}")
     return (
-        0 if results and len(results) == len(sel) and all(r.ok for r in results) and not left else 1
+        0
+        if results
+        and len(results) == len(sel)
+        and all(r.ok for r in results)
+        and not left
+        and not failed_hosts
+        else 1
     )
 
 

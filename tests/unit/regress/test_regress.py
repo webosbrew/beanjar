@@ -727,9 +727,11 @@ class DryRunTest(unittest.TestCase):
             [
                 f"FW={WT1H} scripts/build.sh guest",
                 "git checkout -q -f --detach",
-                "SRC=none HOST=vmhost DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
                 "vm-launcher config FIRMWARE_DIRS",
                 "pgrep -ax",
+                # the host's own preparation, before its lanes
+                "SRC=none HOST=vmhost DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
+                "build: host side on vmhost",
                 f"FW={WT1H} STATE=none BUILD=0 LAYERS=normal,gl DISPLAY_BACKEND=dbus",
                 "TIME_SCALE=1 sh /host/tests/regress/guest.sh boot 300",
                 "guest.sh check-m1 regress-t1-h13-afro-check-m1 10",
@@ -794,14 +796,22 @@ class DryRunTest(unittest.TestCase):
                 "[rock] exec 9>>beanjar.lock",
                 "push -q pi:beanjar-src.git",
                 "[pi] mkdir -p beanjar && cd beanjar",
-                "HOST=pi DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
                 "push -q rock:beanjar-src.git",
                 "[rock] mkdir -p beanjar && cd beanjar",
-                "HOST=rock DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
-                "build: host side on pi",
-                "build: host side on rock",
+                "checking that nothing runs on the VM host pi",
+                "checking that nothing runs on the VM host rock",
             ],
         )
+        # then each host's own preparation, the hosts side by side
+        for host in ("pi", "rock"):
+            self.assertInOrder(
+                text,
+                [
+                    f"checking that nothing runs on the VM host {host}",
+                    f"HOST={host} DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
+                    f"build: host side on {host}",
+                ],
+            )
         pushed = {line.split()[-1] for line in text.splitlines() if " push -q " in line}
         self.assertEqual(len(pushed), 1)  # the same commit for every host
         for host in ("pi", "rock"):
@@ -816,6 +826,36 @@ class DryRunTest(unittest.TestCase):
         self.assertTrue(set(rows.values()) <= {"pi", "rock"})
         self.assertIn("4 at once (pi 2, rock 2)", text)
 
+    def test_a_host_that_fails_its_preparation(self):
+        # rock's preparation fails: pi runs every target; with pi gone too, the targets say why
+        real_side = regress.host_side
+        real = regress.parse
+        regress.parse = lambda argv: real(argv, found=FOUND, env={})
+        try:
+            for broken, want in (({"rock"}, 0), ({"pi", "rock"}, 4)):  # said, and under "not run:"
+                regress.host_side = lambda a, host, files=(), broken=broken: host not in broken
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    rc = regress.main(
+                        [
+                            "-n",
+                            "--headless",
+                            "--host",
+                            "pi,rock",
+                            "--target",
+                            "h13-afro,m3-goldilocks",
+                        ]
+                    )
+                text = out.getvalue()
+                self.assertEqual(rc, 1)
+                self.assertIn("rock: its preparation failed; no target ran there", text)
+                self.assertEqual(text.count("got ready (pi, rock failed)"), want, text[-2000:])
+                if not want:
+                    rows = {line.split()[0]: line.split()[-2] for line in table_lines(text)[-2:]}
+                    self.assertEqual(rows, {"h13-afro": "pi", "m3-goldilocks": "pi"})
+        finally:
+            regress.host_side, regress.parse = real_side, real
+
     def test_host_without_toolchain(self):
         a, sel = regress.parse(
             ["-n", "--headless", "--host", "pi,rock", "--target", "h13-afro"], found=FOUND, env={}
@@ -824,6 +864,9 @@ class DryRunTest(unittest.TestCase):
         a.traits = {"pi": CAPABLE, "rock": dict(CAPABLE, toolchain=False)}
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertTrue(regress.prepare(a, sel))
+            for host in ("pi", "rock"):
+                self.assertTrue(regress.host_tree(a, host))
+                self.assertTrue(regress.host_side(a, host))
         text = out.getvalue()
         self.assertIn("build: host side on pi", text)
         self.assertIn(
@@ -1815,6 +1858,39 @@ class ScheduleTest(unittest.TestCase):
         # an item no host can run is left out
         out = regress.schedule_hosts([1, 2], [("a", 1)], work, lambda x, h: x == 1)
         self.assertEqual(out, [(1, 10)])
+
+    def test_hosts_start_when_each_is_ready(self):
+        # "fast" is ready at once; "slow" only after fast has run its first items; "broken" never.
+        # A slow host holds back only itself, and a failed one runs nothing: its items go to the
+        # others where they can run them, and an item only it could run is left out.
+        lock, ran, order = threading.Lock(), {}, []
+        slow_ready = threading.Event()
+
+        def work(x, host):
+            with lock:
+                ran[x] = host
+                order.append((x, host))
+                if len([1 for _x, h in order if h == "fast"]) == 2:
+                    slow_ready.set()  # the slow host's sync ends while the fast one is at work
+            time.sleep(0.05)
+            return x
+
+        ready = {
+            "fast": lambda: True,
+            "slow": lambda: slow_ready.wait(10) and True,
+            "broken": lambda: False,
+        }
+        out = regress.schedule_hosts(
+            list(range(8)),
+            [("fast", 1), ("slow", 1), ("broken", 2)],
+            work,
+            can=lambda x, h: (h == "broken") if x == 7 else True,
+            ready=ready,
+        )
+        self.assertEqual([x for x, _ in out], list(range(7)))  # 7: only the broken host could
+        self.assertEqual(order[:2], [(0, "fast"), (1, "fast")])  # before slow was ready
+        self.assertIn("slow", ran.values())  # and then side by side
+        self.assertNotIn("broken", ran.values())
 
 
 class InstanceTest(unittest.TestCase):
