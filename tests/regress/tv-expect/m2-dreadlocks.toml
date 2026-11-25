@@ -22,7 +22,7 @@ url = "http://lgtvonline.lge.com/"
 "blegatt.getState" = { present = false, source = "no-role-or-services-5e4a76" }
 "camera.getList" = { present = false, source = "no-role-or-services-1e2e5b" }
 "connman.palm" = { present = true, source = "com-palm-connectionmanager-by-fe7ea2" }
-"connman.webos" = { present = true, source = "com-webos-service-6ea35c" }
+"connman.webos" = { present = true, source = "com-webos-service-d445ba" }
 "mrcu.getAPIVersion" = { present = false, source = "getAPIVersion-no-string-a864f4" }
 "mrcu.getSensorState" = { present = false, source = "getSensorState-no-string-cd8d73" }
 "nyx.DeviceInfo.board_type" = { present = true, source = "nyxDeviceInfoMain-module-case-2-36865c" }
@@ -173,6 +173,8 @@ what = "User Guide"
 
 [tee]
 clients = []
+node = false
+node_source = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0"
 source = "no TEE client: none of the 1480 ELF files under bin/, sbin/, lib/, usr/bin/, usr/sbin/, usr/lib/, usr/libexec/, bsp/ of rootfs.pak, bsppart.pak, tvservice-dvb.pak, otncabi-dvb.pak, otycabi-dvb.pak, fonts.pak, smartkey.pak, license.pak names /dev/tee"
 tas = []
 
@@ -206,7 +208,7 @@ absent-by-design-no-cf9904 = "absent by design: no Wi-Fi/BT hardware (out of sco
 absent-by-design-no-dbdb50 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-dvb.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module runs hcitool, which the firmware does not have)"
 com-palm-connectionmanager-by-fe7ea2 = "com.palm.connectionmanager by usr/share/ls2/roles/prv/webos-connman-adapter.json, usr/share/ls2/roles/pub/webos-connman-adapter.json -> /usr/sbin/webos-connman-adapter; 'getStatus' in the / table rootfs.pak:/usr/sbin/webos-connman-adapter (com.palm.connectionmanager, prv), rootfs.pak:/usr/sbin/webos-connman-adapter (com.palm.connectionmanager, pub) registers"
 com-palm-systemservice-by-834738 = "com.palm.systemservice by usr/share/ls2/roles/prv/com.palm.systemservice.json, usr/share/ls2/roles/pub/com.palm.systemservice.json -> /usr/sbin/LunaSysService; 'getSystemTime' in rootfs.pak:/usr/sbin/LunaSysService"
-com-webos-service-6ea35c = "com.webos.service.connectionmanager by usr/share/ls2/roles/prv/webos-connman-adapter.json, usr/share/ls2/roles/pub/webos-connman-adapter.json -> /usr/sbin/webos-connman-adapter; 'getStatus' in rootfs.pak:/usr/sbin/webos-connman-adapter"
+com-webos-service-d445ba = "com.webos.service.connectionmanager by usr/share/ls2/roles/prv/webos-connman-adapter.json, usr/share/ls2/roles/pub/webos-connman-adapter.json -> /usr/sbin/webos-connman-adapter; 'getStatus' in the / table rootfs.pak:/usr/sbin/webos-connman-adapter (com.webos.service.connectionmanager, prv), rootfs.pak:/usr/sbin/webos-connman-adapter (com.webos.service.connectionmanager, pub) registers"
 com-webos-service-sm-ceadce = "com.webos.service.sm by usr/share/ls2/roles/prv/com.webos.service.sm.json, usr/share/ls2/roles/pub/com.webos.service.sm.json -> /usr/sbin/securitymanager; 'getIDs' in rootfs.pak:/usr/sbin/securitymanager"
 com-webos-service-tv-d16c31 = "com.webos.service.tv.systemproperty by tvservice-dvb.pak:/mnt/lg/tvservice/lgapp/tvservice (tvservice); 'getSystemInfo' in tvservice-dvb.pak:/mnt/lg/tvservice/lgapp/tvservice"
 com-webos-service-tv-dd132b = "com.webos.service.tv.systemproperty by tvservice-dvb.pak:/mnt/lg/tvservice/lgapp/tvservice (tvservice); 'getCurrentCountryGroup' in tvservice-dvb.pak:/mnt/lg/tvservice/lgapp/tvservice"

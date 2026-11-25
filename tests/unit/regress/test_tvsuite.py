@@ -538,6 +538,22 @@ class HelpersTest(unittest.TestCase):
         self.assertIsNone(locs)
         self.assertIn("no role or services.d file provides", src)
 
+    def test_registrations_per_firmware(self):
+        """What an executable registers is read again for each firmware: a full run sees the same
+        label (rootfs.pak:/usr/sbin/...) in every target's firmware."""
+        import types
+        from unittest import mock
+
+        label = "rootfs.pak:/usr/sbin/webos-connman-adapter"
+        with mock.patch.object(
+            gen, "ls_registrations", lambda data, label: {data.decode(): {"pub": {"/": {"get"}}}}
+        ):
+            for d, name in (("fw-a", "com.a.svc"), ("fw-b", "com.b.svc")):
+                reach = gen.registered(
+                    types.SimpleNamespace(dir=d), [(label, name.encode())], name, ""
+                )
+                self.assertEqual(reach[2], f"{label} ({name}, pub)", d)
+
     def test_non_utf8_file_names(self):
         """A pak's file names that are not UTF-8 (N21D has a symlink usr/lib/\\xb1\\xfb) are listed,
         followed and read, and go back to their bytes in an unsquashfs list file (tee_init_of)."""

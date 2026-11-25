@@ -168,6 +168,8 @@ what = "User Guide"
 
 [tee]
 clients = []
+node = false
+node_source = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0"
 source = "no TEE client: none of the 1419 ELF files under bin/, sbin/, lib/, usr/bin/, usr/sbin/, usr/lib/, usr/libexec/, bsp/ of rootfs.pak, tvservice-dvb.pak, otncabi-dvb.pak, otycabi-dvb.pak, fonts.pak, smartkey.pak names /dev/tee"
 tas = []
 

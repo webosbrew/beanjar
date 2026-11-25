@@ -434,7 +434,7 @@ def ls_registrations(data, label="binary"):
     return out
 
 
-_REGS = {}
+_REGS = {}  # (firmware directory, label): ls_registrations; a label alone names the same path in every firmware
 
 
 def registered(fw, bins, service, src):
@@ -447,9 +447,10 @@ def registered(fw, bins, service, src):
     for label, data in bins:
         if "/lib/" in label:
             continue
-        if label not in _REGS:
-            _REGS[label] = ls_registrations(data, label)
-        for name, buses in _REGS[label].items():
+        key = (fw.dir, label)
+        if key not in _REGS:
+            _REGS[key] = ls_registrations(data, label)
+        for name, buses in _REGS[key].items():
             last = service.rsplit(".", 1)[1]
             if name != service and not (
                 len(names) > 1 and name.startswith("com.webos.") and name.endswith("." + last)
