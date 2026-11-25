@@ -18,57 +18,7 @@ paks = [
 ]
 partmap = "k24-ombre"
 
-# No tuner yet (soc/k24.toml's US one is checked on ponytail and queue only): on 23.23.30
-# videooutputd crashes in V4l2vsc::getWindowProp at each foreground app change, tuner or not, and
-# a scan never starts. K24's rtk row and the tuner values it had before.
-[soc]
-base = "k24"
-broadcast_params = {}
-
-
-[[soc.modules]]
-name = "rtk"
-params = [
-    "rbus_phys=0x18000000",
-    "rbus_size=0x80000",
-    "pli_base=0x20000000",
-    "pli_max=0x60000000",
-    "pli_step=0x8000000",
-    "pli_rbus=0x10000000",
-    "pli_window=0x8000000",
-    "pli_uncached=0x8000000",
-    "pli_pad=0x10000",
-    "dcu1_base=0x20000000",
-    "dcu1_size=0x20000000",
-    "dcu2_base=0x40000000",
-    "dcu2_size=0x20000000",
-    "clock90k=0xb801b6b8,0xb801b6bc",
-    """nodes=rtkaudio,audio_hw,rtkvdec,rtkdemux,rtkdemod,rtkademod,vscdev,vfedev,vbedev,vpqdev,\
-        vpqmemc,vpqleddev,vodev,vivtdev,sys-misc,sys-intmicom,se0,gdma_hal_gal0,hdcp2dev,otp,\
-        mcp/core,mcp/cipher,mcp/dgst,mcp_core,mcp_cipher,mcp_dgst,rcp_core,venus_gpio,pwm0,\
-        rtd-logger,cec0,dolbyvisionEDR0,rtk_spi,rtk_rng,rtkdelivery,irtx-0,video28,video30,video31""",
-    "ucom_node=sys-intmicom",
-    "waits=cec0:0xc0386106",
-    "v4l2_vsc=video30,video31",
-    "pwms=pwm-I-0,pwm-I-1,pwm-I-2,pwm-I-3,pwm-M-0,pwm-M-1,pwm-M-2,pwm-M-3",
-    "gpio_lines=734",
-    "vt=vivtdev:1920:1080:60",
-    "rpc_word=100:12070:2:0x11000",
-    "tee=1",
-    "fb=1:512x2160",
-    "vsc_screen=3840,2160",
-    "gpio_level=71:1,87:1",
-    "gpio_usb_vbus=69,86",
-]
-derived = "rpc-table"
-
-[[soc.modules]]
-name = "webos_tv"
-params = [
-    "platform=wfm",
-    "frontends=2",
-    "delsys=3+16+1+2+5+6+18,3+16+1+2+5+6+18",
-    "version=2.1.0",
-    "version_cmd=0x68",
-    "atv=2",
-]
+# The tuner is soc/k24.toml's US one, as on ponytail and queue: W24H ombre's libdil_tu_plugin,
+# webos_tv.ko and atsc_dtv_soc.ko are W24P ombre's (33.20.23) byte for byte, a build that scans and
+# plays with these values. The videooutputd crash in V4l2vsc::getWindowProp that kept the tuner off
+# is fixed in rtk-vsc and lgemu.
