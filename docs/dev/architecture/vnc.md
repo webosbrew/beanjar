@@ -696,6 +696,36 @@ memory with the listener, and 2D updates are only the fallback. With a client th
 host's CPU no longer spent on an unwatched beanjar-vnc goes to TCG), so per update it costs less
 (about 4.2% of a core per update a second in VNC before, 3.2% after) though the totals rose.
 
+## Against WayVNC on the Pi
+
+What watching a VM costs the Pi 5 through beanjar-vnc, against the setup it replaces: the GTK
+viewer on the desktop (labwc, 1920x1080) with WayVNC capturing the whole desktop. Measured
+2026-11-25 (22:25 to 22:38 UTC) on the Pi 5 (KVM), W22O 43.21.89.01 (webOS 26, 2560 MiB, nat and
+mitm), the checkout's build of a47c617, nothing else of ours running. The same RFB client for both,
+`tests/lib/rfbclient.py` with noVNC's encodings (Tight JPEG, continuous updates); beanjar-vnc on
+its `--local` socket at its default 1280x720, `--fps 60` or `--fps 30`; WayVNC as a second
+instance like the desktop's (`wayvnc` 0.10.2, neatvnc 1.0.4, `--gpu`, its default 30 fps limit),
+but on a Unix socket without authentication, so with no TLS; the viewer window at its default
+size. "Playing" is a looping 1280x720 60 fps H.264 test pattern in the video test app
+(`tests/regress/video/app`, a 960x540 window); "idle" is Home with nothing moving (a key pressed
+before each window keeps the screen on). 20 s windows, three setups in turn, two rounds in
+alternating order. CPU in % of one core (all threads; the host's is all cores busy, other
+users' services included):
+
+| | client updates/s | watching it | QEMU | media-helper | host |
+|---|---|---|---|---|---|
+| playing, beanjar-vnc at 60 | 57.5, 57.8 | 72.0, 75.0 (main thread 57, 60) | 55.7, 60.0 | 42.5, 44.2 | 236, 235 |
+| playing, beanjar-vnc at 30 | 30.0, 30.0 | 40.3, 38.9 (main thread 32, 31) | 48.2, 49.2 | 38.2, 36.9 | 186, 180 |
+| playing, viewer and WayVNC | 28.0, 28.4 | 66.8, 67.7: WayVNC 34.1, 33.8, viewer 26.6, 27.3, labwc 6.1, 6.6 | 55.9, 55.7 | 44.0, 43.8 | 240, 232 |
+| idle, beanjar-vnc at 60 | 0 | 1.3, 1.3 | 22.2, 23.1 | 0.6, 0.5 | 37, 38 |
+| idle, beanjar-vnc at 30 | 0 | 1.4, 1.3 | 23.5, 26.8 | 0.5, 0.5 | 38, 42 |
+| idle, viewer and WayVNC | 1.3, 1.2 | 3.7, 3.6: WayVNC 1.0, 1.0, viewer 2.4, 2.3, labwc 0.3, 0.3 | 23.0, 24.8 | 0.6, 0.6 | 43, 39 |
+
+At the same 30 updates a second beanjar-vnc takes about 40% of a core where the viewer, WayVNC
+and the compositor take 67%, and the host as a whole is about 50 points lower; at 60 it sends
+twice the updates for 72 to 75%, a little more than the old setup at 30. Idle, both are small. beanjar-vnc renders
+on V3D there, not llvmpipe (`GL OpenGL ES 3.1 Mesa 26.2.2; V3D 7.1.7.0` in its log).
+
 ## Thumbnails
 
 beanjar-web's cards ask for a 384x216 picture of each running VM every 5 s while they are on
