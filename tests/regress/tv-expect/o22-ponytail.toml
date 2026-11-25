@@ -24,8 +24,41 @@ url = "http://lgtvonline.lge.com/"
 "connman.webos" = { present = true, source = "com-webos-service-68cf5d" }
 "mrcu.getAPIVersion" = { present = true, source = "com-webos-service-mrcu-eb70f2" }
 "mrcu.getSensorState" = { present = true, source = "com-webos-service-mrcu-5eb836" }
+"nyx.DeviceInfo.board_type" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.bt_addr" = { design = true, present = false, source = "absent-by-design-no-8456a5" }
+"nyx.DeviceInfo.device_name" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.hardware_id" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.hardware_revision" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.installer" = { present = false, source = "nyx-cmd-has-no-bf4d6c" }
+"nyx.DeviceInfo.keyboard_type" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.modem_present" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.nduid" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
 "nyx.DeviceInfo.output" = { present = true, source = "nyx-cmd-prints-its-05b03e" }
+"nyx.DeviceInfo.product_id" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.radio_type" = { present = false, source = "nyx-cmd-has-no-06d854" }
+"nyx.DeviceInfo.ram_size" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.serial_number" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.storage_free" = { present = false, source = "nyx-cmd-has-no-b43bcf" }
+"nyx.DeviceInfo.storage_size" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.DeviceInfo.wifi_addr" = { design = true, present = false, source = "absent-by-design-no-3b6e34" }
+"nyx.DeviceInfo.wired_addr" = { present = true, source = "nyxDeviceInfo-module-c10e98" }
+"nyx.OSInfo.core_os_kernel_config" = { present = false, source = "nyx-cmd-has-no-81598a" }
+"nyx.OSInfo.core_os_kernel_version" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.core_os_name" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.core_os_release" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.core_os_release_codename" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.encryption_key_type" = { present = true, source = "nyxOSInfo-module-7da84e" }
 "nyx.OSInfo.output" = { present = true, source = "nyx-cmd-prints-its-05b03e" }
+"nyx.OSInfo.webos_api_version" = { present = false, source = "nyx-cmd-has-no-4d6548" }
+"nyx.OSInfo.webos_build_datetime" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_build_id" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_imagename" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_manufacturing_version" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_name" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_prerelease" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_release" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_release_codename" = { present = true, source = "nyxOSInfo-module-7da84e" }
+"nyx.OSInfo.webos_release_platformcode" = { present = true, source = "nyxOSInfo-module-7da84e" }
 "sam.getAppLoadStatus" = { present = true, source = "com-webos-applicationManager-by-047c3f" }
 "settings.caption.captionAnalog" = { present = true, source = "defaultSettings-json-caption-aa6372" }
 "settings.caption.captionBgColor" = { present = true, source = "defaultSettings-json-caption-79291a" }
@@ -140,6 +173,8 @@ what = "User Guide"
 
 [tee]
 clients = []
+node = false
+node_source = "no module of the chip's guest/targets/soc row has tee=1, so the VM has no /dev/tee0"
 source = "no TEE client: none of the 2818 ELF files under bin/, sbin/, lib/, usr/bin/, usr/sbin/, usr/lib/, usr/libexec/, bsp/ of rootfs.pak, bsppart.pak, otncabi-global.pak, otycabi-global.pak, fonts-global.pak, license.pak, lxboot.pak, kernel.pak, tzfw.pak, intmicom.pak names /dev/tee"
 tas = []
 
@@ -169,6 +204,8 @@ present = true
 source = "rootfs.pak:/usr/lib/libplayerAPIs.so.1.0.0 exports all 8 StarfishMediaAPIs symbols the app looks up"
 
 [sources]
+absent-by-design-no-3b6e34 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-global.pak:/usr/lib/nyx/modules/nyxDeviceInfo.module)"
+absent-by-design-no-8456a5 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-global.pak:/usr/lib/nyx/modules/nyxDeviceInfo.module runs hcitool, which the firmware does not have)"
 com-palm-connectionmanager-by-a21bd3 = "com.palm.connectionmanager by usr/share/luna-service2/roles.d/com.webos.service.wowplay.role.json (com.palm. names mapped by usr/sbin/ls-hubd), usr/share/luna-service2/services.d/com.webos.service.wowplay.service (com.palm. names mapped by usr/sbin/ls-hubd) -> /usr/sbin/wowplay; usr/share/luna-service2/roles.d/webos-connman-adapter.role.json (com.palm. names mapped by usr/sbin/ls-hubd), usr/share/luna-service2/services.d/webos-connman-adapter.service (com.palm. names mapped by usr/sbin/ls-hubd) -> /usr/sbin/webos-connman-adapter; 'getStatus' in the / table rootfs.pak:/usr/sbin/webos-connman-adapter (com.webos.service.connectionmanager, any) registers"
 com-palm-systemservice-by-67dd09 = "com.palm.systemservice by usr/share/luna-service2/roles.d/com.webos.service.systemservice.service.role.json (com.palm. names mapped by usr/sbin/ls-hubd), usr/share/luna-service2/services.d/com.webos.service.systemservice.service (com.palm. names mapped by usr/sbin/ls-hubd) -> /usr/sbin/LunaSysService; 'getSystemTime' in rootfs.pak:/usr/sbin/LunaSysService"
 com-webos-applicationManager-by-047c3f = "com.webos.applicationManager by usr/share/ls2/roles/prv/com.webos.app.liveginga.json, usr/share/ls2/roles/pub/com.webos.app.liveginga.json -> /usr/palm/applications/com.webos.app.liveginga/com.webos.app.liveginga; usr/share/luna-service2/roles.d/com.webos.sam.role.json, usr/share/luna-service2/services.d/com.webos.sam.service -> /usr/sbin/sam; 'getAppLoadStatus' in rootfs.pak:/usr/sbin/sam"
@@ -201,4 +238,11 @@ getSystemInfo-key-baf79e = "getSystemInfo key contiLangCountry: no string 'conti
 getSystemInfo-key-platformName-e12666 = "getSystemInfo key platformName: no string 'platformName' in rootfs.pak:/usr/sbin/tvservicemock (and 4 libraries of the firmware they NEED)"
 getSystemInfo-key-tvSystemName-f0f4ce = "getSystemInfo key tvSystemName: no string 'tvSystemName' in rootfs.pak:/usr/sbin/tvservicemock (and 4 libraries of the firmware they NEED)"
 no-role-or-services-91e887 = "no role or services.d file provides com.webos.service.camera (usr/share/ls2/roles, usr/share/luna-service2/roles.d, services.d)"
+nyx-cmd-has-no-06d854 = "rootfs.pak:/usr/bin/nyx-cmd has no query radio_type"
+nyx-cmd-has-no-4d6548 = "rootfs.pak:/usr/bin/nyx-cmd has no query webos_api_version"
+nyx-cmd-has-no-81598a = "rootfs.pak:/usr/bin/nyx-cmd has no query core_os_kernel_config"
+nyx-cmd-has-no-b43bcf = "rootfs.pak:/usr/bin/nyx-cmd has no query storage_free"
+nyx-cmd-has-no-bf4d6c = "rootfs.pak:/usr/bin/nyx-cmd has no query installer"
 nyx-cmd-prints-its-05b03e = "nyx-cmd prints its value only"
+nyxDeviceInfo-module-c10e98 = "otycabi-global.pak:/usr/lib/nyx/modules/nyxDeviceInfo.module"
+nyxOSInfo-module-7da84e = "otycabi-global.pak:/usr/lib/nyx/modules/nyxOSInfo.module"

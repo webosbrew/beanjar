@@ -22,7 +22,8 @@ tests/regress/smp/smpcheck.c looks up (smp_of). A check is expected (present) un
            NEEDs from the firmware)
   key      getSystemInfo: the key is not a string of that executable; getSystemSettings: no
            etc/palm/defaultSettings.json record of the category has it
-  nyx      nyx-cmd's plugin (usr/lib/nyx/nyxcmd/libnyxcmdModule<M>.so) has no such query; for
+  nyx      nyx-cmd's plugin (usr/lib/nyx/nyxcmd/libnyxcmdModule<M>.so, or usr/bin/nyx-cmd where
+           the module is linked in) has no such query; for
            DeviceInfo, the module's device_info_query sends the query type to its default case
            (NYX_ERROR_NOT_IMPLEMENTED), or the module's command is not in the firmware (hcitool)
 getSystemInfo's UHD, where tvservicemock answers it from configd's tv.hw.panelResolution, also
@@ -578,9 +579,16 @@ def nyx_rows(fw, pak_order):
     """{check id: (present, source)} of nyx-cmd's OSInfo and DeviceInfo queries."""
     rows = {}
     for module, keys in (("OSInfo", tvsuite.NYX_OS_INFO), ("DeviceInfo", tvsuite.NYX_DEVICE_INFO)):
-        plugin = fw.find(f"usr/lib/nyx/nyxcmd/libnyxcmdModule{module}.so")
+        # the query plugin, or (W22 and later builds with no nyxcmd directory) nyx-cmd itself,
+        # which has the same module linked in
+        plugin = fw.find(f"usr/lib/nyx/nyxcmd/libnyxcmdModule{module}.so") or fw.find(
+            "usr/bin/nyx-cmd"
+        )
         text = fw.read(*plugin) if plugin else b""
-        mod = fw.find(f"usr/lib/nyx/modules/nyx{module}Main.module", pak_order)
+        # the module is nyx<M>Main.module (W22's builds with nyx-cmd linking it in: nyx<M>.module)
+        mod = fw.find(f"usr/lib/nyx/modules/nyx{module}Main.module", pak_order) or fw.find(
+            f"usr/lib/nyx/modules/nyx{module}.module", pak_order
+        )
         mdata = fw.read(*mod) if mod else b""
         table = jump_table(mdata, "device_info_query") if module == "DeviceInfo" and mdata else None
         # the answer for a query type the module does not implement: the case of the battery's two
@@ -599,10 +607,10 @@ def nyx_rows(fw, pak_order):
                 ):
                     continue  # never a query of nyx-cmd's
                 if plugin:
-                    rows[cid] = (False, f"rootfs.pak:/{plugin[1]} has no query {key}")
+                    rows[cid] = (False, f"{plugin[0]}:/{plugin[1]} has no query {key}")
                 continue
             if not mod:
-                rows[cid] = (True, f"rootfs.pak:/{plugin[1]} (no nyx{module}Main.module found)")
+                rows[cid] = (True, f"{plugin[0]}:/{plugin[1]} (no nyx{module} module found)")
                 continue
             src = f"{mod[0]}:/{mod[1]}"
             if nyi is not None and table[0].get(idx) == nyi:

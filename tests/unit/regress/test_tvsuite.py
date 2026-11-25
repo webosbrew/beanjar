@@ -2233,6 +2233,33 @@ class SmpTest(unittest.TestCase):
             ["_ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_"],
         )
 
+    def test_nyx_rows_without_plugin_directory(self):
+        """W22 builds link nyx-cmd's OSInfo and DeviceInfo in (no nyxcmd/libnyxcmdModule*.so) and
+        name the modules nyx<M>.module: the rows come from usr/bin/nyx-cmd and those modules."""
+
+        class Fw:
+            files = {
+                "usr/bin/nyx-cmd": b"hardware_id nduid core_os_release webos_release",
+                "usr/lib/nyx/modules/nyxOSInfo.module": b"",
+                "usr/lib/nyx/modules/nyxDeviceInfo.module": b"",
+            }
+
+            def find(self, path, paks=None):
+                return ("rootfs.pak", path) if path in self.files else None
+
+            def read(self, pak, path):
+                return self.files[path]
+
+        rows = gen.nyx_rows(Fw(), ["rootfs.pak"])
+        self.assertEqual(
+            rows["nyx.DeviceInfo.hardware_id"],
+            (True, "rootfs.pak:/usr/lib/nyx/modules/nyxDeviceInfo.module"),
+        )
+        self.assertTrue(rows["nyx.OSInfo.webos_release"][0])
+        present, src = rows["nyx.DeviceInfo.storage_free"]
+        self.assertFalse(present)
+        self.assertIn("rootfs.pak:/usr/bin/nyx-cmd has no query storage_free", src)
+
 
 if __name__ == "__main__":
     unittest.main()
