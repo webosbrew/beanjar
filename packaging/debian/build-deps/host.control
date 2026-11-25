@@ -101,5 +101,6 @@ Depends: meson,
  iproute2,
  openssh-client,
  openssl,
- squashfs-tools
+ squashfs-tools,
+ mesa-utils
 Description: Beanjar host build, viewer, GTK manager, tests and VM running
