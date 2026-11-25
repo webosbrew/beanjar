@@ -1,0 +1,6 @@
+# Emulator: no PowerVR kernel modules (bsppart's lib/modules/3.10.19-p.58.digya.k2lp.2/kernel:
+# drm_nulldisp.ko and pvrsrvkm.ko, built for Realtek's 3.10.19 kernel) and no pvrsrvctl. Kept as a
+# no-op task because surface-manager starts on "stopped gpu-libs".
+script
+	echo "[Upstart Job: $UPSTART_JOB] emulator: no PowerVR driver"
+end script

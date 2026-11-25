@@ -324,14 +324,17 @@ static void blocks_release(struct file *owner)
 
 /* ---- /dev/auth: PLI, Realtek's auth device (mm/auth.c, mm/tlbmap.c) ---- */
 
-#define AUTH_IOCQ_MAP        _IOW('k', 1, char[20])
-#define AUTH_IOCQ_ALLOC      _IOW('k', 2, struct auth_alloc32)
-#define AUTH_IOCQ_FREE       _IO('k', 3)
-#define AUTH_IOCQ_FREEALL    _IO('k', 4)
-#define AUTH_IOCQ_LISTALL    _IO('k', 5)
-#define AUTH_IOCS_FLUSHVIRT  _IOW('k', 6, struct auth_region32)
-#define AUTH_IOCS_FLUSHPHYS  _IOW('k', 7, struct auth_region32)
-#define AUTH_IOCQ_ALLOCAV    _IOW('k', 8, struct auth_alloc32)
+#define AUTH_IOCQ_MAP       _IOW('k', 1, char[20])
+#define AUTH_IOCQ_ALLOC     _IOW('k', 2, struct auth_alloc32)
+#define AUTH_IOCQ_FREE      _IO('k', 3)
+#define AUTH_IOCQ_FREEALL   _IO('k', 4)
+#define AUTH_IOCQ_LISTALL   _IO('k', 5)
+#define AUTH_IOCS_FLUSHVIRT _IOW('k', 6, struct auth_region32)
+#define AUTH_IOCS_FLUSHPHYS _IOW('k', 7, struct auth_region32)
+#define AUTH_IOCQ_ALLOCAV   _IOW('k', 8, struct auth_alloc32)
+/* W16P's KADP (K2LP) passes the older mem_alloc_struct, without the name: the same requests */
+#define AUTH_IOCQ_ALLOC8     _IOW('k', 2, struct auth_region32)
+#define AUTH_IOCQ_ALLOCAV8   _IOW('k', 8, struct auth_region32)
 #define AUTH_IOCQ_FREEAV     _IO('k', 9)
 #define AUTH_IOCH_DUMPMEM    _IO('k', 10)
 #define AUTH_IOCSINITLOGBUF  _IOW('k', 11, struct auth_region32)
@@ -509,13 +512,17 @@ static long auth_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     case AUTH_IOCQ_MAP: /* the auth string ("Realtek DVR") is not checked */
         return auth_map(file->private_data);
     case AUTH_IOCQ_ALLOC:
-        if (copy_from_user(&a, uarg, sizeof(a)))
+    case AUTH_IOCQ_ALLOC8:
+        memset(&a, 0, sizeof(a));
+        if (copy_from_user(&a, uarg, _IOC_SIZE(cmd)))
             return 0;
         return auth_alloc(file, &a);
     case AUTH_IOCQ_FREE:
         return auth_free(file, arg);
     case AUTH_IOCQ_ALLOCAV: /* a PA, not mapped */
-        if (copy_from_user(&a, uarg, sizeof(a)))
+    case AUTH_IOCQ_ALLOCAV8:
+        memset(&a, 0, sizeof(a));
+        if (copy_from_user(&a, uarg, _IOC_SIZE(cmd)))
             return 0;
         b = block_alloc(file, PAGE_ALIGN(a.size), a.flag, true);
         return b ? b->pa : 0;

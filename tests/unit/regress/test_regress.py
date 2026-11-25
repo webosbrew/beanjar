@@ -58,6 +58,7 @@ W19H = "05.50.00.01-HE_DTV_W19H_AFADATAA"
 W19O = "05.50.00.01-HE_DTV_W19O_AFABATAA"
 W19K = "05.50.00.01-HE_DTV_W19K_AFADATAA"
 W17P = "06.10.75.01-HE_DTV_W17P_AFADABAA"
+W16P = "05.70.50.01-HE_DTV_W16P_AFADATAA"
 W21O = "03.70.05.01-HE_DTV_W21O_AFABATAA"
 W21K = "03.70.25.01-HE_DTV_W21K_AFADATAA"
 W23M = ("13.40.97", "23.25.55", "33.31.61", "43.22.75")
@@ -89,6 +90,7 @@ FOUND = {
     "m3-goldilocks": fws(W18R),
     "m3r-goldilocks2": fws(W19R),
     "lm18a-goldilocks": fws(W18A),
+    "k2lp-dreadlocks": fws(W16P),
     "k3lp-dreadlocks2": fws(W17P),
     "k5lp-goldilocks2": fws(W19P),
     "k6lp-jhericurl": fws(W20L),

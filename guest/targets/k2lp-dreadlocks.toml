@@ -1,0 +1,41 @@
+models = ["W16P"]
+
+# W16P dreadlocks (05.70.50, "dreadlocks-digya" 3.4, HE_DTV_W16P_AFADATAA, the ATSC build):
+# dreadlocks' paks (named -atsc, which the release's -dvb names resolve to), mount points and
+# EEPROM layout (W16P's tvservice places its ModelInfoDB, ToolOptionDB, LastInputDB and
+# ContinentOptionDB at W16R's offsets with W16R's marks). Its partition table is its own
+# (lginit_app2 of tvservice-atsc, as the release reads it: p28 tvservice, p31 otncabi, p32 otycabi,
+# p33 fonts, p34 smartkey, p36 license, p52-p54 the state partitions), with the release's names.
+[release]
+base = "dreadlocks"
+# Realtek's 3.10.19 kernel (kernel.pak: no IKCONFIG, an empty modules.builtin.bin): its strings
+# name usbhid, uhid, joydev, xpad, uvcvideo, usb-storage, cdc_acm, snd-usb-audio and the pl2303,
+# sierra and option serial drivers, and only hid-generic of the HID drivers; no ipw, ftdi_sio or
+# codepage 949. So dreadlocks' list (W16R's MStar kernel) less ipw, nls_cp949 and the DragonRise,
+# Logitech, Sony and Zeroplus HID drivers.
+peripherals = [
+    "sit",
+    "usbhid", "uhid", "joydev", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "nls_iso8859-1", "snd-usb-audio", "cdc-acm", "pl2303", "option", "sierra", "lgfs",
+]
+
+# dreadlocks' records, read from the ATSC build's tvservice
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20130002
+model_field = [4, 13]
+serial_field = [17, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1BD4
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1B48
+factory_offset = 0x294
+local_key = { word = 3, offset = 18, width = 1, names = ["joystick", "onekey"] }
+debug_status_offset = 0x1A1

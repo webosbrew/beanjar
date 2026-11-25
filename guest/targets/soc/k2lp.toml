@@ -1,0 +1,68 @@
+# The Realtek RTD2999L "K2LP" (U-Boot's chip=K2LP), W16P's SoC: K3LP's generation before, Realtek's
+# drivers built into its 3.10.19 kernel (3.10.19-p.58.digya.k2lp.2, the older REALTEK_* driver
+# options) under bsppart's KADP (libkadaptor, libhal_rtd2999l and the split libhal_*), in rtk.ko
+# with K3LP's values but the PLI layout: pli_getIOAddress maps a register at base + 0x68000000 + its
+# 0xb8xxxxxx address, RBUS at base + 0x20000000, and pli_allocContinuousMemoryMesg reads a block's
+# uncached alias at + 0x10000000, through the older 8-byte AUTH_IOCQ_ALLOC (0x40086b02; rtk.ko
+# takes both). The rest as K3LP's: K5LP's /dev/auth map and DCU windows, the 90 kHz clock, rtkaudio's
+# allocs and shared states, four RPC rings (rpc12..15: the KCPU's TeeManager, program 501; no
+# OP-TEE client), the firmware's own RPC answers (derived "rpc-table"), and the scaler's idle
+# capture with three frame buffers.
+# The nodes are those libkadaptor and bsppart's libhal_* open, as K3LP's less rtkteeproxy,
+# rtd-logger and watch, which W16P's KADP does not name.
+# The I2C devices: RELEASE.cfg's "[i2c]MICOM:1:0x52:2", "[i2c]NVM:4:0xA0:1" and
+# "[i2c]NTP7515:4:0x54:1" (the AMP_NTP7515_1AMP ToolOpt3 selects), on /dev/i2c-0 to -7, which
+# KADP's RHAL_I2C opens. tvservice's OSA_CfgGetModelCfg keeps each line's channel, and
+# DILC_I2C_Read/_Write pass it to libhal_i2c's HAL_I2C_Read/_Write, which hands it to KADP's
+# RHAL_I2CRead_Mapping/_Write_Mapping in mode 1. W16P's KADP maps the channels differently from
+# W17P's (its remap table: 1 to 2, 2 to 0, 4 to 1, 6 to 3; 3 and 5 refused; the 8-bit address
+# halved), so the micom is on bus 2 (0x29) and the EEPROM and the amplifier, channel 4, on bus 1
+# (0x50, 0x2a). Booting with the micom and the EEPROM on each other bus agrees: only bus 2 got
+# the micom's power-state read ("firmware ready") and the key polls, and only bus 1 gave tvservice
+# the board's model name and US area (elsewhere it fell back to RELEASE.cfg's Korean defaults).
+# The GPU is a PowerVR Rogue G6110 (DDK 1.6), which the gl layer replaces (the k3lp soc layer).
+
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43UH6030's area, a US set's, the US group of W16P's tables (host/tools/research/model-config.py
+# with --set szCountryGroupCode=US): nContinentIdx 10 ("US" in its tvservice's _aDefineContinent),
+# LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, from W16P's RELEASE.cfg (the UH78 defaults), read by
+# host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6,7", "i2c_dev=micom:2:0x29,nvm:1:0x50,amp:1:0x2a",
+]
+
+[[modules]]
+name = "rtk"
+params = [
+    "rbus_phys=0x18000000",
+    "rbus_size=0x80000",
+    # the first base low enough that its 512 MiB space (RBUS at + 0x20000000) ends below 0x40000000,
+    # where a 32-bit process's mappings start: from 0x20000000 the space ran into them
+    "pli_base=0x18000000",
+    "pli_max=0x60000000",
+    "pli_step=0x8000000",
+    "pli_rbus=0x20000000",
+    "pli_window=0x10000000",
+    "pli_uncached=0x10000000",
+    "pli_pad=0x10000",
+    "dcu1_base=0x20000000",
+    "dcu1_size=0x20000000",
+    "dcu2_base=0x40000000",
+    "dcu2_size=0x20000000",
+    "clock90k=0xb801b690,0xb801b694",
+    "rpc_cpus=4",
+    """nodes=rtkaudio,rtkvdec,rtkdemux,rtkdemod,rtkademod,vscdev,vfedev,vbedev,vpqdev,vpqmemc,\
+        vpqleddev,vodev,vivtdev,sys-misc,se0,gdma_hal_gal0,hdcp2dev,mcp/core,mcp/cipher,mcp/dgst,\
+        mcp_core,mcp_cipher,mcp_dgst,venus_gpio,pwm0,dolbyvisionEDR0,tp""",
+    "allocs=rtkaudio:0x4004610a:0x4004610b",
+    "stores=rtkaudio:0x80046107:0x40046106",
+    "pwms=pwm-I-0,pwm-I-1,pwm-I-2,pwm-I-3,pwm-M-0,pwm-M-1,pwm-M-2,pwm-M-3",
+    "vt=vivtdev:1920:1080:60:3",
+    "rpc_fn009=201:248",
+    "rpc_audio_config=201:16",
+    "rpc_spdifo_source=201:90",
+]
+derived = "rpc-table"
