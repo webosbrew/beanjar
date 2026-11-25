@@ -29,6 +29,8 @@ concurrency:
 
 jobs:
   host:
+    # Automatic runs only in the public repository; the private one runs these by hand
+    if: github.repository == 'webosbrew/beanjar' || github.event_name == 'workflow_dispatch'
     name: host (${{ matrix.arch }})
     strategy:
       fail-fast: false
@@ -78,6 +80,7 @@ jobs:
   # beanjar-guest is not built here: a manual run fetches the newest release of the host's contract
   # on the public repository, checked against its SHA256SUMS
   guest:
+    # By hand only, in either repository
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15

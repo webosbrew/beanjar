@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   lint:
+    # Automatic runs only in the public repository; the private one runs these by hand
+    if: github.repository == 'webosbrew/beanjar' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     container: debian:trixie
     timeout-minutes: 15
@@ -37,6 +39,8 @@ jobs:
         run: scripts/tests-ci.sh lint
 
   unit:
+    # Automatic runs only in the public repository; the private one runs these by hand
+    if: github.repository == 'webosbrew/beanjar' || github.event_name == 'workflow_dispatch'
     name: unit (${{ matrix.arch }})
     strategy:
       fail-fast: false

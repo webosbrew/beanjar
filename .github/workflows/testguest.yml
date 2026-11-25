@@ -39,6 +39,8 @@ concurrency:
 
 jobs:
   check:
+    # Automatic runs only in the public repository; the private one runs these by hand
+    if: github.repository == 'webosbrew/beanjar' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     container: debian:trixie
     timeout-minutes: 45
