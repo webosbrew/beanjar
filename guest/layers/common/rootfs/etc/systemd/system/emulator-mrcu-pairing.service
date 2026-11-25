@@ -1,11 +1,13 @@
 # Emulator: a paired Magic Remote's record on the common data partition, made once when the state
-# has none (usr/libexec/beanjar/emulator-mrcu-pairing). Pulled in by lginput2.service
-# (lginput2.service.wants) and done before it starts, after mount-readwrite mounted the partition.
-# The systemd releases' counterpart of etc/init/emulator-mrcu-pairing.conf.
+# has none, and the emulated Bluetooth controller's address and module.conf where btmtk_usb.ko is
+# one (usr/libexec/beanjar/emulator-mrcu-pairing). Pulled in by lginput2.service and
+# webos-bluetooth-service.service (their .wants) and done before both start, after
+# mount-readwrite mounted the partition. The systemd releases' counterpart of
+# etc/init/emulator-mrcu-pairing.conf.
 [Unit]
-Description=Emulator: a paired Magic Remote's record
+Description=Emulator: a paired Magic Remote's record, the Bluetooth controller's address
 After=mount-readwrite.service
-Before=lginput2.service
+Before=lginput2.service webos-bluetooth-service.service
 
 [Service]
 Type=oneshot

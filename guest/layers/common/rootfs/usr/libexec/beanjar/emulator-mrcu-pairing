@@ -17,9 +17,18 @@
 #   fwVer = %02d.%02d.%02d.%d...      W21A: Name, BDAddr, fwVer, Battery, Paired Time
 #   fwVer = %02d.%02d.%02d.%d          W18, W19: Name, BDAddr, fwVer
 # On webOS 6 on, lginput2 also needs bluetooth2 to list an adapter with the HID-host profile before
-# isPaired answers true; without a Bluetooth controller the record is read but not reported.
+# isPaired answers true: the controller below.
+#
+# The controller (webOS 6 on, where the initramfs loaded btmtk_usb.ko with controller=1): the
+# adapter's address, made with the record and kept beside it in the state (btsvc/emulator-bdaddr,
+# a random unicast locally administered one), is given to the module before the Bluetooth service
+# starts; and the firmware's own udev script for its MediaTek module (bt_module_info_update.sh,
+# with the arguments its 90-internal-bt.rules passes for LG's MT7668, as udev runs it at each boot
+# on a real set) writes btsvc/module.conf, from which the service loads the stack. The script's
+# stop, restart and rmmod of the service find no-ops: it runs before the service.
+#
 # See docs/research/magic-remote-pairing.md. Run by etc/systemd/system/emulator-mrcu-pairing.service
-# (systemd) and etc/init/emulator-mrcu-pairing.conf (Upstart).
+# (systemd) and etc/init/emulator-mrcu-pairing.conf (Upstart, webOS 4: no controller).
 
 LGINPUT=/usr/sbin/lginput2
 DATA=/mnt/lg/cmn_data
@@ -33,6 +42,63 @@ has() { # has STRING: lginput2 holds STRING
 	grep -aqF "$1" "$LGINPUT"
 }
 
+new_addr() { # a unicast, locally administered address: the first octet's low bits 10
+	set -- $(od -An -N6 -tu1 /dev/urandom)
+	printf '%02x:%02x:%02x:%02x:%02x:%02x\n' $(($1 & 252 | 2)) "$2" "$3" "$4" "$5" "$6"
+}
+
+controller() {
+	params=/sys/module/btmtk_usb/parameters
+	[ "$(cat $params/controller 2>/dev/null)" = Y ] || return 0
+	mkdir -p "$DATA/btsvc"
+	f=$DATA/btsvc/emulator-bdaddr
+	if [ ! -s "$f" ]; then
+		new_addr > "$f.$$" && sync && mv "$f.$$" "$f" && sync
+		log "adapter address $(cat "$f") ($f)"
+	fi
+	cat "$f" > $params/bdaddr || log "btmtk_usb refused the address in $f"
+
+	# udev's run of the stock script for LG's MT7668 (the first btmtk_usb.ko line of the rules)
+	rules=/etc/udev/rules.d/90-internal-bt.rules
+	line=$(grep -m 1 'BT_KO_NAME}="btmtk_usb.ko"' $rules 2>/dev/null)
+	[ -n "$line" ] || return 0
+	vid=$(echo "$line" | sed -n 's/.*ATTR{idVendor}=="\([^"]*\)".*/\1/p')
+	pid=$(echo "$line" | sed -n 's/.*ATTR{idProduct}=="\([^"]*\)".*/\1/p')
+	run=${line#*RUN+=\"}
+	run=${run%\"*}
+	args=
+	set -f
+	for t in $run; do
+		t=${t#\'}
+		t=${t%\'}
+		case $t in
+		'$attr{idVendor}') t=$vid ;;
+		'$attr{idProduct}') t=$pid ;;
+		'$env{'*)
+			k=${t#\$env\{}
+			k=${k%\}}
+			t=$(echo "$line" | sed -n "s/.*ENV{$k}=\"\([^\"]*\)\".*/\1/p")
+			;;
+		esac
+		args="$args $t"
+	done
+	set +f
+	noop=/run/emulator-bt-noop
+	mkdir -p $noop
+	for c in stop restart rmmod; do
+		printf '#!/bin/sh\nexit 0\n' > $noop/$c
+		chmod 755 $noop/$c
+	done
+	PATH=$noop:$PATH $args || log "$args: status $?"
+	log "module.conf: $(tr '\n' ' ' < "$DATA/btsvc/module.conf" 2>/dev/null)"
+}
+
+grep -q " $DATA " /proc/mounts || {
+	log "$DATA is not mounted; no record"
+	exit 0
+}
+controller
+
 [ -f "$LGINPUT" ] || exit 0
 if has "$DATA/mrcu/mrcu1.info"; then
 	dir=$DATA/mrcu
@@ -41,10 +107,6 @@ elif has "$DATA/btsvc/mrcu1.info"; then
 else
 	exit 0 # no file-based pairing record in this release
 fi
-grep -q " $DATA " /proc/mounts || {
-	log "$DATA is not mounted; no record"
-	exit 0
-}
 # webOS 6 on moves btsvc/*.info into mrcu/ at start (lginput_db_moveDevInfoFile): either is a record
 for f in "$DATA/mrcu/mrcu1.info" "$DATA/btsvc/mrcu1.info"; do
 	[ -s "$f" ] && exit 0
@@ -55,9 +117,7 @@ name=$(tr '\0' '\n' < "$LGINPUT" | grep -xE 'LGE MR[0-9]{2}(GA)?' | sort -u | ta
 [ -n "$name" ] || name="LGE MR18"
 year=$(echo "$name" | sed 's/^LGE MR\([0-9][0-9]\).*/\1/')
 
-# a unicast, locally administered address: the first octet's low bits 10
-set -- $(od -An -N6 -tu1 /dev/urandom)
-addr=$(printf '%02x:%02x:%02x:%02x:%02x:%02x' $(($1 & 252 | 2)) "$2" "$3" "$4" "$5" "$6")
+addr=$(new_addr)
 day=$(date +%Y%m%d)
 time=$(date +%H%M%S | sed 's/^0*//')
 

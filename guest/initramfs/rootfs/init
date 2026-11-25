@@ -202,6 +202,21 @@ ROOTDEV=$(disk "$ROOTFS")
 mkdir -p /lower/rootfs
 mount -t squashfs -o ro "$ROOTDEV" /lower/rootfs || fail "cannot mount $ROOTDEV"
 
+# --- a Bluetooth controller (btmtk_usb.ko controller=1, guest/kernel/modules/btmtk_usb): where
+# the firmware's udev rules name MediaTek's btmtk_usb.ko for the TV's Bluetooth module (webOS 6
+# on: 90-internal-bt.rules) and its stack opens /dev/stpbt (libbt-vendor_mtk.so), the module the
+# stock stack finds on a real set, at netlink family 29 (every webOS 6 on service checked:
+# docs/research/magic-remote-pairing.md). The guest's emulator-mrcu-pairing gives it the VM's
+# address. Not where the chip table loads btmtk_usb already (webOS 4: no controller). ---
+if [ ! -d /sys/module/btmtk_usb ] && [ -f /lower/rootfs/usr/lib/libbt-vendor_mtk.so ] &&
+	grep -q 'BT_KO_NAME}="btmtk_usb.ko"' /lower/rootfs/etc/udev/rules.d/90-internal-bt.rules 2>/dev/null; then
+	if insmod /lib/modules/btmtk_usb.ko family=29 controller=1 2>/run/insmod.err; then
+		log "btmtk_usb.ko loaded: a Bluetooth controller at /dev/stpbt"
+	else
+		log "btmtk_usb.ko not loaded: $(cat /run/insmod.err)"
+	fi
+fi
+
 # --- state disks (boot.conf's STATE_DISKS; STATE in host/core/beanjar/qemu.py): the TV's
 # read-write eMMC partitions. The firmware's own fstabs and scripts reach them as
 # /dev/mmcblk0pN (made below).

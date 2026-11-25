@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# btmtk_usb.ko, MediaTek's Bluetooth USB driver as webos-bluetooth-service sees it with no adapter
-# (its netlink family and /sys/module/btmtk_usb): built as lgemu.ko is (docs/dev/guides/build.md, "Kernel
+# btmtk_usb.ko, MediaTek's Bluetooth USB driver as webos-bluetooth-service sees it: its netlink
+# family and /sys/module/btmtk_usb, and with controller=1 a controller with no radio at /dev/stpbt
+# (docs/research/magic-remote-pairing.md): built as lgemu.ko is (docs/dev/guides/build.md, "Kernel
 # module lgemu"), carried in the initramfs, and loaded by /init when boot.conf's SOC_MODULES names
-# it (the chip table, guest/targets/soc/: m3, k5lp). Published as build/btmtk_usb.ko
-# too.
+# it (the chip table, guest/targets/soc/: m3, k5lp, no adapter), or with controller=1 where the
+# firmware's udev rules name it (webOS 6 on). Published as build/btmtk_usb.ko too.
 btmtk_usb_dir = kernel_root / 'btmtk_usb'
 btmtk_usb_inputs = kbuild + [files('Kbuild', 'btmtk_usb.c')]
 btmtk_usb_ko = custom_target('btmtk_usb',
