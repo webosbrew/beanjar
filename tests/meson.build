@@ -7,7 +7,7 @@
 # A run whose every test skipped exits 77 (tests/conftest.py).
 xvfb_run = find_program('xvfb-run', required: false)   # the GTK and SDL checks' private X display
 subdir('unit')          # the compiled unit checks
-subdir('integration')   # the compiled check-audio-context
+subdir('integration')   # the compiled check-audio-context and check-media-sandbox
 
 # What the integration tests run, by name: the `artefact` fixture (tests/conftest.py). A name with
 # an empty path is not built here; its tests skip.
@@ -20,6 +20,7 @@ test_artefacts = {
   'media_helper': media_helper.full_path(),
   'relay': relay.full_path(),
   'check_audio_context': check_audio_context.full_path(),
+  'check_media_sandbox': check_media_sandbox.full_path(),
   'vnc': have_vnc ? vnc.full_path() : '',
   'manager_gresource': have_gtk ? manager_gresource.full_path() : '',
   'viewer_gresource': have_gtk ? viewer_gresource.full_path() : '',
@@ -52,7 +53,7 @@ endforeach
 integration_depends = {
   'network': [180, [relay]],
   'ui': [300, have_gtk ? [manager_gresource] : []],
-  'media-helper': [180, [media_helper]],
+  'media-helper': [180, [media_helper, check_media_sandbox]],
   'vnc': [600, have_vnc ? [vnc, viewer_headless, media_helper] : []],
   'web': [300, have_vnc ? [vnc] : []],
   'viewer': [600, [viewer_core, viewer_headless, check_audio_context] +

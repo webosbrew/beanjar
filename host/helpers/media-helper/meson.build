@@ -16,7 +16,7 @@ foreach s : fs.read('../../media/decode/sources.txt').split(' ')
 endforeach
 # The VM's end of the guest's media ports (media-helper.c),
 # published to build/media-helper/. The launcher starts it next to QEMU when it is there.
-media_helper = executable('media-helper', ['media-helper.c', '../../media/ipc.c', '../../media/ivserver.c'] + media_engine_sources + coverage_c,
+media_helper = executable('media-helper', ['media-helper.c', '../../media/ipc.c', '../../media/ivserver.c', '../../media/sandbox.c'] + media_engine_sources + coverage_c,
   dependencies: ffmpeg_deps + [dependency('threads')],
   build_rpath: vendor_rpath['ffmpeg'],
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'],

@@ -33,6 +33,7 @@
 #include "../../media/ivserver.h"
 #include "../../media/log.h"
 #include "../../media/pool.h"
+#include "../../media/sandbox.h"
 #include "../../../include/webos-video.h"
 
 #include <libavutil/log.h>
@@ -616,13 +617,21 @@ static int start_pool(const char *path, int listen_fd, uint32_t size)
 int main(int argc, char **argv)
 {
     pid_t pid = 0;
+    int sandbox = 1;
     int ports = WEBOS_MEDIA_PORTS;
     char vq[108] = "", vv[108] = "", mq[108] = "", mv[108] = "";
     const char *logpath = NULL, *decode_log = NULL, *pool_path = NULL;
     int pool_listen = -1;
     uint32_t pool_size = WEBOS_MEDIA_POOL_SIZE;
     const char *hwdec = getenv("MEDIA_HWDEC");
-    for (int i = 1; i + 1 < argc; i += 2) {
+    for (int i = 1; i < argc; i += 2) {
+        if (!strcmp(argv[i], "--no-sandbox")) {
+            sandbox = 0;
+            i--;
+            continue;
+        }
+        if (i + 1 >= argc)
+            break;
         if (!strcmp(argv[i], "--pid"))
             pid = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "--log"))
@@ -644,10 +653,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--video") && !split(argv[i + 1], vq, vv)) {
         } else if (!strcmp(argv[i], "--media") && !split(argv[i + 1], mq, mv)) {
         } else {
-            fprintf(
-                stderr,
-                "usage: media-helper --pid PID [--log FILE] [--decode-log FILE] [--streams FILE] "
-                "--video Q:V --media QPREFIX:VPREFIX [--ports N] [--pool FILE --pool-fd FD]\n");
+            fprintf(stderr, "usage: media-helper --pid PID [--log FILE] [--decode-log FILE] "
+                            "[--streams FILE] --video Q:V --media QPREFIX:VPREFIX [--ports N] "
+                            "[--pool FILE --pool-fd FD] [--no-sandbox]\n");
             return 2;
         }
     }
@@ -687,15 +695,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "media-helper: eventfd: %s\n", strerror(errno));
         return 1;
     }
-    decode = decoder_create(ports, hwdec);
-    if (!decode) {
-        fprintf(stderr, "media-helper: cannot create decoder service\n");
-        return 1;
-    }
-    decoder_set_reply(decode, on_reply, NULL);
-    if (pool_path && pool_listen >= 0 && start_pool(pool_path, pool_listen, pool_size) == 0)
-        decoder_set_pool(decode, &pool, ring_guest, &server);
-    else if (pool_listen >= 0)
+    if (!(pool_path && pool_listen >= 0 && start_pool(pool_path, pool_listen, pool_size) == 0) &&
+        pool_listen >= 0)
         close(pool_listen); /* QEMU's realize fails without a server: better than a hang */
     struct chan ch[MAX_PORTS + 1];
     int n = ports + 1;
@@ -714,6 +715,39 @@ int main(int argc, char **argv)
         c->gfd = c->vfd = -1;
         c->lfd = unix_listen(c->viewer, c->media);
     }
+    /* Setup done: the helper confines itself (sandbox.h) before any thread starts, since Landlock
+     * holds for the threads made after it. It writes only in its own directories: the logs', the
+     * open sessions', the pool's and its sockets'. */
+    if (sandbox) {
+        struct hm_sandbox box = {.devices = !hwdec || strcmp(hwdec, "none") != 0};
+        static char dirs[8][4096];
+        const char *files[] = {logpath, decode_log, streams_path, pool_path, vv, mv};
+        int nd = 0;
+        for (size_t i = 0; i < sizeof files / sizeof *files && nd < 7; i++) {
+            if (!files[i] || !*files[i])
+                continue;
+            char tmp[4096];
+            snprintf(tmp, sizeof tmp, "%s", files[i]);
+            snprintf(dirs[nd], sizeof dirs[nd], "%s", dirname(tmp));
+            box.rw[nd] = dirs[nd];
+            nd++;
+        }
+        char what[256];
+        if (hm_sandbox(&box, what, sizeof what) < 0) {
+            fprintf(stderr, "media-helper: sandbox: %s\n", what);
+            return 1;
+        }
+        say(-1, "sandbox: %s", what);
+    } else
+        say(-1, "sandbox: off (--no-sandbox)");
+    decode = decoder_create(ports, hwdec);
+    if (!decode) {
+        fprintf(stderr, "media-helper: cannot create decoder service\n");
+        return 1;
+    }
+    decoder_set_reply(decode, on_reply, NULL);
+    if (have_pool)
+        decoder_set_pool(decode, &pool, ring_guest, &server);
     streams_ch = ch;
     streams_n = n;
     write_streams();
