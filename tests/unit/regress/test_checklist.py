@@ -248,6 +248,14 @@ def test_sysprops():
     )
     s, why = items(edit(GOOD, sysprops=missing))["sysprops"]
     assert (s, "required system resource is missing" in why) == ("FAIL", True)
+    gap = GOOD.replace(
+        "sysprops=",
+        "main_board=BOARD_A5LR_DVB_EU\nnyx_board_type=Error 8 in executing query\nsysprops=",
+    )
+    s, why = items(edit(gap, sysprops=missing))["sysprops"]
+    assert (s, "BOARD_A5LR_DVB_EU" in why) == ("WARN", True)
+    other = gap.replace("BOARD_A5LR_DVB_EU", "BOARD_H15_DVB_EU")
+    assert items(edit(other, sysprops=missing))["sysprops"][0] == "FAIL"
     one = '[ { "com.palm.properties.machineName": "m2" } ]'
     assert items(edit(GOOD, sysprops=one))["sysprops"][0] == "FAIL"
     assert items(edit(GOOD, sysprops=""))["sysprops"][0] == "FAIL"

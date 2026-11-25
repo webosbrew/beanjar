@@ -12,6 +12,7 @@ bring-up (the set misbehaves for it); WARN is worth a look but seen on working t
                   preload/ where it reads it
   tvservice       no restart of tvservice, no crash report or core file
   sysprops        luna-prefs' getAllSysProperties answers, with storageCapacity (the eMMC's size)
+                  (WARN where the firmware's nyx has no name for the board: NYX_BOARD_GAPS)
   eeprom          tvservice's model name read (not empty) and the one the bootloader passes
   modules         lgemu.ko and the SoC's modules loaded, built for the running kernel, no sign
                   of a stale build in the kernel log
@@ -228,6 +229,15 @@ def tvservice(facts):
     return "PASS", "tvservice not restarted, no crash report or core file"
 
 
+# Boards whose own nyx DeviceInfo module cannot name the board, so `boardType` fails and
+# getAllSysProperties answers "required system resource is missing" on the stock firmware too.
+# Measured on W15L (mtka5lr 03.31.00) in a running guest: RELEASE.cfg's eMainBoardType is
+# BOARD_A5LR_DVB_EU, DILE_BOARDINFO_GetMainBoardType returns 0x11 (init 0), and
+# nyxDeviceInfoMain.module's board_type looks 0x11 up in tables whose keys are 0..4 and 2, 4, 7
+# (H13 and M14 boards only, ended by 0xff), finds nothing and answers error 8.
+NYX_BOARD_GAPS = {"BOARD_A5LR_DVB_EU": "0x11"}
+
+
 def sysprops(facts):
     """luna-prefs' getAllSysProperties: an array of one-property objects, or an error object when
     any property fails (storageCapacity without an mmcblk0 line in /proc/partitions)."""
@@ -238,6 +248,12 @@ def sysprops(facts):
         return "FAIL", f"getAllSysProperties did not answer: {(raw or '').strip()[:80]!r}"
     if isinstance(answer, dict):
         why = answer.get("errorText") or answer.get("errorCode") or "no properties"
+        board = _one(facts, "main_board") or ""
+        if board in NYX_BOARD_GAPS and "Error 8 " in (_one(facts, "nyx_board_type") or ""):
+            return "WARN", (
+                f"getAllSysProperties: {why}; the firmware's nyx has no board name for {board} "
+                f"({NYX_BOARD_GAPS[board]}): board_type fails with error 8 on the stock set too"
+            )
         return "FAIL", f"getAllSysProperties: {why}"
     props = {}
     for p in answer if isinstance(answer, list) else []:

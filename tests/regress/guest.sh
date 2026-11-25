@@ -373,6 +373,9 @@ checklist_webos() {
 	echo "bootstatus=$(lq luna://com.webos.bootManager/getBootStatus '{}')"
 	# luna-prefs' system properties: all or nothing, storageCapacity from mmcblk0's /proc/partitions line
 	echo "sysprops=$(lq luna://com.palm.preferences/systemProperties/getAllSysProperties '{}')"
+	# the board name behind boardType: what RELEASE.cfg says, and what nyx makes of it
+	echo "main_board=$(sed -n 's/^eMainBoardType,//p' /mnt/lg/model/RELEASE.cfg 2>/dev/null | head -n 1)"
+	echo "nyx_board_type=$(nyx-cmd DeviceInfo query board_type 2>&1 | tr '\n' ' ' | sed -n 's/.*\(Error [0-9]* in executing query\).*/\1/p;t;s/^ *\([A-Za-z0-9_]*\) *$/\1/p' | head -n 1)"
 	# webOS 5's bootd keeps its first app's id as the template (its log: "Set first action (Input
 	# App) appId (${Last Input App})") and getBootStatus answers firstAppId "": the id it launched.
 	# An NMRM set's bootd (MODEL_NMRM: NmrmBootSequencer's doNmrmAppLaunching) launches Home without
