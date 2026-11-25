@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Regression run over every supported firmware target (docs/dev/guides/build.md, "Regression runs"):
 
-  scripts/regress (--host HOST | --local) [--target TARGET]... [--fw NAME]... [--headless] [--tv]
+  scripts/regress (--host HOST... | --local) [--target TARGET]... [--fw NAME]... [--headless] [--tv]
                   [--no-build] [--no-sync] [--keep-going] [--timeout S] [--settle S] [--run NAME]
                   [--dry-run] [-j N] [--viewer] [--tv-steps LIST] [--decode-cases LIST]
                   [--commit REV | --working-tree]
@@ -27,6 +27,22 @@ commit. The runner itself, its judges and the test apps it packs are this checko
 VM host boots each target's firmware from its own firmware collections (`host/scripts/vm-launcher config
 FIRMWARE_DIRS` there), by the name chosen here; nothing is copied to it, and a target whose firmware
 is not there fails without booting.
+Several VM hosts (--host repeated or comma-separated; REGRESS_HOST a comma- or space-separated list)
+share one run: each gets the same tree (one worktree, synced to each in turn), each is checked as one
+would be, and the targets go from one queue, in their order, to whichever host has a free slot and
+can run the target. What each host can do is read over ssh at the start (TRAITS: uname -m; a toolchain,
+meson, ninja and cc, which `scripts/build.sh host` needs; the render node the launcher gives a KVM
+guest's virgl display, /dev/dri/renderD128, without which a graphics start fails; a desktop session, a
+Wayland socket in XDG_RUNTIME_DIR or X :0, where the --viewer window opens). A graphics target runs
+only on a host with that render node, with --viewer only on one with a desktop too, and any target only
+where its firmware is in that host's collections. A host without a toolchain (an arm64 board) builds
+nothing: the sync ships it this checkout's cross-built build/publish-arm64 (scripts/build.sh host-arm64,
+which must be there), as --no-build would have it. Each host runs -j N of its targets at once, capped by
+its own CPUs and MemAvailable as one host's are (cap_jobs, below; graphics one at a time on each); a
+target whose RAM does not fit a host's MemAvailable less HEADROOM_MB goes to those it fits. A failure
+(without --keep-going) or a leftover starts no further target on any host. The results come back to
+one run directory here; the summary has a host column and the run's slots per host, and summary.json
+each target's host and its host's slots.
 Then, strictly one target at a time, the checkout's development VM of the target (INSTANCE=<target>: a
 development VM is bound to one firmware; never a library VM, and nothing starts while any VM,
 mitmweb, slirp4netns or viewer runs on the VM host):
@@ -517,7 +533,10 @@ def parser():
     p.add_argument(
         "--host",
         metavar="HOST",
-        help="the VM host: an ssh destination (default: $REGRESS_HOST); its checkout is the "
+        action="append",
+        default=[],
+        help="a VM host: an ssh destination (repeatable, or comma-separated: the targets are spread "
+        "across them; default: $REGRESS_HOST, a comma- or space-separated list); its checkout is the "
         "directory $DEST (default beanjar) in its home",
     )
     p.add_argument("--local", action="store_true", help="boot on this machine instead of over ssh")
@@ -546,7 +565,7 @@ def parser():
         type=int,
         metavar="N",
         help=f"--headless: targets at once, each in an instance "
-        f"of its own (default {JOBS} with --local, {PI_JOBS} on a VM host; capped by the VM host's CPUs and MemAvailable)",
+        f"of its own (default {JOBS} with --local, {PI_JOBS} on each VM host; capped by each host's CPUs and MemAvailable)",
     )
     return p
 
@@ -640,8 +659,12 @@ def parse(argv, found=None, env=None):
     env = os.environ if env is None else env
     if a.local and a.host:
         raise Usage("--host and --local exclude each other")
-    a.host = None if a.local else a.host or env.get("REGRESS_HOST")
-    if not a.local and not a.host:
+    hosts = [h for x in a.host for h in x.split(",")] or re.split(
+        r"[,\s]+", env.get("REGRESS_HOST") or ""
+    )
+    a.hosts = [] if a.local else list(dict.fromkeys(h for h in hosts if h))
+    del a.host
+    if not a.local and not a.hosts:
         raise Usage(
             "no VM host: give --host HOST (or set REGRESS_HOST) for a run over ssh, or --local to boot on this machine"
         )
@@ -819,6 +842,7 @@ class Result:
         self.standby = "-"  # the standby step's numbers, or why it was skipped
         self.seconds = None  # the target's whole run, start to stopped
         self.instance = None  # its INSTANCE (every target runs in one of its own)
+        self.host = None  # the VM host that ran it (None: this machine, or none ran it)
         self.identity = {}  # the started VM's MAC, SERIAL and IDENTITY (vm_identity)
         self.device_census = None  # evidence status only; never a hardware coverage verdict
         # guest restarts followed (follow_restart: a firmware's first-boot restart)
@@ -868,9 +892,9 @@ class Result:
         ]
 
 
-def table(results, mode="graphics", tv=False):
-    """The summary: a row per target, then each target's checklist items that are not PASS (--tv: the
-    suite's checks that are not PASS)."""
+def table(results, mode="graphics", tv=False, hosts=False):
+    """The summary: a row per target (hosts: with the VM host that ran it last), then each target's
+    checklist items that are not PASS (--tv: the suite's checks that are not PASS)."""
     if tv:
         head = [
             "target",
@@ -914,6 +938,9 @@ def table(results, mode="graphics", tv=False):
             "result",
         ]
     rows = [head] + [r.row() for r in results]
+    if hosts:
+        rows = [head + ["host"]] + [r.row() + [r.host or "-"] for r in results]
+        head = rows[0]
     w = [max(len(row[i]) for row in rows) for i in range(len(head))]
     out = ["  ".join(c.ljust(w[i]) for i, c in enumerate(row)).rstrip() for row in rows]
     notes = [
@@ -2161,15 +2188,15 @@ def run_target(h, a, target, fw):
             say(f"{target}: left running on the VM host:\n{r.orphans}")
         r.window = (r.window[0], now())
         r.seconds = time.monotonic() - began
-        if a.host:
+        if h.host:
             if not a.dry_run:
                 os.makedirs(os.path.join(TOP, rel), exist_ok=True)
             if local(
-                ["rsync", "-a", f"{a.host}:{a.dest}/{rel}/", os.path.join(TOP, rel) + "/"],
+                ["rsync", "-a", f"{h.host}:{h.dest}/{rel}/", os.path.join(TOP, rel) + "/"],
                 a.dry_run,
             ):
                 say(
-                    f"{target}: copying the results back failed; they are in {a.host}:{a.dest}/{rel}"
+                    f"{target}: copying the results back failed; they are in {h.host}:{h.dest}/{rel}"
                 )
                 if net_off:
                     r.steps["capture"] = (
@@ -2210,27 +2237,42 @@ def run_target(h, a, target, fw):
 
 
 def schedule(items, jobs, work, stop=lambda r: False):
-    """work(item) for each of items in their order, at most jobs at once; once stop(result) holds
-    for one, no further item starts (those running finish). [(item, result)] of the items that
-    ran, in items' order. A KeyboardInterrupt starts nothing more and waits for the running ones
-    (each ends by stopping its VM)."""
+    """work(item) for each of items in their order, at most jobs at once (schedule_hosts with one
+    host)."""
+    return schedule_hosts(items, [(None, jobs)], lambda item, _host: work(item), stop=stop)
+
+
+def schedule_hosts(items, slots, work, can=lambda item, host: True, stop=lambda r: False):
+    """work(item, host) for each of items in their order, on the hosts of slots ([(host, n)]: at
+    most n at once on host), each item on the first host with a free slot that can(item, host) run
+    it; an item no host can run is left out. Once stop(result) holds for one, no further item starts
+    (those running finish). [(item, result)] of the items that ran, in items' order. A
+    KeyboardInterrupt starts nothing more and waits for the running ones (each ends by stopping
+    its VM)."""
     lock = threading.Lock()
     pending = list(enumerate(items))
     done, halted = {}, []
 
-    def worker():
+    def worker(host):
         while True:
             with lock:
-                if halted or not pending:
+                if halted:
                     return
-                i, item = pending.pop(0)
-            r = work(item)
+                k = next((k for k, (_i, item) in enumerate(pending) if can(item, host)), None)
+                if k is None:  # nothing left this host can run (pending only shrinks)
+                    return
+                i, item = pending.pop(k)
+            r = work(item, host)
             with lock:
                 done[i] = (item, r)
                 if stop(r):
                     halted.append(i)
 
-    threads = [threading.Thread(target=worker, daemon=True) for _ in range(min(jobs, len(items)))]
+    threads = [
+        threading.Thread(target=worker, args=(host,), daemon=True)
+        for host, n in slots
+        for _ in range(min(n, len(items)))
+    ]
     for t in threads:
         t.start()
     try:
@@ -2270,11 +2312,11 @@ def source(a):
     had uncommitted changes (tracked or untracked, not ignored), which a pinned run leaves out and an
     unpinned one (--working-tree, --local) tests. --no-sync: the VM host's checkout as it was, its
     commit unknown. RuntimeError if git cannot say (a.pin is not a commit)."""
-    if a.host and a.no_sync:
+    if a.hosts and a.no_sync:
         return {"commit": None, "pinned": False, "dirty": None, "synced": False}
     commit = git("rev-parse", "--verify", "--end-of-options", f"{a.pin or 'HEAD'}^{{commit}}")
     dirty = bool(git("status", "--porcelain", "--untracked-files=normal"))
-    out = {"commit": commit, "pinned": bool(a.pin), "dirty": dirty, "synced": bool(a.host)}
+    out = {"commit": commit, "pinned": bool(a.pin), "dirty": dirty, "synced": bool(a.hosts)}
     if a.pin:
         out["rev"] = a.pin
     return out
@@ -2354,7 +2396,9 @@ def machine():
 
 
 def prepare(a, sel):
-    """Build (or check) and sync; False on a failure."""
+    """Build (or check) and sync to every VM host; False on a failure. a.traits must hold each VM
+    host's host_traits: one without a toolchain gets the cross-built arm64 host side the sync ships
+    (build/publish-arm64) instead of building its own."""
     x86 = machine() == "x86_64"
     if a.no_build:
         say("checking what is built")
@@ -2394,37 +2438,94 @@ def prepare(a, sel):
         say("build: host (no guest builds here: the SDK is x86_64)")
         if local(["scripts/build.sh", "host"], a.dry_run):
             return False
-    if a.host and not a.no_sync:
-        say(f"sync: to {a.host}")
-        if not a.sync:
+    if not a.hosts or a.no_sync:
+        return True
+    if not a.sync:
+        say(
+            "no sync command: set REGRESS_SYNC to an executable that copies this checkout to the VM host "
+            "(it gets SRC, HOST and DEST in its environment), or sync it yourself and pass --no-sync"
+        )
+        return False
+    published = os.path.isdir(os.path.join(TOP, PUBLISH_ARM64))
+    for host in a.hosts:
+        t = a.traits[host]
+        if t["toolchain"]:
+            continue
+        if t["arch"] != "aarch64" or not (published or a.dry_run):
             say(
-                "no sync command: set REGRESS_SYNC to an executable that copies this checkout to the VM host "
-                "(it gets SRC, HOST and DEST in its environment), or sync it yourself and pass --no-sync"
+                f"{host} has no toolchain ({', '.join(TOOLCHAIN)}), so it needs the cross-built arm64 host "
+                f"side, {PUBLISH_ARM64} (scripts/build.sh host-arm64)"
+                + ("" if t["arch"] == "aarch64" else f", which a {t['arch']} host cannot run")
             )
             return False
-        # SRC: the tree it copies (a pinned run's clean worktree, else this checkout); the build's
-        # outputs it sends are this checkout's build/ either way
-        try:
-            with (
-                Pinned(a.source["commit"], a.dry_run) if a.pin else contextlib.nullcontext() as pin
-            ):
-                env = {"SRC": pin.path if pin else TOP, "HOST": a.host, "DEST": a.dest}
+    # SRC: the tree it copies (a pinned run's clean worktree, else this checkout); the build's
+    # outputs it sends are this checkout's build/ either way. Every VM host gets the same tree.
+    try:
+        with Pinned(a.source["commit"], a.dry_run) if a.pin else contextlib.nullcontext() as pin:
+            for host in a.hosts:
+                say(f"sync: to {host}")
+                env = {"SRC": pin.path if pin else TOP, "HOST": host, "DEST": a.dest}
                 if local([a.sync], a.dry_run, env):
                     return False
-        except RuntimeError as e:
-            say(str(e))
+    except RuntimeError as e:
+        say(str(e))
+        return False
+    if a.no_build:
+        return True
+    for host in a.hosts:
+        if not a.traits[host]["toolchain"]:
+            say(f"build: none on {host} (no toolchain): its host side is {PUBLISH_ARM64}'s")
+            continue
+        say(f"build: host side on {host}")
+        rc, text = Host(host, a.dest, a.dry_run).run(
+            "scripts/build.sh host > build/regress-host-build.log 2>&1 || { tail -n 20 build/regress-host-build.log; "
+            "exit 1; }",
+            3600,
+        )
+        if rc:
+            print(text)
             return False
-        if not a.no_build:
-            say(f"build: host side on {a.host}")
-            rc, text = Host(a.host, a.dest, a.dry_run).run(
-                "scripts/build.sh host > build/regress-host-build.log 2>&1 || { tail -n 20 build/regress-host-build.log; "
-                "exit 1; }",
-                3600,
-            )
-            if rc:
-                print(text)
-                return False
     return True
+
+
+# What a VM host's traits are read from (host_traits). The toolchain is what scripts/build.sh host
+# needs; the render node is the one the launcher gives a KVM guest's virgl display (qemu.py:
+# RENDERNODE's default under KVM; a graphics lane fails its start without it); the desktop is
+# where viewer() opens the --viewer window (a Wayland socket in XDG_RUNTIME_DIR, else X :0).
+TOOLCHAIN = ("meson", "ninja", "cc")
+KVM_RENDERNODE = "/dev/dri/renderD128"
+PUBLISH_ARM64 = "build/publish-arm64"
+TRAITS = (
+    'echo "arch $(uname -m)"; '
+    + "".join(f"command -v {t} >/dev/null && " for t in TOOLCHAIN)
+    + "echo toolchain; "
+    + f"n={KVM_RENDERNODE}; "
+    + '[ -c "$n" ] && [ -r "$n" ] && [ -w "$n" ] && '
+    + '[ "$(basename "$(readlink -f /sys/class/drm/${n##*/}/device)")" != vgem ] && echo render; '
+    + "rt=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; "
+    + "{ ls -d $rt/wayland-[0-9]* 2>/dev/null | grep -qv lock || [ -S /tmp/.X11-unix/X0 ]; } "
+    + "&& echo desktop; true"
+)
+
+
+def host_traits(h):
+    """{arch, toolchain, render, desktop} of the VM host h (TRAITS); this machine (no host) has
+    everything a --local run needs. A dry run prints the probe and assumes a capable arm64 host.
+    RuntimeError if the host cannot say."""
+    if not h.host:
+        return {"arch": machine(), "toolchain": True, "render": True, "desktop": True}
+    rc, out = h.run(TRAITS, 30)
+    if h.dry:
+        return {"arch": "aarch64", "toolchain": True, "render": True, "desktop": True}
+    words = dict((line.split(" ", 1) + [""])[:2] for line in out.splitlines() if line)
+    if rc or "arch" not in words:
+        raise RuntimeError(f"cannot read {h.host}'s traits: {out.strip()}")
+    return {
+        "arch": words["arch"],
+        "toolchain": "toolchain" in words,
+        "render": "render" in words,
+        "desktop": "desktop" in words,
+    }
 
 
 def host_firmwares(h, names):
@@ -2451,32 +2552,76 @@ def host_firmwares(h, names):
     return dirs, found
 
 
-def missing_firmware(a, sel):
-    """{target: Result} of the targets whose firmware the VM host's collections do not have (failed, not
-    run); None if the host cannot say. --local: none (the firmware was chosen from this machine's)."""
-    if not a.host or not sel:
-        return {}
-    h = Host(a.host, a.dest, a.dry_run)
-    say(f"firmware: from {a.host}'s firmware collections")
-    try:
-        dirs, found = host_firmwares(h, sorted({fw for _, fw in sel}))
-    except RuntimeError as e:
-        say(str(e))
-        return None
-    out = {}
-    for target, fw in sel:
+def why_not(a, host, fw, collections):
+    """Why the VM host cannot run a target of firmware fw, "" if it can: its firmware collections
+    (collections: host_firmwares' (dirs, found), None: any firmware, --local or a dry run), and its
+    traits: graphics needs the KVM render node, --viewer a desktop."""
+    if collections is not None and fw not in collections[1]:
+        return f"firmware {fw} not in the host's firmware collections ({':'.join(collections[0]) or 'none'})"
+    t = a.traits[host]
+    if a.mode == "graphics" and not t["render"]:
+        return f"graphics needs the render node {KVM_RENDERNODE}, which the host has not"
+    if a.viewer and not t["desktop"]:
+        return "--viewer needs a desktop session on the host (a Wayland socket, or X :0)"
+    return ""
+
+
+def placement(a, sel):
+    """({target: [the VM hosts that can run it]}, {target: Result} of the targets none can run (failed,
+    not run)); None if a host cannot say. The firmware is looked up in each VM host's collections
+    (--local: this machine's, where it was chosen); nothing is copied."""
+    hosts = a.hosts or [None]
+    collections = {}
+    for host in hosts:
+        if host is None or not sel:
+            collections[host] = None
+            continue
+        say(f"firmware: from {host}'s firmware collections")
+        try:
+            collections[host] = host_firmwares(
+                Host(host, a.dest, a.dry_run), sorted({fw for _, fw in sel})
+            )
+        except RuntimeError as e:
+            say(str(e))
+            return None
         if a.dry_run:
+            collections[host] = None
+    where, failed = {}, {}
+    for target, fw in sel:
+        why = {h: why_not(a, h, fw, collections[h]) for h in hosts}
+        where[target] = [h for h in hosts if not why[h]]
+        if where[target]:
+            if collections[where[target][0]] is not None:
+                say(f"{target}: {fw} at {collections[where[target][0]][1][fw]}")
             continue
-        if fw in found:
-            say(f"{target}: {fw} at {found[fw]}")
-            continue
-        r = out[target] = Result(target, fw, a.mode, a.tv)
+        r = failed[target] = Result(target, fw, a.mode, a.tv)
         r.steps["start"] = "FAIL"
-        r.failed = (
-            f"firmware {fw} not in the host's firmware collections ({':'.join(dirs) or 'none'})"
-        )
+        r.failed = why[hosts[0]] if len(hosts) == 1 else "; ".join(f"{h}: {why[h]}" for h in hosts)
         say(f"{target}: FAIL ({r.failed})")
-    return out
+    return where, failed
+
+
+def fit_ram(where, ram, capacity, headroom_mb=HEADROOM_MB):
+    """Narrow where ({target: [hosts]}) to the hosts whose room (capacity: {host: (CPUs,
+    MemAvailable kB)}, less headroom_mb) holds the target's RAM (ram: {target: MiB}), where there
+    are any; a target that fits none keeps its hosts (the launcher's admission decides there)."""
+    for p, hs in where.items():
+        fits = [h for h in hs if ram[p] <= capacity[h][1] // 1024 - headroom_mb]
+        if fits and len(fits) < len(hs):
+            say(
+                f"{p}: on {', '.join(fits)} only (its {ram[p]} MB is more than the others' "
+                f"MemAvailable less {headroom_mb} MB)"
+            )
+            where[p] = fits
+
+
+def send_to_hosts(a, path):
+    """path (in this checkout) to the same path in every VM host's checkout; False on a failure."""
+    return not any(
+        Host(host, a.dest, a.dry_run).run(f"mkdir -p {os.path.dirname(path)}", 30)[0]
+        or local(["rsync", "-a", path, f"{host}:{a.dest}/{path}"], a.dry_run)
+        for host in a.hosts
+    )
 
 
 def pack_smp_app(a):
@@ -2494,12 +2639,7 @@ def pack_smp_app(a):
         a.dry_run,
     ):
         return False
-    if a.host:
-        return not (
-            Host(a.host, a.dest, a.dry_run).run(f"mkdir -p {os.path.dirname(ipk)}", 30)[0]
-            or local(["rsync", "-a", ipk, f"{a.host}:{a.dest}/{ipk}"], a.dry_run)
-        )
-    return True
+    return send_to_hosts(a, ipk)
 
 
 def pack_test_app(a):
@@ -2529,12 +2669,7 @@ def pack_test_app(a):
             return False
         os.replace(os.path.join(TOP, tmp, built[0]), os.path.join(TOP, ipk))
         os.rmdir(os.path.join(TOP, tmp))
-    if a.host:
-        return not (
-            Host(a.host, a.dest, a.dry_run).run(f"mkdir -p {os.path.dirname(ipk)}", 30)[0]
-            or local(["rsync", "-a", ipk, f"{a.host}:{a.dest}/{ipk}"], a.dry_run)
-        )
-    return True
+    return send_to_hosts(a, ipk)
 
 
 def gallery(d, results):
@@ -2570,7 +2705,7 @@ def main(argv=None):
     say(
         f"run {a.run} ({a.mode}{', TV suite' if a.tv else ''}): "
         + ", ".join(f"{p} ({fw})" for p, fw in sel)
-        + f" on {a.host or 'this machine'}"
+        + f" on {', '.join(a.hosts) or 'this machine'}"
         + (" (dry run)" if a.dry_run else "")
     )
     try:
@@ -2599,12 +2734,26 @@ def main(argv=None):
                 ].skipped = f"no gl layer: guest/layers/soc/{target.split('-')[0]} has no graphics ABI configured"
                 say(f"{target}: SKIP ({skipped[target].skipped})")
     run = [(p, fw) for p, fw in sel if p not in skipped]
+    hosts = a.hosts or [None]  # None: this machine (--local)
+    try:
+        # from the home directory: a new host has no checkout before its first sync
+        a.traits = {host: host_traits(Host(host, ".", a.dry_run)) for host in hosts}
+    except RuntimeError as e:
+        say(str(e))
+        return 1
+    for host in a.hosts:
+        t = a.traits[host]
+        say(
+            f"{host}: {t['arch']}, "
+            + ", ".join(f"{'' if t[k] else 'no '}{k}" for k in ("toolchain", "render", "desktop"))
+        )
     if not prepare(a, run):
         say("build or sync failed")
         return 1
-    missing = missing_firmware(a, run)
-    if missing is None:
+    placed = placement(a, run)
+    if placed is None:
         return 1
+    where, missing = placed
     if (
         a.tv
         and {"apps", "draw", "audio", "decode"} & set(a.tv_steps)
@@ -2616,45 +2765,71 @@ def main(argv=None):
     if a.tv and "smp" in a.tv_steps and a.mode == "graphics" and not pack_smp_app(a):
         say("packing the SMP check app failed")
         return 1
-    h = Host(a.host, a.dest, a.dry_run)
     if a.scale != 1:
         say(
             f"{a.accel}: the run's deadlines x{a.scale} (step limit {a.timeout} s), as the guest's bootd timers"
         )
-    say("checking that nothing runs on the VM host")
-    rc, busy = h.run(ORPHANS, 30)
-    if rc or busy.strip():
-        say(f"not starting: the VM host is busy or unreachable:\n{busy.strip()}")
-        return 1
-    jobs = 1
-    if a.instances:
-        smp = int(a.vm_env.get("SMP") or 4)
-        mems = [int(a.vm_env.get("MEM") or nvm.board_ram(targets.by_name(p))) for p, _fw in run]
-        cpus, avail = (
-            (a.jobs * smp, (sum(sorted(mems)[-a.jobs :]) + HEADROOM_MB) * 1024)
-            if a.dry_run and a.host
-            else host_capacity(h)
+    for host in hosts:
+        say("checking that nothing runs on the VM host" + (f" {host}" if len(hosts) > 1 else ""))
+        rc, busy = Host(host, a.dest, a.dry_run).run(ORPHANS, 30)
+        if rc or busy.strip():
+            say(
+                f"not starting: the VM host{f' {host}' if host else ''} is busy or unreachable:\n{busy.strip()}"
+            )
+            return 1
+    # each VM host's targets at once: -j capped by its own CPUs and RAM (cap_jobs) against the targets
+    # it can run. A target whose RAM does not fit a host's room (MemAvailable less HEADROOM_MB) goes
+    # to the hosts it fits, where there are any (else it is tried as on one host: the launcher's
+    # admission decides).
+    smp = int(a.vm_env.get("SMP") or 4)
+    ram = {p: int(a.vm_env.get("MEM") or nvm.board_ram(targets.by_name(p))) for p, _fw in run}
+    capacity = {}
+    for host in hosts:
+        mems = [ram[p] for p, _fw in run if p not in missing and host in where.get(p, ())]
+        if mems:
+            capacity[host] = (
+                (a.jobs * smp, (sum(sorted(mems)[-a.jobs :]) + HEADROOM_MB) * 1024)
+                if a.dry_run and host
+                else host_capacity(Host(host, a.dest, a.dry_run))
+            )
+    fit_ram(where, ram, capacity)
+    slots = {}
+    for host in hosts:
+        mine = [p for p, _fw in run if p not in missing and host in where.get(p, ())]
+        if not mine:
+            slots[host] = 0
+            continue
+        cpus, avail = capacity[host]
+        n, why = cap_jobs(
+            a.jobs, len(mine), cpus, avail, [ram[p] for p in mine], smp, KVM_OVERSUB if host else 1
         )
-        jobs, why = cap_jobs(a.jobs, len(run), cpus, avail, mems, smp, KVM_OVERSUB if a.host else 1)
+        slots[host] = n
         say(
-            f"{jobs} VM(s) at once, each in an instance of its own (INSTANCE=<target>, build/instances/<target>)"
-            + (f"; -j {a.jobs} capped by {why}" if jobs < a.jobs and why else "")
+            (f"{host}: " if len(hosts) > 1 else "")
+            + f"{n} VM(s) at once, each in an instance of its own (INSTANCE=<target>, build/instances/<target>)"
+            + (f"; -j {a.jobs} capped by {why}" if n < a.jobs and why else "")
         )
+    jobs = sum(slots.values())
 
-    def work(item):
+    def work(item, host):
         target, fw = item
         if target in skipped:
             return skipped[target]
         if target in missing:
             return missing[target]
         r = run_target(
-            Host(a.host, a.dest, a.dry_run, Instance(target) if a.instances else None),
+            Host(host, a.dest, a.dry_run, Instance(target) if a.instances else None),
             a,
             target,
             fw,
         )
         r.instance = target if a.instances else None
+        r.host = host
         return r
+
+    def can(item, host):
+        # skipped and not-run targets take no VM: whichever slot comes first reports them
+        return item[0] in skipped or item[0] in missing or host in where[item[0]]
 
     def stop(r):
         if r.orphans:
@@ -2668,20 +2843,30 @@ def main(argv=None):
     began = time.monotonic()
     results = []
     try:
-        results = [r for _, r in schedule(interleave(sel) if jobs > 1 else sel, jobs, work, stop)]
+        order = interleave(sel) if jobs > 1 else sel
+        # a slot for a host with nothing to run still reports the skipped and not-run targets
+        busy = [(host, n) for host, n in slots.items() if n] or [(hosts[0], 1)]
+        results = [r for _, r in schedule_hosts(order, busy, work, can, stop)]
     except KeyboardInterrupt:
         say("interrupted")
     wall = time.monotonic() - began
     left = ""
     if a.instances and not a.dry_run:
-        # every instance checked its own; now the host as a whole
-        _, left = h.run(ORPHANS, 30)
-        left = left.strip()
-        if left:
-            say(f"left running on the VM host after the run:\n{left.strip()}")
+        # every instance checked its own; now each host as a whole
+        for host in hosts:
+            _, out = Host(host, a.dest, a.dry_run).run(ORPHANS, 30)
+            if out.strip():
+                say(
+                    f"left running on the VM host{f' {host}' if host else ''} after the run:\n{out.strip()}"
+                )
+                left += out
+    many = len(hosts) > 1
+    per_host = ", ".join(f"{h} {n}" for h, n in slots.items()) if many else ""
     summary = (
-        table(results, a.mode, a.tv)
-        + f"\n\nwall {wall:.0f} s, {jobs} at once\nsource: {describe(a.source)}"
+        table(results, a.mode, a.tv, hosts=many)
+        + f"\n\nwall {wall:.0f} s, {jobs} at once"
+        + (f" ({per_host})" if per_host else "")
+        + f"\nsource: {describe(a.source)}"
     )
     say_raw(summary)
     d = os.path.join(TOP, "build", "regress", a.run)
@@ -2719,7 +2904,8 @@ def main(argv=None):
                         failed=r.failed,
                         seconds=r.seconds,
                         instance=r.instance,
-                        jobs=jobs,
+                        host=r.host,
+                        jobs=slots.get(r.host, 0),
                         commit=a.source["commit"],
                         device_census=r.device_census,
                         checklist=[dict(item=i, status=s, reason=why) for i, s, why in r.checklist],

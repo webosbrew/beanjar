@@ -250,6 +250,27 @@ tested: the commit, whether it was pinned, and whether this checkout had uncommi
 and `summary.json` has each target's `commit`. The runner itself, its judges and the test apps it packs
 run from this checkout.
 
+One run can spread its targets across several KVM hosts: `--host` repeated or comma-separated, or
+`REGRESS_HOST` as a comma- or space-separated list (`--host pi,rockpi4a-1,rockpi4a-2`). Every host
+gets the same tree (one pinned worktree, synced to each), is checked for leftovers before and after,
+and has its targets copied back into the one run directory here. At the start the runner reads over
+ssh what each host can do (`TRAITS` in `scripts/regress`): its architecture; a toolchain (`meson`,
+`ninja`, `cc`, which `scripts/build.sh host` needs); `/dev/dri/renderD128`, the render node the
+launcher gives a KVM guest's virgl display (`RENDERNODE`'s default under KVM, `qemu.py`), without which
+a graphics start fails; and a desktop session (a Wayland socket in `XDG_RUNTIME_DIR`, or X `:0`), where
+the `--viewer` window opens. A graphics target goes only to a host with that render node, with `--viewer`
+only to one with a desktop too, and any target only to a host whose firmware collections have its
+firmware; a target no host can take fails without booting, with each host's reason under "not run:". A
+host without a toolchain (a ROCK Pi 4 board) builds nothing: the sync ships it this checkout's
+cross-built `build/publish-arm64` (`scripts/build.sh host-arm64`), which must be there, as `--no-build`
+would. The targets go from one queue, in their order, to the first host with a free slot that can run
+them; each host takes `-j N` at once (graphics: one), capped by its own CPUs and `MemAvailable` as a
+single host's are, and a target whose RAM is more than a host's `MemAvailable` less `HEADROOM_MB` goes to
+the hosts it fits where there are any (a 4 GB board ends up with one VM at a time). A failure without
+`--keep-going`, or a leftover, starts no further target on any host. The summary gets a `host` column
+and the slots per host on its `wall` line; `summary.json` has each target's `host` and its host's
+`jobs`.
+
 `--viewer` (graphics only) opens `build/viewer/beanjar-viewer` on the VM's D-Bus display on the VM
 host's desktop (its Wayland socket in `XDG_RUNTIME_DIR`, else X `:0`) once the VM has started, with
 `--no-audio --no-media` and no remote (`ir.sock` takes one client, the run's `ir-key.py`: the viewer's

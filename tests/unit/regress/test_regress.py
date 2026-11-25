@@ -107,6 +107,9 @@ FOUND = {
 }
 
 
+CAPABLE = {"arch": "aarch64", "toolchain": True, "render": True, "desktop": True}
+
+
 def table_lines(text):
     """The summary table's lines, without the wall time line after it."""
     return text.split("\n\nwall ")[0].splitlines()
@@ -325,7 +328,7 @@ class ArgsTest(unittest.TestCase):
             found=FOUND,
             env={"REGRESS_HOST": "host2", "NET_LINK": "off", "LAYERS": "normal,gl,rootssh"},
         )
-        self.assertEqual((a.host, a.dest), ("host2", "beanjar"))
+        self.assertEqual((a.hosts, a.dest), (["host2"], "beanjar"))
         self.assertEqual(
             a.vm_env,
             {
@@ -336,7 +339,7 @@ class ArgsTest(unittest.TestCase):
             },
         )
         a, _ = regress.parse(["--local"], found=FOUND, env={"REGRESS_HOST": "host2"})
-        self.assertIsNone(a.host)
+        self.assertEqual(a.hosts, [])
 
     def test_vm_host_is_explicit(self):
         # no built-in host name: neither --host, nor REGRESS_HOST, nor --local is an error
@@ -346,13 +349,23 @@ class ArgsTest(unittest.TestCase):
             self.assertIn("--host", str(e.exception))
             self.assertIn("REGRESS_HOST", str(e.exception))
             a, _ = _parse(["--host", "tv-host"], found=FOUND, env={"REGRESS_HOST": "other"})
-            self.assertEqual(a.host, "tv-host")
+            self.assertEqual(a.hosts, ["tv-host"])
             a, _ = _parse([], found=FOUND, env={"REGRESS_HOST": "other"})
-            self.assertEqual(a.host, "other")
+            self.assertEqual(a.hosts, ["other"])
             a, _ = _parse(["--local"], found=FOUND, env={})
-            self.assertIsNone(a.host)
+            self.assertEqual(a.hosts, [])
             with self.assertRaises(regress.Usage):
                 _parse(["--host", "tv-host", "--local"], found=FOUND, env={})
+
+    def test_several_hosts(self):
+        a, _ = _parse(
+            ["--host", "pi", "--host", "rock1,rock2", "--host", "pi"], found=FOUND, env={}
+        )
+        self.assertEqual(a.hosts, ["pi", "rock1", "rock2"])  # in order, once each
+        a, _ = _parse([], found=FOUND, env={"REGRESS_HOST": "pi, rock1 rock2"})
+        self.assertEqual(a.hosts, ["pi", "rock1", "rock2"])
+        a, _ = _parse(["--host", "rock1"], found=FOUND, env={"REGRESS_HOST": "pi,rock2"})
+        self.assertEqual(a.hosts, ["rock1"])  # --host wins
 
     def test_sync_command_is_explicit(self):
         a, _ = _parse([], found=FOUND, env={"REGRESS_HOST": "h"})
@@ -511,27 +524,27 @@ class SourceTest(unittest.TestCase):
     def test_source_and_dirty(self):
         top = self.repo()
         head = subprocess.run(
-            ["git", "-C", top, "rev-parse", "HEAD"], capture_output=True, text=True
+            ["git", "-C", top, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
         ).stdout.strip()
         with mock.patch.object(regress, "TOP", top):
-            a = argparse.Namespace(host="h", no_sync=False, pin="HEAD")
+            a = argparse.Namespace(hosts=["h"], no_sync=False, pin="HEAD")
             src = regress.source(a)
             self.assertEqual(
-                src, dict(commit=head, pinned=True, dirty=False, synced=True, rev="HEAD")
+                src, {"commit": head, "pinned": True, "dirty": False, "synced": True, "rev": "HEAD"}
             )
             self.assertIn("clean worktree)", regress.describe(src))
             with open(os.path.join(top, "new.txt"), "w") as f:
                 f.write("x")  # untracked: dirty
-            src = regress.source(argparse.Namespace(host="h", no_sync=False, pin=None))
-            self.assertEqual(src, dict(commit=head, pinned=False, dirty=True, synced=True))
+            src = regress.source(argparse.Namespace(hosts=["h"], no_sync=False, pin=None))
+            self.assertEqual(src, {"commit": head, "pinned": False, "dirty": True, "synced": True})
             self.assertIn("uncommitted changes", regress.describe(src))
-            src = regress.source(argparse.Namespace(host=None, no_sync=False, pin=None))
+            src = regress.source(argparse.Namespace(hosts=[], no_sync=False, pin=None))
             self.assertFalse(src["synced"])  # --local: this checkout
-            src = regress.source(argparse.Namespace(host="h", no_sync=True, pin=None))
+            src = regress.source(argparse.Namespace(hosts=["h"], no_sync=True, pin=None))
             self.assertIsNone(src["commit"])
             self.assertIn("unknown", regress.describe(src))
             with self.assertRaises(RuntimeError):
-                regress.source(argparse.Namespace(host="h", no_sync=False, pin="no-such-rev"))
+                regress.source(argparse.Namespace(hosts=["h"], no_sync=False, pin="no-such-rev"))
 
     def test_pinned_worktree(self):
         top = self.repo()
@@ -564,9 +577,8 @@ class SourceTest(unittest.TestCase):
             self.assertFalse(os.path.exists(pin.path))
             self.assertFalse(os.path.exists(other.path))
             # removed on a failure too
-            with self.assertRaises(ZeroDivisionError):
-                with regress.Pinned(head, False) as pin:
-                    1 / 0
+            with self.assertRaises(ZeroDivisionError), regress.Pinned(head, False) as pin:
+                raise ZeroDivisionError
             self.assertFalse(os.path.exists(pin.path))
             self.assertNotIn("rg-", regress.git("worktree", "list"))
 
@@ -677,6 +689,68 @@ class DryRunTest(unittest.TestCase):
         )
         self.assertEqual(lines[-1].split()[:2], ["m2-dreadlocks", "graphics"])
         self.assertIn("t1/m2-dreadlocks.png", lines[-1])
+
+    def test_dry_run_several_hosts(self):
+        text = self.dry_run(
+            [
+                "-n",
+                "--headless",
+                "--run",
+                "t9",
+                "--host",
+                "pi,rock",
+                "--target",
+                "h13-afro,m2-dreadlocks,m3-goldilocks",
+            ]
+        )
+        # one worktree of the commit, synced to each host; each host's own checks
+        self.assertEqual(text.count("git worktree add"), 1)
+        self.assertInOrder(
+            text,
+            [
+                "git worktree add",
+                "HOST=pi DEST=beanjar sync-checkout",
+                "HOST=rock DEST=beanjar sync-checkout",
+                "git worktree remove",
+                "build: host side on pi",
+                "build: host side on rock",
+            ],
+        )
+        src = {line.split()[1] for line in text.splitlines() if "sync-checkout" in line}
+        self.assertEqual(len(src), 1)  # the same tree for every host
+        for host in ("pi", "rock"):
+            self.assertIn(f'[{host}] echo "arch $(uname -m)"', text)  # its traits
+            self.assertIn(f"firmware: from {host}'s firmware collections", text)
+            self.assertIn(f"checking that nothing runs on the VM host {host}", text)
+            self.assertIn(f"{host}: 2 VM(s) at once", text)
+        lines = table_lines(text)
+        self.assertEqual(lines[-4].split()[-1], "host")
+        rows = {line.split()[0]: line.split()[-1] for line in lines[-3:]}
+        self.assertEqual(set(rows), {"h13-afro", "m2-dreadlocks", "m3-goldilocks"})
+        self.assertTrue(set(rows.values()) <= {"pi", "rock"})
+        self.assertIn("4 at once (pi 2, rock 2)", text)
+
+    def test_host_without_toolchain(self):
+        a, sel = regress.parse(
+            ["-n", "--headless", "--host", "pi,rock", "--target", "h13-afro"], found=FOUND, env={}
+        )
+        a.source = {"commit": "0" * 40}
+        a.traits = {"pi": CAPABLE, "rock": dict(CAPABLE, toolchain=False)}
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertTrue(regress.prepare(a, sel))
+        text = out.getvalue()
+        self.assertIn("build: host side on pi", text)
+        self.assertIn(
+            "build: none on rock (no toolchain): its host side is build/publish-arm64's", text
+        )
+        self.assertNotIn("[rock] scripts/build.sh host", text)
+        self.assertIn("HOST=rock DEST=beanjar sync-checkout", text)  # still synced
+        # the published host side is arm64's: a host of another kind cannot use it
+        a.traits["rock"] = dict(CAPABLE, toolchain=False, arch="x86_64")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertFalse(regress.prepare(a, sel))
+        self.assertIn("rock has no toolchain", out.getvalue())
+        self.assertNotIn("sync-checkout", out.getvalue())  # before any sync
 
     def test_dry_run_skips_targets_without_gl(self):
         real_gl = regress.gl_expected  # every chip has GPU stand-ins now: pretend k5lp has none
@@ -1226,8 +1300,10 @@ class HostFirmwareTest(unittest.TestCase):
                 return 0, f"dir /srv/beanjar/firmware\nfw {WT1H} /srv/beanjar/firmware/{WT1H}\n"
 
         a, sel = regress.parse(["--target", "h13-afro,m2-dreadlocks"], found=FOUND, env={})
+        a.traits = {"vmhost": CAPABLE}
         with mock.patch.object(regress, "Host", H), contextlib.redirect_stdout(io.StringIO()):
-            missing = regress.missing_firmware(a, sel)
+            where, missing = regress.placement(a, sel)
+        self.assertEqual(where, {"h13-afro": ["vmhost"], "m2-dreadlocks": []})
         self.assertEqual(list(missing), ["m2-dreadlocks"])
         r = missing["m2-dreadlocks"]
         self.assertFalse(r.ok)
@@ -1237,7 +1313,88 @@ class HostFirmwareTest(unittest.TestCase):
         self.assertIn(f"not run:\n  m2-dreadlocks: {why}", regress.table([r]))
         # --local: the firmware was chosen from this machine's collections
         a, sel = regress.parse(["--local", "--target", "m2-dreadlocks"], found=FOUND, env={})
-        self.assertEqual(regress.missing_firmware(a, sel), {})
+        a.traits = {None: CAPABLE}
+        self.assertEqual(regress.placement(a, sel), ({"m2-dreadlocks": [None]}, {}))
+
+    def test_placement_across_hosts(self):
+        # pi has both firmwares and a render node; rock has only WT1H's and no render node
+        class H:
+            def __init__(self, host, *args, **kw):
+                self.host = host
+
+            def run(self, cmd, timeout):
+                fws = (WT1H, W16R) if self.host == "pi" else (WT1H,)
+                return 0, "dir /srv/fw\n" + "".join(f"fw {n} /srv/fw/{n}\n" for n in fws)
+
+        traits = {"pi": CAPABLE, "rock": dict(CAPABLE, render=False, desktop=False)}
+        argv = ["--host", "pi,rock", "--target", "h13-afro,m2-dreadlocks"]
+        for extra, want in (
+            (["--headless"], {"h13-afro": ["pi", "rock"], "m2-dreadlocks": ["pi"]}),
+            ([], {"h13-afro": ["pi"], "m2-dreadlocks": ["pi"]}),  # graphics: the render node
+        ):
+            a, sel = regress.parse(argv + extra, found=FOUND, env={})
+            a.traits = traits
+            with mock.patch.object(regress, "Host", H), contextlib.redirect_stdout(io.StringIO()):
+                where, missing = regress.placement(a, sel)
+            self.assertEqual((where, missing), (want, {}), extra)
+        # none can: each host's reason
+        traits["pi"] = dict(CAPABLE, render=False)
+        a, sel = regress.parse(argv, found=FOUND, env={})
+        a.traits = traits
+        with mock.patch.object(regress, "Host", H), contextlib.redirect_stdout(io.StringIO()):
+            where, missing = regress.placement(a, sel)
+        self.assertEqual(
+            missing["m2-dreadlocks"].failed,
+            "pi: graphics needs the render node /dev/dri/renderD128, which the host has not; "
+            f"rock: firmware {W16R} not in the host's firmware collections (/srv/fw)",
+        )
+        # --viewer: a desktop too
+        traits["pi"] = dict(CAPABLE, desktop=False)
+        a, sel = regress.parse(argv + ["--viewer"], found=FOUND, env={})
+        a.traits = traits
+        with mock.patch.object(regress, "Host", H), contextlib.redirect_stdout(io.StringIO()):
+            _, missing = regress.placement(a, sel)
+        self.assertIn("--viewer needs a desktop", missing["h13-afro"].failed)
+
+    def test_fit_ram(self):
+        gb = 1 << 20  # kB
+        where = {"big": ["pi", "rock"], "small": ["pi", "rock"], "huge": ["pi", "rock"]}
+        ram = {"big": 2560, "small": 1536, "huge": 8192}
+        capacity = {"pi": (4, 6 * gb), "rock": (6, 3 * gb)}  # rock: 3 GB less 1 GB of room
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            regress.fit_ram(where, ram, capacity)
+        self.assertEqual(where, {"big": ["pi"], "small": ["pi", "rock"], "huge": ["pi", "rock"]})
+        self.assertIn("big: on pi only", out.getvalue())
+
+    def test_host_traits(self):
+        class H:
+            host, dry = "board", False
+
+            def __init__(self, rc, out):
+                self.r = (rc, out)
+
+            def run(self, cmd, timeout):
+                return self.r
+
+        self.assertEqual(
+            regress.host_traits(H(0, "arch aarch64\nrender\n")),
+            {"arch": "aarch64", "toolchain": False, "render": True, "desktop": False},
+        )
+        self.assertEqual(
+            regress.host_traits(H(0, "arch aarch64\ntoolchain\nrender\ndesktop\n")), CAPABLE
+        )
+        with self.assertRaises(RuntimeError):
+            regress.host_traits(H(255, "ssh: no route"))
+
+    def test_traits_probe_runs(self):
+        # the probe's own shell: it says the arch, and nothing it cannot back up
+        r = subprocess.run(
+            ["sh", "-c", regress.TRAITS], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(r.returncode, 0)
+        lines = r.stdout.split("\n")
+        self.assertEqual(lines[0], f"arch {os.uname().machine}")
+        self.assertTrue(set(lines[1:]) <= {"toolchain", "render", "desktop", ""}, r.stdout)
 
 
 class ResultTest(unittest.TestCase):
@@ -1544,6 +1701,35 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual(sorted(started), [0, 1, 2])
         self.assertEqual(out, [(0, 0), (1, 10), (2, 20)])
 
+    def test_across_hosts(self):
+        # each host at most its own slots at once, each item only on a host that can run it
+        lock, live, peak, ran = threading.Lock(), {}, {}, {}
+
+        def work(x, host):
+            with lock:
+                live[host] = live.get(host, 0) + 1
+                peak[host] = max(peak.get(host, 0), live[host])
+                ran[x] = host
+            time.sleep(0.05)
+            with lock:
+                live[host] -= 1
+            return x * 10
+
+        def can(x, host):
+            return host == "pi" if x % 3 == 0 else True  # every third: the big host only
+
+        out = regress.schedule_hosts(
+            list(range(9)), [("pi", 2), ("rock1", 1), ("rock2", 1)], work, can
+        )
+        self.assertEqual(out, [(i, i * 10) for i in range(9)])
+        self.assertEqual({x for x, h in ran.items() if h != "pi"} & {0, 3, 6}, set())
+        self.assertLessEqual(peak["pi"], 2)
+        self.assertLessEqual(peak.get("rock1", 0), 1)
+        self.assertGreater(len(set(ran.values())), 1)  # spread
+        # an item no host can run is left out
+        out = regress.schedule_hosts([1, 2], [("a", 1)], work, lambda x, h: x == 1)
+        self.assertEqual(out, [(1, 10)])
+
 
 class InstanceTest(unittest.TestCase):
     def test_launcher_env(self):
@@ -1682,6 +1868,7 @@ class ReadyLineTest(unittest.TestCase):
         # a loaded TCG guest's shell may print "Terminated" (luna-send's timeout) before READY
         class FakeHost:
             inst = regress.Instance("fake")
+            host = None
 
             def run(self, cmd, timeout):
                 return 0, ""
@@ -1717,6 +1904,7 @@ class FirstBootRestartTest(unittest.TestCase):
 
         class FakeHost:
             inst = regress.Instance("fake")
+            host = None
 
             def run(self, cmd, timeout):
                 return (back, "") if "until n=" in cmd else (0, "")
@@ -2024,6 +2212,7 @@ class DeviceCensusIntegrationTest(unittest.TestCase):
     def test_two_non_dry_targets_keep_snapshot_and_report_separate(self):
         class FakeHost:
             inst = regress.Instance("fake")
+            host = None
 
             def __init__(self, root, target):
                 self.root, self.target = root, target
@@ -2075,6 +2264,7 @@ class CaptureTest(unittest.TestCase):
     def test_capture_verdict_even_when_start_or_stop_fails(self):
         class FakeHost:
             inst = regress.Instance("fake")
+            host = None
 
             def __init__(self, stop_rc, capture_rc):
                 self.stop_rc, self.capture_rc, self.commands = stop_rc, capture_rc, []
@@ -2131,7 +2321,9 @@ class CaptureTest(unittest.TestCase):
             mock.patch.object(regress, "local", return_value=1),
             contextlib.redirect_stdout(io.StringIO()),
         ):
-            r = regress.run_target(FakeHost(0, 0), remote, "h13-afro", WT1H)
+            host = FakeHost(0, 0)
+            host.host, host.dest = "vmhost", "beanjar"  # its results copied back from there
+            r = regress.run_target(host, remote, "h13-afro", WT1H)
         self.assertEqual(r.steps["capture"], "FAIL")
         self.assertFalse(r.ok)
 
