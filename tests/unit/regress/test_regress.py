@@ -466,6 +466,135 @@ class ArgsTest(unittest.TestCase):
                 regress.parse(argv, found=FOUND, env={})
 
 
+def _git(top, *args):
+    subprocess.run(["git", "-C", top, *args], check=True, capture_output=True)
+
+
+class SourceTest(unittest.TestCase):
+    """What a run tests: a commit (pinned) or this checkout as it is."""
+
+    def test_pin_arguments(self):
+        a, _ = regress.parse([], found=FOUND, env={})
+        self.assertEqual(a.pin, "HEAD")  # over ssh: HEAD by default
+        a, _ = regress.parse(["--commit", "abc123"], found=FOUND, env={})
+        self.assertEqual(a.pin, "abc123")
+        a, _ = regress.parse(["--working-tree"], found=FOUND, env={})
+        self.assertIsNone(a.pin)
+        a, _ = regress.parse(["--local"], found=FOUND, env={})
+        self.assertIsNone(a.pin)
+        a, _ = regress.parse(["--no-sync"], found=FOUND, env={})
+        self.assertIsNone(a.pin)
+        for argv in (
+            ["--commit", "HEAD", "--working-tree"],
+            ["--local", "--commit", "HEAD"],
+            ["--local", "--working-tree"],
+            ["--no-sync", "--commit", "HEAD"],
+            ["--no-sync", "--working-tree"],
+            ["--commit", ""],
+        ):
+            with self.assertRaises(regress.Usage, msg=argv):
+                regress.parse(argv, found=FOUND, env={})
+
+    def repo(self):
+        top = tempfile.mkdtemp()
+        self.addCleanup(subprocess.run, ["rm", "-rf", top])
+        _git(top, "init", "-q")
+        _git(top, "config", "user.email", "t@example.invalid")
+        _git(top, "config", "user.name", "t")
+        for name, text in (("same.txt", "same\n"), ("edited.txt", "one\n")):
+            with open(os.path.join(top, name), "w") as f:
+                f.write(text)
+        _git(top, "add", ".")
+        _git(top, "commit", "-q", "-m", "one")
+        return top
+
+    def test_source_and_dirty(self):
+        top = self.repo()
+        head = subprocess.run(
+            ["git", "-C", top, "rev-parse", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+        with mock.patch.object(regress, "TOP", top):
+            a = argparse.Namespace(host="h", no_sync=False, pin="HEAD")
+            src = regress.source(a)
+            self.assertEqual(
+                src, dict(commit=head, pinned=True, dirty=False, synced=True, rev="HEAD")
+            )
+            self.assertIn("clean worktree)", regress.describe(src))
+            with open(os.path.join(top, "new.txt"), "w") as f:
+                f.write("x")  # untracked: dirty
+            src = regress.source(argparse.Namespace(host="h", no_sync=False, pin=None))
+            self.assertEqual(src, dict(commit=head, pinned=False, dirty=True, synced=True))
+            self.assertIn("uncommitted changes", regress.describe(src))
+            src = regress.source(argparse.Namespace(host=None, no_sync=False, pin=None))
+            self.assertFalse(src["synced"])  # --local: this checkout
+            src = regress.source(argparse.Namespace(host="h", no_sync=True, pin=None))
+            self.assertIsNone(src["commit"])
+            self.assertIn("unknown", regress.describe(src))
+            with self.assertRaises(RuntimeError):
+                regress.source(argparse.Namespace(host="h", no_sync=False, pin="no-such-rev"))
+
+    def test_pinned_worktree(self):
+        top = self.repo()
+        old = time.time() - 3600
+        for name in ("same.txt", "edited.txt"):
+            os.utime(os.path.join(top, name), (old, old))
+        with open(os.path.join(top, "edited.txt"), "w") as f:
+            f.write("two\n")  # uncommitted: not in the worktree, which keeps its own time
+        with open(os.path.join(top, "untracked.txt"), "w") as f:
+            f.write("u\n")
+        with (
+            mock.patch.object(regress, "TOP", top),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            head = regress.git("rev-parse", "HEAD")
+            with regress.Pinned(head, False) as pin:
+                self.assertEqual(pin.rel, f"scratch/rg-{head[:12]}")
+                with open(os.path.join(pin.path, "edited.txt")) as f:
+                    self.assertEqual(f.read(), "one\n")
+                self.assertFalse(os.path.exists(os.path.join(pin.path, "untracked.txt")))
+                # unchanged content: this checkout's time; changed: the checkout's own (now)
+                self.assertEqual(
+                    os.stat(os.path.join(pin.path, "same.txt")).st_mtime_ns,
+                    os.stat(os.path.join(top, "same.txt")).st_mtime_ns,
+                )
+                self.assertGreater(os.stat(os.path.join(pin.path, "edited.txt")).st_mtime, old + 60)
+                # a second run of the same commit gets a worktree of its own
+                with regress.Pinned(head, False) as other:
+                    self.assertEqual(other.rel, f"scratch/rg-{head[:12]}-{os.getpid()}")
+            self.assertFalse(os.path.exists(pin.path))
+            self.assertFalse(os.path.exists(other.path))
+            # removed on a failure too
+            with self.assertRaises(ZeroDivisionError):
+                with regress.Pinned(head, False) as pin:
+                    1 / 0
+            self.assertFalse(os.path.exists(pin.path))
+            self.assertNotIn("rg-", regress.git("worktree", "list"))
+
+    def test_dry_run_working_tree(self):
+        out = io.StringIO()
+        real = regress.parse
+        regress.parse = lambda argv: real(argv, found=FOUND, env={})
+        try:
+            with (
+                contextlib.redirect_stdout(out),
+                mock.patch.object(regress, "machine", return_value="x86_64"),
+            ):
+                rc = regress.main(["-n", "--working-tree", "--target", "h13-afro"])
+        finally:
+            regress.parse = real
+        text = out.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertNotIn("worktree add", text)
+        self.assertIn(f"SRC={TOP} HOST=vmhost DEST=beanjar sync-checkout", text)
+        self.assertIn("source: commit ", text)
+
+    def test_sync_script_copies_src(self):
+        with open(os.path.join(TOP, "host", "scripts", "sync-pi.sh")) as f:
+            text = f.read()
+        self.assertIn("SRC=${SRC:-$TOP}", text)
+        self.assertIn('"$SRC/" "$PI:$DEST/"', text)
+
+
 class DryRunTest(unittest.TestCase):
     def setUp(self):
         # what is built and checked depends on the machine (guest builds on x86_64 only), and a
@@ -501,7 +630,9 @@ class DryRunTest(unittest.TestCase):
             text,
             [
                 f"FW={WT1H} scripts/build.sh guest",
-                "[here] HOST=vmhost DEST=beanjar sync-checkout",
+                "git worktree add --quiet --detach scratch/rg-",
+                "HOST=vmhost DEST=beanjar sync-checkout",
+                "git worktree remove --force scratch/rg-",
                 "vm-launcher config FIRMWARE_DIRS",
                 "pgrep -ax",
                 f"FW={WT1H} STATE=none BUILD=0 LAYERS=normal,gl DISPLAY_BACKEND=dbus",

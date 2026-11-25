@@ -6,14 +6,24 @@
   scripts/regress (--host HOST | --local) [--target TARGET]... [--fw NAME]... [--headless] [--tv]
                   [--no-build] [--no-sync] [--keep-going] [--timeout S] [--settle S] [--run NAME]
                   [--dry-run] [-j N] [--viewer] [--tv-steps LIST] [--decode-cases LIST]
+                  [--commit REV | --working-tree]
 
 Drives the VM host over ssh from this machine (--host HOST, or REGRESS_HOST in the environment: an
 ssh destination, with no built-in default; the checkout there is the directory DEST, default
 beanjar, relative to its home), or this machine itself with --local. First, here:
 `FW=<fw> scripts/build.sh guest` for each target's firmware (--no-build: only checks that the
 published kernel and the target's layers exist), then the command named by REGRESS_SYNC (an
-executable that copies this checkout to the VM host; it gets HOST and DEST in its environment) and
-`scripts/build.sh host` on the VM host (--no-sync skips both: sync and build the host yourself). The
+executable that copies a tree to the VM host; it gets SRC, HOST and DEST in its environment) and
+`scripts/build.sh host` on the VM host (--no-sync skips both: sync and build the host yourself).
+A run over ssh tests a commit: SRC is a clean `git worktree add --detach` of HEAD (--commit REV: of
+REV) at scratch/rg-<hash>, removed after the sync, on a failure too, whose files keep this checkout's
+modification times where their content is the same; the guest build's outputs the sync sends are
+this checkout's build/ either way. Several agents edit this checkout at once, so its uncommitted files
+are never tested by default; --working-tree syncs this checkout as it is (SRC=TOP) instead. The run
+directory's source.json says what was tested: the commit, pinned or not, and whether this checkout had
+uncommitted changes (tracked or untracked, not ignored; with --no-sync the commit is null: the VM
+host's checkout as it was); summary.txt's last line says the same, and summary.json each target's
+commit. The runner itself, its judges and the test apps it packs are this checkout's. The
 VM host boots each target's firmware from its own firmware collections (`host/scripts/vm-launcher config
 FIRMWARE_DIRS` there), by the name chosen here; nothing is copied to it, and a target whose firmware
 is not there fails without booting.
@@ -167,6 +177,7 @@ release its rootfs names; the default firmware first; --fw NAME picks one where 
 """
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -510,6 +521,17 @@ def parser():
         "directory $DEST (default beanjar) in its home",
     )
     p.add_argument("--local", action="store_true", help="boot on this machine instead of over ssh")
+    p.add_argument(
+        "--commit",
+        metavar="REV",
+        help="sync the VM host from a clean worktree of commit REV (default HEAD: a run over ssh "
+        "tests a commit, never uncommitted files)",
+    )
+    p.add_argument(
+        "--working-tree",
+        action="store_true",
+        help="sync this checkout's working tree as it is, uncommitted files included, instead of a commit",
+    )
     p.add_argument("--dry-run", "-n", action="store_true", help="print what would run, run nothing")
     p.add_argument(
         "--viewer",
@@ -625,6 +647,17 @@ def parse(argv, found=None, env=None):
         )
     a.dest = env.get("DEST") or "beanjar"
     a.sync = env.get("REGRESS_SYNC") or ""
+    # what the VM host gets: a commit (REV, default HEAD), or with --working-tree this checkout as it is
+    if a.commit is not None and a.working_tree:
+        raise Usage("--commit and --working-tree exclude each other")
+    if (a.commit is not None or a.working_tree) and (a.local or a.no_sync):
+        raise Usage(
+            "--commit and --working-tree choose what is synced to a VM host: "
+            + ("--local runs this checkout as it is" if a.local else "--no-sync syncs nothing")
+        )
+    if not a.commit and a.commit is not None:
+        raise Usage("--commit needs a revision")
+    a.pin = None if a.local or a.no_sync or a.working_tree else (a.commit or "HEAD")
     a.mode = "headless" if a.headless else "graphics"
     a.vm_env = {k: env.get(k) or v for k, v in DEFAULTS[a.mode].items()}
     if env.get("NET"):
@@ -2217,6 +2250,104 @@ def schedule(items, jobs, work, stop=lambda r: False):
     return [done[i] for i in sorted(done)]
 
 
+def git(*args, top=None):
+    """git's output in top (default TOP; stripped); RuntimeError with its message on a failure."""
+    r = subprocess.run(
+        ["git", "-C", top or TOP, *args],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip() or f"git {' '.join(args)} failed")
+    return r.stdout.strip("\n")
+
+
+def source(a):
+    """What the run tests (its run directory's source.json): the commit (with a.pin, the one it
+    names; else this checkout's HEAD), whether it is pinned, and whether this checkout's working tree
+    had uncommitted changes (tracked or untracked, not ignored), which a pinned run leaves out and an
+    unpinned one (--working-tree, --local) tests. --no-sync: the VM host's checkout as it was, its
+    commit unknown. RuntimeError if git cannot say (a.pin is not a commit)."""
+    if a.host and a.no_sync:
+        return {"commit": None, "pinned": False, "dirty": None, "synced": False}
+    commit = git("rev-parse", "--verify", "--end-of-options", f"{a.pin or 'HEAD'}^{{commit}}")
+    dirty = bool(git("status", "--porcelain", "--untracked-files=normal"))
+    out = {"commit": commit, "pinned": bool(a.pin), "dirty": dirty, "synced": bool(a.host)}
+    if a.pin:
+        out["rev"] = a.pin
+    return out
+
+
+def describe(src):
+    """source()'s one line, for the log and the summary."""
+    if src["commit"] is None:
+        return "the VM host's checkout as it was (--no-sync), commit unknown"
+    if src["pinned"]:
+        return f"commit {src['commit']} ({src['rev']}, a clean worktree" + (
+            "; this checkout's uncommitted changes left out)" if src["dirty"] else ")"
+        )
+    return f"commit {src['commit']}" + (
+        " with this checkout's uncommitted changes" if src["dirty"] else ", working tree clean"
+    )
+
+
+def match_mtimes(tree, commit):
+    """Give each file of the fresh worktree tree that this checkout has with the same content its
+    modification time here, so that the sync (rsync's size and time check) and the VM host's build
+    (ninja's) see unchanged files as unchanged; the rest keep the checkout's time."""
+    differ = set(git("diff", "--name-only", "-z", commit).split("\0"))
+    for f in git("ls-files", "-z", top=tree).split("\0"):
+        if not f or f in differ:
+            continue
+        try:
+            st, mine = os.lstat(os.path.join(TOP, f)), os.lstat(os.path.join(tree, f))
+        except FileNotFoundError:
+            continue
+        os.utime(
+            os.path.join(tree, f), ns=(mine.st_atime_ns, st.st_mtime_ns), follow_symlinks=False
+        )
+
+
+# A pinned run's worktree: short, as runtime paths under a checkout meet AF_UNIX's 108-byte limit
+PINNED_PREFIX = "scratch/rg-"
+
+
+class Pinned:
+    """A clean worktree of commit (git worktree add --detach) under scratch/ for the sync to copy:
+    scratch/rg-<12 hex digits>, with -<pid> when another run has that one. Removed on leaving, on a
+    failure too. Dry run: printed, not made."""
+
+    def __init__(self, commit, dry):
+        self.commit, self.dry = commit, dry
+        rel = f"{PINNED_PREFIX}{commit[:12]}"
+        if os.path.exists(os.path.join(TOP, rel)):
+            rel += f"-{os.getpid()}"
+        self.rel, self.path = rel, os.path.join(TOP, rel)
+
+    def __enter__(self):
+        say(f"worktree: {self.rel} at {self.commit}")
+        if local(
+            ["git", "worktree", "add", "--quiet", "--detach", self.rel, self.commit], self.dry
+        ):
+            raise RuntimeError(f"git worktree add {self.rel} failed")
+        if not self.dry:
+            try:
+                match_mtimes(self.path, self.commit)
+            except BaseException:
+                self.__exit__(None, None, None)
+                raise
+        return self
+
+    def __exit__(self, *exc):
+        say(f"worktree: removing {self.rel}")
+        if local(["git", "worktree", "remove", "--force", self.rel], self.dry) and not self.dry:
+            shutil.rmtree(self.path, ignore_errors=True)
+            local(["git", "worktree", "prune"], self.dry)
+        return False
+
+
 def machine():
     """This machine's architecture: guest builds happen only on x86_64 (the SDK's)."""
     return os.uname().machine
@@ -2268,10 +2399,20 @@ def prepare(a, sel):
         if not a.sync:
             say(
                 "no sync command: set REGRESS_SYNC to an executable that copies this checkout to the VM host "
-                "(it gets HOST and DEST in its environment), or sync it yourself and pass --no-sync"
+                "(it gets SRC, HOST and DEST in its environment), or sync it yourself and pass --no-sync"
             )
             return False
-        if local([a.sync], a.dry_run, {"HOST": a.host, "DEST": a.dest}):
+        # SRC: the tree it copies (a pinned run's clean worktree, else this checkout); the build's
+        # outputs it sends are this checkout's build/ either way
+        try:
+            with (
+                Pinned(a.source["commit"], a.dry_run) if a.pin else contextlib.nullcontext() as pin
+            ):
+                env = {"SRC": pin.path if pin else TOP, "HOST": a.host, "DEST": a.dest}
+                if local([a.sync], a.dry_run, env):
+                    return False
+        except RuntimeError as e:
+            say(str(e))
             return False
         if not a.no_build:
             say(f"build: host side on {a.host}")
@@ -2432,6 +2573,18 @@ def main(argv=None):
         + f" on {a.host or 'this machine'}"
         + (" (dry run)" if a.dry_run else "")
     )
+    try:
+        a.source = source(a)
+    except RuntimeError as e:
+        print(f"scripts/regress: {a.pin or 'HEAD'}: {e}", file=sys.stderr)
+        return 2
+    say(f"source: {describe(a.source)}")
+    if not a.dry_run:
+        d = os.path.join(TOP, "build", "regress", a.run)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "source.json"), "w") as f:
+            json.dump(a.source, f, indent=1)
+            f.write("\n")
     for p, _fw in sel:
         warning = targets.untested_warning(targets.by_name(p))
         if warning:
@@ -2526,7 +2679,10 @@ def main(argv=None):
         left = left.strip()
         if left:
             say(f"left running on the VM host after the run:\n{left.strip()}")
-    summary = table(results, a.mode, a.tv) + f"\n\nwall {wall:.0f} s, {jobs} at once"
+    summary = (
+        table(results, a.mode, a.tv)
+        + f"\n\nwall {wall:.0f} s, {jobs} at once\nsource: {describe(a.source)}"
+    )
     say_raw(summary)
     d = os.path.join(TOP, "build", "regress", a.run)
     if not a.dry_run:
@@ -2564,6 +2720,7 @@ def main(argv=None):
                         seconds=r.seconds,
                         instance=r.instance,
                         jobs=jobs,
+                        commit=a.source["commit"],
                         device_census=r.device_census,
                         checklist=[dict(item=i, status=s, reason=why) for i, s, why in r.checklist],
                         tv={

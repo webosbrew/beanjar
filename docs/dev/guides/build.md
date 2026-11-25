@@ -235,6 +235,21 @@ scripts/regress --target m2-dreadlocks --no-build --no-sync --keep-going --timeo
 scripts/regress --tv --viewer    # graphics: each VM also in the viewer on the VM host's desktop
 ```
 
+A run over ssh tests a commit, not this checkout's working tree: several agents edit the checkout
+at once, and a run that synced it could test someone's half-finished edit without saying so. The
+sync command gets `SRC`, the tree it copies: a clean `git worktree add --detach` of `HEAD` (`--commit
+REV`: of `REV`) at `scratch/rg-<hash>` (short, as runtime paths under a checkout must stay within
+`AF_UNIX`'s 108 bytes), removed once the sync ends, on a failure too. Its files keep this checkout's
+modification times where their content is the same, so the sync and the VM host's build see them
+unchanged. What the guest build publishes (`build/Image`, the components, `build/publish-arm64`) is
+sent from this checkout's `build/` either way. `--working-tree` syncs this checkout as it is,
+uncommitted files included (`SRC` is the checkout). The run directory's `source.json` says what was
+tested: the commit, whether it was pinned, and whether this checkout had uncommitted changes
+(tracked or untracked, not ignored), which a pinned run left out and an unpinned one (`--working-tree`,
+`--local`) tested; with `--no-sync` the commit is `null`. `summary.txt` ends with the same in a line,
+and `summary.json` has each target's `commit`. The runner itself, its judges and the test apps it packs
+run from this checkout.
+
 `--viewer` (graphics only) opens `build/viewer/beanjar-viewer` on the VM's D-Bus display on the VM
 host's desktop (its Wayland socket in `XDG_RUNTIME_DIR`, else X `:0`) once the VM has started, with
 `--no-audio --no-media` and no remote (`ir.sock` takes one client, the run's `ir-key.py`: the viewer's
