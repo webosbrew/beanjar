@@ -77,6 +77,34 @@ def test_validation():
         ({"network": {"link": "lan", "address": "10.0.0.5"}}, "network.address"),
         ({"network": {"link": "lan", "address": "10.0.0.5/30,10.0.0.1"}}, "network.address"),
         ({"network": {"link": "lan", "address": "10.0.0.5/24,10.0.0.5"}}, "network.address"),
+        # lan with direct: nothing of Beanjar's in the guest's traffic, so no LG mock, no address
+        # of ours and no forwards
+        (
+            {"network": {"link": "lan", "mode": "direct"}},
+            "network.lg_services: link=lan with mode=direct needs lg_services=real",
+        ),
+        (
+            {
+                "network": {
+                    "link": "lan",
+                    "mode": "direct",
+                    "lg_services": "real",
+                    "address": "dhcp",
+                }
+            },
+            "network.address: address is for link=lan with mode=mitm",
+        ),
+        (
+            {
+                "network": {
+                    "link": "lan",
+                    "mode": "direct",
+                    "lg_services": "real",
+                    "forward": "8080",
+                }
+            },
+            "network.forward: forward is for link=nat and link=lan with mode=mitm",
+        ),
     ]
     for fields, message in bad:
         with pytest.raises(core.Error, match=message):
@@ -85,6 +113,21 @@ def test_validation():
         vmconfig.decode({})
     with pytest.raises(core.Error, match="unknown section"):
         vmconfig.decode({"smp": 4})
+
+
+def test_lan_direct():
+    """link=lan with mode=direct and lg_services=real is a VM's network, written as given."""
+    cfg = vmconfig.decode(
+        dict(
+            firmware={"directory": "firmware"},
+            network={"link": "lan", "mode": "direct", "lg_services": "real"},
+        )
+    )
+    assert (cfg["link"], cfg["mode"], cfg["lg_services"]) == ("lan", "direct", "real")
+    assert vmsettings.lan_direct("lan", "direct")
+    assert not vmsettings.lan_direct("lan", None)  # mitm, the default
+    assert not vmsettings.lan_direct("nat", "direct")
+    assert vmsettings.network_label("lan", "direct") == "lan+direct"
 
 
 def test_userland():
@@ -395,14 +438,14 @@ def test_network():
             base,
             network={
                 "link": "lan",
-                "mode": "direct",
+                "mode": "mitm",
                 "address": "192.168.1.50/24,192.168.1.1",
             },
         )
     )
     assert (cfg["link"], cfg["mode"], cfg["address"]) == (
         "lan",
-        "direct",
+        "mitm",
         "192.168.1.50/24,192.168.1.1",
     )
     assert (
@@ -413,9 +456,9 @@ def test_network():
         vmconfig.decode(dict(base, network={"link": "nat", "listen": "0.0.0.0"}))["listen"]
         == "0.0.0.0"
     )
-    assert vmsettings.launcher_env(dict(link="lan", mode="direct", address="dhcp")) == {
+    assert vmsettings.launcher_env(dict(link="lan", mode="mitm", address="dhcp")) == {
         "NET_LINK": "lan",
-        "NET_MODE": "direct",
+        "NET_MODE": "mitm",
         "NET_ADDRESS": "dhcp",
     }
 

@@ -408,32 +408,57 @@ class ManagerTest(unittest.TestCase):
         self.assertIn(
             "address is for link=lan", self.cli("config", "set", "tv1", "address=dhcp", ok=False)
         )
+        # lan with direct: LG's services cannot be mocked there, and the guest takes its own address
+        self.assertIn(
+            "needs lg_services=real",
+            self.cli("config", "set", "tv1", "link=lan", "mode=direct", ok=False),
+        )
+        self.assertIn(
+            "address is for link=lan with mode=mitm",
+            self.cli(
+                "config",
+                "set",
+                "tv1",
+                "link=lan",
+                "mode=direct",
+                "lg_services=real",
+                "address=dhcp",
+                ok=False,
+            ),
+        )
+        self.cli("config", "set", "tv1", "link=lan", "mode=direct", "lg_services=real")
+        cfg = tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
+        self.assertEqual(
+            (cfg["link"], cfg["mode"], cfg["lg_services"], "address" in cfg),
+            ("lan", "direct", "real", False),
+        )
+        self.assertEqual(self.listing()["tv1"]["network"], "lan+direct")
+        self.assertEqual(
+            self.lib().vm("tv1").listeners(), [], "lan+direct: nothing of it on this host"
+        )
+        self.assertIn(
+            "listen is for link=nat", self.cli("config", "set", "tv1", "listen=0.0.0.0", ok=False)
+        )
+        self.assertIn("needs the library's lan_parent", self.cli("start", "tv1", ok=False))
+        self.assertEqual(self.listing()["tv1"]["state"], "Off")
         self.cli(
             "config",
             "set",
             "tv1",
-            "link=lan",
-            "mode=direct",
+            "mode=mitm",
+            "lg_services=mock",
             "address=192.168.1.50/24,192.168.1.1",
         )
         cfg = tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
         self.assertEqual(
             (cfg["link"], cfg["mode"], cfg["address"]),
-            ("lan", "direct", "192.168.1.50/24,192.168.1.1"),
+            ("lan", "mitm", "192.168.1.50/24,192.168.1.1"),
         )
-        self.assertEqual(self.listing()["tv1"]["network"], "lan+direct")
         self.assertEqual(
             self.lib().vm("tv1").listeners(),
             [("127.0.1.1", p) for p in (3000, 3001, 9922, 9991)],
             "lan: on its own LAN address, and the host side of its relay on its address",
         )
-        self.assertIn(
-            "listen is for link=nat", self.cli("config", "set", "tv1", "listen=0.0.0.0", ok=False)
-        )
-        out = self.cli("start", "tv1", ok=False)
-        self.assertIn("link=lan with mode=direct is not implemented yet", out)
-        self.assertEqual(self.listing()["tv1"]["state"], "Off")
-        self.cli("config", "set", "tv1", "mode=mitm")
         self.assertIn("needs the library's lan_parent", self.cli("start", "tv1", ok=False))
         self.assertEqual(self.listing()["tv1"]["state"], "Off")
         self.assertIn(
@@ -2425,6 +2450,28 @@ class ManagerTest(unittest.TestCase):
             "stopped, without root SSH",
         )
         self.assertIn("no VM named nope", self.cli("_ares", "local/nope", "--json", ok=False))
+        # link lan with mode direct: this host cannot reach it; another machine's tool is given
+        # the guest's own LAN address (run/lan.json, "" while none), root on the guest's port 22
+        self.cli("config", "set", "tv2", "link=lan", "mode=direct", "lg_services=real")
+        self.assertIn(
+            "VM tv2 is link=lan with mode=direct: the guest is on the LAN itself",
+            self.cli("ares-fake", "-d", "tv2", ok=False, env=env),
+        )
+        self.assertEqual(json.loads(self.cli("_ares", "local/tv2", "--json"))["lan"], "")
+        run_dir = os.path.join(self.lib_dir, "vms", "tv2", "run")
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "lan.json"), "w") as f:
+            json.dump({"address": "192.168.1.77", "prefix": 24, "source": "guest"}, f)
+        self.assertEqual(
+            json.loads(self.cli("_ares", "local/tv2", "--json"))["lan"], "192.168.1.77"
+        )
+        self.cli("config", "set", "tv2", "layers=normal,gl,rootssh")
+        self.assertEqual(json.loads(self.cli("_ares", "local/tv2", "--root", "--json"))["port"], 22)
+        self.assertSameAresAnswer("tv2", True)
+        os.unlink(os.path.join(run_dir, "lan.json"))
+        self.cli(
+            "config", "set", "tv2", "link=nat", "mode=mitm", "lg_services=mock", "layers=normal,gl"
+        )
         # the query reads one vm.toml without the library module: the library's answer and errors
         same = self.assertSameAresAnswer
         for name, root in (("tv2", False), ("tv2", True), ("tv1", True), ("nope", False)):
@@ -2443,7 +2490,7 @@ class ManagerTest(unittest.TestCase):
                 got,
                 {"name": "tv1", "layers": ["normal", "devmode", "rootssh"], "running": True,
                  "address": "127.0.1.1", "port": port,
-                 "key": slurp(os.path.join(vm_dir, "identity", key))},
+                 "key": slurp(os.path.join(vm_dir, "identity", key)), "lan": None},
             )  # fmt: skip
             same("tv1", root)
         self.assertNotIn("_ares", self.cli("--help"), "internal: not in the help")

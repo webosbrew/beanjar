@@ -938,6 +938,27 @@ class AresRemoteTest(Base):
         self.assertTrue(argv[argv.index("-L") + 1].endswith(":192.168.1.9:9922"))
         self.assert_clean()
 
+    def test_lan_direct(self):
+        """A VM with link lan and mode direct: the host cannot reach it, so the tool connects to the
+        guest's own LAN address (the host's "lan") with no forward, root to the guest's port 22;
+        while the host knows no address yet ("") it is refused."""
+        self.target["lan"] = "192.168.1.77"
+        with open(os.path.join(self.dir, "forwards.json"), "w") as f:
+            f.write("[]")  # the fake tool reads the master's forwards: none
+        rc, _out, err = self.beanjar("ares-fake", "-d", "pi/tv")
+        self.assertEqual(rc, 3, err)
+        got = self.tool()
+        self.assertEqual(got["forwards"], [])
+        for profile in ("ose", "tv"):
+            (dev,) = got[profile]
+            self.assertEqual((dev["host"], dev["port"]), ("192.168.1.77", 9922))
+        self.assertEqual(self.requests(), [], "no forward")
+        self.assert_clean()
+        self.target["lan"] = ""
+        rc, _out, err = self.beanjar("ares-fake", "-d", "pi/tv")
+        self.assertEqual(rc, 1)
+        self.assertIn("its LAN address is not known yet", err)
+
     def test_master_started(self):
         """No shared connection running: one is started (a command over it), then the forward
         added to it."""

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""link = "lan" with mode = "mitm" (host/core/beanjar/netns.py, lan()) end to end, without a VM
+"""link = "lan" with mode = "mitm", and with mode = "direct" (LanDirect, its own docstring), in
+host/core/beanjar/netns.py's lan(), end to end, without a VM
 and without a real LAN: test_netns_lan.py runs these cases under `unshare -rn`, where a veth pair is the LAN
 (lanp, the "wired interface", and lanpeer, the rest of the LAN: a DHCP server of the test's own on
 192.0.2.1, and a TCP server there). A stand-in for the CAP_NET_ADMIN helper (BEANJAR_LAN_HELPER)
@@ -234,9 +235,13 @@ class Lan(unittest.TestCase):
 
     @staticmethod
     def connect(host):
+        return Lan.connect_port(host, FWD)
+
+    @staticmethod
+    def connect_port(host, port):
         for _ in range(20):
             try:
-                with socket.create_connection((host, FWD), 3) as c:
+                with socket.create_connection((host, port), 3) as c:
                     return c.recv(100)
             except OSError as e:
                 why = repr(e).encode()
@@ -384,6 +389,191 @@ class Lan(unittest.TestCase):
             self.assertEqual(
                 statuses, [403, 403, 200], host
             )  # no password, a wrong one, the right one
+
+
+class LanDirect(unittest.TestCase):
+    """link = "lan" with mode = "direct": the fake guest's TAP joined to lan0 by tc, nothing of
+    Beanjar's in between. The guest has the macvlan's MAC (the fake guest's own, here), asks the
+    LAN's DHCP server itself, reaches the LAN from its lease and is reached there at every port;
+    the lease watch writes lan.json from the server's ACK; the LAN namespace has no address of its
+    own; at the stop lan0 and lan.json are gone and nothing of the run is left."""
+
+    GUEST_MAC = "a8:23:fe:12:34:56"  # tests/fakes/fake-tap-guest's
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("tc", path=SBIN):
+            raise unittest.SkipTest("tc not found")
+        cls.tmp = t = tempfile.mkdtemp(prefix="test-netns-lan-direct-")
+        cls.dhcp, cls.server = LAN["dhcp"], LAN["server"]
+        # the Lan case's guest had the same lease with another MAC
+        ip("neigh", "flush", "dev", "lanpeer")
+        with open(f"{t}/helper", "w") as f:
+            f.write(
+                '#!/bin/sh\n[ "$1" = macvlan ] || exit 2\n'
+                'exec ip link add link "$2" name lan0 address "$3" netns "$4" type macvlan mode bridge\n'
+            )
+        os.chmod(f"{t}/helper", 0o755)
+        spec = {"lan": {"kind": "tcp", "host": SERVER, "port": cls.server.port}}
+        with open(f"{t}/spec.json", "w") as f:
+            json.dump(spec, f)
+        os.makedirs(f"{t}/vm-run")
+        env = dict(
+            os.environ,
+            PATH=SBIN,
+            PYTHONPATH=os.pathsep.join(filter(None, (PKG, os.environ.get("PYTHONPATH")))),
+            NETNS_SOCK_DIR=f"{t}/run",
+            RUN_DIR=f"{t}/vm-run",
+            NETNS_LOG_DIR=t,
+            NETNS_TAP="tap0",
+            NETNS_FWD="",
+            VM_ADDRESS=VM_ADDRESS,
+            NET_LINK="lan",
+            NET_MODE="direct",
+            NET_LG_SERVICES="real",
+            NET_LAN_PARENT="lanp",
+            NET_LAN_MAC=cls.GUEST_MAC,
+            NET_LAN_HELPER=f"{t}/helper",
+            FAKE_GUEST_SPEC=f"{t}/spec.json",
+            FAKE_GUEST_RESULTS=f"{t}/results.json",
+            FAKE_GUEST_STOP=f"{t}/stop",
+            FAKE_GUEST_PORT=str(GUEST_PORT),
+        )
+        with open(f"{t}/out.log", "w") as out:
+            cls.proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os, sys; from beanjar import netns; "
+                    "sys.exit(netns.run(sys.argv[1:], os.environ))",
+                    sys.executable,
+                    os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
+                ],
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=out,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        end = time.monotonic() + 60
+        while not os.path.exists(f"{t}/results.json"):
+            if cls.proc.poll() is not None or time.monotonic() > end:
+                cls.stop()
+                raise AssertionError("the fake guest gave no results:\n" + cls.logs())
+            time.sleep(0.2)
+        with open(f"{t}/results.json") as f:
+            cls.results = json.load(f)
+        cls.info = None
+        for _ in range(20):
+            try:
+                with open(f"{t}/vm-run/lan.json") as f:
+                    cls.info = json.load(f)
+                break
+            except OSError:
+                time.sleep(0.2)
+        cls.from_lan = Lan.connect_port(LEASE, GUEST_PORT)
+        cls.ns_addresses = subprocess.run(
+            ["nsenter", "-t", str(cls.lan_pid()), "-U", "-n", "--preserve-credentials"]
+            + ["ip", "-o", "addr"],
+            env=dict(os.environ, PATH=SBIN),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).stdout
+        cls.rc = cls.stop()
+        time.sleep(0.5)
+        cls.links = subprocess.run(
+            ["ip", "-br", "link"],
+            env=dict(os.environ, PATH=SBIN),
+            stdout=subprocess.PIPE,
+            text=True,
+        ).stdout
+
+    @classmethod
+    def lan_pid(cls):
+        """The pid of netns.lan, in the LAN namespace (the fake guest has a namespace of its own)."""
+        for pid in filter(str.isdigit, os.listdir("/proc")):
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmd = f.read().split(b"\0")
+                with open(f"/proc/{pid}/environ", "rb") as f:
+                    mine = cls.tmp.encode() in f.read()
+            except OSError:
+                continue
+            if mine and b"beanjar.netns" in cmd and b"lan" in cmd:
+                return pid
+        return 0
+
+    @classmethod
+    def stop(cls):
+        open(f"{cls.tmp}/stop", "w").close()
+        try:
+            return cls.proc.wait(timeout=40)
+        except subprocess.TimeoutExpired:
+            testunits.end(cls.proc.pid, group=True)
+            cls.proc.wait()
+            return None
+
+    @classmethod
+    def logs(cls):
+        try:
+            with open(os.path.join(cls.tmp, "out.log")) as f:
+                return f.read()[-3000:]
+        except OSError:
+            return ""
+
+    @classmethod
+    def tearDownClass(cls):
+        if not os.environ.get("KEEP_TMP"):
+            shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_guest_takes_the_lan_lease_itself(self):
+        self.assertEqual(self.results["dhcp"]["ack"], LEASE, self.results)
+        self.assertEqual(self.results["dhcp"]["router"], SERVER)
+        self.assertEqual(
+            self.results["dhcp"]["renew"], LEASE, "unicast renewal to the LAN's server"
+        )
+        self.assertIn((3, self.GUEST_MAC), self.dhcp.seen, "no DHCPREQUEST from the guest's MAC")
+
+    def test_guest_reaches_the_lan_from_its_own_address(self):
+        self.assertEqual(self.results["lan"].get("data"), f"from:{LEASE}", self.results)
+
+    def test_every_guest_port_on_its_lan_address(self):
+        self.assertEqual(self.from_lan, b"guest-banner\n")
+
+    def test_lan_json_from_the_guests_lease(self):
+        self.assertEqual(
+            {k: (self.info or {}).get(k) for k in ("address", "prefix", "router", "mac", "source")},
+            {
+                "address": LEASE,
+                "prefix": 24,
+                "router": SERVER,
+                "mac": self.GUEST_MAC,
+                "source": "guest",
+            },
+            self.logs(),
+        )
+
+    def test_lan_namespace_has_no_address(self):
+        """No IPv4 or IPv6 address of the namespace's own on lan0 or tap0: it only carries frames."""
+        self.assertIn("lo", self.ns_addresses, f"nsenter failed: {self.ns_addresses}")
+        self.assertNotIn("lan0", self.ns_addresses)
+        self.assertNotIn("tap0", self.ns_addresses)
+
+    def test_exit_and_cleanup(self):
+        self.assertEqual(self.rc, 0, self.logs())
+        self.assertNotIn("lan0", self.links, "the macvlan outlived the VM")
+        self.assertFalse(os.path.exists(f"{self.tmp}/vm-run/lan.json"))
+        self.assertFalse(os.path.exists(f"{self.tmp}/run"), "socket dir left behind")
+        left = []
+        for pid in filter(str.isdigit, os.listdir("/proc")):
+            try:
+                with open(f"/proc/{pid}/environ", "rb") as f:
+                    if self.tmp.encode() in f.read():
+                        left.append(pid)
+            except OSError:
+                pass
+        self.assertEqual(left, [], "processes of the run still alive")
 
 
 class LanCrash(unittest.TestCase):

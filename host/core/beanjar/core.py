@@ -683,10 +683,11 @@ class VM:
     def listeners(self):
         """[(address, port)] its forwarded ports (forwards()) listen on when it runs: listen, else
         its own address; with link lan its own address (the host side of its relay; on the LAN they
-        are on its LAN address); none with link off."""
+        are on its LAN address); none with link off, and none with link lan and mode direct (the
+        guest's own ports on its own LAN address, nothing on this host)."""
         addr = self.address()
         link = self.config.get("link", "nat")
-        if addr is None or link == "off":
+        if addr is None or link == "off" or vmsettings.lan_direct(link, self.config.get("mode")):
             return []
         listen = (self.config.get("listen") if link == "nat" else None) or addr
         ports = []
@@ -1230,8 +1231,10 @@ class Library:
             raise Error(why)
 
         if vm.config.get("link", "nat") == "lan":
-            if vm.config.get("mode", "mitm") != "mitm":
-                raise Error(vmsettings.LAN_NOT_IMPLEMENTED, "link")
+            if vmsettings.lan_direct("lan", vm.config.get("mode")) and (
+                vm.config.get("lg_services", vmsettings.DEFAULT_LG_SERVICES) != "real"
+            ):
+                raise Error(vmsettings.LAN_DIRECT_LG, "lg_services")
             parent = vmidentity.lan_parent_of(self.root)
             if not parent:
                 raise Error(
@@ -1593,7 +1596,7 @@ class Library:
         """beanjar-vnc (docs/dev/architecture/vnc.md) on listen (default the VM's own address, 127.0.1.N)
         at port (VNC_PORT; 0: any free port, which VM.vnc_info and run/vnc.json report), always behind the VM's own password (RSA-AES): the owner-only
         VM.vnc_password_file in its identity, made random the first time and kept
-        (set_vnc_password), which beanjar-vnc reads (--password-file). With link lan it is also on
+        (set_vnc_password), which beanjar-vnc reads (--password-file). With link lan and mode mitm it is also on
         the VM's LAN address, port 5900: beanjar-vnc listens on the socket dir's netns.VNC_SOCK too,
         which the LAN namespace's relay serves there; listen is refused there (the VM's addresses
         are its own) and port moves only this host's listener (a desktop VNC may hold *:5900). A
@@ -1608,6 +1611,9 @@ class Library:
         vm = self._frontend_check(name, "beanjar-vnc")
         env = hostprocs.proc_env(vm.pid())
         lan = (env.get("NET_LINK") or vm.config.get("link")) == "lan"
+        # link lan with mode direct has no LAN namespace relay to serve it there (the guest alone
+        # is on the LAN): this host's listener only, as with nat
+        lan = lan and not vmsettings.lan_direct("lan", env.get("NET_MODE") or vm.config.get("mode"))
         if lan and listen:
             raise Error(
                 f"VM {name} has link lan: VNC is on its own addresses (the LAN one and "

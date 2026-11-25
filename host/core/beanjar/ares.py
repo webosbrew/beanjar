@@ -53,7 +53,7 @@ import sys
 import tempfile
 import termios
 
-from . import base, core, keys, layermeta, remote
+from . import base, core, keys, layermeta, remote, vmsettings
 from .core import Error
 
 TOOL_RE = re.compile(r"ares-[a-z-]+")
@@ -190,7 +190,20 @@ def check(name, layers, running, address, has_key, root=False, port=None):
         raise Error(f"VM {name} has no developer key ({keys.DEVMODE}): start it to make one")
 
 
+def lan_direct_refusal(name, spec):
+    """The Error for a local ares-TOOL on a VM with link lan and mode direct: this host cannot
+    reach its own macvlan children."""
+    return Error(
+        f"VM {name} is link=lan with mode=direct: the guest is on the LAN itself, where this host "
+        f"cannot reach it (a macvlan's parent never reaches its children). Run the tool on another "
+        f"machine of the LAN: beanjar ares-TOOL -d {spec} there, or the SDK's own tools at its LAN "
+        "address"
+    )
+
+
 def check_vm(vm, root=False):
+    if vmsettings.lan_direct(vm.config.get("link"), vm.config.get("mode")):
+        raise lan_direct_refusal(vm.name, f"HOST/{vm.name}")
     layers = vm.config.get("layers")
     check(
         vm.name,
@@ -331,8 +344,9 @@ def target(vm, root=False):
 
 def remote_vm(host, uri, name, root=False):
     """(its layers, whether it runs, its address on host, its key as bytes or None, the port to
-    forward to or None) of VM name on host: target there, one call over the host's shared
-    connection. A host whose beanjar predates the query is told to update it."""
+    forward to or None, its own LAN address with link lan and mode direct: "" while unknown, None
+    for any other) of VM name on host: target there, one call over the host's shared connection.
+    A host whose beanjar predates the query is told to update it."""
     words = [remote.ARES_QUERY, remote.own(name), *([ROOT_OPTION] if root else []), "--json"]
     rc, out, err = remote.call(host, uri, words, timeout=remote.LIST_TIMEOUT)
     if rc == 2:
@@ -346,9 +360,14 @@ def remote_vm(host, uri, name, root=False):
     try:
         got = json.loads(out)
         key, port = got["key"], got["port"]
-        if not (key is None or isinstance(key, str)) or not (port is None or isinstance(port, int)):
+        lan = got.get("lan")
+        if (
+            not (key is None or isinstance(key, str))
+            or not (port is None or isinstance(port, int))
+            or not (lan is None or isinstance(lan, str))
+        ):
             raise TypeError
-        return got["layers"], bool(got["running"]), got["address"], key and key.encode(), port
+        return got["layers"], bool(got["running"]), got["address"], key and key.encode(), port, lan
     except (ValueError, KeyError, TypeError):
         raise remote.HostError(
             host,
@@ -514,8 +533,13 @@ def run_remote(host, name, tool, args, root=False):
     """Runs tool here against VM name on host, through a forward of its developer-mode port (with
     root, of its root SSH port): the tool's exit status."""
     uri = remote.hosts()[host]
-    layers, running, address, key, port = remote_vm(host, uri, name, root)
+    layers, running, address, key, port, lan = remote_vm(host, uri, name, root)
     check(name, layers, running, address, key is not None, root, port)
+    if lan == "":
+        raise Error(
+            f"VM {name} is link=lan with mode=direct and its LAN address is not known yet (its "
+            "DHCP lease): try again once its network is up"
+        )
     path = find_tool(tool)
     args = detach_stdin(tool, args)
     old = {s: signal.signal(s, raise_terminated) for s in (signal.SIGTERM, signal.SIGHUP)}
@@ -523,6 +547,10 @@ def run_remote(host, name, tool, args, root=False):
     try:
         sweep_homes(home_parent())
         home = tempfile.mkdtemp(prefix=f"{HOME_PREFIX}{os.getpid()}-", dir=home_parent())
+        if lan:
+            # link=lan with mode=direct: the guest itself, at its LAN address, without a forward
+            write_home(home, name, lan, port, key, root)
+            return run_child(path, tool, args, child_env(home))
         with Forward(host, uri, address, port, os.path.join(home, FORWARD_RECORD)) as here:
             write_home(home, name, FORWARD_HOST, here, key, root)
             return run_child(path, tool, args, child_env(home))

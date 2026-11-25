@@ -224,7 +224,20 @@ LG_SERVICES = ("mock", "real")
 DEFAULT_LG_SERVICES = "mock"
 
 
-LAN_NOT_IMPLEMENTED = "link=lan with mode=direct is not implemented yet"
+# link=lan with mode=direct (docs/dev/architecture/network.md, "lan with direct"): the guest's frames
+# go between its TAP and the macvlan untouched, so nothing of Beanjar's sees its addresses, its DNS
+# or its connections. LG's services cannot be mocked there, and the guest takes its own address.
+LAN_DIRECT_LG = (
+    "link=lan with mode=direct needs lg_services=real: the guest is on the LAN itself, its DNS "
+    "and connections pass no part of Beanjar, so LG's hosts can be neither refused nor answered "
+    "(beanjar config set NAME link=lan mode=direct lg_services=real; mode=mitm keeps the mock)"
+)
+
+
+def lan_direct(link, mode):
+    """Whether link and mode are link=lan with mode=direct: the guest on the LAN itself (its own
+    lease, every port of it at its own address), with nothing of Beanjar's in its traffic."""
+    return (link or "nat") == "lan" and (mode or "mitm") == "direct"
 
 
 def guest_net(link, mode):
@@ -385,7 +398,9 @@ SETTING_HELP = {
     "mode": (
         "|".join(MODES),
         vmconfig.DEFAULTS["mode"],
-        "the traffic inspector or none; ignored with link=off",
+        "the traffic inspector or none; ignored with link=off. link=lan with direct puts the "
+        "guest itself on the LAN (its own lease, no relays, unreachable from this host) and "
+        "needs lg_services=real",
         None,
     ),
     "display": ("|".join(DISPLAYS), vmconfig.DEFAULTS["display"], "the display backend", None),
@@ -416,7 +431,8 @@ SETTING_HELP = {
         "PORT[:GUEST],...",
         "none",
         "guest TCP ports relayed on the VM's address as its TV-service ports are (on listen with "
-        "link=nat, also on the LAN address with link=lan), e.g. 8080,3000 or 8081:80 for guest 80 "
+        "link=nat, also on the LAN address with link=lan and mode=mitm; with lan and direct every "
+        "guest port is on its own LAN address and none is forwarded), e.g. 8080,3000 or 8081:80 for guest 80 "
         "on host 8081; a host port a layer has (SSAP 3000/3001, SSH 6622, 9922, 9991), 5900 (VNC), "
         "18083 (the inspector) or one below 1024 is refused",
         "none",
@@ -424,7 +440,7 @@ SETTING_HELP = {
     "address": (
         "dhcp|A.B.C.D/NN,GATEWAY",
         "dhcp",
-        "link=lan: the VM's LAN address",
+        "link=lan with mode=mitm: the VM's LAN address (with direct the guest takes its own)",
         "dhcp",
     ),
     "lan_access": (
@@ -442,7 +458,7 @@ SETTING_HELP = {
         "uploads, beacons, ads, ACR, ThinQ and IoT, QuickSet, firmware update, remote diagnostics, "
         "voice) in every mode, answers LG's online check itself and never passes TLS to an LG host "
         "through uninspected; real reaches every LG host as a TV does, for a VM with a real model "
-        "key",
+        "key. link=lan with mode=direct has nothing to mock with and needs real",
         DEFAULT_LG_SERVICES,
     ),
     "mitm_flows": (
@@ -673,6 +689,21 @@ def validate(cfg, saved=False):
             raise Error(str(e), "forward") from None
     if cfg.get("lan_access") == "on" and link == "lan":
         raise Error("lan_access is for link=nat: a link=lan VM is on the LAN anyway", "lan_access")
+    if lan_direct(link, cfg.get("mode")):
+        if cfg.get("lg_services", DEFAULT_LG_SERVICES) != "real":
+            raise Error(LAN_DIRECT_LG, "lg_services")
+        if "address" in cfg:
+            raise Error(
+                "address is for link=lan with mode=mitm: with mode=direct the guest takes its own "
+                "address on the LAN, by DHCP or as set on the TV",
+                "address",
+            )
+        if cfg.get("forward"):
+            raise Error(
+                "forward is for link=nat and link=lan with mode=mitm: with link=lan and "
+                "mode=direct every port of the guest is on its own LAN address",
+                "forward",
+            )
     if "address" in cfg:
         from . import keys
 

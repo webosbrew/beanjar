@@ -252,7 +252,24 @@ ARES_QUERY = "_ares"  # the query another machine's ares-TOOL -d HOST/NAME asks 
 ROOT_OPTION = "--root"  # ares-TOOL's and the query's: root on root SSH, not developer mode
 LOCAL = "local"  # the name of this machine in HOST/NAME, reserved (remote.py)
 # The settings target reads (vmconfig.peek)
-TARGET_SETTINGS = ("layers", "slot", "listen", "SSH_PORT")
+TARGET_SETTINGS = ("layers", "slot", "listen", "SSH_PORT", "link", "mode")
+LAN_FILE = "lan.json"  # in a VM's run directory: its LAN address while it runs (netns.LAN_FILE)
+
+
+def lan_direct_address(vm_dir, cfg):
+    """With link lan and mode direct (the guest itself on the LAN, which this host cannot reach):
+    the guest's LAN address as its run directory's lan.json has it, "" while none is known; None
+    for any other link and mode."""
+    if cfg.get("link") != "lan" or cfg.get("mode") != "direct":
+        return None
+    import json
+
+    try:
+        with open(os.path.join(vm_dir, RUN_DIR, LAN_FILE)) as f:
+            address = json.load(f)["address"]
+        return address if isinstance(address, str) else ""
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
 
 
 def split_spec(spec):
@@ -267,7 +284,9 @@ def target(name, vm_dir, cfg, root=False):
     where this host reaches it (its address, or listen's when that names one), the port to forward
     to (developer mode's; with root its root SSH port, None without a layer that forwards it) and
     the key the tool logs in with (its developer key; with root its client key), as text, None if
-    it has none yet."""
+    it has none yet. With link lan and mode direct, "lan" is the guest's own LAN address (""
+    while none is known), which the other machine's tool connects to itself: this host cannot
+    reach its own macvlan children, so a forward through it would lead nowhere."""
     layers = cfg.get("layers")
     try:
         with open(os.path.join(identity_dir(vm_dir), CLIENT if root else DEVMODE)) as f:
@@ -280,6 +299,9 @@ def target(name, vm_dir, cfg, root=False):
         port = layermeta.root_port(layers, cfg.get("SSH_PORT"))
     else:
         port = DEVMODE_PORT
+    lan = lan_direct_address(vm_dir, cfg)
+    if lan is not None and port and root:
+        port = 22  # the guest's own root SSH port, not the host port a forward would have
     run = os.path.join(vm_dir, RUN_DIR)
     return {
         "name": name,
@@ -288,4 +310,5 @@ def target(name, vm_dir, cfg, root=False):
         "address": vm_service_host(vm_dir, cfg),
         "port": port and int(port),
         "key": key,
+        "lan": lan,
     }

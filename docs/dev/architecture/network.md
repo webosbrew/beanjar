@@ -7,7 +7,7 @@ A VM's network is two settings in its `vm.toml`:
 link = "nat"        # nat | lan | off
 mode = "mitm"       # mitm | direct   (ignored when link = "off")
 listen = "0.0.0.0"  # link = "nat" only: where the TV-service ports listen (default: the slot address)
-address = "dhcp"    # link = "lan" only: "dhcp" or "A.B.C.D/NN,gateway"
+address = "dhcp"    # link = "lan" with mode = "mitm" only: "dhcp" or "A.B.C.D/NN,gateway"
 lan_access = "on"   # link = "nat" only: the LAN and this host's addresses too (default "off")
 lg_services = "real" # mock | real: LG's online services (default "mock", below)
 slot = 1            # assigned, not a setting
@@ -25,26 +25,29 @@ canned-response, selective relay and zero-egress-default designs, and the single
 |---|---|---|---|
 | `nat` | `mitm` | NAT to the internet, every TCP and UDP connection passing through mitmweb (tun mode); ICMP direct | Rootless network namespace, TAP, routing into mitmweb's TUN device and slirp4netns uplink |
 | `nat` | `direct` | NAT without the proxy | The same rootless namespace and slirp4netns uplink, without mitmweb |
-| `lan` | `direct` | *Planned.* On the host's wired LAN as a TV of its own: the guest takes its own DHCP lease, SSDP works, nothing is intercepted | QEMU attaches the guest to `lan_parent` with macvtap, with the VM's MAC |
+| `lan` | `direct` | The guest itself on the host's wired LAN as a TV of its own: its own DHCP lease, every port at that address, SSDP and mDNS natively, nothing intercepted, relayed or mocked; this host cannot reach it | A macvlan on `lan_parent` with the VM's MAC, joined to the guest's TAP by tc in a rootless namespace that has no address of its own (below) |
 | `lan` | `mitm` | On the LAN at its own address and MAC, with SSDP/mDNS discovery and best-effort web capture | A LAN namespace gets a macvlan on `lan_parent` with the VM's MAC and its DHCP lease or static `address`; the private guest sits behind it, with service and discovery relays (below) |
 | `off` | ignored | NIC present with link down and no uplink | Isolated QEMU hub port; QMP sets link down before execution resumes |
 
 Rules the settings enforce:
 
-- `listen` belongs to `link = "nat"` and `address` to `link = "lan"`; either one with another link is
-  a validation error. Changing the link clears it in the same command (`set tv1 link=lan listen=`).
+- `listen` belongs to `link = "nat"` and `address` to `link = "lan"` with `mode = "mitm"`; either one
+  elsewhere is a validation error. Changing the link clears it in the same command (`set tv1
+  link=lan listen=`).
+- `link = "lan"` with `mode = "direct"` needs `lg_services = "real"` ([below](#lan-with-direct):
+  nothing can mock LG's services there) and takes no `forward` (every guest port is on its own LAN
+  address already).
 - `lan` needs the library's `lan_parent` (`beanjar library config set lan_parent=eth0`), the host's wired
   interface, named explicitly and never guessed: a VPN interface such as ZeroTier may sit in the
   same subnet as the LAN. It must exist, and a wireless one is refused, at `config` and at a `lan` start
   (`/sys/class/net/IF/wireless`): macvlan and macvtap generally fail on Wi-Fi.
 - `lan` VMs never collide with each other's ports: each has its own LAN address. With macvlan the
   host itself cannot reach its own children unless it adds a host-side macvlan of its own.
-- Privileges: a small helper with only `CAP_NET_ADMIN` creates the macvlan or macvtap on the allowed
-  `lan_parent` only, with the VM's MAC, and hands it to that VM. The rest of Beanjar stays rootless.
+- Privileges: a small helper with only `CAP_NET_ADMIN` creates the macvlan on the allowed
+  `lan_parent` only, with the VM's MAC, in that VM's namespace, for both modes. The rest of
+  Beanjar stays rootless.
 
-`lan` with `direct` is not implemented yet: it validates and is stored, but a start refuses
-it, "link=lan with mode=direct is not implemented yet". The guest's kernel command line keeps
-`webos.net=mitm|direct|off`, informational, for the `nat` and `off` combinations.
+The guest's kernel command line keeps `webos.net=mitm|direct|off`, informational.
 
 ## What the guest reaches
 
@@ -56,9 +59,11 @@ the host is attack surface. Rules, in every mode:
   and has no switch against it, which on one PC let a guest drive an unauthenticated Docker API;
   so no mode uses it. `nat` in both modes runs in the rootless namespace below, whose uplink is
   slirp4netns with `--disable-host-loopback`: `10.0.2.2` is refused. `lan` is in a namespace of its
-  own, where the host's loopback does not exist.
+  own, where the host's loopback does not exist; with `direct` the guest's frames do not even enter
+  that namespace's IP stack, and go out on the LAN only.
 - **The LAN and the host's own addresses, only with `lan_access = "on"`** (`link = "nat"`; `link =
-  "lan"` is on the LAN by definition). slirp4netns opens its sockets in the host's namespace, where
+  "lan"` is on the LAN by definition, and with `direct` reaches the host as any other LAN device
+  would, below). slirp4netns opens its sockets in the host's namespace, where
   the host's LAN, bridge (`docker0`, `virbr0`) and VPN addresses are local, so a wildcard service
   there is reachable unless refused. Without LAN access the guest reaches neither the LAN nor them.
 - **The internet** as each mode has it: through mitmweb (`mitm`) or straight out (`direct`). DNS is
@@ -104,7 +109,8 @@ slirp4netns and iproute2. A host without user namespaces has `link = "off"` only
 ## LG services
 
 `lg_services` (`vm.toml`'s `network.lg_services`, `NET_LG_SERVICES`) is `mock`, the default, or
-`real`, one or the other for the whole VM. `real` is the network as described elsewhere on this
+`real`, one or the other for the whole VM. `link = "lan"` with `mode = "direct"` refuses `mock`
+(validation and start): see [`lan` with `direct`](#lan-with-direct). `real` is the network as described elsewhere on this
 page, with nothing done about LG: a VM with a real model key behaves as a set does, and the CA is
 there for inspection only. `mock` keeps the guest from LG's telemetry and cloud services and
 answers LG's online check, LG's SDP server and LG's other web hosts itself, in `mitm` and
@@ -373,6 +379,82 @@ host ── VM_ADDRESS relay (127.0.1.N: service ports, inspector)
   another on the parent has its MAC, so a start waits up to a minute for that, then says why.
   `tests/integration/network/test_netns_lan.py` checks a stop and a kill, with a veth pair as the LAN.
 
+## `lan` with `direct`
+
+The guest's own NIC on the LAN, as a TV plugged into it, with nothing of Beanjar's in its traffic:
+
+```
+host ── (nothing of the VM: no relay, no address; beanjar-vnc on VM_ADDRESS as always)
+ └─ LAN namespace (unshare -rnm), no address but lo
+     lan0: macvlan on lan_parent, the VM's MAC ── tc ── tap0 ── QEMU (virtio-net, the same MAC)
+```
+
+- **The wire.** `netns.lan()` sees `NET_MODE=direct` once lan0 is up (the same helper call, the same
+  wait for the VM's MAC as `mitm`) and runs `_lan_direct` instead of the DHCP client, slirp4netns,
+  the inner namespace and the relays: it makes `tap0`, turns `allmulticast` on for lan0 (a macvlan
+  passes only the multicast groups on its own list, and the guest's IGMP joins never reach it, so
+  without it mDNS and SSDP would not arrive), disables IPv6 on lan0 before it comes up (the
+  namespace must not send its own link-local, router or neighbour solicitations with the guest's
+  MAC) and joins the two with tc (`netns.join_commands`): a `clsact` qdisc on each and a `matchall`
+  filter on each one's ingress whose `mirred egress redirect` sends every frame on to the other.
+  The redirect happens at ingress, before the namespace's IP stack, so no address, route or policy
+  rule of that namespace ever applies to the guest's frames. QEMU runs in the LAN namespace with
+  the same `tap` netdev as every other mode, the guest's NIC already having the VM's MAC (`MAC` or
+  the board's), which is lan0's.
+- **Why not macvtap.** A macvtap's character device, `/dev/tapN`, is made by the kernel owned by
+  the host's root, mode 0600, whatever namespace the interface is in: measured on WSL2 (kernel
+  6.18), a macvtap made in a rootless namespace showed as `crw------- 65534 65534` there and opening
+  it was refused. Handing QEMU its descriptor would need a helper with `CAP_DAC_OVERRIDE` or a udev
+  rule, a new privilege on the host. The macvlan and tc do the same job with the privilege `mitm`
+  already has: `beanjar-lan-helper macvlan`, unchanged. tc needs only `CAP_NET_ADMIN` of the
+  namespace (it works rootless) and the kernel's `sch_ingress` (clsact), `cls_matchall` and
+  `act_mirred` (modules in the WSL2 kernel, loaded on first use from the rootless namespace); a
+  start without them stops with that reason.
+- **The guest's address.** The guest asks the LAN's DHCP server itself, with its own MAC and
+  whatever hostname its firmware sends (Beanjar's `NET_LAN_HOSTNAME` does not apply), and takes whatever DNS that server gives; a static address is set on the
+  TV, not in `vm.toml` (`address` is refused). `netns.LeaseWatch` reads the frames on tap0 (a
+  packet socket, which sees both directions before the redirect) for the server's DHCPACK to the
+  guest's MAC (`netns.guest_lease`) and writes `RUN_DIR/lan.json` with `source = "guest"`, so
+  `beanjar show` (`lan_address`), `list` and the GUI show it. It only reads. A guest with a static
+  address has no `lan.json`.
+- **What reaches it.** Every port of the guest, at its own LAN address, from any host of the LAN:
+  nothing is forwarded or relayed, so `forward` is refused and the layers' ports are not on
+  `VM_ADDRESS` (`VM.listeners()` is empty, and no start conflicts with another over them). This
+  host is the exception: a macvlan's parent never reaches its children, so neither the host's
+  tools nor its browser reach the guest. `beanjar ares-TOOL -d NAME` on the VM's own host says so;
+  from another machine `beanjar ares-TOOL -d HOST/NAME` asks that host for the guest's LAN address
+  (`_ares`'s `lan`, from `lan.json`) and connects there itself, without a forward through the
+  host, root on the guest's port 22. VNC (beanjar-vnc) does not use the guest's network and stays
+  on `VM_ADDRESS`; `--listen` may open it as with `nat`.
+- **What it reaches.** The LAN and through its router the internet, as any device there. The
+  host's loopback, never: it is in another namespace and the guest's frames enter no IP stack of
+  the host's. The host's address on `lan_parent` is unreachable too (the same parent rule, the
+  other way round). The host's other addresses (a Wi-Fi address on the same LAN, a VPN, `docker0`)
+  are reached only as the LAN routes to them, exactly as from another device of the LAN: a service
+  the host opens to the LAN is open to the guest. That is the point of the mode; `nat` without
+  `lan_access` is the one that keeps the guest away from the LAN.
+- **LG's services.** `mock` cannot hold here, and the setting refuses it (`vmsettings.validate`,
+  `qemu.plan` and `Library.start`: "needs lg_services=real"). Every means `mock` has sits in the
+  inner namespace's IP stack: the resolver at `10.0.2.254` handed out by the namespace's own DHCP
+  server, the pref 90 `prohibit` rules for LG's literal addresses and for other resolvers, and the
+  SDP answers on `10.0.2.254:443`. In this mode the guest's DHCP, DNS and connections are the LAN's,
+  and its frames are redirected before any IP stack of ours sees them (the LAN namespace has no
+  address; `tests/integration/network/netns_lan_cases.py`, `LanDirect`, checks it has none and
+  that the guest's lease and connections are the LAN server's). Refusing names and addresses there
+  would mean steering the guest's DNS and LG's addresses out of the wire into a stack of ours
+  (tc rewriting of MAC and IP addresses): interception again, which this mode is defined
+  without. Partial enforcement (dropping LG's literal addresses with tc, say) would leave names
+  through and call it mock. So `lan` + `direct` is `real` only, stated, and `lan` + `mitm` is the
+  LAN mode that keeps the mock.
+- **Cleanup.** As `mitm`'s: a stop deletes lan0 and `lan.json`; every process of the namespace dies
+  with its parent; the next start waits for the MAC.
+
+`tests/integration/network/netns_lan_cases.py` (`LanDirect`) runs it end to end with a veth pair as
+the LAN and the fake guest on the TAP: the guest's lease and its unicast renewal from the LAN's
+DHCP server, its connection to a LAN server arriving from its lease, a LAN client reaching a guest
+port at the lease, `lan.json` from the ACK, no address in the LAN namespace, and nothing left after
+the stop. `tests/unit/launch/test_netns_lan_direct.py` covers the tc commands and the ACK reading.
+
 ## Ownership and interception
 
 `host/core/beanjar/netns.py` owns the namespace and networking helpers. The `mitm` path
@@ -509,7 +591,7 @@ the guest.
   `VM_ADDRESS`. `direct` forwards with QEMU's `hostfwd=tcp:127.0.1.N:PORT-:GUEST`; `mitm`'s
   host-side relay (`beanjar-relay`, `host/helpers/network/relay.c`) binds the same address and ports and bridges them into the
   namespace, the inspector included unless `NETSTUB_WEB_HOST` names another address. `link = "off"`
-  forwards nothing, and a `lan` VM's ports will be on its own LAN address, not forwarded.
+  forwards nothing, and a `lan` + `direct` VM's ports are on its own LAN address, not forwarded.
 - **Reaching a VM.** Everything that says how to reach a VM uses its address: the launcher's
   notes, `beanjar show`'s `ssh` commands, `beanjar ares-TOOL -d NAME` (the ares tools
   with a device list of the VM alone: `127.0.1.N`, port 9922, user `prisoner`), `beanjar list`, the GUI's

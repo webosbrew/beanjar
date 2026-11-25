@@ -194,7 +194,8 @@ def cases(top, fw):
         ),
         ("tcg-bad-link", "tcg", dict(NET_LINK="bogus")),
         ("tcg-bad-mode", "tcg", dict(NET_MODE="off")),
-        ("tcg-lan-not-yet", "tcg", dict(NET_LINK="lan", NET_MODE="direct")),
+        # lan with direct and LG's services mocked: nothing to mock with
+        ("tcg-lan-direct-mock", "tcg", dict(NET_LINK="lan", NET_MODE="direct")),
         ("tcg-bad-audio", "tcg", dict(DISPLAY_BACKEND="egl-headless", AUDIO="dbus")),
         ("kvm-bad-display", "kvm", dict(DISPLAY_BACKEND="vnc")),
         ("tcg-no-slot", "tcg", dict(**net("direct"), SLOT="")),
@@ -1160,7 +1161,8 @@ class ArgvTest(unittest.TestCase):
         self.assertEqual(plan("panfrost", VIRGL_USE_INTEGER="x")["VIRGL_USE_INTEGER"], "x")
 
     def test_network_link_and_mode(self):
-        """NET_LINK=off ignores NET_MODE; lan with mode direct is refused until it exists; lan with
+        """NET_LINK=off ignores NET_MODE; lan with mode direct needs NET_LG_SERVICES=real and takes
+        no NET_ADDRESS or FORWARD; lan with
         mode mitm is the mitm plan with the LAN's settings for netns.lan, LAN access always on;
         nat with mode direct is the same namespace without the inspector; NET_LAN_ACCESS is on or
         off (default); other values are errors."""
@@ -1171,10 +1173,20 @@ class ArgvTest(unittest.TestCase):
         self.assertIn(
             "webos.net=off", " ".join(self.qemu_plan("tcg", NET_LINK="off", NET_MODE="direct")[0])
         )
-        with self.assertRaisesRegex(
-            qemu.Error, r"^link=lan with mode=direct is not implemented yet$"
-        ):
+        with self.assertRaisesRegex(qemu.Error, r"needs lg_services=real"):
             self.qemu_plan("tcg", NET_LINK="lan", NET_MODE="direct", NET_LAN_PARENT="eth0")
+        for more, why in (
+            (
+                dict(NET_LAN_PARENT="eth0", NET_ADDRESS="dhcp"),
+                "NET_ADDRESS is for NET_LINK=lan with",
+            ),
+            (dict(NET_LAN_PARENT="eth0", FORWARD="8080"), "FORWARD is for NET_MODE=mitm"),
+            (dict(), "needs NET_LAN_PARENT"),
+        ):
+            with self.subTest(more=more), self.assertRaisesRegex(qemu.Error, why):
+                self.qemu_plan(
+                    "tcg", NET_LINK="lan", NET_MODE="direct", NET_LG_SERVICES="real", **more
+                )
         with self.assertRaisesRegex(qemu.Error, "needs NET_LAN_PARENT"):
             self.qemu_plan("tcg", NET_LINK="lan", NET_MODE="mitm")
         with self.assertRaisesRegex(qemu.Error, "LISTEN_ADDRESS is for NET_LINK=nat"):
@@ -1274,6 +1286,52 @@ class ArgvTest(unittest.TestCase):
                 dry=True,
             )
         self.assertIn("network: nat, direct, host address 127.0.1.2, LAN access", notes)
+        # lan with direct: the same guest NIC and TAP, in the LAN namespace with the macvlan's MAC;
+        # no forwards, no address setting, no inspector or CA, the layers' host-address notes left out
+        notes = []
+        with mock.patch.object(qemu, "first_rendernode", return_value=None):
+            lan_direct = qemu.plan(
+                dict(
+                    FW=self.fw,
+                    STATE="none",
+                    SLOT="2",
+                    LAYERS="normal,devmode",
+                    NET_LINK="lan",
+                    NET_MODE="direct",
+                    NET_LG_SERVICES="real",
+                    NET_LAN_PARENT="eth0",
+                    MAC="02:ab:cd:00:11:22",
+                ),
+                [],
+                accel="tcg",
+                tree=paths.Tree(self.top),
+                say=notes.append,
+                dry=True,
+            )
+        self.assertEqual(
+            (
+                lan_direct.wrap,
+                lan_direct.env["NET_LINK"],
+                lan_direct.env["NET_MODE"],
+                lan_direct.env["NET_LAN_PARENT"],
+                lan_direct.env["NET_LAN_MAC"],
+                lan_direct.env["NETNS_FWD"],
+                lan_direct.env["NET_LAN_ACCESS"],
+                lan_direct.env["NET_LG_SERVICES"],
+                lan_direct.ca,
+            ),
+            ("netns", "lan", "direct", "eth0", "02:ab:cd:00:11:22", "", "on", "real", None),
+        )
+        self.assertNotIn("NET_ADDRESS", lan_direct.env)
+        self.assertNotIn("MITM_FLOWS", lan_direct.env)
+        self.assertTrue(lan_direct.env["NET_LAN_HELPER"].endswith("network/beanjar-lan-helper"))
+        self.assertEqual(
+            lan_direct.argv[lan_direct.argv.index("-netdev") + 1],
+            nat.argv[nat.argv.index("-netdev") + 1],
+        )
+        self.assertIn("mac=02:ab:cd:00:11:22", " ".join(lan_direct.argv))
+        self.assertEqual([n for n in notes if "127.0.1.2" in n and "ssh" in n], [])
+        self.assertTrue(any("the guest itself on the LAN of eth0" in n for n in notes), notes)
         # the guest's side is the mitm plan's: the same command line but its MAC
         mac = plan(NET_LINK="lan", NET_MODE="mitm", NET_LAN_PARENT="eth0")
         self.assertEqual(mac.argv, nat.argv)

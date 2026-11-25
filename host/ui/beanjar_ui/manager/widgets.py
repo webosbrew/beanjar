@@ -413,16 +413,16 @@ class VMForm(_Submit, Adw.Dialog):
         return item.get_string() if item else "nat"
 
     def link_changed(self):
-        """mode means nothing with link off; Settings shows listen with link nat, address with lan,
-        and the inspector's limits with mode mitm."""
+        """mode means nothing with link off; Settings shows listen with link nat, address with lan
+        and mode mitm (with direct the guest takes its own), and the inspector's limits with mode
+        mitm."""
         link = self.link_value()
         self.mode.set_sensitive(link != "off")
         item = self.mode.get_selected_item()
-        self.inspector_group.set_visible(
-            self.settings and link != "off" and (item.get_string() if item else "mitm") == "mitm"
-        )
+        mode = item.get_string() if item else "mitm"
+        self.inspector_group.set_visible(self.settings and link != "off" and mode == "mitm")
         self.listen_group.set_visible(self.settings and link == "nat")
-        self.address_group.set_visible(self.settings and link == "lan")
+        self.address_group.set_visible(self.settings and link == "lan" and mode == "mitm")
 
     # -- pages --
     def page_title(self, name):

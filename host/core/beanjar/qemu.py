@@ -780,11 +780,13 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     lg_services = _get(env, "NET_LG_SERVICES", vmsettings.DEFAULT_LG_SERVICES)
     if lg_services not in vmsettings.LG_SERVICES:
         raise Error(f"NET_LG_SERVICES={lg_services}: {' or '.join(vmsettings.LG_SERVICES)}")
+    lan_direct = vmsettings.lan_direct(link, net)
     if link == "lan":
         lan_access = "on"
-        # the mitm namespace one level in, its uplink a macvlan on the library's lan_parent (netns.lan)
-        if net != "mitm":
-            raise Error(vmsettings.LAN_NOT_IMPLEMENTED)
+        # mitm: the mitm namespace one level in, its uplink a macvlan on the library's lan_parent;
+        # direct: the guest's TAP joined to that macvlan, nothing in between (netns.lan)
+        if lan_direct and lg_services != "real":
+            raise Error(vmsettings.LAN_DIRECT_LG)
         parent = env.get("NET_LAN_PARENT")
         if not parent:
             raise Error(
@@ -796,6 +798,14 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             )
         if not dry and os.path.exists(f"/sys/class/net/{parent}/wireless"):
             raise Error(f"NET_LAN_PARENT={parent} is wireless; link=lan needs a wired interface")
+        if lan_direct and env.get("NET_ADDRESS"):
+            raise Error(
+                "NET_ADDRESS is for NET_LINK=lan with NET_MODE=mitm: with direct the guest takes its own address"
+            )
+        if lan_direct and env.get("FORWARD"):
+            raise Error(
+                "FORWARD is for NET_MODE=mitm with NET_LINK=lan: with direct every guest port is on its own LAN address"
+            )
         address = env.get("NET_ADDRESS") or "dhcp"
         try:
             address = keys.lan_address(address)
@@ -804,15 +814,15 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         helper = tree.lan_helper()
         if not dry and not os.access(helper, os.X_OK):
             raise Error(f"link=lan needs {helper} (scripts/build.sh host)")
-        p.env.update(
-            NET_LINK="lan", NET_LAN_PARENT=parent, NET_ADDRESS=address, NET_LAN_HELPER=helper
-        )
+        p.env.update(NET_LINK="lan", NET_LAN_PARENT=parent, NET_LAN_HELPER=helper)
+        if not lan_direct:
+            p.env["NET_ADDRESS"] = address
     fwd = []  # hostport:guestport
     if net in ("mitm", "direct"):
         # both in netns.py's rootless namespace, slirp4netns its uplink with the host's loopback
         # refused (QEMU's own slirp, -netdev user, maps 10.0.2.2 to it); direct without mitmweb
         p.wrap = "netns"
-        if not dry and not os.access(tree.relay(), os.X_OK):
+        if not lan_direct and not dry and not os.access(tree.relay(), os.X_OK):
             raise Error(f"NET_LINK={link} needs {tree.relay()} (scripts/build.sh host)")
         p.env["NET_MODE"] = net
         p.env["NET_LAN_ACCESS"] = lan_access
@@ -865,7 +875,9 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     addr = p.service_host
 
     def forward(host, guest):
-        if net in ("mitm", "direct"):
+        if lan_direct:
+            pass  # the guest is on the LAN itself: guest port `guest` is on its own LAN address
+        elif net in ("mitm", "direct"):
             fwd.append(f"{host}:{guest}")
         else:
             say(
@@ -938,7 +950,9 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         if guest == 22:
             p.ssh_port = ssh_port
         forward(host, guest)
-        if (i + 1 == len(fwds) or fwds[i + 1][2] != name) and name in notes:  # a layer's last
+        if (
+            (i + 1 == len(fwds) or fwds[i + 1][2] != name) and name in notes and not lan_direct
+        ):  # a layer's last; with link=lan and direct nothing is on this host's address
             say(notes[name]())
     p.env["NETNS_FWD"] = "".join(" " + f for f in fwd)
     if net != "off":
@@ -949,7 +963,13 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             + (f", service ports on {listen}" if listen != p.address else "")
             + (
                 f", LAN on {p.env['NET_LAN_PARENT']} ({p.env['NET_ADDRESS']})"
-                if link == "lan"
+                if link == "lan" and not lan_direct
+                else ""
+            )
+            + (
+                f", the guest itself on the LAN of {p.env['NET_LAN_PARENT']} (its own lease and "
+                "ports; this host cannot reach it)"
+                if lan_direct
                 else ""
             )
         )

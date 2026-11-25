@@ -61,6 +61,16 @@ with its parent, PR_SET_PDEATHSIG): no interface outlives the VM. After a kill t
 that namespace, and so lan0 and the VM's MAC on the parent, until its last TCP sockets are torn
 down, minutes at most; the next start waits LAN_MAC_WAIT for it.
 
+link = "lan" with mode direct (NET_LINK=lan, NET_MODE=direct): the same LAN namespace and lan0, but
+no address, DHCP client, slirp4netns, inner namespace or relay in it. lan() joins lan0 and the
+guest's TAP with tc (join_commands: each one's ingress redirected to the other's egress, before
+this namespace's IP stack) and runs QEMU there, its NIC already with lan0's MAC: the guest asks the
+LAN for its own lease, every port of it is on that address, and nothing of Beanjar's sees its
+traffic, so NET_LG_SERVICES=mock cannot apply (qemu.py refuses it). LeaseWatch reads the LAN's
+DHCPACK to the guest off the TAP for RUN_DIR/lan.json. This host cannot reach the guest (a
+macvlan's parent never reaches its children). macvtap is not used: its /dev/tapN is the host
+root's, mode 0600, which the rootless namespace cannot open.
+
 off(): the TV with no cable plugged in. The guest keeps its NIC (virtio-net, the board MAC), as a TV
 keeps its Ethernet port, but the link is down from its first look, so connman sees a wired
 interface with no carrier. The netdev is a hub port alone on its hub, so there is nothing on the
@@ -81,6 +91,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 from . import base, hostswap, mitmtool, paths, vmsettings
@@ -395,6 +406,87 @@ def lan_info(run_dir):
         return None
 
 
+def lan_direct(env):
+    """Whether env is link=lan with mode=direct: the guest's TAP joined to lan0, nothing between."""
+    return vmsettings.lan_direct(env.get("NET_LINK"), env.get("NET_MODE"))
+
+
+def join_commands(lan_if, tap):
+    """link=lan with mode=direct: the tc commands (argv lists) that join lan_if (the macvlan, the
+    VM's MAC) and tap (QEMU's NIC, the same MAC) into one wire. Every frame arriving on either is
+    redirected, at ingress, to the other's egress (clsact, matchall, mirred), so the frames pass
+    unchanged and the LAN namespace's own IP stack never sees them: no address, route or policy
+    rule of it applies to the guest."""
+    return [
+        ["tc", "qdisc", "add", "dev", lan_if, "clsact"],
+        ["tc", "qdisc", "add", "dev", tap, "clsact"],
+        *(
+            ["tc", "filter", "add", "dev", a, "ingress", "matchall"]
+            + ["action", "mirred", "egress", "redirect", "dev", b]
+            for a, b in ((lan_if, tap), (tap, lan_if))
+        ),
+    ]
+
+
+def guest_lease(frame, mac):
+    """The lease in frame (an Ethernet frame) if it is a DHCPACK from the LAN's server to the client
+    with mac (aa:bb:..): {address, prefix, router, dns, lease}; else None. link=lan with mode=direct
+    learns the guest's address this way, reading only, for RUN_DIR/lan.json."""
+    try:
+        if len(frame) < 14 + 20 + 8 + 240 or frame[12:14] != b"\x08\x00":
+            return None
+        ip = frame[14:]
+        ihl = (ip[0] & 0x0F) * 4
+        if ip[0] >> 4 != 4 or ip[9] != 17 or ip[6] & 0x3F or ip[7]:  # IPv4, UDP, not a fragment
+            return None
+        udp = ip[ihl:]
+        if udp[0:4] != b"\x00\x43\x00\x44":  # 67 -> 68
+            return None
+        bootp = udp[8:]
+        if bootp[0] != 2 or bootp[28:34] != bytes.fromhex(mac.replace(":", "")):
+            return None
+        if bootp[236:240] != bytes((99, 130, 83, 99)):
+            return None
+        opts, i, data = {}, 0, bootp[240:]
+        while i < len(data) and data[i] != 255:
+            if data[i] == 0:
+                i += 1
+                continue
+            opts[data[i]] = data[i + 2 : i + 2 + data[i + 1]]
+            i += 2 + data[i + 1]
+        if opts.get(53) != b"\x05":
+            return None
+        address = socket.inet_ntoa(bootp[16:20])
+        mask = opts.get(1, b"")
+        prefix = (
+            ipaddress.IPv4Network(f"0.0.0.0/{socket.inet_ntoa(mask)}").prefixlen
+            if len(mask) == 4
+            else 32
+        )
+        router = opts.get(3, b"")
+        dns = opts.get(6, b"")
+        lease = opts.get(51, b"")
+        if address == "0.0.0.0":
+            return None
+        return {
+            "address": address,
+            "prefix": prefix,
+            "router": socket.inet_ntoa(router[:4]) if len(router) >= 4 else None,
+            "dns": [socket.inet_ntoa(dns[i : i + 4]) for i in range(0, len(dns) - 3, 4)],
+            "lease": int.from_bytes(lease, "big") if len(lease) == 4 else 0,
+        }
+    except (IndexError, ValueError):
+        return None
+
+
+def write_lan_info(path, lease):
+    """RUN_DIR/lan.json (lan_info), atomically."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(lease, f)
+    os.replace(tmp, path)
+
+
 def write_password(path, password="", source=PASSWORD_ENV):
     """Write password (a new random one if empty; source: where a given one came from) to path,
     owner-only, replacing what was there."""
@@ -562,9 +654,13 @@ def run(argv, env, tree=paths.TREE):
     env = _sbin_path(dict(env))
     lan = env.get("NET_LINK") == "lan"
     mitm = inspected(env)
-    for tool in ("unshare", "ip", "slirp4netns") + (("busybox",) if lan else ()):
+    if lan_direct(env):
+        tools = ("unshare", "ip", "tc")  # no uplink, DHCP client or relay of ours
+    else:
+        tools = ("unshare", "ip", "slirp4netns") + (("busybox",) if lan else ())
+    for tool in tools:
         if not shutil.which(tool, path=env["PATH"]):
-            raise Error(f"netns: {tool} not found (every link=nat and link=lan VM needs it)")
+            raise Error(f"netns: {tool} not found (this VM's link and mode need it)")
     if lan:
         for k in ("NET_LAN_PARENT", "NET_LAN_MAC", "NET_LAN_HELPER"):
             if not env.get(k):
@@ -636,7 +732,9 @@ def run(argv, env, tree=paths.TREE):
         print(
             "network: the host's loopback unreachable; "
             + (
-                "the LAN and the host's other addresses reachable (LAN access)"
+                "the guest itself on the LAN, as any device there (this host unreachable)"
+                if lan_direct(env)
+                else "the LAN and the host's other addresses reachable (LAN access)"
                 if lan_access(env)
                 else "the LAN and the host's addresses unreachable (no LAN access)"
             ),
@@ -1410,6 +1508,81 @@ def dhcp_argv(env, script):
     return argv + ["-s", script]
 
 
+def _sysctl6(key, value):
+    """An IPv6 sysctl of this namespace; nothing if the kernel has no IPv6."""
+    try:
+        with open("/proc/sys/net/ipv6/" + key, "w") as f:
+            f.write(value + "\n")
+    except FileNotFoundError:
+        pass
+
+
+class LeaseWatch:
+    """link=lan with mode=direct: reads the frames on tap (a packet socket: it sees both ways,
+    before the tc redirect takes them) for the LAN server's DHCPACKs to the guest's MAC, and writes
+    each lease to path (RUN_DIR/lan.json, source "guest") for status, list and the GUI. It only
+    reads; a guest with a static address set on the TV has no lan.json."""
+
+    def __init__(self, tap, mac, path, parent):
+        self.mac, self.path, self.parent = mac, path, parent
+        self.sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
+        self.sock.bind((tap, 0))
+        threading.Thread(target=self.run, daemon=True).start()
+
+    def run(self):
+        while True:
+            try:
+                frame = self.sock.recv(65536)
+            except OSError:
+                return
+            lease = guest_lease(frame, self.mac)
+            if lease:
+                lease.update(parent=self.parent, mac=self.mac, source="guest")
+                try:
+                    write_lan_info(self.path, lease)
+                except OSError:
+                    pass
+
+
+def _lan_direct(argv, env, info):
+    """link=lan with mode=direct, in the LAN namespace once lan0 is up: the TAP, joined to lan0 by
+    tc (join_commands), the lease watch, then QEMU, whose Popen it returns. The guest does its own
+    DHCP on the LAN with its own MAC (lan0's); this namespace has no address on either."""
+    tap = env.get("NETNS_TAP") or "tap0"
+    mac = env.get("NET_LAN_MAC", "")
+    # every multicast group to the guest (mDNS, SSDP): a macvlan otherwise passes only those on its
+    # own list, and the guest's IGMP joins never reach that list
+    _ip(env, "link", "set", LAN_IF, "allmulticast", "on")
+    shown = subprocess.run(
+        ["ip", "-o", "link", "show", LAN_IF], env=env, stdout=subprocess.PIPE, text=True
+    ).stdout.split()
+    mtu = shown[shown.index("mtu") + 1] if "mtu" in shown else "1500"
+    _ip(env, "tuntap", "add", tap, "mode", "tap")
+    _ip(env, "link", "set", tap, "mtu", mtu, "up")
+    for cmd in join_commands(LAN_IF, tap):
+        r = subprocess.run(
+            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        )
+        if r.returncode != 0:
+            raise Error(
+                f"netns lan: could not join {tap} to {LAN_IF} ({' '.join(cmd)}: {r.stdout.strip()});"
+                " link=lan with mode=direct needs tc and the kernel's sch_ingress (clsact),"
+                " cls_matchall and act_mirred"
+            )
+    LeaseWatch(tap, mac, info, env.get("NET_LAN_PARENT"))
+    print(
+        f"network: the guest on the LAN of {env.get('NET_LAN_PARENT')} with MAC {mac}, its own"
+        " lease and ports; nothing of Beanjar's in its traffic, and this host cannot reach it",
+        file=sys.stderr,
+        flush=True,
+    )
+    fds = hostswap.open_fds(argv)
+    try:
+        return subprocess.Popen(argv, env=env, preexec_fn=_die_with_parent, pass_fds=fds)
+    finally:
+        hostswap.close_fds(fds)
+
+
 def lan(argv, tree=paths.TREE):
     """The LAN namespace (link=lan; run() runs this under `unshare -rnm` and has lan0 made in it):
     lan0's address (a DHCP lease or NET_ADDRESS), DNS, RUN_DIR/lan.json, inner() with its uplink
@@ -1445,6 +1618,12 @@ def lan(argv, tree=paths.TREE):
         if not has_lan():
             raise Error(f"netns lan: no {LAN_IF} from the helper")
         _ip(env, "link", "set", "lo", "up")
+        direct = lan_direct(env)
+        if direct:
+            # lan0 has the guest's MAC: this namespace must not speak on it itself (IPv6
+            # link-local, router and neighbour solicitations), only carry the guest's frames
+            for dev in ("default", LAN_IF):
+                _sysctl6(f"conf/{dev}/disable_ipv6", "1")
         # A macvlan comes up only while no other on the parent has its MAC: a previous run's lan0
         # outlives its namespace's processes until the kernel lets that namespace go (its TCP
         # sockets' teardown can take minutes after a kill), so wait for it, up to LAN_MAC_WAIT.
@@ -1470,6 +1649,9 @@ def lan(argv, tree=paths.TREE):
                     )
                 )
             time.sleep(1)
+        if direct:
+            child = _lan_direct(argv, env, info)
+            return _status(child.wait())
         if address == "dhcp":
             lease_file = os.path.join(rundir, "lan-lease.json")
             with open(os.path.join(logdir, "netns-dhcp.log"), "w") as log:
@@ -1513,10 +1695,7 @@ def lan(argv, tree=paths.TREE):
             mac=env.get("NET_LAN_MAC"),
             source="dhcp" if address == "dhcp" else "static",
         )
-        tmp = f"{info}.{os.getpid()}.tmp"
-        with open(tmp, "w") as f:
-            json.dump(lease, f)
-        os.replace(tmp, info)
+        write_lan_info(info, lease)
         print(
             f"network: LAN address {lease['address']}/{lease['prefix']} on {lease['parent']} "
             f"({lease['source']}), MAC {lease['mac']}",

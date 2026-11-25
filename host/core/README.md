@@ -70,7 +70,10 @@ default: mitmweb in tun mode, the user's own mitmproxy 12.0.1 or newer, `pipx in
 "mitm"` puts the VM on the library's `lan_parent` (`beanjar library config set lan_parent=eth0`) with its own
 MAC and a DHCP lease (or the static `address`), its TV-service ports on that LAN address; the
 package installs the one privileged helper it needs (docs/dev/architecture/network.md, "`lan` with
-`mitm`"). `lan` with `direct` is not implemented yet: a start refuses it. Both modes run in a
+`mitm`"). `lan` with `direct` joins the guest's own NIC to a macvlan on `lan_parent` with the same
+helper and nothing in between: its own DHCP lease, every port at that address, no inspector or
+relays, unreachable from this host, and `lg_services = "real"` required (the same document, "`lan`
+with `direct`"). The other combinations run in a
 rootless network namespace with slirp4netns as its uplink, and the guest never reaches this host's
 loopback; with `link = "nat"` it reaches the LAN and this host's own addresses only with
 `lan_access = "on"` (`beanjar config set NAME lan_access=on`; docs/dev/architecture/network.md,
@@ -1453,7 +1456,7 @@ testing real apps: the app is a developer app, as on a rooted TV, and its servic
 keys: the client key `id_ed25519` and the `authorized_keys` above log in, and the host key is
 `rootssh_host_key`, so `known_hosts` pins it as for `rootssh`. The layer is built once per
 Homebrew Channel release: `layers=normal,devmode,hbchannel@0.7.3` picks one, plain `hbchannel`
-is the default (0.8.0-rc1), and an unknown version is refused with the list. `config show` shows
+is the default (0.8.0), and an unknown version is refused with the list. `config show` shows
 `layer_versions.hbchannel` and `list` a `VERSIONS` column. HBC can update itself in the VM as on a
 TV (its service's `install`, which writes into the VM's state); a newer copy there then stays
 whatever the layer's version, until `beanjar wipe`. `beanjar show NAME` prints the

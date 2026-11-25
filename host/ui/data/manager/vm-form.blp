@@ -390,7 +390,7 @@ template $ManagerVMForm: Adw.Dialog {
 
             child: Adw.PreferencesPage {
               Adw.PreferencesGroup {
-                description: "Link: nat, behind this host; lan, on the host's wired LAN as a TV of its own (with mitm; direct is not implemented yet); off, no network. Mode: mitm, every TCP and UDP connection through the host's recording proxy, your own mitmproxy 12.0.1 or newer (pipx install mitmproxy; the guest trusts the VM's own CA); direct, no proxy.";
+                description: "Link: nat, behind this host; lan, on the host's wired LAN as a TV of its own (with direct the guest itself is there, with its own lease, unreachable from this host, and needs lg_services=real); off, no network. Mode: mitm, every TCP and UDP connection through the host's recording proxy, your own mitmproxy 12.0.1 or newer (pipx install mitmproxy; the guest trusts the VM's own CA); direct, no proxy.";
 
                 Adw.ComboRow link {
                   title: "Link";

@@ -2018,14 +2018,15 @@ class Manager:
                 serial=f["serial"].get_text().strip() or None,
             )
         if form.settings:
-            # each only where its link has it, else cleared (vm.toml refuses listen with lan, address without)
+            # each only where its link has it, else cleared (vm.toml refuses listen with lan,
+            # address without lan or with lan and direct)
             v.update(
                 free_page_reporting="on" if f["free_page_reporting"].get_active() else "off",
                 listen=f["listen"].get_text().strip()
                 if v["link"] == "nat"
                 else "",  # empty: the VM's own address
                 address=f["address"].get_text().strip()
-                if v["link"] == "lan"
+                if v["link"] == "lan" and v["mode"] == "mitm"
                 else "",  # empty: dhcp
                 # the inspector's limits, kept whatever the mode (configure checks them)
                 mitm_flows=int(f["mitm_flows"].get_value()),

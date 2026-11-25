@@ -168,6 +168,15 @@ These settings decide a VM's network ([guest networking](../dev/architecture/net
   and DHCP lease, after `beanjar library config set lan_parent=eth0`) or `off`.
 - `mode`: `mitm` (the default), which records the guest's TCP and UDP traffic, DNS included, in a
   traffic inspector (your own mitmproxy 12.0.1 or newer, `pipx install mitmproxy`), or `direct`. See [Inspect emulator traffic](inspect-emulator-traffic.md).
+- `link=lan` with `mode=direct` puts the guest itself on the LAN, as a TV plugged into it: it asks
+  the LAN's router for its own lease, every port of it is at that address and phones find it as
+  they find a TV, with nothing of Beanjar's in between: no inspector, no relays and no LG mock, so
+  it needs `lg_services=real` too
+  (`beanjar config set NAME link=lan mode=direct lg_services=real`). `address` and `forward` do
+  not apply (set a static address on the TV itself). This host cannot reach such a VM, as a
+  network interface never reaches the macvlans on it: use it from another machine of the LAN
+  (`beanjar ares-TOOL -d HOST/NAME` there, or the SDK's tools at its LAN address, which
+  `beanjar show` gives as `lan_address` once the guest has its lease). VNC stays on this host.
 - `lan_access`: `off` (the default) or `on`, with `link=nat`. The guest runs untrusted code, so by
   default it reaches the internet only: not the LAN (private, shared and link-local addresses,
   multicast) and not this host's own addresses. `config set NAME lan_access=on` lets it reach
@@ -183,17 +192,20 @@ These settings decide a VM's network ([guest networking](../dev/architecture/net
   Nothing reaches LG, whatever model key the VM has. The guest trusts the library's CA for these
   answers in `direct` too. `config set NAME
   lg_services=real` lets the VM talk to all of LG's services as a TV does, for a VM with a real
-  model key; nothing is refused or answered then. See [LG services](../dev/architecture/network.md#lg-services).
+  model key; nothing is refused or answered then. `link=lan` with `mode=direct` has no way to
+  mock them and needs `real`. See [LG services](../dev/architecture/network.md#lg-services).
 
 The guest never reaches this host's loopback (`127.0.0.1` and the rest of `127.0.0.0/8`), whatever
 the settings: a service that listens only there (a development server, Docker's API, a local mail
 server) is out of its reach. Every `nat` and `lan` VM needs `unshare`, `ip` and `slirp4netns` and
-unprivileged user namespaces, `mode=direct` too (`sudo apt install slirp4netns`).
+unprivileged user namespaces, `mode=direct` too (`sudo apt install slirp4netns`); `link=lan` with
+`mode=direct` needs `tc` (iproute2) instead of `slirp4netns`.
 
 Each VM has its own loopback address, `127.0.1.N`, and its services are on the TV's own port
 numbers there: SSAP 3000 and 3001, root SSH 6622, Developer Mode 9922 and its key server 9991, the
 traffic inspector 18083 and VNC 5900. `beanjar show NAME` prints them. To reach them from another
-machine, `config set NAME listen=0.0.0.0` (with `link=nat`), or use `link=lan`.
+machine, `config set NAME listen=0.0.0.0` (with `link=nat`), or use `link=lan` (with
+`mode=direct` they are on the guest's own LAN address and not on `127.0.1.N`).
 `config set NAME forward=8080` relays an app's own guest port as well.
 
 ## Identity
