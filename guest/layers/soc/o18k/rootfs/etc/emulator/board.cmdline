@@ -1,0 +1,29 @@
+# Board parameters the LG bootloader (lxboot) puts on the kernel command line, as on O18
+# (guest/layers/soc/o18/rootfs/etc/emulator/board.cmdline): W19K's lxboot (lxboot.pak 05.50.00,
+# V4.04.37) has W19O's format, chip table and board sizes ("3.0GB", "3.0GB,QUHD"), and its
+# kernel O18's chip table: chip=O18A0, CHIP_REV 0x22a0 (guest/targets/soc/o18k.toml).
+#
+# The values describe a 75SM9970PUA, the US 8K NanoCell the models DB lists for this firmware's OTA
+# ID (HE_DTV_W19K_AFADATAA: US, CA_EN), proposed by host/tools/research/model-config.py from W19K
+# 05.50.00's own tables with szCountryGroupCode=US continent=10 eLanguageCountry=LANG_COUNTRY_US
+# eHWSettingGroup=HWSETTING_US tuner=none ddr_size=DDR_SIZE_3G eBackLightType=BL_DIRECT_L; they are
+# not read from a real set. This ATSC firmware's RELEASE.cfg is W19O's file, a Korean 65" C9 (OLED):
+# the model's inch, tool type and direct LED backlight replace it, the rest stays the C9's. The 8K
+# path is not chosen: hwopt's FRC type (digit 17) is 0, so the kernel keeps its internal FRC and UHD.
+ethaddr=a8:23:fe:12:34:56 rev=1 chip=O18A0 bver=4.04.37 devtmpfs.mount=1
+# 7.5 GB eMMC, as the others (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# 16 straps: the kernel reads none; O18's line
+modelopt=0010010000000000
+# 18 digits, W19K's hardware option fields as model-config.py encodes them (W19O's tables): country
+# US, V-by-One, UD panel, panel V18, the US row of gmodelopt_lg1211_tuner_comb, DDR 3 GB, graphic
+# resolution 1920x1080, FRC type 0
+hwopt=002217000006002000
+# 6 tool option words: ToolOpt1 INCH_75, TOOL_SM99, direct LED; the rest RELEASE.cfg's C9 defaults
+ToolOpt=243:19:1234:193:59218019:1884281673
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=75SM9970PUA serialNum=905RAXX00003
+cmdEnd

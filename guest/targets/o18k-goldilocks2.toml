@@ -1,0 +1,39 @@
+models = ["W19K"]
+# tv.capture's video frames: lg115x.ko's de0 fills the frozen VT frame from the viewer, as on W17H
+viewer_capture = true
+
+# W19K goldilocks2 (05.50.00, "goldilocks2-grampians" 4.10.2, HE_DTV_W19K_AFADATAA, the ATSC build):
+# W19O's release rows (o18-goldilocks2.toml): its tvservice-atsc's lginit_app2 (the partition
+# table) and tvservice (the NVM records) are byte-identical to W19O's.
+
+[release]
+base = "goldilocks2"
+state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G", uhdcp = "16M" }
+peripherals = [
+    "sit",
+    "usbhid", "hid-axff", "hid-dr", "hid-logitech", "hid-pl", "hid-sony", "hid-zpff", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "snd-usb-audio", "cdc-acm", "uhid", "input-leds",
+    "hid-playstation", "ftdi_sio", "pl2303", "option", "sierra", "lgfs",
+]
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+tool_option_given = 6
+factory_offset = 0x294
+local_key = { word = 4, offset = 0, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_block_offset = 0x1C6

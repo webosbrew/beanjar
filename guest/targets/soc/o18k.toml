@@ -1,0 +1,13 @@
+# The LG O18K (the firmware's machine name o18k; lxboot's and the kernel's O18), W19K's SoC: O18's
+# platform (guest/targets/soc/o18.toml) with W19K's own board, a 75SM9970PUA (board.cmdline). W19K
+# 05.50.00's libkadaptor, libhal_lg115x and libdile_i2c are rebuilds of W19O's (the same I2C map
+# 190110, /dev/i2c-0 to -9), its RELEASE.cfg is W19O's file, and its kernel O18's build, so O18's
+# module rows hold.
+
+base = "o18"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 75SM9970PUA's area, a US set's: W19K's _aDefineContinent entry 10 ("US"), LANG_COUNTRY_US 14,
+# HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, from W19K's RELEASE.cfg (C9 defaults), read by host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
