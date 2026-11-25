@@ -103,20 +103,23 @@ void test_descriptors()
               f->intervals[0] == 333333);
     }
     // the C920's alternate settings 1 to 11, every microframe, and ours for compressed formats,
-    // 12: 3x1024 bytes every 4th microframe (bInterval 3)
-    const std::uint32_t ladder[] = {0,    192,  384,  512,  640,  800, 944,
-                                    1280, 1600, 1984, 2688, 3060, 3072};
-    for (std::uint8_t alt = 0; alt < 13; alt++)
+    // 12: 3x1024 bytes every 4th microframe (bInterval 3), 13: 3x1022 bytes every 8th (bInterval 4)
+    const std::uint32_t ladder[] = {0,    192,  384,  512,  640,  800,  944,
+                                    1280, 1600, 1984, 2688, 3060, 3072, 3066};
+    for (std::uint8_t alt = 0; alt < 14; alt++)
         CHECK(c.alt_payload(alt) == ladder[alt]);
     for (std::uint8_t alt = 1; alt < 12; alt++)
         CHECK(c.alt_endpoint(alt) && c.alt_endpoint(alt)->interval == 1);
     CHECK(c.alt_endpoint(12) && c.alt_endpoint(12)->interval == 3 &&
           c.alt_endpoint(12)->address == 0x81);
-    // uncompressed: never alternate setting 12, also past the largest payload
+    CHECK(c.alt_endpoint(13) && c.alt_endpoint(13)->interval == 4 &&
+          c.alt_endpoint(13)->address == 0x81);
+    // uncompressed: never alternate setting 12 or 13, also past the largest payload
     CHECK(c.alt_for(1) == 1 && c.alt_for(2306) == 10 && c.alt_for(3061) == 11 &&
           c.alt_for(5000) == 11);
-    // compressed: 12 carries 3070 x 2000 bytes/s, no more
-    CHECK(c.sparse_alt_for(1) == 12 && c.sparse_alt_for(6140000) == 12 &&
+    // compressed: 13 carries 3064 x 1000 bytes/s, 12 3070 x 2000, no more
+    CHECK(c.sparse_alt_for(1) == 13 && c.sparse_alt_for(3064000) == 13 &&
+          c.sparse_alt_for(3064001) == 12 && c.sparse_alt_for(6140000) == 12 &&
           c.sparse_alt_for(6140001) == 0);
 
     Probe r;
@@ -129,11 +132,13 @@ void test_descriptors()
     CHECK(negotiate(c, r).interval == 416666); // the listed interval nearest
     r.format = 3, r.frame = 1, r.interval = 0;
     p = negotiate(c, r);
-    CHECK(p.format == 3 && p.max_payload == 3072 &&
+    CHECK(p.format == 3 && p.max_payload == 3066 &&
           p.interval == c.formats[2].frame(1)->default_interval);
-    // MJPEG 640x480, 1280x720 and 1920x1080 at 30 fps: alternate setting 12 (uvcvideo takes
-    // the lowest payload of at least 3072, which only 12 has); YUY2 640x480 stays on 10
+    // MJPEG 640x480 and 1280x720 at 30 fps: alternate setting 13 (uvcvideo takes the lowest
+    // payload of at least 3066, which only 13 has); 1920x1080: 12 (3072, only 12's); YUY2 640x480
+    // stays on 10
     for (auto [w, h] : {std::pair{640, 480}, {1280, 720}, {1920, 1080}}) {
+        const std::uint32_t want = w == 1920 ? 3072 : 3066;
         const Frame *f = nullptr;
         for (auto &x : c.formats[2].frames)
             if (x.width == w && x.height == h)
@@ -143,9 +148,9 @@ void test_descriptors()
             continue;
         r.format = 3, r.frame = f->index, r.interval = 333333;
         p = negotiate(c, r);
-        CHECK(p.interval == 333333 && p.max_payload == 3072);
+        CHECK(p.interval == 333333 && p.max_payload == want);
         r.format = 2; // H.264, frame-based: compressed too
-        CHECK(negotiate(c, r).max_payload == 3072);
+        CHECK(negotiate(c, r).max_payload == want);
     }
     // more than 12 carries (2304x1536 MJPEG would be 0.75 bit x 3.5 Mpx x 30): the largest of
     // the C920's own
@@ -266,6 +271,19 @@ void test_gst()
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         CHECK(s.samples() > before); // live: new frames keep coming
+        // asked once a millisecond, as the pacing thread does, it serves GStreamer's 30 frames/s,
+        // each once (usbipdcpp's own frame clock would make that 29.4: frame_interval())
+        CHECK(s.frame_interval() == 333333 / 2);
+        const auto samples0 = s.samples(), repeats0 = s.repeats();
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 1; i <= 2000; i++) {
+            s.get_frame(f);
+            std::this_thread::sleep_until(t0 + std::chrono::milliseconds(i));
+        }
+        const auto served = s.samples() - samples0;
+        std::fprintf(stderr, "gst: %llu frames served in 2 s, %llu repeated\n",
+                     (unsigned long long)served, (unsigned long long)(s.repeats() - repeats0));
+        CHECK(served >= 57 && served <= 63 && s.repeats() == repeats0);
     }
     CHECK(children().empty()); // and ends with the source
 }
@@ -419,9 +437,9 @@ void test_front()
     CHECK(r.first == usb_redir_success && r.second.size() == 18 && r.second[8] == 0x6d);
     r = guest.control(0x80, 6, 0x0200, 0, 9);
     CHECK(r.first == usb_redir_success && r.second.size() == 9 &&
-          (r.second[2] | r.second[3] << 8) == 3468); // the C920's 3452 and alt 12
+          (r.second[2] | r.second[3] << 8) == 3484); // the C920's 3452, alts 12 and 13
     r = guest.control(0x80, 6, 0x0200, 0, 4096);
-    CHECK(r.second.size() == 3468);
+    CHECK(r.second.size() == 3484);
     r = guest.control(0x80, 6, 0x0302, 0x0409, 255);
     CHECK(r.first == usb_redir_success && r.second.size() == 38 && r.second[2] == 'H');
     r = guest.control(0x80, 6, 0x0303, 0x0409, 255);
@@ -488,34 +506,45 @@ void test_front()
     CHECK(guest.wait_status(id) == usb_redir_success);
     CHECK(!front.streaming());
 
-    // a format switch: MJPEG frame 2, then the stream again in alternate setting 12, at 2000
-    // packets/s (20000-byte frames: 7 packets of 3070 bytes each)
-    want.format = 3, want.frame = 2;
-    CHECK(guest.control(0x21, 0x01, 0x0200, 1, 26, want.bytes()).first == usb_redir_success);
-    CHECK(source->fourcc == FOURCC_MJPG && cam.committed().max_payload == 3072);
-    sa = {1, 12};
-    id = guest.next_id++;
-    usbredirparser_send_set_alt_setting(guest.p, id, &sa);
-    CHECK(guest.wait_status(id) == usb_redir_success);
-    CHECK(guest.ep.max_packet_size[16 + 1] == 3072 && guest.ep.interval[16 + 1] == 3);
-    guest.iso_packets = guest.iso_eof = guest.max_len = 0;
-    si = {0x81, 20, 8};
-    id = guest.next_id++;
-    usbredirparser_send_start_iso_stream(guest.p, id, &si);
-    CHECK(guest.wait_status(id) == usb_redir_success);
-    const auto t1 = std::chrono::steady_clock::now();
-    guest.pump([] { return false; }, 1000);
-    const double secs2 =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
-    const double rate2 = double(guest.iso_packets) / secs2, fps2 = double(guest.iso_eof) / secs2;
-    std::fprintf(stderr, "MJPEG stream: %.2f s, %.0f packets/s, %.1f frames/s, max %llu\n", secs2,
-                 rate2, fps2, (unsigned long long)guest.max_len);
-    CHECK(rate2 > 1750 && rate2 < 2250);
-    CHECK(fps2 > 25 && fps2 < 35);
-    CHECK(guest.max_len <= 3072);
-    id = guest.next_id++;
-    usbredirparser_send_stop_iso_stream(guest.p, id, &st);
-    CHECK(guest.wait_status(id) == usb_redir_success);
+    // format switches: MJPEG 160x90 (frame 2), then the stream again in alternate setting 13 at
+    // 1000 packets/s; MJPEG 1920x1080 (frame 17) in 12 at 2000 packets/s (20000-byte frames: 7
+    // packets each)
+    struct Sparse {
+        std::uint8_t frame, alt;
+        std::uint32_t payload;
+        std::uint8_t interval;
+        double rate;
+    };
+    for (const Sparse x : {Sparse{2, 13, 3066, 4, 1000}, Sparse{17, 12, 3072, 3, 2000}}) {
+        want.format = 3, want.frame = x.frame;
+        CHECK(guest.control(0x21, 0x01, 0x0200, 1, 26, want.bytes()).first == usb_redir_success);
+        CHECK(source->fourcc == FOURCC_MJPG && cam.committed().max_payload == x.payload);
+        sa = {1, x.alt};
+        id = guest.next_id++;
+        usbredirparser_send_set_alt_setting(guest.p, id, &sa);
+        CHECK(guest.wait_status(id) == usb_redir_success);
+        CHECK(guest.ep.max_packet_size[16 + 1] == x.payload &&
+              guest.ep.interval[16 + 1] == x.interval);
+        guest.iso_packets = guest.iso_eof = guest.max_len = 0;
+        si = {0x81, 20, 8};
+        id = guest.next_id++;
+        usbredirparser_send_start_iso_stream(guest.p, id, &si);
+        CHECK(guest.wait_status(id) == usb_redir_success);
+        const auto t1 = std::chrono::steady_clock::now();
+        guest.pump([] { return false; }, 1000);
+        const double secs2 =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t1).count();
+        const double rate2 = double(guest.iso_packets) / secs2;
+        const double fps2 = double(guest.iso_eof) / secs2;
+        std::fprintf(stderr, "MJPEG stream, alt %u: %.2f s, %.0f packets/s, %.1f frames/s, max %llu\n",
+                     x.alt, secs2, rate2, fps2, (unsigned long long)guest.max_len);
+        CHECK(rate2 > 0.875 * x.rate && rate2 < 1.125 * x.rate);
+        CHECK(fps2 > 25 && fps2 < 35);
+        CHECK(guest.max_len <= x.payload);
+        id = guest.next_id++;
+        usbredirparser_send_stop_iso_stream(guest.p, id, &st);
+        CHECK(guest.wait_status(id) == usb_redir_success);
+    }
 
     front.stop();
     guest.pump([&] { return guest.disconnected; });

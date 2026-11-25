@@ -8,13 +8,15 @@
 // dependency like any tool.
 //
 // A reader thread keeps the latest whole frame (YUY2: width x height x 2 bytes; MJPEG: one JPEG,
-// SOI to EOI). usbipdcpp's streaming handler asks for a frame at most once per frame interval,
-// from the pacing thread: it gets the latest at once, the last one again when no new one came.
+// SOI to EOI). usbipdcpp's streaming handler asks for a frame from the pacing thread once it may
+// start one: it gets a new one as soon as GStreamer has made it, so the frame rate is GStreamer's
+// (frame_interval()), and the last one again only when GStreamer is two frame intervals late.
 #pragma once
 
 #include <sys/types.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -51,7 +53,7 @@ class GstSource : public usbipdcpp::VideoSource
     std::uint64_t repeats() const
     {
         return repeats_;
-    } // frames served again for want of a new one
+    } // frames served again because GStreamer is late
     // gst-launch-1.0's pipeline for a format, its frames to file descriptor fd
     static std::vector<std::string> pipeline(const std::string &pattern, std::uint32_t fourcc,
                                              std::uint16_t width, std::uint16_t height,
@@ -75,6 +77,7 @@ class GstSource : public usbipdcpp::VideoSource
     std::mutex mutex_;
     std::vector<std::uint8_t> latest_, current_;
     std::uint64_t latest_seq_ = 0, served_seq_ = 0;
+    std::chrono::steady_clock::time_point served_at_{}; // when current_ was first or last served
     std::atomic<std::uint64_t> samples_{0}, repeats_{0};
 };
 

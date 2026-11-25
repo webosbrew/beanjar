@@ -4,7 +4,7 @@
 """Parse a `lsusb -v` dump of a UVC camera into byte-exact USB descriptors.
 
 usage: python3 -I gen.py <lsusb.txt> <outdir> [--vc-intr-maxtransfer N]
-                         [--compressed-alt WMAXPACKETSIZE:BINTERVAL] [--verbose]
+                         [--compressed-alt WMAXPACKETSIZE:BINTERVAL]... [--verbose]
 
 The virtual camera's build runs it (host/helpers/virtcam/meson.build) on the C920's dump beside it
 (c920-046d-082d-lsusb.txt, from libuvc's cameras/logitech_hd_pro_920.txt) for descriptors.h.
@@ -14,10 +14,10 @@ qualifier.bin, config.bin, string0..2.bin, descriptors.h, layout.txt (every desc
 and length) and prints the checks (all with --verbose, else only on a failure). Standard library
 only.
 
---compressed-alt adds one VideoStreaming alternate setting after the dump's last one, with the
-same endpoint at the wMaxPacketSize and bInterval given: the virtual camera's own setting for
-compressed formats, which a real C920 does not have. The total
-length check then expects the dump's wTotalLength plus its 16 bytes.
+Each --compressed-alt adds one VideoStreaming alternate setting after the dump's last one (in the
+order given), with the same endpoint at the wMaxPacketSize and bInterval given: the virtual
+camera's own settings for compressed formats, which a real C920 does not have. The total length
+check then expects the dump's wTotalLength plus 16 bytes for each.
 """
 
 import re, struct, sys, os
@@ -377,10 +377,11 @@ def main():
     vc_intr_max = 16
     if "--vc-intr-maxtransfer" in sys.argv:
         vc_intr_max = int(sys.argv[sys.argv.index("--vc-intr-maxtransfer") + 1])
-    extra_alt = None
-    if "--compressed-alt" in sys.argv:
-        mps, ivl = sys.argv[sys.argv.index("--compressed-alt") + 1].split(":")
-        extra_alt = (num(mps), num(ivl))
+    extra_alts = []
+    for i, arg in enumerate(sys.argv):
+        if arg == "--compressed-alt":
+            mps, ivl = sys.argv[i + 1].split(":")
+            extra_alts.append((num(mps), num(ivl)))
     text = open(src, encoding="utf-8").read()
     dev, blocks = parse_blocks(text)
     os.makedirs(outdir, exist_ok=True)
@@ -452,16 +453,19 @@ def main():
                 )
             )
             gap_inserted = True
-    if extra_alt:
+    if extra_alts:
         at, number, alt, ep = vs_last
-        intf = bytes([9, 4, number, alt + 1, 1, 14, 2, 0, 0])
-        endp = struct.pack(
-            "<BBBBHB", 7, 5, I(ep, "bEndpointAddress"), I(ep, "bmAttributes"), *extra_alt
-        )
-        items[at:at] = [
-            ("Interface Descriptor alt %d (added: --compressed-alt)" % (alt + 1), intf, None),
-            ("Endpoint Descriptor (added: --compressed-alt)", endp, None),
-        ]
+        added = []
+        for n, extra_alt in enumerate(extra_alts, alt + 1):
+            intf = bytes([9, 4, number, n, 1, 14, 2, 0, 0])
+            endp = struct.pack(
+                "<BBBBHB", 7, 5, I(ep, "bEndpointAddress"), I(ep, "bmAttributes"), *extra_alt
+            )
+            added += [
+                ("Interface Descriptor alt %d (added: --compressed-alt)" % n, intf, None),
+                ("Endpoint Descriptor (added: --compressed-alt)", endp, None),
+            ]
+        items[at:at] = added
     body = b"".join(d for _, d, _ in items)
     total = 9 + len(body)
     cfg = (
@@ -481,14 +485,14 @@ def main():
 
     # checks
     ok = True
-    lsusb_total = I(cfgblk, "wTotalLength") + (16 if extra_alt else 0)
+    lsusb_total = I(cfgblk, "wTotalLength") + 16 * len(extra_alts)
     lsusb_sum = 9 + sum(l for _, _, l in items if l is not None)
     say("lsusb bLength sum (text, incl. config 9): %d" % lsusb_sum)
     say("lsusb wTotalLength                      : %d" % lsusb_total)
     say("emitted config length                   : %d" % len(cfg))
     say(
         "gap descriptor inserted                 : %s (%d bytes)"
-        % (gap_inserted, len(cfg) - lsusb_sum - (16 if extra_alt else 0))
+        % (gap_inserted, len(cfg) - lsusb_sum - 16 * len(extra_alts))
     )
     if len(cfg) != lsusb_total:
         ok = False

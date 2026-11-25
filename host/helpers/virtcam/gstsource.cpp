@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 
 #include "uvcdesc.h"
@@ -207,15 +208,20 @@ bool GstSource::set_format(std::uint32_t fourcc, std::uint16_t width, std::uint1
 bool GstSource::get_frame(usbipdcpp::VideoFrame &frame)
 {
     std::lock_guard lock(mutex_);
+    const auto now = std::chrono::steady_clock::now();
     if (latest_seq_ != served_seq_) {
         current_.swap(latest_);
         served_seq_ = latest_seq_;
+        served_at_ = now;
         samples_++;
-    } else if (!current_.empty()) {
+    } else if (current_.empty()) {
+        return false; // none yet: the handler sends empty packets and asks again
+    } else if (now - served_at_ < std::chrono::nanoseconds(std::uint64_t(interval_) * 200)) {
+        return false; // the next one is due from GStreamer's clock: empty packets until it comes
+    } else {
+        served_at_ = now; // GStreamer is two frame intervals late: the last one again
         repeats_++;
     }
-    if (current_.empty())
-        return false; // none yet: the handler sends empty packets and asks again
     frame = {current_.data(), current_.size(), true};
     return true;
 }
@@ -227,7 +233,11 @@ std::size_t GstSource::max_frame_size() const
 
 std::uint32_t GstSource::frame_interval() const
 {
-    return interval_;
+    // usbipdcpp's frame clock starts each frame at the call that starts it, and the pacing thread
+    // calls once a millisecond, so at its own interval every frame would last a whole number of
+    // milliseconds (34 for 33.3, 29.4 frames/s). It gets half: GStreamer's live clock, through
+    // get_frame, then sets the rate
+    return interval_ / 2;
 }
 
 } // namespace virtcam

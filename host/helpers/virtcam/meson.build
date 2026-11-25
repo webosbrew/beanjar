@@ -35,13 +35,16 @@ if have_virtcam
               '@OUTPUT0@'] + usbipdcpp_cross,
     console: true,
     build_by_default: true)
-  # The C920's descriptors, byte for byte, from a published lsusb -v of the camera, plus one
-  # alternate setting of our own for compressed formats: 3x1024 bytes every 4th microframe
-  # (bInterval 3, 2000 packets/s), so MJPEG does not cost QEMU 8000 transfers a second
+  # The C920's descriptors, byte for byte, from a published lsusb -v of the camera, plus two
+  # alternate settings of our own for compressed formats, so MJPEG does not cost QEMU 8000
+  # transfers a second: alt 12, 3x1024 bytes every 4th microframe (bInterval 3, 2000 packets/s),
+  # and alt 13, 3x1022 bytes every 8th (bInterval 4, 1000 packets/s), which QEMU's xHCI keeps on
+  # schedule through a 4 ms late timer where alt 12 slips after 2 ms
   virtcam_descriptors = custom_target('virtcam-descriptors',
     input: files('descriptors/gen.py', 'descriptors/c920-046d-082d-lsusb.txt'),
     output: 'descriptors.h',
-    command: [python, '-I', '@INPUT0@', '@INPUT1@', '@OUTDIR@', '--compressed-alt', '0x1400:3'],
+    command: [python, '-I', '@INPUT0@', '@INPUT1@', '@OUTDIR@', '--compressed-alt', '0x1400:3',
+              '--compressed-alt', '0x13fe:4'],
     capture: false)
   usbipdcpp_dep = declare_dependency(
     sources: [usbipdcpp[0]],

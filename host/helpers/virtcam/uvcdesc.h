@@ -97,7 +97,8 @@ std::optional<Config> parse_config(const std::uint8_t *data, std::size_t size);
 // which a bcdUVC 1.00 camera uses (34 or 48 with the later fields for 1.1 and 1.5).
 // A compressed frame's size as negotiate() budgets it: 0.75 bits per pixel. jpegenc's quality-85
 // baseline JPEG of the smpte pattern (with its time overlay) is 0.69 at 640x480, 0.57 at 1280x720
-// and 0.51 at 1920x1080, so 1920x1080 at 30 fps (5.8 MB/s) fits in 3072 bytes x 2000 packets/s.
+// and 0.51 at 1920x1080, so 1280x720 at 30 fps (2.07 MB/s) fits in 3066 bytes x 1000 packets/s and
+// 1920x1080 at 30 fps (5.8 MB/s) in 3072 bytes x 2000 packets/s.
 constexpr std::uint32_t COMPRESSED_BITS_PER_PIXEL_X4 = 3;
 
 struct Probe {
@@ -118,8 +119,9 @@ struct Probe {
 // names none or one it lacks), the listed frame interval nearest the request (the frame's default
 // for 0), the frame's buffer size, and the payload per packet this rate needs, rounded up to an
 // alternate setting's (uncompressed: frame bytes x frame rate / 8000 plus the 2-byte header;
-// compressed: the sparse alternate setting when it carries COMPRESSED_BITS_PER_PIXEL_X4 / 4 at this
-// size and rate, else the largest one, since the size of a frame varies).
+// compressed: the sparse alternate setting with the least bandwidth that carries
+// COMPRESSED_BITS_PER_PIXEL_X4 / 4 at this size and rate, else the largest one, since the size of
+// a frame varies).
 Probe negotiate(const Config &config, const Probe &request);
 // GET_DEF: the first format's default frame at its default interval.
 Probe default_probe(const Config &config);
