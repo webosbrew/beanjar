@@ -227,7 +227,7 @@ viewer-headless (C, SDL offscreen): core/headless.c (+ SDL scancode names for --
   power states 3 (active) and 2; its power off (`25 00`) ends the VM.
 - **No version check** (`WV_ABI` 9). `wv_check` (ABI 8), which compared the run's versions
   with the viewer's, is gone: versions are information only. The display, cursor, video and media
-  protocols identify themselves (`WOSCUR1`, `WOSVID2`, the media helper's HELLO/ACK)
+  protocols identify themselves (`WOSCUR1`, `WOSVID3`, the media helper's HELLO/ACK)
   (build-and-boot.md, "Host and guest compatibility").
 - **The mix for a front end** (`WV_ABI` 10). `wv_audio_sink(fn, data)`, before `wv_start`, gives
   the sound to the front end instead of SDL: `pcm-out.c`'s thread, a 10 ms clock, mixes the media

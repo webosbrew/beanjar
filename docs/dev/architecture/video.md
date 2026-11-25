@@ -94,8 +94,11 @@ host, codec and implementation; software/ownership tests do not qualify GPU sync
 ## Display and audio
 
 LG's window control supplies placement and visibility. The viewer combines the decoded video
-with the TV's OSD. A video plane without input is black, and so is a shown window without a
-decoded picture while decoding is on: before the first frame, between streams, after a helper
+with the TV's OSD. Each window also carries the scaler's input region inside its source (live TV's
+overscan, the picture-size modes): the viewer shows only that part of the picture, stretched to
+the window, as a scaler does (`host/viewer/core/video-place.h`). lgemu's V4L2 scaler and rtk-vsc
+send it; the LG115x HAL shim and MStar's XC send none (their sets show the whole source). A video
+plane without input is black, and so is a shown window without a decoded picture while decoding is on: before the first frame, between streams, after a helper
 restart, and for a codec the helper has no decoder for (as on a TV). Only with decoding off
 (viewer `--no-media` or a `MEDIAHUB=0` launch) does such a
 window show the diagnostic checkerboard (60 guest pixels per square, light grey and dark blue),

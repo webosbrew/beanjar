@@ -251,7 +251,7 @@ has (`beanjar/compat.py`):
   module, the parameter and the payload's `.ko`. The declared names are cached by the `.ko`'s
   path, size and mtime (`modinfo-params.json` in the host's cache: `build/` or
   `~/.cache/beanjar/`). Init's own `nvm_disk=` and `partinfo_disk=` are the guest's business.
-- **Protocols.** The wire formats identify themselves (`WOSCUR1`, `WOSVID2`, the media helper's
+- **Protocols.** The wire formats identify themselves (`WOSCUR1`, `WOSVID3`, the media helper's
   HELLO/ACK) and stay the guard between viewer and VM; the viewer has no version check.
 
 The versions are information. Each build lane stamps what it publishes (the host lane
