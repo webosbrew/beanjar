@@ -17,6 +17,8 @@ VERSIONS = ("2.0", "3.0", "3.1", "3.2")
 # The chips below ES 3.2: their firmware's GL library prints that version (the soc tables cite it)
 BELOW_32 = {
     "h13": "3.0",
+    "k2l": "3.1",
+    "k2lp": "3.1",
     "lm15u": "3.0",
     "m14": "2.0",
     "m2": "2.0",
