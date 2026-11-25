@@ -1,0 +1,55 @@
+# Board parameters the bootloader (Realtek's U-Boot 2012.07, LG's build for K3LP, r-versions
+# 1.00.64) puts on the kernel command line, parsed by libdile_boardinfo, tvservice, tvconfig-gen
+# and the Upstart jobs. The initramfs appends these to the real cmdline and bind-mounts the result
+# over /proc/cmdline inside webOS. Format and order follow W17P's boot.pak format strings
+# ("ethaddr=%s ", "devtmpfs.mount=1", "modelopt=%s ", "hwopt=%s ",
+# "ToolOpt=%u:%u:%u:%u:%u:%u:%u:%u:%u ", "debugMode=%d ", "countryGrp=%d ", "modelName=%s ",
+# "serialNum=%s ", "chip=K3LPA0", "emmc_size=0x%01lx%08lx ", "cmdEnd"); the values describe a
+# 43UJ651V, a German model that runs W17P 06.10.75 (the models database), in W17P's own encodings,
+# proposed by host/tools/research/model-config.py; they are not read from a real set. U-Boot's
+# kernel-only parameters (root=, console=, loglevel=, rtdlog=, mmcoops=, resume=, pwm_mode=,
+# intdemod=, ...) are left out, and so are sver= and bver= (the boot versions, which only
+# tvconfig-gen's version check prints), and modelopt= (the ADC straps: no program of W17P's
+# rootfs or tvservice reads that token).
+#
+# chip=K3LPA0 is a constant in this U-Boot.
+ethaddr=a8:23:fe:12:34:56
+devtmpfs.mount=1
+# 18 hex digits as W17P's tvconfig-gen (SystemHdrInit) reads them: d0 country 2 (EU), d2 panel
+# interface 2 (V-by-One), d3 panel resolution 2 (UD), d4 FRC 0, d5 panel V17 7, d8 tuner 2
+# (gmodelopt_RTD2871F_tuner_comb[EU][2]: DVB-T2/C and S2, external), d11 DDR 3 (1.5 GB: a strap,
+# not in the firmware), d14 graphic resolution 2 (1920x1080); the rest 0
+hwopt=202207002003002000
+# U-Boot passes ToolOption1..9 of the NVM ToolOptionDB, which the launcher programs into a new
+# EEPROM (host/core/beanjar/nvm.py). W17P's encodings (tvservice's DWARF TOOL_OPTIONn_T and enums)
+# with its RELEASE.cfg, whose defaults are the UJ65 series' (the model's own):
+#   ToolOpt1 33322: INCH_43 10 (bits 0-4), TOOL_UJ65 17 (5-10), MODULE_LGD 0, LVDS bit 1.
+#   ToolOpt2 18465: video and audio input index 1, BL_EDGE_LED 2, three USB ports, no HDMI switch.
+#   ToolOpt3 57681: AMP_NTP7515_1AMP 1 (RELEASE.cfg "[i2c]NTP7515:4:0x54": targets.py's
+#     amp:4:0x2a), headphone, DVR ready, ISF, local dimming and its menu, luminance up.
+#   ToolOpt4 64793: demodulators TCS_COMBO 1, DVB_SI2169C 6, SI2178B 4, NO_DEMOD 14 and
+#     NO_DEMOD_ANA 7. No tuner or demodulator chip is modelled.
+#   ToolOpt5 115181: WiFi 5 (11ac combo, MediaTek), CAM_READY 1, mouseRC 7 (RELEASE.cfg's
+#     MOTION_REMOCON_MR16_MR15R is not in the parser's table: its -1, masked), TVLink, scanning
+#     backlight, WOL, ClearPlus.
+#   ToolOpt6 134730: default standard backlight 10 (RELEASE.cfg's 75 as OSA_MD_InitToolOption
+#     scales it), MOTION_MIDDLE1 4, audio power 6, 10 W speakers, PWM2_DUTY_41 2.
+#   ToolOpt7 918159: MAC, ESN, CI and Widevine AP, EDID_DTS 2, the eye sensor, Quick Start+ 0
+#     with its default on, PWM 100/120 Hz, Magic Space Sound.
+#   ToolOpt8 0 (the default record's), ToolOpt9 131970: BPL_CURRENT_130 2, panel gamut 7
+#     (RELEASE.cfg's PANEL_GAMUT_WCG is not in the parser's table: its -1, masked), HDR.
+ToolOpt=33322:18465:57681:64793:115181:134730:918159:0:131970
+# The NVM sysdb's debug status, 3 = DEBUG, 4 = EVENT, 5 = RELEASE; a retail set passes 5, RELEASE.
+# The emulator deliberately runs DEBUG on every board.
+debugMode=3
+# the ModelInfoDB's group code: 4 = EU (libdile_boardinfo's countryGrpMatch)
+countryGrp=4
+# modelName, serialNum (the NVM ModelInfoDB's). The EEPROM's area (ContinentOptionDB) is the
+# factory's, not U-Boot's: targets.py's Soc.continent.
+modelName=43UJ651V serialNum=704RAXX00001
+chip=K3LPA0
+# 0x + 9 hex digits (U-Boot's 0x%01lx%08lx): 7.5 GB eMMC, as M2's (the state disks' sizes are the
+# launcher's, not this)
+emmc_size=0x1d2000000
+# U-Boot ends with cmdEnd, and puts a space after every value.
+cmdEnd

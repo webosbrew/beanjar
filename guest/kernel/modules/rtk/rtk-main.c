@@ -79,6 +79,20 @@ static int allocs_count;
 module_param_array(allocs, charp, &allocs_count, 0444);
 MODULE_PARM_DESC(allocs, "ioctls that allocate and free memory by PA, node:alloc_cmd:free_cmd");
 
+/* Ioctls that keep what one process sets for the others to get (rtkaudio's
+ * RTKAUDIO_IOC_SET_STATUS/GET_STATUS on W17P, _IOW/_IOR('a', 6/7, int): the audio HAL's resource,
+ * flow and input states that every KADP client shares, which tvservice's HAL_AUDIO reads back
+ * before it walks them): node:get_cmd:set_cmd. The argument is {u32 index (< 8), u32 buffer,
+ * u32 size}; get copies what the last set of that index stored, zeros past it (and for an index
+ * never set: Realtek's driver starts them zeroed). */
+static char *stores[4];
+static int stores_count;
+module_param_array(stores, charp, &stores_count, 0444);
+MODULE_PARM_DESC(stores,
+                 "ioctls that keep a blob per index for every process, node:get_cmd:set_cmd");
+#define STORE_SLOTS 8
+#define STORE_MAX   (64 << 10)
+
 /* Ioctls that wait for an event no emulated hardware ever has (CEC's receive): node:cmd. They sleep
  * until a signal, or fail at once with O_NONBLOCK as Realtek's do when nothing came (-EFAULT). An
  * accept-all answer would hand the caller an empty event and it would ask again at once. */
@@ -94,6 +108,14 @@ MODULE_PARM_DESC(arc_ioctl, "the ARC enable ioctl, node:cmd (W19P vfedev:0x40047
                             "recorded");
 static char arc_node[16];
 static u32 arc_cmd;
+
+/* the CPUs KADP has RPC rings to (rtk-rpc.c), each a ring there and one back, four minors: three
+ * (the audio CPU and the two video CPUs, rpc0..11) on K5LP and later; four on the older chips
+ * (W16K, W16P, W17P), whose KADP also opens rpc12..15, the rings of the KCPU's TeeManager
+ * (SECURE_SYSTEM, program 501) */
+static unsigned int rpc_cpus = 3;
+module_param(rpc_cpus, uint, 0444);
+MODULE_PARM_DESC(rpc_cpus, "the CPUs with RPC rings, /dev/rpc0 to rpc<4n-1> (3 or 4; default 3)");
 
 /* the TEE (tee.c): /dev/tee0, OP-TEE's user ABI, with the stand-in TAs of tee-ta.c */
 static bool tee;
@@ -141,6 +163,13 @@ static struct {
     char node[NODE_NAME_LEN];
     u32 alloc, free;
 } alloc_rules[ARRAY_SIZE(allocs)];
+static struct {
+    char node[NODE_NAME_LEN];
+    u32 get, set;
+    struct mutex lock;
+    void *blob[STORE_SLOTS];
+    u32 size[STORE_SLOTS];
+} store_rules[ARRAY_SIZE(stores)];
 
 static int node_rules_parse(void)
 {
@@ -165,7 +194,76 @@ static int node_rules_parse(void)
         alloc_rules[i].alloc = v[0];
         alloc_rules[i].free = v[1];
     }
+    for (int i = 0; i < stores_count; i++) {
+        u32 v[2];
+
+        if (lgemu_parse_named(stores[i], store_rules[i].node, NODE_NAME_LEN, 0, v, 2)) {
+            pr_err("stores=%s: not node:get_cmd:set_cmd\n", stores[i]);
+            return -EINVAL;
+        }
+        store_rules[i].get = v[0];
+        store_rules[i].set = v[1];
+        mutex_init(&store_rules[i].lock);
+    }
     return 0;
+}
+
+static void stores_free(void)
+{
+    for (int i = 0; i < stores_count; i++)
+        for (int j = 0; j < STORE_SLOTS; j++)
+            kvfree(store_rules[i].blob[j]);
+}
+
+/* stores= for node and cmd: the rule's index, *set whether cmd is its set; -1 neither */
+static int node_store(const char *node, unsigned int cmd, bool *set)
+{
+    for (int i = 0; i < stores_count; i++) {
+        if (strcmp(store_rules[i].node, node))
+            continue;
+        if (cmd == store_rules[i].get || cmd == store_rules[i].set) {
+            *set = cmd == store_rules[i].set;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static long node_store_ioctl(int i, bool set, unsigned long arg)
+{
+    u32 a[3];
+    void __user *buf;
+    long ret = 0;
+
+    if (copy_from_user(a, compat_ptr(arg), sizeof(a)))
+        return -EFAULT;
+    if (a[0] >= STORE_SLOTS || a[2] > STORE_MAX)
+        return -EINVAL;
+    buf = compat_ptr(a[1]);
+    mutex_lock(&store_rules[i].lock);
+    if (set) {
+        void *blob = kvmalloc(a[2] ? a[2] : 1, GFP_KERNEL);
+
+        if (!blob)
+            ret = -ENOMEM;
+        else if (copy_from_user(blob, buf, a[2])) {
+            kvfree(blob);
+            ret = -EFAULT;
+        } else {
+            kvfree(store_rules[i].blob[a[0]]);
+            store_rules[i].blob[a[0]] = blob;
+            store_rules[i].size[a[0]] = a[2];
+        }
+    } else {
+        u32 n = min(a[2], store_rules[i].size[a[0]]);
+
+        if (n && copy_to_user(buf, store_rules[i].blob[a[0]], n))
+            ret = -EFAULT;
+        else if (a[2] > n && clear_user(buf + n, a[2] - n))
+            ret = -EFAULT;
+    }
+    mutex_unlock(&store_rules[i].lock);
+    return ret;
 }
 
 /* whether node's ioctl cmd is one of waits= */
@@ -206,6 +304,13 @@ static long node_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     kind = node_alloc_kind(file->private_data, cmd);
     if (kind)
         return rtk_node_memory_ioctl(kind, arg);
+    {
+        bool set;
+        int i = node_store(file->private_data, cmd, &set);
+
+        if (i >= 0)
+            return node_store_ioctl(i, set, arg);
+    }
     if (node_waits(file->private_data, cmd)) {
         if (file->f_flags & O_NONBLOCK)
             return -EFAULT;
@@ -263,7 +368,7 @@ static int node_open(struct inode *inode, struct file *file)
  * Realtek's rpc_poll_open does */
 static const struct file_operations *minor_fops(unsigned int minor)
 {
-    if (minor < 2 * RPC_RINGS || minor == RPC_CTRL)
+    if (minor < 4 * rpc_cpus || minor == RPC_CTRL)
         return &rtk_rpc_fops;
     if (minor == MINOR_AUTH)
         return &rtk_auth_fops;
@@ -347,6 +452,10 @@ static int __init rtk_init(void)
     int err;
 
     rtk_clock_prepare();
+    if (rpc_cpus < 3 || rpc_cpus > RPC_CPUS_MAX) {
+        pr_err("rpc_cpus=%u: not 3 or 4\n", rpc_cpus);
+        return -EINVAL;
+    }
     err = rtk_memory_params_check();
     if (!err)
         err = rtk_dcu_setup();
@@ -411,7 +520,7 @@ static int __init rtk_init(void)
         goto fail;
     class_registered = true;
 
-    for (unsigned int m = 0; m < 2 * RPC_RINGS && !err; m++) {
+    for (unsigned int m = 0; m < 4 * rpc_cpus && !err; m++) {
         char name[8];
 
         snprintf(name, sizeof(name), "rpc%u", m);
@@ -442,6 +551,7 @@ static void rtk_exit(void)
 {
     unsigned int m;
 
+    stores_free();
     rtk_fb_remove();
     lgemu_v4l2_capture_remove();
     rtk_tee_remove();

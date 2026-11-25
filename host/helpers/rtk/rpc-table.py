@@ -69,7 +69,10 @@ MAX_REPLY, MAX_CREATE, MAX_ANSWER, MAX_RESULT = 128, 16, 16, 4096
 PROGRAMS = {
     "AUDIO": 201,
     "VIDEO": 100,
-}  # AUDIO_SYSTEM, VIDEO_SYSTEM
+    "SECURE": 501,
+}  # AUDIO_SYSTEM, VIDEO_SYSTEM, SECURE_SYSTEM (the KCPU's TeeManager on W16K, W16P and W17P: a
+# fourth ring, rpc12 to rpc15, which the clnt's mode does not name: only AUDIO and VIDEO are
+# checked against it)
 # clnt mode bits (prepareCLNT's second argument): BLOCK_MODE 1, USE_INTR_BUF 2, SEND_AUDIO_CPU 4
 BLOCK_MODE = 1
 SEND_AUDIO_CPU = 4  # else the video CPU (KADP's video clnts pass mode 3)
@@ -468,7 +471,7 @@ def analyse(path):
         x = a["xdrmem"][0] if len(a["xdrmem"]) == 1 else None
         if len(a["xdrmem"]) > 1 or (a["xdrmem"] and x is None):
             raise Ambiguous(f"{s}: XDR decode size not one constant: {a['xdrmem']}")
-        m = re.match(r"(AUDIO|VIDEO)_", s)
+        m = re.match(r"(AUDIO|VIDEO|SECURE)_", s)
         rows.append(
             {
                 "stub": s,
@@ -509,7 +512,7 @@ def analyse(path):
                 row["program"], row["create"] = None, False
                 continue
             p = progs.pop()
-        if cpus - {p}:
+        if p in (100, 201) and cpus - {p}:
             errors.append(f"{row['stub']}: program {p} sent to the CPU of {sorted(cpus)}")
         row["program"] = p
         row["create"] = (

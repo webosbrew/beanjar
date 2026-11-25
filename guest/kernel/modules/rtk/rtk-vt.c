@@ -33,11 +33,13 @@
 #include "../../../../include/webos-video.h"
 
 /* The scaler's video-to-memory capture, Realtek's /dev/vivtdev (below, "VT"):
- * node:width:height:fps, the node of nodes= whose ioctls are VT's, the capture's largest frame and
- * the display's rate. */
+ * node:width:height:fps[:buffers], the node of nodes= whose ioctls are VT's, the capture's largest
+ * frame, the display's rate and the most frame buffers the driver has (its VT_MAX_BUFFER_NUM, the
+ * addresses in the all-buffer property: 5, the default, from K5LP on; 3 on W17P's K3LP, whose
+ * property is 36 bytes). */
 static char *vt;
 module_param(vt, charp, 0444);
-MODULE_PARM_DESC(vt, "the VT capture device, node:max_width:max_height:framerate");
+MODULE_PARM_DESC(vt, "the VT capture device, node:max_width:max_height:framerate[:buffers]");
 
 /* ---- VT: the scaler's capture to memory (Realtek's tvscalercontrol/scaler_vtdev.c) ----
  *
@@ -105,7 +107,8 @@ static_assert(sizeof(struct vt_vfod_state) == 8);
 static struct {
     char node[NODE_NAME_LEN];
     u32 max_w, max_h, fps;
-    u64 pa; /* VT_BUFFERS_MAX buffers of unit bytes */
+    u32 nbuf; /* the most buffers, at most VT_BUFFERS_MAX */
+    u64 pa;   /* nbuf buffers of unit bytes */
     unsigned long unit;
     struct mutex lock;
     bool inited;
@@ -125,15 +128,18 @@ static void vt_defaults(u32 buffers)
 
 int rtk_vt_setup(void)
 {
-    u32 v[3];
+    u32 v[4] = {0, 0, 0, VT_BUFFERS_MAX};
 
     if (!vt)
         return 0;
-    if (lgemu_parse_named(vt, vtd.node, NODE_NAME_LEN, 0, v, 3) || !v[0] || !v[1] || !v[2] ||
-        v[0] > U16_MAX || v[1] > U16_MAX) {
-        pr_err("vt=%s: not node:max_width:max_height:framerate\n", vt);
+    if ((lgemu_parse_named(vt, vtd.node, NODE_NAME_LEN, 0, v, 4) &&
+         lgemu_parse_named(vt, vtd.node, NODE_NAME_LEN, 0, v, 3)) ||
+        !v[0] || !v[1] || !v[2] || v[0] > U16_MAX || v[1] > U16_MAX || !v[3] ||
+        v[3] > VT_BUFFERS_MAX) {
+        pr_err("vt=%s: not node:max_width:max_height:framerate[:buffers]\n", vt);
         return -EINVAL;
     }
+    vtd.nbuf = v[3];
     if (!rtk_node_exists(vtd.node)) {
         pr_err("vt=%s: %s is not one of nodes=\n", vt, vtd.node);
         return -EINVAL;
@@ -142,14 +148,14 @@ int rtk_vt_setup(void)
     vtd.max_h = v[1];
     vtd.fps = v[2];
     vtd.unit = roundup_pow_of_two(VT_PLANE1_OFFSET + (unsigned long)v[0] * v[1]);
-    vtd.pa = rtk_dcu_take(0, (VT_BUFFERS_MAX * vtd.unit) >> PAGE_SHIFT);
+    vtd.pa = rtk_dcu_take(0, (vtd.nbuf * vtd.unit) >> PAGE_SHIFT);
     if (!vtd.pa) {
-        pr_err("vt: no %lu KiB in DCU1 for the frame buffers\n", VT_BUFFERS_MAX * vtd.unit >> 10);
+        pr_err("vt: no %lu KiB in DCU1 for the frame buffers\n", vtd.nbuf * vtd.unit >> 10);
         return -ENOMEM;
     }
-    vt_defaults(3); /* Realtek's VtBufferNum before the first InitEx */
-    pr_info("vt: %s, up to %ux%u, %u buffers at %#llx\n", vtd.node, vtd.max_w, vtd.max_h,
-            VT_BUFFERS_MAX, vtd.pa);
+    vt_defaults(min(3u, vtd.nbuf)); /* Realtek's VtBufferNum before the first InitEx */
+    pr_info("vt: %s, up to %ux%u, %u buffers at %#llx\n", vtd.node, vtd.max_w, vtd.max_h, vtd.nbuf,
+            vtd.pa);
     return 0;
 }
 
@@ -166,12 +172,12 @@ static long vt_ioctl_locked(unsigned int nr, void __user *uarg)
     switch (nr) {
     case VT_NR_INIT:
     case VT_NR_INITEX: {
-        u32 n = VT_BUFFERS_MAX;
+        u32 n = vtd.nbuf;
 
         if (nr == VT_NR_INITEX)
             VT_IN(n);
-        if (!n || n > VT_BUFFERS_MAX)
-            n = VT_BUFFERS_MAX;
+        if (!n || n > vtd.nbuf)
+            n = vtd.nbuf;
         if (!vtd.inited) { /* a second InitEx keeps the first's count */
             vt_defaults(n);
             vtd.inited = true;
@@ -182,7 +188,7 @@ static long vt_ioctl_locked(unsigned int nr, void __user *uarg)
         if (!vtd.inited)
             return -1;
         vtd.inited = false;
-        vt_defaults(VT_BUFFERS_MAX);
+        vt_defaults(vtd.nbuf);
         vtd.state.enabled = 0;
         return 0;
     case VT_NR_DEVICE_CAP: {
@@ -238,23 +244,22 @@ static long vt_ioctl_locked(unsigned int nr, void __user *uarg)
         return VT_OUT(a);
     }
     case VT_NR_ALLVFB_PROP: {
-        struct {
-            s32 wid;
-            u32 format, stride, width, height, pa[VT_BUFFERS_MAX], buffers;
-        } a;
-        static_assert(sizeof(a) == 44);
+        /* wid, format, stride, width, height, pa[nbuf], buffers: 44 bytes with five */
+        u32 a[5 + VT_BUFFERS_MAX + 1];
+        size_t n = (5 + vtd.nbuf + 1) * sizeof(u32);
 
-        VT_IN(a);
-        if (a.wid || !vtd.inited)
+        if (copy_from_user(a, uarg, n))
+            return -EFAULT;
+        if (a[0] || !vtd.inited)
             return -1;
-        a.format = VT_PF_YUV422_SP;
-        a.stride = roundup(vtd.cap_w, 96);
-        a.width = vtd.cap_w;
-        a.height = vtd.cap_h;
-        for (int i = 0; i < VT_BUFFERS_MAX; i++)
-            a.pa[i] = i < vtd.buffers ? vtd.pa + i * vtd.unit : 0;
-        a.buffers = vtd.buffers;
-        return VT_OUT(a);
+        a[1] = VT_PF_YUV422_SP;
+        a[2] = roundup(vtd.cap_w, 96);
+        a[3] = vtd.cap_w;
+        a[4] = vtd.cap_h;
+        for (u32 i = 0; i < vtd.nbuf; i++)
+            a[5 + i] = i < vtd.buffers ? vtd.pa + i * vtd.unit : 0;
+        a[5 + vtd.nbuf] = vtd.buffers;
+        return copy_to_user(uarg, a, n) ? -EFAULT : 0;
     }
     case VT_NR_VFB_INDEX: { /* the frozen buffer: the first */
         struct {

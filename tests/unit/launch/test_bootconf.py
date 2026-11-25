@@ -80,7 +80,7 @@ class BootConfTest(unittest.TestCase):
             chip = target[0]
             want = (
                 chip.startswith(("o2", "e60n", "m23"))
-                or (chip.startswith("k") and chip != "k5lp")
+                or (chip.startswith("k") and chip not in ("k3lp", "k5lp"))
                 or chip.startswith("lm21")
                 or targets.name(target) == "m2-dreadlocks"
             )
@@ -589,6 +589,7 @@ class BootConfTest(unittest.TestCase):
             "o18-goldilocks2": base | {"ftdi_sio"},
             "o18k-goldilocks2": base | {"ftdi_sio"},
             "m2r-dreadlocks2": base | {"ipw"},
+            "k3lp-dreadlocks2": base | {"ftdi_sio"},
             "m3-goldilocks": base | {"ipw"},
             "m3r-goldilocks2": base | {"ipw"},
             "lm18a-goldilocks": base | {"ipw"},
@@ -1329,6 +1330,7 @@ class BootConfTest(unittest.TestCase):
                 "k24n-queue",
                 "k25lp-ponytail",
                 "k25lp-queue",
+                "k3lp-dreadlocks2",
                 "k5lp-goldilocks2",
                 "k6hp-jhericurl",
                 "k6lp-jhericurl",
@@ -1445,6 +1447,7 @@ class BootConfTest(unittest.TestCase):
                 "m3-goldilocks": 1536,
                 "m3r-goldilocks2": 1536,
                 "lm18a-goldilocks": 1536,
+                "k3lp-dreadlocks2": 1536,
                 "k5lp-goldilocks2": 1536,
                 "k6lp-jhericurl": 1536,
                 "k6hp-jhericurl": 2048,

@@ -1,0 +1,78 @@
+# The Realtek RTD2871F "K3LP" (U-Boot's chip=K3LPA0), W17P's SoC: the generation before K5LP,
+# Realtek's drivers built into its 4.4.3 kernel (4.4.3-208.drd4tv.3, ARCH_RTK289X, the
+# CONFIG_RTK_KDRV_* layout), under the KADP of bsppart (libkadaptor, which every libhal_*.so.1
+# NEEDs), in rtk.ko. KADP's /dev/auth is K5LP's: pli_init's MAP is AUTH_IOCQ_MAP 0x40146b01, and
+# pli_getIOAddress maps a register at base + 0x58000000 + its 0xb8xxxxxx address, RBUS at
+# base + 0x10000000, so K5LP's PLI and DCU values hold; pli_getPTS reads the 90 kHz clock at
+# 0xb801b690 (low) and 0xb801b694 (high). RTKAudio_Malloc's rtkaudio_alloc is K5LP's ioctl
+# 0x4004610a; its rtkaudio_ioctl_set and _get (0x40046106, 0x80046107) keep the audio HAL's shared
+# states, which tvservice's tAUDInit reads back from the first (KADP_AUDIO_GetResouceStatus) and
+# walks by the count in it: an accept-all answer left its stack's garbage there and the walk ran
+# off the thread's stack (stores).
+# The RPC: four rings (rpc_cpus=4): KADP also opens rpc12..15, the KCPU's TeeManager
+# (SECURE_SYSTEM, program 501, SECURE_RPC_ToAgent_*), whose requests get the idle CPU's answer
+# like the others'; there is no OP-TEE client in this KADP (no /dev/tee*), so no tee. The RPC
+# answers are the firmware's own: derived "rpc-table".
+# The nodes are those libkadaptor and bsppart's libhal_* open (their /dev/ strings), less K5LP's
+# audio_hw, cec-0, otp, rcp_core, rtk_spi and tee, plus tp, rtkteeproxy (RTK_KDRV_TEEPROXY) and
+# watch. No libhal_cec, no libhal_ucom: W17P's micom is an external one on I2C (tvservice's
+# OSA_MD_IsSupportInternalMicom answers 0), lgemu.ko's I2C micom. libhal_pwm's outputs are
+# Realtek's /sys/class/rtk-pwm devices, as K5LP's.
+# The scaler's capture (vivtdev, KADP_VT): K5LP's ioctls 't' 1 to 23 (W17P's KADP adds the output
+# device's property, 24 to 26, which stay accept-all), its idle scaler (vt), with three frame
+# buffers: W17P's libhal_vt passes a 36-byte all-buffer property (three addresses; K5LP's 44, five),
+# and K5LP's answer overwrote the caller's saved registers (DILE_VT_Create crashed). With an accept-all
+# vivtdev, DILE_VT_Create mallocs 4 bytes per frame buffer of the capability it was not given
+# (34 MB of stack garbage), in WebAppMgr's GPU thread at each feature probe, until the
+# process's heap ran out (chromium's "Out of memory" without end, and no Home).
+# The I2C devices: RELEASE.cfg's "[i2c]MICOM:1:0x52:0", "[i2c]NVM:4:0xA0:1" and
+# "[i2c]NTP7515:4:0x54:1" (the AMP_NTP7515_1AMP ToolOpt3 selects), on KADP's RHAL_I2C channels:
+# libhal_i2c's HAL_I2C_Read and _Write map a channel to /dev/i2c-N (RHAL_I2CRead_Mapping, mode 1:
+# 1 to 0, 2 to 2, 4 to 4, 6 to 1) and halve the 8-bit address, so the micom is on bus 0 (on bus
+# 1 tvservice never reached it: no "firmware ready", no key polls), the NVM and the amplifier on
+# bus 4. RHAL_I2CInit opens all eight, /dev/i2c-0 to -7.
+# The GPU is a PowerVR Rogue GE7800 (bsppart's pvrsrvkm.ko and its DDK 1.6 user libraries), which
+# the gl layer replaces (guest/layers/soc/k3lp/meson.build).
+
+board_cmdline = "/etc/emulator/board.cmdline"
+# The 43UJ651V's area, a German set's: W17P's RELEASE.cfg nContinentIdx 50 ("DE" in its
+# tvservice's _aDefineContinent), LANG_COUNTRY_EU 24, HWSETTING_EU 0
+continent = [50, 24, 0]
+# Its input ports, from W17P's RELEASE.cfg (the UJ65 defaults), read by
+# host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 0, 1, 2, 4, 0, 0, 0, 0, 4, 2, 0, 1, 1, 3, 2, 0, 0, 0, 0]
+lgemu = [
+    "i2c_buses=0,1,2,3,4,5,6,7", "i2c_dev=micom:0:0x29,nvm:4:0x50,amp:4:0x2a",
+]
+
+[[modules]]
+name = "rtk"
+params = [
+    "rbus_phys=0x18000000",
+    "rbus_size=0x80000",
+    "pli_base=0x20000000",
+    "pli_max=0x60000000",
+    "pli_step=0x8000000",
+    "pli_rbus=0x10000000",
+    "pli_window=0x8000000",
+    "pli_uncached=0x8000000",
+    "pli_pad=0x10000",
+    "dcu1_base=0x20000000",
+    "dcu1_size=0x20000000",
+    "dcu2_base=0x40000000",
+    "dcu2_size=0x20000000",
+    "clock90k=0xb801b690,0xb801b694",
+    "rpc_cpus=4",
+    """nodes=rtkaudio,rtkvdec,rtkdemux,rtkdemod,rtkademod,vscdev,vfedev,vbedev,vpqdev,vpqmemc,\
+        vpqleddev,vodev,vivtdev,sys-misc,se0,gdma_hal_gal0,hdcp2dev,mcp/core,mcp/cipher,mcp/dgst,\
+        mcp_core,mcp_cipher,mcp_dgst,venus_gpio,pwm0,rtd-logger,dolbyvisionEDR0,tp,rtkteeproxy,\
+        watch""",
+    "allocs=rtkaudio:0x4004610a:0x4004610b",
+    "stores=rtkaudio:0x80046107:0x40046106",
+    "pwms=pwm-I-0,pwm-I-1,pwm-I-2,pwm-I-3,pwm-M-0,pwm-M-1,pwm-M-2,pwm-M-3",
+    "vt=vivtdev:1920:1080:60:3",
+    "rpc_fn009=201:248",
+    "rpc_audio_config=201:16",
+    "rpc_spdifo_source=201:90",
+]
+derived = "rpc-table"

@@ -135,14 +135,15 @@ static int rpc_show(char *buf, size_t size, const struct lgemu_count *e)
 
 DEFINE_LGEMU_COUNTS(rpc_counts, 512, 64, rpc_show); /* ("rpc", program, procedure) */
 
-/* ---- RPC: /dev/rpc0..11 and /dev/rpc100 ----
+/* ---- RPC: /dev/rpc0..11 (rpc0..15 with rpc_cpus=4) and /dev/rpc100 ----
  *
  * Minor m is ring m / 2 in poll (m even) or interrupt (m odd) mode; rings 0/1 are the SCPU's to and
- * from the audio CPU, 2/3 video CPU 1, 4/5 video CPU 2. KADP writes a request to an even ring (one
- * write: the 28-byte RPC_STRUCT, big-endian, and the XDR arguments) and its RPC_thread reads the
- * reply from the next ring in the same mode: RPC_STRUCT (program 99 REPLYID), the request's task
- * id, and the result, which Reply_Handler copies to the request's context (the stub's result
- * buffer, no bounds check) before waking the task.
+ * from the audio CPU, 2/3 video CPU 1, 4/5 video CPU 2, and on the older chips (rtk-main.c's
+ * rpc_cpus) 6/7 the KCPU's TeeManager (program 501), answered as the others. KADP writes a request
+ * to an even ring (one write: the 28-byte RPC_STRUCT, big-endian, and the XDR arguments) and its
+ * RPC_thread reads the reply from the next ring in the same mode: RPC_STRUCT (program 99 REPLYID),
+ * the request's task id, and the result, which Reply_Handler copies to the request's context (the
+ * stub's result buffer, no bounds check) before waking the task.
  *
  * The answer is written at once into the reading file of that ring and mode that the writing
  * process opened, as an idle CPU's "done": the first result word is rpc_ok (or an rpc_answer's),

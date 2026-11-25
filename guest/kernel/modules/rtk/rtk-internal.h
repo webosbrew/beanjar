@@ -9,7 +9,7 @@
 #include <linux/types.h>
 
 #define NODE_NAME_LEN 32
-#define RPC_RINGS     6
+#define RPC_CPUS_MAX  4 /* rtk-main.c's rpc_cpus: four minors each, below RPC_CTRL */
 #define RPC_CTRL      100
 
 struct proc_dir_entry;

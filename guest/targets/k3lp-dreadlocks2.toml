@@ -1,0 +1,32 @@
+models = ["W17P"]
+
+# W17P dreadlocks2 (06.10.75, "dreadlocks2-dudhwa" 3.9.3, HE_DTV_W17P_AFADABAA, the DVB build; no
+# ATSC build of W17P exists): dreadlocks2's paks, mount points and EEPROM layout (W17P's tvservice
+# places its ModelInfoDB, ToolOptionDB and ContinentOptionDB as W17H's). Its partition table is
+# its own (lginit_app2 of tvservice-dvb, as the release reads it): every pak and state partition one
+# number above W17H's (p29 tvservice, p32 otncabi, p33 otycabi, p34 fonts, p35 smartkey,
+# p37 license, p54-p56 the state partitions) and has no uhdcp, so its state disks and partitions
+# are dreadlocks2's without it (mount-readwrite looks uhdcp up in /proc/partinfo and skips it).
+[release]
+base = "dreadlocks2"
+state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G" }
+
+[release.partitions]
+partinfo = "partinfo"
+mapbak = "partinfo"
+authcxt = "authcxt"
+nvram = "nvram"
+sestore = "sestore"
+sedata = "sedata"
+rootfs = "rootfs"
+tvservice = "tvservice"
+otncabi = "otncabi"
+otycabi = "otycabi"
+fonts = "fonts"
+smartkey = "smartkey"
+db8 = "db8"
+data = "cmn_data"
+apps = "appstore"
+bsppart = "bsppart"
+license = "license"
+wossestore = "wossestore"
