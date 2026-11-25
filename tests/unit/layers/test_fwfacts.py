@@ -14,10 +14,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import fwfacts  # noqa: E402
+from beanjar import fwfacts, paths  # noqa: E402
 
 FACTS = """# demo
 defines bsppart:bsp/usr/lib/libdemo.so:demo_f yes
@@ -183,6 +184,71 @@ class Stub(unittest.TestCase):
 
 
 CC = shutil.which("cc")
+
+
+class Expanded(unittest.TestCase):
+    """A firmware directory that already shows its images as files (an epkfs 0.3+ mount: rootfs/
+    beside rootfs.pak, or the partitions under super/) is read as it is: no squashfuse mount and no
+    unsquashfs run, whatever the pak files hold."""
+
+    def tree(self, top, extra=""):
+        lib = top / "usr/lib"
+        lib.mkdir(parents=True)
+        (lib / "libdemo.so.1.2.3").write_bytes(b"x")
+        os.symlink("libdemo.so.1.2.3", lib / "libdemo.so.1")
+        (top / "etc").mkdir()
+        (top / "etc/demo.env").write_text("export DEMO_PLATFORM='demo'\n")
+
+    def questions(self):
+        return {
+            "path": ["etc/demo.env", "etc/none"],
+            "version": ["usr/lib/libdemo.so.1", "usr/lib/libnone.so.0"],
+            "lib": [],
+            "exports": ["etc/demo.env:DEMO_PLATFORM=demo"],
+        }
+
+    def check(self, fw):
+        def refuse(*a, **k):
+            raise AssertionError(f"ran {a[0]}")
+
+        with unittest.mock.patch("subprocess.run", refuse):
+            f = fwfacts.answer(str(fw), self.questions(), {})
+        self.assertEqual(f["path"], {"etc/demo.env": True, "etc/none": False})
+        self.assertEqual(
+            f["version"], {"usr/lib/libdemo.so.1": "2.3", "usr/lib/libnone.so.0": "none"}
+        )
+        self.assertEqual(f["exports"], {"etc/demo.env:DEMO_PLATFORM=demo": True})
+
+    def test_rootfs_beside_pak(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fw = Path(tmp)
+            (fw / "rootfs.pak").write_bytes(b"not a squashfs image")
+            self.tree(fw / "rootfs")
+            self.check(fw)
+
+    def test_super_partitions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fw = Path(tmp)
+            (fw / "super.pak").write_bytes(b"not a super image")
+            self.tree(fw / "super/rootfs")
+            self.check(fw)
+
+    def test_pak_only_is_not_expanded(self):
+        """A rootfs/ directory without its pak beside it is not taken for the image."""
+        with tempfile.TemporaryDirectory() as tmp:
+            self.tree(Path(tmp) / "rootfs")
+            self.assertIsNone(paths.expanded_image(tmp))
+            (Path(tmp) / "rootfs.pak").write_bytes(b"")
+            self.assertEqual(paths.expanded_image(tmp), os.path.join(tmp, "rootfs"))
+
+    def test_image_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fw = Path(tmp)
+            (fw / "bsppart.pak").write_bytes(b"")
+            (fw / "bsppart/bsp").mkdir(parents=True)
+            (fw / "bsppart/bsp/f").write_bytes(b"data")
+            self.assertEqual(fwfacts.image_file(tmp, "bsppart", "/bsp/f"), b"data")
+            self.assertIsNone(fwfacts.image_file(tmp, "bsppart", "/bsp/none"))
 
 
 @unittest.skipUnless(CC and shutil.which("readelf"), "no host C compiler or readelf")

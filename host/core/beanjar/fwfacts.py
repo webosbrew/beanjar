@@ -404,7 +404,15 @@ def _image(fw_dir, image):
 @contextlib.contextmanager
 def mounted_root(fw_dir):
     """The firmware's rootfs image mounted read-only with squashfuse for the with block, so the
-    facts' rootfs paths are read in place without extracting it; unmounted after."""
+    facts' rootfs paths are read in place without extracting it; unmounted after. A fw_dir that
+    already shows the image as files (an epkfs 0.3+ mount: paths.expanded_image) is read as it is,
+    with no mount."""
+    from . import paths
+
+    root = paths.expanded_image(fw_dir)
+    if root:
+        yield root
+        return
     src, offset = _image(fw_dir, "rootfs")
     mnt = tempfile.mkdtemp(prefix="beanjar-fwfacts-")
     try:
@@ -461,7 +469,18 @@ def answer_version(root, path):
 def image_file(fw_dir, image, path):
     """The bytes of path in fw_dir's stock image (rootfs or bsppart: <image>.pak, or super.pak's
     logical image), its symlinks followed by unsquashfs; None where the image has no such file.
-    Error without the image."""
+    Error without the image. Read as files where fw_dir already shows the image so
+    (paths.expanded_image), without unsquashfs."""
+    from . import paths
+
+    root = paths.expanded_image(fw_dir, image)
+    if root:
+        try:
+            full = _in_root(root, path)
+            with open(full, "rb") as f:
+                return f.read() or None
+        except OSError:
+            return None
     src, offset = _image(fw_dir, image)
     r = subprocess.run(
         ["unsquashfs", "-cat", "-no-wildcards", "-o", str(offset), src, path.lstrip("/")],

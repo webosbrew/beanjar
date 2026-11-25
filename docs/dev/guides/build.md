@@ -65,7 +65,7 @@ Each rule adds its question to `fw_questions` before it reads the answer; the se
 answer one. `host/scripts/vm-launcher firmware-facts <target>` answers them from the target's
 paks, read in place: paths with `unsquashfs -ls`, libraries in the rootfs image mounted read-only
 with `squashfuse` for the run (`--firmware DIR` for another firmware directory: a collection entry,
-or an EPK mounted with `epkfs`). Nothing is extracted:
+or an EPK mounted with `epkfs`; an epkfs 0.3 or later mount already shows each pak's files, which are read directly with no `squashfuse` or `unsquashfs`). Nothing is extracted:
 
 ```sh
 host/scripts/vm-launcher firmware-facts k8hp-ombre --build build/guest-k8hp-ombre   # write
@@ -236,7 +236,7 @@ Firmware is looked up by name in the host's firmware collections, `firmware_dirs
 `~/.config/beanjar/config.toml` (`beanjar host config set firmware_dirs=DIR[:DIR...]`; default
 `/srv/beanjar/firmware`). Firmware is read in place and never extracted into the checkout: for a
 firmware not in a collection, mount its EPK read-only with `epkfs EPK DIR` (a directory of its
-paks) and pass `FW=DIR` (or the host build's `-Dfirmware=DIR`; the guest build takes no firmware).
+paks and, from epkfs 0.3, of their files, which are read directly) and pass `FW=DIR` (or the host build's `-Dfirmware=DIR`; the guest build takes no firmware).
 The checkout root has no `firmware/` directory.
 
 ## Regression runs

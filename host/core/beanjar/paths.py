@@ -164,6 +164,25 @@ def root_pak(fw_dir):
     return None
 
 
+def expanded_image(fw_dir, image="rootfs"):
+    """The directory of fw_dir's stock image (rootfs, or bsppart and the like) when fw_dir already
+    shows it as files: an epkfs 0.3+ mount has <image>/ beside <image>.pak (root/ beside root.pak
+    for SimpleSmart's rootfs) and a webOS 23+ super.pak's partitions under super/. None where fw_dir
+    holds only paks (a firmware collection, epkfs --no-expand), so the image is read with unsquashfs
+    and squashfuse."""
+    if not fw_dir:
+        return None
+    sup = os.path.join(fw_dir, "super", image)
+    if os.path.isfile(os.path.join(fw_dir, "super.pak")) and os.path.isdir(sup):
+        return sup
+    for name in ("rootfs", "root") if image == "rootfs" else (image,):
+        if os.path.isfile(os.path.join(fw_dir, name + ".pak")) and os.path.isdir(
+            os.path.join(fw_dir, name)
+        ):
+            return os.path.join(fw_dir, name)
+    return None
+
+
 def _squashfs_cat(pak, path, offset=0):
     import subprocess
 
@@ -192,12 +211,21 @@ def _squashfs_names(pak):
 def rootfs_entries(fw_dir, directories):
     """The entries directly in each of directories (paths in the root, without a leading "/") of
     fw_dir's stock rootfs image, listed with unsquashfs -ls: rootfs.pak, or super.pak's logical
-    rootfs. The guest build decides its shims by these (guest/layers/soc/meson.build), so what an
-    extracted tree beside the paks happens to hold never changes them. ValueError without an image
+    rootfs; a directory that shows the image as files (expanded_image) is listed as it is. The guest
+    build decides its shims by these (guest/layers/soc/meson.build). ValueError without an image
     unsquashfs can list."""
     import subprocess
     from . import superpak
 
+    wanted = {d.strip("/") for d in directories}
+    root = expanded_image(fw_dir)
+    if root:
+        return sorted(
+            os.path.join(d, n).lstrip("/")
+            for d in wanted
+            if os.path.isdir(os.path.join(root, d))
+            for n in os.listdir(os.path.join(root, d))
+        )
     src, offset = os.path.join(fw_dir, "rootfs.pak"), 0
     logical = superpak.images(fw_dir)
     if logical:
@@ -211,7 +239,6 @@ def rootfs_entries(fw_dir, directories):
     )
     if r.returncode != 0:
         raise ValueError(f"{src}: unsquashfs cannot list it")
-    wanted = {d.strip("/") for d in directories}
     return sorted(
         name
         for name in (line.lstrip("/") for line in r.stdout.decode(errors="replace").splitlines())
@@ -226,6 +253,9 @@ def rootfs_has(fw_dir, path):
     import subprocess
     from . import superpak
 
+    root = expanded_image(fw_dir)
+    if root:
+        return os.path.lexists(os.path.join(root, path.strip("/")))
     src, offset = os.path.join(fw_dir, "rootfs.pak"), 0
     logical = superpak.images(fw_dir)
     if logical:
