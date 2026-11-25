@@ -178,6 +178,8 @@ clients = [
     "rootfs.pak:/usr/sbin/legacy-broadcast-dvb",
     "bsppart.pak:/bsp/usr/lib/libkadaptor.so.1.0.0",
 ]
+node = true
+node_source = "rtk.ko makes /dev/tee0 (tee=1 in the chip's guest/targets/soc row)"
 source = "ELF files naming /dev/tee: rootfs.pak:/usr/bin/tee-supplicant, rootfs.pak:/usr/lib/libckteec.so.0.1.0, rootfs.pak:/usr/sbin/legacy-broadcast-dvb, bsppart.pak:/bsp/usr/lib/libkadaptor.so.1.0.0"
 tas = [
     "032f7cc3-1363-48bb-a02a6bbfd0aa9b1b",

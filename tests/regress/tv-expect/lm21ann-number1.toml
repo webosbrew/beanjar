@@ -20,8 +20,8 @@ url = "http://lgtvonline.lge.com/"
 [checks]
 "blegatt.getState" = { present = true, source = "com-webos-service-blegatt-d6a61b" }
 "camera.getList" = { present = false, source = "no-role-or-services-91e887" }
-"connman.palm" = { present = true, source = "com-palm-connectionmanager-by-e45730" }
-"connman.webos" = { present = true, source = "com-webos-service-9b5159" }
+"connman.palm" = { present = true, source = "com-palm-connectionmanager-by-baf8c2" }
+"connman.webos" = { present = true, source = "com-webos-service-68cf5d" }
 "mrcu.getAPIVersion" = { present = true, source = "com-webos-service-mrcu-eb70f2" }
 "mrcu.getSensorState" = { present = true, source = "com-webos-service-mrcu-5eb836" }
 "nyx.DeviceInfo.board_type" = { present = true, source = "nyxDeviceInfoMain-module-case-2-edc863" }
@@ -181,10 +181,33 @@ clients = [
     "bsppart.pak:/bsp/usr/lib/libkadaptor.so",
 ]
 node = true
-node_source = "lgemu.ko makes /dev/tee0 with no TA (tee=1: the rootfs has /usr/bin/tee-supplicant and no module of the chip's guest/targets/soc row has tee=1)"
+node_source = "lgemu.ko makes /dev/tee0 with no TA (tee=1: the rootfs has /usr/bin/tee-supplicant and no module of the chip's guest/targets/soc row has tee=1); the firmware's own bsppart.pak:/bsp/etc/systemd/system/scripts/optee-init.sh opens /dev/tee0"
 node_tas = false
 source = "ELF files naming /dev/tee: rootfs.pak:/usr/bin/tee-supplicant, rootfs.pak:/usr/sbin/legacy-broadcast-dvb, bsppart.pak:/bsp/usr/lib/libckteec.so, bsppart.pak:/bsp/usr/lib/libckteec.so.0, bsppart.pak:/bsp/usr/lib/libckteec.so.0.1, bsppart.pak:/bsp/usr/lib/libckteec.so.0.1.0, bsppart.pak:/bsp/usr/lib/libkadaptor.so"
-tas = []
+tas = [
+    "0987be40-05fb-11e6-9893-0002a5d5c51b",
+    "30db8f36-7069-11e9-a923-1681be663d3e",
+    "51aaf0be-6ad3-4494-8b14-c367b44c010e",
+    "61328cc8-8df1-4821-8901-761bb2b9115c",
+    "6d244580-0391-70e2-4f42-c532e0badd8c",
+    "7350842e-2d2a-4a8b-9742-6695913832a9",
+    "748487d6-eb5f-463c-b688-23b9edc286e5",
+    "758ee8b4-f485-45fb-8fb0-3d0cc027b84a",
+    "778ee68e-6ee0-11e8-adc0-fa7ae01bbebc",
+    "79f0049a-4098-8642-ab92-e65be0885f95",
+    "94ce86fb-07ff-4f43-adb8-93d2fa968ca2",
+    "99986025-2c8d-43ca-9598-b90e324e9d3b",
+    "a51ba47c-7252-11e9-a923-1681be663d3e",
+    "b9dbbfa1-8b01-4643-8187-7f845788cd45",
+    "bc2f95bc-1111-2222-a43c-a1796e7cac31",
+    "c305a84a-b4a5-11e8-96f8-529269fb1459",
+    "d03c1b74-1896-43d3-a6fa-12a3b7cb9d32",
+    "dba51a17-0563-11e7-93b1-6fa7b0071a51",
+    "e95601fc-8423-481d-aa67-2749d5a369b8",
+    "edff8ba9-79d6-4ace-a3c8-27dcd51d21ed",
+    "f235e3dc-b4a5-11e8-96f8-529269fb1459",
+    "fc5196b1-555b-4288-8f46-e78472e1f05e",
+]
 
 [audio]
 alsa_hw = { device = "hw:0,6", present = true, source = "rootfs.pak:/etc/pulse/system.pa: pcm_output is module-alsa-sink device=hw:0,6; player rootfs.pak:/usr/bin/aplay" }
@@ -218,10 +241,10 @@ source = "rootfs.pak:/usr/lib/libvtcapture.so.1.0.0 exports no vtCapture_initHis
 [sources]
 absent-by-design-no-db3b97 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-global.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module runs hcitool, which the firmware does not have)"
 absent-by-design-no-eef014 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-global.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module (case 17))"
-com-palm-connectionmanager-by-e45730 = "com.palm.connectionmanager by usr/share/luna-service2/roles.d/webos-connman-adapter.role.json (com.palm. names mapped by usr/sbin/ls-hubd), usr/share/luna-service2/services.d/webos-connman-adapter.service (com.palm. names mapped by usr/sbin/ls-hubd) -> /usr/sbin/webos-connman-adapter; 'getStatus' in the / table rootfs.pak:/usr/sbin/webos-connman-adapter (com.palm.connectionmanager, prv), rootfs.pak:/usr/sbin/webos-connman-adapter (com.palm.connectionmanager, pub) registers"
+com-palm-connectionmanager-by-baf8c2 = "com.palm.connectionmanager by usr/share/luna-service2/roles.d/webos-connman-adapter.role.json (com.palm. names mapped by usr/sbin/ls-hubd), usr/share/luna-service2/services.d/webos-connman-adapter.service (com.palm. names mapped by usr/sbin/ls-hubd) -> /usr/sbin/webos-connman-adapter; 'getStatus' in the / table rootfs.pak:/usr/sbin/webos-connman-adapter (com.webos.service.connectionmanager, any) registers"
 com-palm-systemservice-by-67dd09 = "com.palm.systemservice by usr/share/luna-service2/roles.d/com.webos.service.systemservice.service.role.json (com.palm. names mapped by usr/sbin/ls-hubd), usr/share/luna-service2/services.d/com.webos.service.systemservice.service (com.palm. names mapped by usr/sbin/ls-hubd) -> /usr/sbin/LunaSysService; 'getSystemTime' in rootfs.pak:/usr/sbin/LunaSysService"
 com-webos-applicationManager-by-047c3f = "com.webos.applicationManager by usr/share/ls2/roles/prv/com.webos.app.liveginga.json, usr/share/ls2/roles/pub/com.webos.app.liveginga.json -> /usr/palm/applications/com.webos.app.liveginga/com.webos.app.liveginga; usr/share/luna-service2/roles.d/com.webos.sam.role.json, usr/share/luna-service2/services.d/com.webos.sam.service -> /usr/sbin/sam; 'getAppLoadStatus' in rootfs.pak:/usr/sbin/sam"
-com-webos-service-9b5159 = "com.webos.service.connectionmanager by usr/share/luna-service2/roles.d/webos-connman-adapter.role.json, usr/share/luna-service2/services.d/webos-connman-adapter.service -> /usr/sbin/webos-connman-adapter; 'getStatus' in rootfs.pak:/usr/sbin/webos-connman-adapter"
+com-webos-service-68cf5d = "com.webos.service.connectionmanager by usr/share/luna-service2/roles.d/webos-connman-adapter.role.json, usr/share/luna-service2/services.d/webos-connman-adapter.service -> /usr/sbin/webos-connman-adapter; 'getStatus' in the / table rootfs.pak:/usr/sbin/webos-connman-adapter (com.webos.service.connectionmanager, any) registers"
 com-webos-service-blegatt-d6a61b = "com.webos.service.blegatt by usr/share/luna-service2/roles.d/com.webos.service.blegatt.role.json, usr/share/luna-service2/services.d/com.webos.service.blegatt.service -> /usr/sbin/blegatt; 'getState' in rootfs.pak:/usr/sbin/blegatt"
 com-webos-service-mrcu-5eb836 = "com.webos.service.mrcu by usr/share/luna-service2/roles.d/com.webos.service.mrcu.role.json, usr/share/luna-service2/services.d/com.webos.service.mrcu.service -> /usr/sbin/lginput2; 'getSensorState' in rootfs.pak:/usr/sbin/lginput2"
 com-webos-service-mrcu-eb70f2 = "com.webos.service.mrcu by usr/share/luna-service2/roles.d/com.webos.service.mrcu.role.json, usr/share/luna-service2/services.d/com.webos.service.mrcu.service -> /usr/sbin/lginput2; 'getAPIVersion' in rootfs.pak:/usr/sbin/lginput2"

@@ -1457,8 +1457,9 @@ class TeeTest(unittest.TestCase):
                     not module and f"rootfs.pak:/{targets.TEE_CLIENT}" in row["tee"]["clients"],
                     target,
                 )
-            # every Realtek firmware has a client library (others may: LM21A's)
-            if target.startswith("k"):
+            # every Realtek firmware from webOS 4 on has a client library (others may: LM21A's; the
+            # k2l, k2lp and k3lp of webOS 3 have none, as their rows' evidence says)
+            if target.startswith("k") and not target.endswith(("-dreadlocks", "-dreadlocks2")):
                 self.assertIsNotNone(plan, target)
             if plan:
                 self.assertRegex(plan[0], r"^/usr/lib/lib[^/]+\.so[.0-9]*$", target)
@@ -2284,11 +2285,10 @@ class SmpTest(unittest.TestCase):
 
     def test_expect_table_smp(self):
         """webOS 1 (no StarfishMediaAPIs(const char *)) and 2 (Load without user data) lack the API."""
+        lacking = ("h13-afro", "m14-beehive", "lm15u-beehive", "mtka5lr-beehive")
         table = expect_table()
         for target, row in table.items():
-            self.assertEqual(
-                row["smp"]["present"], target not in ("h13-afro", "m14-beehive"), target
-            )
+            self.assertEqual(row["smp"]["present"], target not in lacking, target)
         self.assertEqual(
             table["m14-beehive"]["smp"]["missing"],
             ["_ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_"],
