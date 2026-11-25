@@ -1229,8 +1229,8 @@ def idle_cpu(h, a, r, out, target):
         return
     r.idle = idlecpu.measure(data, a.accel)
     if r.idle["flagged"]:
-        pids = ",".join(str(p["pid"]) for p in r.idle["flagged"])
-        if guest_step(h, a, r, "idle-threads", f"{pids} {idlecpu.SAMPLES}", out) == 0:
+        tids = ",".join(str(t["tid"]) for p in r.idle["flagged"] for t in p["threads"])
+        if guest_step(h, a, r, "idle-threads", f"{tids} {idlecpu.SAMPLES}", out) == 0:
             idlecpu.add_threads(r.idle, r.text)
     r.idle_item = idlecpu.judge(r.idle)
     r.steps["idle-cpu"] = r.idle_item[0]

@@ -36,24 +36,26 @@ idle_cpu() { # SECONDS WINDOWS
 	done
 	echo "IDLECPU END"
 }
-# idle_threads PIDS SAMPLES: the threads of processes PIDS (comma-joined, as idle-cpu named them),
-# SAMPLES times 0.2 s apart: each thread's state, wchan (the kernel function it sleeps in, 0 when
-# running) and the syscall it is in (the first field of /proc/TID/syscall: its number, "running",
-# or -1 when in none)
-#   X SAMPLE PID TID STATE WCHAN SYSCALL
-idle_threads() { # PIDS SAMPLES
+# idle_threads TIDS SAMPLES: threads TIDS (comma-joined: a flagged process's busiest, as idle-cpu
+# numbered them), SAMPLES times 0.2 s apart: each thread's state, wchan (the kernel function it
+# sleeps in, 0 when running) and the syscall it is in (the first field of /proc/TID/syscall: its
+# number, "running", or -1 when in none). Shell builtins only, no process per read: a sample
+# costs the guest next to nothing.
+#   X SAMPLE TID STATE WCHAN SYSCALL
+idle_threads() { # TIDS SAMPLES
 	echo "IDLETHREADS $(uname -m) $2"
+	tids=$(echo "$1" | tr ',' ' ')
 	i=0
 	while [ $i -lt $2 ]; do
 		i=$((i + 1))
-		for p in $(echo "$1" | tr ',' ' '); do
-			for t in "$(idle_proc)/$p"/task/[0-9]*; do
-				st=$(sed -n 's/^.*) \(.\) .*/\1/p' $t/stat 2>/dev/null)
-				[ -n "$st" ] || continue
-				w=$(cat $t/wchan 2>/dev/null)
-				sc=$(cut -d' ' -f1 $t/syscall 2>/dev/null)
-				echo "X $i $p ${t##*/} $st ${w:-?} ${sc:-?}"
-			done
+		for t in $tids; do
+			for d in "$(idle_proc)"/[0-9]*/task/$t; do :; done  # its process's directory
+			st= w= sc=
+			read -r st 2>/dev/null < "$d/stat" || [ -n "$st" ] || continue
+			st=${st##*) }; st=${st%% *}
+			read -r w 2>/dev/null < "$d/wchan"
+			read -r sc _ 2>/dev/null < "$d/syscall"
+			echo "X $i $t ${st:-?} ${w:-?} ${sc:-?}"
 		done
 		[ $i -lt $2 ] && sleep 0.2
 	done

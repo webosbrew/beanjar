@@ -290,9 +290,9 @@ def parse_threads(text):
         f = line.split(" ")
         if f[0] == "IDLETHREADS" and len(f) >= 2:
             arch = f[1]
-        elif f[0] == "X" and len(f) == 7:
+        elif f[0] == "X" and len(f) == 6:
             try:
-                out[int(f[3])].append((f[4], f[5], f[6]))
+                out[int(f[2])].append((f[3], f[4], f[5]))
             except ValueError:
                 continue
     return arch, dict(out)

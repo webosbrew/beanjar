@@ -546,7 +546,7 @@ works out the CPU per process (% of one core) and the wakeups per thread for bot
 
 The two windows rule out a one-off burst (the Home page settling, a once-a-minute job); a spin is
 steady. 30 s at 100 ticks a second resolves 0.1 % of a core. For each flagged process a second
-guest step, `idle-threads`, samples its threads 10 times 0.2 s apart (state, `wchan`, the syscall
+guest step, `idle-threads`, samples its busiest threads 10 times 0.2 s apart (state, `wchan`, the syscall
 from `/proc/TID/syscall`, named for arm or x86-64), and the report lists its busiest threads with
 their CPU and wakeups per second: a busy loop holds the CPU with few voluntary switches, a
 short-sleep poll has many. The step adds about 65 s to a lane (2 s more for a flagged process).

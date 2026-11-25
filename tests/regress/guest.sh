@@ -45,7 +45,7 @@
 #   sh /host/tests/regress/guest.sh idle-cpu SECONDS WINDOWS  every process's and thread's CPU and
 #                                                     context switches, WINDOWS+1 snapshots SECONDS
 #                                                     apart (judged by tests/regress/lib/idlecpu.py)
-#   sh /host/tests/regress/guest.sh idle-threads PIDS SAMPLES  the threads of PIDS (comma-joined):
+#   sh /host/tests/regress/guest.sh idle-threads TIDS SAMPLES  threads TIDS (comma-joined):
 #                                                     state, wchan, syscall, SAMPLES times
 #   sh /host/tests/regress/guest.sh checklist [LASTINPUT]  the bring-up checklist's facts, one
 #                                                     "name=value" a line, judged on the host

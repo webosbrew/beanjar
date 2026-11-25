@@ -235,10 +235,10 @@ class Snapshots(unittest.TestCase):
         procs[400][1][401].update(state="R", wchan="0", syscall="running")
         procs[500][1][501].update(state="S", wchan="hrtimer_nanosleep", syscall="162")
         self.proc.write(1100.0, procs)
-        text = sh("idle_threads 400,500 3", self.proc.root)
+        text = sh("idle_threads 401,501 3", self.proc.root)
         self.assertIn("IDLETHREADS ", text)
-        self.assertIn("X 3 500 501 S hrtimer_nanosleep 162", text)
-        self.assertIn("X 1 400 401 R 0 running", text)
+        self.assertIn("X 3 501 S hrtimer_nanosleep 162", text)
+        self.assertIn("X 1 401 R 0 running", text)
         text = text.replace(text.split("\n", 1)[0], "IDLETHREADS aarch64 3")
         idlecpu.add_threads(r, text)
         t = {p["comm"]: p["threads"][0] for p in r["flagged"]}
