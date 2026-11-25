@@ -21,10 +21,10 @@ arm64 = "d3bea77cee63bde013d88249ec5b70992e33263805c516f0499e61bb7207361f"
 # (docs/dev/architecture/qemu-user-bridge.md): arm64 for the arm64 guest kernel, build/qemu-user;
 # amd64, with qemu-aarch64, for the experimental x86-64 one, build/qemu-user-amd64 (amd64 hosts)
 [qemu-user]
-tag = "qemu-user-10.0.2+beanjar2"
+tag = "qemu-user-10.0.2+beanjar3"
 guest = ["arm64", "amd64"]
-arm64 = "0397a5d820f9da2a95c2f21eab093f5908e8f2887f6ef6b790fc1e4a0e02a9aa"
-amd64 = "d2dc446e5d8abcc918948a09fb0c721477e52e7b88b35e4cf2c76a9f38004072"
+arm64 = "9f32da5e5bccb378dbec4f4c1c26c5e6a764c9c093e36287860c63a857816594"
+amd64 = "be75b81892da27bde0d280527715e4c6dfef026ec9d59faa58d61435d0162d14"
 
 # FFmpeg with the V4L2 Request API hwaccels, /usr/lib/beanjar/ffmpeg: the media helper's
 # decoding and beanjar-vnc's video (beanjar)
