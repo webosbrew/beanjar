@@ -480,26 +480,31 @@ class ArgsTest(unittest.TestCase):
 
 
 def _git(top, *args):
-    subprocess.run(["git", "-C", top, *args], check=True, capture_output=True)
+    return subprocess.run(
+        ["git", "-C", top, *args], check=True, capture_output=True, text=True
+    ).stdout.strip()
 
 
 class SourceTest(unittest.TestCase):
-    """What a run tests: a commit (pinned) or this checkout as it is."""
+    """What a run tests: a commit's public or whole tree, or this checkout as it is."""
 
-    def test_pin_arguments(self):
-        a, _ = regress.parse([], found=FOUND, env={})
-        self.assertEqual(a.pin, "HEAD")  # over ssh: HEAD by default
-        a, _ = regress.parse(["--commit", "abc123"], found=FOUND, env={})
-        self.assertEqual(a.pin, "abc123")
-        a, _ = regress.parse(["--working-tree"], found=FOUND, env={})
-        self.assertIsNone(a.pin)
-        a, _ = regress.parse(["--local"], found=FOUND, env={})
-        self.assertIsNone(a.pin)
-        a, _ = regress.parse(["--no-sync"], found=FOUND, env={})
-        self.assertIsNone(a.pin)
+    def test_tree_arguments(self):
+        for argv, tree, pin in (
+            ([], "public", "HEAD"),  # over ssh: HEAD's public tree by default
+            (["--commit", "abc123"], "public", "abc123"),
+            (["--private-tree"], "private", "HEAD"),
+            (["--private-tree", "--commit", "abc123"], "private", "abc123"),
+            (["--working-tree"], "working-tree", None),
+            (["--local"], None, None),
+            (["--no-sync"], None, None),
+        ):
+            a, _ = regress.parse(argv, found=FOUND, env={})
+            self.assertEqual((a.tree, a.pin), (tree, pin), argv)
         for argv in (
             ["--commit", "HEAD", "--working-tree"],
+            ["--private-tree", "--working-tree"],
             ["--local", "--commit", "HEAD"],
+            ["--local", "--private-tree"],
             ["--local", "--working-tree"],
             ["--no-sync", "--commit", "HEAD"],
             ["--no-sync", "--working-tree"],
@@ -508,81 +513,115 @@ class SourceTest(unittest.TestCase):
             with self.assertRaises(regress.Usage, msg=argv):
                 regress.parse(argv, found=FOUND, env={})
 
-    def repo(self):
+    def repo(self, machinery=False):
+        """A repository with a private path; machinery: with the publishing machinery (this
+        checkout's scripts/publish/sync.py and a paths.txt), as the private repository has."""
         top = tempfile.mkdtemp()
         self.addCleanup(subprocess.run, ["rm", "-rf", top])
         _git(top, "init", "-q")
         _git(top, "config", "user.email", "t@example.invalid")
         _git(top, "config", "user.name", "t")
-        for name, text in (("same.txt", "same\n"), ("edited.txt", "one\n")):
+        _git(top, "config", "commit.gpgSign", "false")
+        tree = {"pub/a.txt": "a\n", "private/notes.md": "n\n"}
+        if machinery:
+            if not os.path.exists(os.path.join(TOP, "scripts", "publish", "sync.py")):
+                self.skipTest("the public repository: no scripts/publish/sync.py")
+            with open(os.path.join(TOP, "scripts", "publish", "sync.py")) as f:
+                tree["scripts/publish/sync.py"] = f.read()
+            tree[".github/publish/paths.txt"] = "pub/**\n"
+        for name, text in tree.items():
+            os.makedirs(os.path.dirname(os.path.join(top, name)), exist_ok=True)
             with open(os.path.join(top, name), "w") as f:
                 f.write(text)
-        _git(top, "add", ".")
+        _git(top, "add", "-A")
         _git(top, "commit", "-q", "-m", "one")
         return top
 
+    def args(self, **kw):
+        a = dict(hosts=["h"], no_sync=False, pin="HEAD", tree="public", dry_run=False)
+        a.update(kw)
+        return argparse.Namespace(**a)
+
     def test_source_and_dirty(self):
         top = self.repo()
-        head = subprocess.run(
-            ["git", "-C", top, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
-        ).stdout.strip()
+        head = _git(top, "rev-parse", "HEAD")
         with mock.patch.object(regress, "TOP", top):
-            a = argparse.Namespace(hosts=["h"], no_sync=False, pin="HEAD")
-            src = regress.source(a)
+            src = regress.source(self.args())
             self.assertEqual(
-                src, {"commit": head, "pinned": True, "dirty": False, "synced": True, "rev": "HEAD"}
+                src,
+                {
+                    "commit": head,
+                    "tree": "public",
+                    "pinned": True,
+                    "filtered": False,
+                    "host_commit": None,
+                    "dirty": False,
+                    "hosts": ["h"],
+                    "rev": "HEAD",
+                },
             )
-            self.assertIn("clean worktree)", regress.describe(src))
             with open(os.path.join(top, "new.txt"), "w") as f:
                 f.write("x")  # untracked: dirty
-            src = regress.source(argparse.Namespace(hosts=["h"], no_sync=False, pin=None))
-            self.assertEqual(src, {"commit": head, "pinned": False, "dirty": True, "synced": True})
+            src = regress.source(self.args(pin=None, tree="working-tree"))
+            self.assertEqual(
+                (src["pinned"], src["dirty"], src["tree"]), (False, True, "working-tree")
+            )
             self.assertIn("uncommitted changes", regress.describe(src))
-            src = regress.source(argparse.Namespace(hosts=[], no_sync=False, pin=None))
-            self.assertFalse(src["synced"])  # --local: this checkout
-            src = regress.source(argparse.Namespace(hosts=["h"], no_sync=True, pin=None))
+            src = regress.source(self.args(hosts=[], pin=None, tree=None))
+            self.assertEqual(src["tree"], "checkout")  # --local: this checkout
+            src = regress.source(self.args(no_sync=True, pin=None, tree=None))
             self.assertIsNone(src["commit"])
             self.assertIn("unknown", regress.describe(src))
             with self.assertRaises(RuntimeError):
-                regress.source(argparse.Namespace(hosts=["h"], no_sync=False, pin="no-such-rev"))
+                regress.source(self.args(pin="no-such-rev"))
 
-    def test_pinned_worktree(self):
+    def host_commit(self, top, **kw):
+        a = self.args(**kw)
+        with mock.patch.object(regress, "TOP", top), contextlib.redirect_stdout(io.StringIO()):
+            a.source = regress.source(a)
+            regress.make_host_commit(a)
+        return a.source
+
+    def test_public_tree_is_filtered(self):
+        top = self.repo(machinery=True)
+        head = _git(top, "rev-parse", "HEAD")
+        src = self.host_commit(top)
+        f = src["host_commit"]
+        self.assertTrue(src["filtered"])
+        self.assertEqual(_git(top, "ls-tree", "-r", "--name-only", f), "pub/a.txt")
+        self.assertEqual(_git(top, "rev-parse", f"refs/hosts/{head}"), f)
+        self.assertEqual(self.host_commit(top)["host_commit"], f)  # the same each time
+        self.assertIn("its public tree", regress.describe(src))
+
+    def test_public_repository_sends_the_commit(self):
+        # no publishing machinery: every commit there is public
         top = self.repo()
-        old = time.time() - 3600
-        for name in ("same.txt", "edited.txt"):
-            os.utime(os.path.join(top, name), (old, old))
-        with open(os.path.join(top, "edited.txt"), "w") as f:
-            f.write("two\n")  # uncommitted: not in the worktree, which keeps its own time
-        with open(os.path.join(top, "untracked.txt"), "w") as f:
-            f.write("u\n")
-        with (
-            mock.patch.object(regress, "TOP", top),
-            contextlib.redirect_stdout(io.StringIO()),
-        ):
-            head = regress.git("rev-parse", "HEAD")
-            with regress.Pinned(head, False) as pin:
-                self.assertEqual(pin.rel, f"scratch/rg-{head[:12]}")
-                with open(os.path.join(pin.path, "edited.txt")) as f:
-                    self.assertEqual(f.read(), "one\n")
-                self.assertFalse(os.path.exists(os.path.join(pin.path, "untracked.txt")))
-                # unchanged content: this checkout's time; changed: the checkout's own (now)
-                self.assertEqual(
-                    os.stat(os.path.join(pin.path, "same.txt")).st_mtime_ns,
-                    os.stat(os.path.join(top, "same.txt")).st_mtime_ns,
-                )
-                self.assertGreater(os.stat(os.path.join(pin.path, "edited.txt")).st_mtime, old + 60)
-                # a second run of the same commit gets a worktree of its own
-                with regress.Pinned(head, False) as other:
-                    self.assertEqual(other.rel, f"scratch/rg-{head[:12]}-{os.getpid()}")
-            self.assertFalse(os.path.exists(pin.path))
-            self.assertFalse(os.path.exists(other.path))
-            # removed on a failure too
-            with self.assertRaises(ZeroDivisionError), regress.Pinned(head, False) as pin:
-                raise ZeroDivisionError
-            self.assertFalse(os.path.exists(pin.path))
-            self.assertNotIn("rg-", regress.git("worktree", "list"))
+        src = self.host_commit(top)
+        self.assertEqual(
+            (src["host_commit"], src["filtered"]), (_git(top, "rev-parse", "HEAD"), False)
+        )
 
-    def test_dry_run_working_tree(self):
+    def test_private_tree(self):
+        top = self.repo(machinery=True)
+        head = _git(top, "rev-parse", "HEAD")
+        src = self.host_commit(top, tree="private")
+        f = src["host_commit"]
+        self.assertFalse(src["filtered"])
+        self.assertEqual(
+            _git(top, "rev-parse", f"{f}^{{tree}}"), _git(top, "rev-parse", "HEAD^{tree}")
+        )
+        self.assertEqual(_git(top, "log", "-1", "--format=%P", f), "")  # no history
+        self.assertEqual(_git(top, "rev-parse", f"refs/hosts/private/{head}"), f)
+        self.assertEqual(self.host_commit(top, tree="private")["host_commit"], f)
+        self.assertIn("whole tree, private paths included", regress.describe(src))
+
+    def test_dry_run_makes_nothing(self):
+        top = self.repo(machinery=True)
+        src = self.host_commit(top, dry_run=True)
+        self.assertIsNone(src["host_commit"])
+        self.assertEqual(_git(top, "for-each-ref", "refs/hosts/"), "")
+
+    def run_dry(self, argv):
         out = io.StringIO()
         real = regress.parse
         regress.parse = lambda argv: real(argv, found=FOUND, env={})
@@ -591,20 +630,65 @@ class SourceTest(unittest.TestCase):
                 contextlib.redirect_stdout(out),
                 mock.patch.object(regress, "machine", return_value="x86_64"),
             ):
-                rc = regress.main(["-n", "--working-tree", "--target", "h13-afro"])
+                rc = regress.main(["-n", *argv, "--target", "h13-afro"])
         finally:
             regress.parse = real
-        text = out.getvalue()
         self.assertEqual(rc, 0)
-        self.assertNotIn("worktree add", text)
-        self.assertIn(f"SRC={TOP} HOST=vmhost DEST=beanjar sync-checkout", text)
+        return out.getvalue()
+
+    def test_dry_run_public_tree(self):
+        text = self.run_dry([])
+        head = _git(TOP, "rev-parse", "HEAD")
+        DryRunTest.assertInOrder(
+            self,
+            text,
+            [
+                "flock -n 9",  # the host's lock first
+                "build: guest h13-afro",
+                f"test -d beanjar-src.git || git init -q --bare beanjar-src.git",
+                f"cat-file -e refs/hosts/{head}^{{commit}}",
+                f"push -q vmhost:beanjar-src.git +refs/hosts/{head}:refs/hosts/{head}",
+                "git checkout -q -f --detach",
+                "git clean -q -ffdx -e /.git/ -e /build/ -e /local/ -e /scratch/",
+                "SRC=none HOST=vmhost DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
+                "scripts/build.sh host",
+                "vm-launcher start",
+            ],
+        )
+
+    def test_dry_run_working_tree(self):
+        text = self.run_dry(["--working-tree"])
+        self.assertNotIn("beanjar-src.git", text)
+        self.assertIn(f"SRC={TOP} HOST=vmhost DEST=beanjar REGRESS_LOCKED=1 sync-checkout", text)
+        self.assertIn("flock -n 9", text)  # held all the same
         self.assertIn("source: commit ", text)
 
-    def test_sync_script_copies_src(self):
+    def test_busy_host(self):
+        class P:
+            def __init__(self, *args, **kw):
+                self.stdout = io.StringIO("BUSY\nscripts/regress run other (pid 1 on pc)\n")
+                self.stdin = io.StringIO()
+
+            def wait(self, timeout=None):
+                return 1
+
+        with mock.patch.object(regress.subprocess, "Popen", P):
+            with self.assertRaisesRegex(
+                regress.HostBusy, "held by another run: scripts/regress run other"
+            ):
+                with regress.HostLock("pi", "beanjar", "r", False):
+                    pass
+
+    def test_sync_script(self):
+        # the PC-side sync is private: the public repository has none
+        if not os.path.exists(os.path.join(TOP, "host", "scripts", "sync-pi.sh")):
+            self.skipTest("no host/scripts/sync-pi.sh")
         with open(os.path.join(TOP, "host", "scripts", "sync-pi.sh")) as f:
             text = f.read()
         self.assertIn("SRC=${SRC:-$TOP}", text)
         self.assertIn('"$SRC/" "$PI:$DEST/"', text)
+        self.assertIn('if [ "$SRC" != none ]', text)
+        self.assertIn("REGRESS_LOCKED", text)
 
 
 class DryRunTest(unittest.TestCase):
@@ -642,9 +726,8 @@ class DryRunTest(unittest.TestCase):
             text,
             [
                 f"FW={WT1H} scripts/build.sh guest",
-                "git worktree add --quiet --detach scratch/rg-",
-                "HOST=vmhost DEST=beanjar sync-checkout",
-                "git worktree remove --force scratch/rg-",
+                "git checkout -q -f --detach",
+                "SRC=none HOST=vmhost DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
                 "vm-launcher config FIRMWARE_DIRS",
                 "pgrep -ax",
                 f"FW={WT1H} STATE=none BUILD=0 LAYERS=normal,gl DISPLAY_BACKEND=dbus",
@@ -703,29 +786,32 @@ class DryRunTest(unittest.TestCase):
                 "h13-afro,m2-dreadlocks,m3-goldilocks",
             ]
         )
-        # one worktree of the commit, synced to each host; each host's own checks
-        self.assertEqual(text.count("git worktree add"), 1)
+        # the same commit to each host, each held and checked on its own
         self.assertInOrder(
             text,
             [
-                "git worktree add",
-                "HOST=pi DEST=beanjar sync-checkout",
-                "HOST=rock DEST=beanjar sync-checkout",
-                "git worktree remove",
+                "[pi] exec 9>>beanjar.lock",
+                "[rock] exec 9>>beanjar.lock",
+                "push -q pi:beanjar-src.git",
+                "[pi] mkdir -p beanjar && cd beanjar",
+                "HOST=pi DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
+                "push -q rock:beanjar-src.git",
+                "[rock] mkdir -p beanjar && cd beanjar",
+                "HOST=rock DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
                 "build: host side on pi",
                 "build: host side on rock",
             ],
         )
-        src = {line.split()[1] for line in text.splitlines() if "sync-checkout" in line}
-        self.assertEqual(len(src), 1)  # the same tree for every host
+        pushed = {line.split()[-1] for line in text.splitlines() if " push -q " in line}
+        self.assertEqual(len(pushed), 1)  # the same commit for every host
         for host in ("pi", "rock"):
             self.assertIn(f'[{host}] echo "arch $(uname -m)"', text)  # its traits
             self.assertIn(f"firmware: from {host}'s firmware collections", text)
             self.assertIn(f"checking that nothing runs on the VM host {host}", text)
             self.assertIn(f"{host}: 2 VM(s) at once", text)
         lines = table_lines(text)
-        self.assertEqual(lines[-4].split()[-1], "host")
-        rows = {line.split()[0]: line.split()[-1] for line in lines[-3:]}
+        self.assertEqual(lines[-4].split()[-2:], ["host", "result"])
+        rows = {line.split()[0]: line.split()[-2] for line in lines[-3:]}
         self.assertEqual(set(rows), {"h13-afro", "m2-dreadlocks", "m3-goldilocks"})
         self.assertTrue(set(rows.values()) <= {"pi", "rock"})
         self.assertIn("4 at once (pi 2, rock 2)", text)
@@ -734,7 +820,7 @@ class DryRunTest(unittest.TestCase):
         a, sel = regress.parse(
             ["-n", "--headless", "--host", "pi,rock", "--target", "h13-afro"], found=FOUND, env={}
         )
-        a.source = {"commit": "0" * 40}
+        a.source = {"commit": "0" * 40, "tree": "public", "host_commit": "f" * 40}
         a.traits = {"pi": CAPABLE, "rock": dict(CAPABLE, toolchain=False)}
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertTrue(regress.prepare(a, sel))
@@ -744,7 +830,7 @@ class DryRunTest(unittest.TestCase):
             "build: none on rock (no toolchain): its host side is build/publish-arm64's", text
         )
         self.assertNotIn("[rock] scripts/build.sh host", text)
-        self.assertIn("HOST=rock DEST=beanjar sync-checkout", text)  # still synced
+        self.assertIn("HOST=rock DEST=beanjar REGRESS_LOCKED=1 sync-checkout", text)  # still synced
         # the published host side is arm64's: a host of another kind cannot use it
         a.traits["rock"] = dict(CAPABLE, toolchain=False, arch="x86_64")
         with contextlib.redirect_stdout(io.StringIO()) as out:

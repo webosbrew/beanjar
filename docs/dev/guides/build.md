@@ -236,23 +236,45 @@ scripts/regress --tv --viewer    # graphics: each VM also in the viewer on the V
 ```
 
 A run over ssh tests a commit, not this checkout's working tree: several agents edit the checkout
-at once, and a run that synced it could test someone's half-finished edit without saying so. The
-sync command gets `SRC`, the tree it copies: a clean `git worktree add --detach` of `HEAD` (`--commit
-REV`: of `REV`) at `scratch/rg-<hash>` (short, as runtime paths under a checkout must stay within
-`AF_UNIX`'s 108 bytes), removed once the sync ends, on a failure too. Its files keep this checkout's
-modification times where their content is the same, so the sync and the VM host's build see them
-unchanged. What the guest build publishes (`build/Image`, the components, `build/publish-arm64`) is
-sent from this checkout's `build/` either way. `--working-tree` syncs this checkout as it is,
-uncommitted files included (`SRC` is the checkout). The run directory's `source.json` says what was
-tested: the commit, whether it was pinned, and whether this checkout had uncommitted changes
-(tracked or untracked, not ignored), which a pinned run left out and an unpinned one (`--working-tree`,
-`--local`) tested; with `--no-sync` the commit is `null`. `summary.txt` ends with the same in a line,
-and `summary.json` has each target's `commit`. The runner itself, its judges and the test apps it packs
-run from this checkout.
+at once, and a run that copied it could test someone's half-finished edit without saying so. By
+default the VM hosts get `HEAD`'s (`--commit REV`: `REV`'s) public tree: the commit filtered by
+`.github/publish/paths.txt`, as the publisher filters it (`scripts/publish/sync.py`, `host_commit`: a
+commit with no parent at `refs/hosts/<commit>`, the same id every time), so every run also shows that
+the published tree works on its own. In a repository without the publishing machinery (the public one)
+the commit itself is sent. `--private-tree` sends the commit's whole tree instead, still without its
+history (`refs/hosts/private/<commit>`). A failure that comes from a file the public tree lacks is a
+finding about `paths.txt`, not something to work around in the run.
+
+Each VM host keeps a bare repository, `beanjar-src.git` in its home, made on first use. The run
+pushes the commit there where the host lacks it (`git push`: only the objects it lacks) and checks it
+out into `DEST` exactly (`tests/regress/lib/hostsrc.py`): files the commit does not have go, except the
+host's own `.git/` (a repository of its own, if it keeps one there), `build/`, `local/`, `scratch/` and what Meson unpacks or caches under `subprojects/` (what
+`host/scripts/sync-pi.sh` never deleted either), and unchanged files keep their modification times, so
+the host's build stays incremental. A push never changes `DEST`; `scripts/publish/host-push.py` pushes
+ahead of a run from a post-commit hook (`host-push.py install`; commits on `main` only, hosts from `git
+config beanjar.hosts`, a host that does not answer skipped with a line in `host-push.log` in the git
+directory), which only saves time: the run pushes what is missing itself.
+
+What the build publishes is not in git: `build/Image`, the components and layers and
+`build/publish-arm64` still go by the command `REGRESS_SYNC` names (`SRC=none`), from this checkout's
+`build/`, which is built from its whole working tree, private parts and uncommitted changes included.
+So a public-tree run tests the published host side and scripts against guest outputs built from the
+private tree. `--working-tree` sends this checkout as it is instead of a commit, through the same
+command (`SRC` is the checkout).
+
+The run holds each VM host's lock, `DEST.lock` in its home (`flock`), from before the checkout to its
+end, over its checkout, build and lanes; a second run, or `host/scripts/sync-pi.sh` run by hand, fails
+at once and names the holder. The run directory's `source.json` says what was tested: the commit, the
+tree (`public`, `private`, `working-tree`; `checkout` with `--local`), whether it was `filtered`, the
+`host_commit` the hosts checked out, whether this checkout had uncommitted changes (tracked or
+untracked, not ignored: left out of a commit's run, tested by `--working-tree` and `--local`) and the
+`hosts`; with `--no-sync` the commit is `null`. `summary.txt` ends with the same in a line, and
+`summary.json` has each target's `commit`. The runner itself, its judges and the test apps it packs run
+from this checkout.
 
 One run can spread its targets across several KVM hosts: `--host` repeated or comma-separated, or
-`REGRESS_HOST` as a comma- or space-separated list (`--host pi,rockpi4a-1,rockpi4a-2`). Every host
-gets the same tree (one pinned worktree, synced to each), is checked for leftovers before and after,
+`REGRESS_HOST` as a comma- or space-separated list (`--host pi,board1,board2`). Every host
+gets the same commit, is held and checked for leftovers before and after,
 and has its targets copied back into the one run directory here. At the start the runner reads over
 ssh what each host can do (`TRAITS` in `scripts/regress`): its architecture; a toolchain (`meson`,
 `ninja`, `cc`, which `scripts/build.sh host` needs); `/dev/dri/renderD128`, the render node the
@@ -267,8 +289,8 @@ would. The targets go from one queue, in their order, to the first host with a f
 them; each host takes `-j N` at once (graphics: one), capped by its own CPUs and `MemAvailable` as a
 single host's are, and a target whose RAM is more than a host's `MemAvailable` less `HEADROOM_MB` goes to
 the hosts it fits where there are any (a 4 GB board ends up with one VM at a time). A failure without
-`--keep-going`, or a leftover, starts no further target on any host. The summary gets a `host` column
-and the slots per host on its `wall` line; `summary.json` has each target's `host` and its host's
+`--keep-going`, or a leftover, starts no further target on any host. The summary of a run over ssh has a `host`
+column, and the slots per host on its `wall` line when there are several; `summary.json` has each target's `host` and its host's
 `jobs`.
 
 `--viewer` (graphics only) opens `build/viewer/beanjar-viewer` on the VM's D-Bus display on the VM
