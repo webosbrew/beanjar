@@ -223,6 +223,9 @@ extern int MAdp_MPool_Init(void) __attribute__((weak));
 extern int MDrv_SEM_Init(void) __attribute__((weak));
 extern int MDrv_MIU_Init(void) __attribute__((weak));
 extern int MDrv_SYS_Init(void) __attribute__((weak));
+/* a layer's own step at the first GAL_GX_Init of a process, where it links one into this library
+ * (NetCast 4: guest/layers/netcast4/src/verify.c) */
+extern void gal_gx_process_init(void) __attribute__((weak));
 #else
 extern int MAdp_SYS_Init(void) __attribute__((weak));
 #endif
@@ -237,6 +240,8 @@ EXPORT int API(Init)(void)
     for (unsigned i = 0; !system_up && i < sizeof(system) / sizeof(system[0]); i++)
         if (system[i])
             system[i]();
+    if (!system_up && gal_gx_process_init)
+        gal_gx_process_init();
     system_up = 1;
     pthread_mutex_unlock(&lock);
 #else

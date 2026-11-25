@@ -365,7 +365,27 @@ done
 
 # --- pseudo filesystems (proc is mounted by /run/webos-init inside the new PID namespace) ---
 mount -t sysfs sysfs /webos/sys
+# NetCast 4 has no device_table: its root packs LG's kdriver nodes in /dev/lg (iic, sys, be, gfx...,
+# the drivers lg115x.ko gives), which devtmpfs would hide. They are copied onto it, as packed.
+packed_lg=
+if [ ! -e /webos/etc/device_table ] && [ -d /webos/dev/lg ]; then
+	packed_lg=/run/packed-dev
+	mkdir -p $packed_lg && cp -a /webos/dev/lg $packed_lg/
+fi
 mount -t devtmpfs devtmpfs /webos/dev
+if [ -n "$packed_lg" ]; then
+	mkdir -p /webos/dev/lg
+	n=0
+	majors=" $(sed -n '/^Character/,/^$/s/^ *\([0-9]*\) .*/\1/p' /proc/devices | tr '\n' ' ') "
+	for f in $packed_lg/lg/*; do
+		major=$(stat -c %t "$f" 2>/dev/null)
+		[ -n "$major" ] || continue
+		case "$majors" in *" $((0x$major)) "*) ;; *) continue ;; esac
+		[ -e "/webos/dev/lg/${f##*/}" ] || { cp -a "$f" /webos/dev/lg/ && n=$((n + 1)); }
+	done
+	rm -rf $packed_lg
+	log "/dev/lg: $n packed kdriver nodes"
+fi
 # devtmpfs hides the firmware's packaged mount-point directories. Stock NetCast
 # lginit mounts devpts and a second devtmpfs there; creating the directories does
 # not replace either filesystem or the firmware's own mount operations.

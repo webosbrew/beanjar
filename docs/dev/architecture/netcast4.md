@@ -52,11 +52,10 @@ mounts its ramfs.
 
 NetCast 4 has no `/etc/device_table`: its root packs its device nodes in `/dev` (919 of them, 81 in
 `/dev/lg`: LG's kdrivers, `iic*`, `sys0`, `be0`, `afe0`, `gfx0`, ...), which devtmpfs hides too.
-So far the firmware runs without them: RELEASE reaches none of its I2C devices (the micom, the
-EEPROM) and none of lg115x.ko's other drivers, and the micom never sees a read (`run/micom-status`
-stays `ready=0`), so no remote key reaches the firmware. Copying the nodes of the majors lg115x.ko
-registers (31) onto devtmpfs makes RELEASE drive the micom and the EEPROM, and then power the set
-off (see "Secure boot" below); that is not done yet.
+Init copies the packed `/dev/lg` nodes of the majors lg115x.ko registers (31) onto devtmpfs before
+lginit runs; nodes of drivers the emulator has not stay absent. Without them RELEASE reached none of
+its I2C devices (the micom, the EEPROM) and none of lg115x.ko's other drivers: the micom never saw a
+read (`run/micom-status` stayed `ready=0`) and no remote key reached the firmware.
 
 ## Console
 
@@ -121,43 +120,49 @@ fbdev.
   window. Measured under TCG: fxui's first 1920x1080 frame took 116 ms to read back and 65 ms to
   copy into the window's two surfaces.
 
-Measured on the PC (TCG), without the packed `/dev/lg` nodes: on a VM whose eMMC NVM earlier boots
-had written (its ring's magic valid), procmgr showed its OSD about 20 s after start and RELEASE drew
-its first-use wizard ("Welcome! Press the WHEEL(OK) button"), a full-panel 1280x720 OSD whose top and
-bottom bands are a translucent black shade over the (black) video plane; it took no key, since none
-reaches RELEASE without the micom (below). On a new VM (the NVM ring blank, "initialize with
-0xFF") procmgr sets only its cursor plane and the screen stays black, 40 minutes after start too:
-RELEASE gets no further than where the micom would answer.
+Measured on the PC (TCG), on a new VM: RELEASE reads the micom's power state about 16 s after
+start (`ready=1`), reads the EEPROM (DDM_VerifyTask logs the new chip's debug level 3 and
+INSTOP_INFO 0) and draws its live-TV OSD, "Not Programmed" over the black video plane, then LG's
+no-signal screen saver (the LG cube with "Not Programmed"). Without the `/dev/lg` nodes the same VM
+stayed black (procmgr set only its cursor plane); a VM whose eMMC NVM earlier boots had written
+showed RELEASE's first-use wizard ("Welcome! Press the WHEEL(OK) button"), a full-panel 1280x720
+OSD whose top and bottom bands are a translucent black shade over the video plane.
 
 ## Secure boot and the micom
 
-Measured with the packed `/dev/lg` nodes in place and the firmware's output on the console, and
-read from RELEASE's code (04.28.15):
+RELEASE's partition verification is the one deliberate exception to running LG's programs
+unchanged: the netcast4 layer's libgal sets RELEASE's exported `gFullVerify` to 1
+(`guest/layers/netcast4/src/verify.c`), and nothing else of RELEASE is touched. The evidence, from
+the firmware's output on the console and RELEASE's code (04.28.15):
 
-- **The set powers itself off about 4 s after RELEASE starts**: micom write `25 00 43`, which
-  `DDI_MICOM_SendSystemPowerControlCommand` sends for `API_DDM_POWER_Shutdown_ByVerifyFail` (0x43 is
-  "VERIFY FAIL" in `API_DDM_POWER_ShutdownSystem`'s reason table). Its only caller is
-  `DDM_VerifyTask` (task tVerifyInit), which `MAIN_Root` always starts, with no condition on the
-  debug status, the command line, NFS, update mode, an environment variable or a file. It checks
-  the signatures of base, patch, opensrc, lglib, emanual, estreamer and extra with
-  `sb_verify_application` and shuts the set down after a second failure ("base verify failed in
-  2nd check ... OTP will be set and System will be shutdown").
+- **Without it the set powers itself off about 4 s after RELEASE starts**: micom write `25 00 43`,
+  which `DDI_MICOM_SendSystemPowerControlCommand` sends for `API_DDM_POWER_Shutdown_ByVerifyFail`
+  (0x43 is "VERIFY FAIL" in `API_DDM_POWER_ShutdownSystem`'s reason table). Its only caller is
+  `DDM_VerifyTask` (init task tVerifyInit), which `MAIN_Root` always starts, the last of its init
+  tasks, with no condition on the debug status, the command line, NFS, update mode, an environment
+  variable or a file. It checks the signatures of base, patch, opensrc, lglib, emanual, estreamer
+  and extra with `sb_verify_application` and shuts the set down after a second failure ("base verify
+  failed in 2nd check ... OTP will be set and System will be shutdown").
 - **The check needs per-set key material.** `sb_verify_application` and `sb_key_dec` are RELEASE's
-  own code (only `KADP_SE_*` come from libkadaptor). It reads `sbkey=` from `/proc/cmdline` (missing
-  or 0: failure), maps that physical address through `/dev/mem`, decrypts 1 KiB with `sb_key_dec`
-  and wants the magic 0xe1761312, then a signature block at each partition's end (magic
-  0x36485434). The bootloader (boot.pak: "Secureboot Init", "sbkey=0x%x", "fullverify") passes the
-  address of the blob it decrypted from the set's `secureboot` partition. RELEASE has no "secure
-  boot off" path; the OTP flag only selects a full check over a sampled one. Its one other exit is
-  the exported `gFullVerify` being nonzero, which nothing in RELEASE writes (SWUE has its own copy).
-  How the emulator leaves this check inactive is not decided yet; the project does not depend on
+  own, statically linked code (only `KADP_SE_*` come from libkadaptor), so there is no library
+  boundary at which to answer "verified". It reads `sbkey=` from `/proc/cmdline` (missing or 0:
+  failure), maps that physical address through `/dev/mem`, decrypts 1 KiB with `sb_key_dec` and
+  wants the magic 0xe1761312, then a signature block at each partition's end (magic 0x36485434).
+  The bootloader (boot.pak: "Secureboot Init", "sbkey=0x%x", "fullverify") passes the address of
+  the blob it decrypted from the set's `secureboot` partition. RELEASE has no "secure boot off"
+  path; the OTP flag only selects a full check over a sampled one. The project does not depend on
   per-set key material.
-- **The micom.** Before the shutdown RELEASE reads 0x9A (power-on mode, answered 0x20) and 0x80
+- **The one stock exit.** With `gFullVerify` nonzero the task logs "Verify end", sets `gVerifyEnd`
+  and returns. Nothing in RELEASE writes it (SWUE has its own copy). Our libgal sets it at RELEASE's
+  first `GAL_GX_Init` (halgal.c's `gal_gx_process_init`), which runs in tGFXInit, the first init
+  task, before `MAIN_Root` creates tVerifyInit. Not in a constructor: RELEASE's start-up zeroes its
+  bss after the preloaded libraries' constructors (a 1 set there read 0 about 300 ms later).
+- **The micom.** At start RELEASE reads 0x9A (power-on mode, answered 0x20) and 0x80
   (RTC), writes its locale (4B), key-lock time (72), baud rate (32 07), child lock (4D), CEC sync
   (4F), LED mode (77) and "application started" (2A), and reads a few things lgemu's micom does not
   answer, which RELEASE retries three times and goes on from: D1 and D0 (the echo of GPIO output
   ports 0x2103 and 0x2102 after 3A <v> and 36/37), 51 (RS-232 key lock, 0 or 1), A8 (logo light,
-  2 bytes) and F9 (RGB sensor). None of them leads to the shutdown.
+  2 bytes) and F9 (RGB sensor).
 - **How remote keys reach the UI.** `MICOM_Task` polls the micom every 40 ms; until
   `MAIN_StartApplication` enables polling (`API_DDM_MICOM_NotifyToMicomPowerOnInitEnd`) it writes the
   dummy `FF FF` instead. Then it reads 0xC0, three bytes: type 2 an IR key, 3 a local key; the check
@@ -166,6 +171,19 @@ read from RELEASE's code (04.28.15):
   and to its uinput device "LGE RCU" (`MICOM_UINPUT_Init`).
 - **The first-use wizard.** `MAIN_StartApplication` creates it when NAND NVM registry byte 0x521 is 0
   and EEPROM 0x739 (INSTOP_INFO, FactoryDB 49) is 1. The new chip (`beanjar/nvmfactory.py`, the same
-  fields as NetCast 4.5's, debug status 3 to 5 at 0x18A) has INSTOP_INFO 0. The wizard drawn without
-  the nodes came from another path; its welcome page takes OK (UI key 28) once its app-store
-  storage popup (which locks the keys for up to 40 s) closes.
+  fields as NetCast 4.5's, debug status 3 to 5 at 0x18A) has INSTOP_INFO 0. Its welcome page takes OK
+  (UI key 28) once its app-store storage popup (which locks the keys for up to 40 s) closes.
+
+Measured on a new VM: the remote's keys reach RELEASE (lgemu's micom trace: HOME is read as
+`02 7c 83` then `0a 7c 83` from 0xC0, each followed by a power-state read), and HOME takes the
+no-signal OSD away, but the screen then stays black: FX HOME was not seen.
+
+## Open
+
+- **Home and navigation.** After HOME nothing is drawn (procmgr shows no window). Not studied yet:
+  which app HOME starts on NC4H and why its window is not shown; once, about 180 s after start, the
+  set restarted (SIGHUP, cause not found; the micom trace was off).
+- **The NetCast regress** (`tests/regress/netcast/run.py`) shares the "NetCast" platform entry with
+  NetCast 4.5; NC4H has no thresholds of its own yet (its home step waits for FX HOME).
+- **Other NC4 builds**: only the EU FHD build 04.28.15 (`HE_DTV_NC4H_AFAAABAA`) has run; UHD and OLED
+  variants of the line are not tried.

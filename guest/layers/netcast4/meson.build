@@ -23,7 +23,7 @@
 #   usr/lib/libEGLmesa.so.1, libgallium, libgbm   Mesa's, which libEGL loads
 #   usr/share/beanjar/gles-version      OpenGL ES 2.0, the set's own (PowerVR, GLES 2 and 1.1)
 gal = shared_library('gal', '../simplesmart/src/libhalgal/halgal.c', '../simplesmart/src/libhalgal/decode.c',
-  '../soc/src/libdile_gal/gal-draw.c', 'src/kadp.c',
+  '../soc/src/libdile_gal/gal-draw.c', 'src/kadp.c', 'src/verify.c',
   include_directories: include_directories('../soc/src/libdile_gal', '../simplesmart/src/libhalgal'),
   c_args: ['-fvisibility=hidden', '-DGAL_GX=1'],
   link_args: ['-lpthread', '-ldl'])
