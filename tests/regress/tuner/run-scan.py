@@ -8,7 +8,8 @@
 Takes the VM's channel map (beanjar io tuner list NAME) and the services of the lineup in effect on
 it (beanjar io tuner lineup show NAME: the VM's own, or the built-in one of its board's standard,
 US ATSC or the Japanese ISDB-T one on an ARIB board) as what the scan must find,
-waits for its legacy-broadcast (legacy-broadcast-atsc, legacy-broadcast-arib) to run, runs tests/regress/tuner/scan.sh in the guest as root
+waits for its legacy-broadcast (legacy-broadcast-atsc, legacy-broadcast-arib) to be steady (the same
+process for a minute, registered with the bus and answering; a first boot respawns it), runs tests/regress/tuner/scan.sh in the guest as root
 (beanjar ares-shell --root: the VM needs the rootssh layer), and checks its answers: every mapped
 virtual channel in iepg/getChannelList, no other, and a current event for each in
 getCurrentEventList with the title the lineup has on air now, after scan.sh has watched the first
@@ -76,6 +77,42 @@ def expected(channels, now, lineup):
     return out
 
 
+# legacy-broadcast, set up on a just-booted VM, can exit and be respawned for a while (a scan then
+# fails with "legacybroadcast.channel is not running"): steady is the same process ids for STEADY_S
+# in a row while it is registered with the bus and answers a call, bounded by STEADY_MAX_S in all
+STEADY_S = 60
+STEADY_MAX_S = 900
+STEADY_PROBE = (
+    "p=$(pidof {service}); echo $p; "
+    'ls-monitor -l 2>/dev/null | grep -q "^$p .*com.webos.service.legacybroadcast.broadcast" && echo registered; '
+    "luna-send -n 1 -w 5000 luna://com.webos.service.legacybroadcast.broadcast/getAudioLanguageList "
+    '\'{{"broadcastId":"-"}}\' </dev/null 2>&1 | grep -q returnValue && echo answers'
+)
+
+
+def steady(name, service, hold=STEADY_S, limit=STEADY_MAX_S):
+    """Seconds it took until the service had run unchanged for hold seconds and answered, or None."""
+    t0 = time.monotonic()
+    last, since = None, t0
+    while time.monotonic() - t0 < limit:
+        try:
+            out = shell(name, STEADY_PROBE.format(service=service), 60)
+        except subprocess.TimeoutExpired:
+            out = ""
+        now = time.monotonic()
+        words = out.split()
+        pids = [w for w in words if w[0].isdigit()]
+        state = (
+            tuple(sorted(pids)) if pids and "answers" in words and "registered" in words else None
+        )
+        if state is None or state != last:
+            last, since = state, now
+        elif now - since >= hold:
+            return int(now - t0)
+        time.sleep(5)
+    return None
+
+
 def parse(text):
     """KEY=VALUE lines before '--- raw': {key: [values]}."""
     out = {}
@@ -116,13 +153,11 @@ def main():
     if not mapped and not streams:
         print("FAIL: no channel mapped (beanjar io tuner map NAME RF...)")
         return 1
-    for _ in range(90):  # legacy-broadcast runs a while after boot
-        if "up" in shell(a.name, f"pidof {service} >/dev/null && echo up", 60):
-            break
-        time.sleep(10)
-    else:
-        print(f"FAIL: {service} is not running")
+    ready = steady(a.name, service)
+    if ready is None:
+        print(f"FAIL: {service} is not steady (not running, or respawning)")
         return 1
+    print(f"broadcast_steady_s={ready}")
     subprocess.run(
         [
             BEANJAR,
