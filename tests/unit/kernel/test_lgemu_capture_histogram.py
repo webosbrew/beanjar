@@ -6,13 +6,19 @@ API: the regions match the measured table, the counts come from the captured pic
 takes effect from the scheduled update, and a read before any data or before START fails."""
 
 from pathlib import Path
-import re
 import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = ROOT / "guest/kernel/modules/lgemu"
-DOC = ROOT / "docs/research/video/capture-histogram.md"
+# Each preset's sample count per block, measured on a set: every block's R, G and B counts add up
+# to the same total, fixed per preset and block
+MEASURED_TOTALS = [
+    [7200, 1728, 2304, 864, 7200, 1380, 1504, 1584, 7200, 1440, 1504, 864, 864, 1584, 704, 720],
+    [5360, 1248, 1728, 624, 5360, 1012, 1120, 1200, 5360, 1056, 1120, 624, 624, 1200, 704, 720],
+    [5400, 1278, 1692, 630, 5400, 1050, 1128, 1188, 5220, 1050, 1081, 630, 648, 1155, 704, 720],
+    [5760, 5760, 5760, 1782, 2064, 1925, 1722, 1584, 864, 864, 864, 1584, 1681, 1890],
+]
 
 FIXTURE = r"""
 #ifndef FIXTURE_H
@@ -165,16 +171,6 @@ int main(void)
 """
 
 
-def measured_totals():
-    """Each block's sample count from the doc's table of totals (measured on the set)."""
-    doc = DOC.read_text()
-    out = []
-    for p in range(4):
-        m = re.search(rf"preset {p}: ([\d ]+)[;|]", doc.split("| Totals per block |")[1])
-        out.append([int(v) for v in m.group(1).split()])
-    return out
-
-
 def test_histogram_controls(tmp_path):
     deep = tmp_path / "a/b/c/d"
     deep.mkdir(parents=True)
@@ -188,7 +184,7 @@ def test_histogram_controls(tmp_path):
     for name in ("compat", "mutex", "slab", "uaccess", "unaligned", "wait", "workqueue", "types"):
         (linux / f"{name}.h").write_text('#include "fixture.h"\n')
     (tmp_path / "fixture.h").write_text(FIXTURE)
-    totals = measured_totals()
+    totals = MEASURED_TOTALS
     assert [len(t) for t in totals] == [16, 16, 16, 14]
     table = ",".join("{" + ",".join(map(str, t)) + "}" for t in totals)
     (deep / "runner.c").write_text(RUNNER % {"totals": table})
