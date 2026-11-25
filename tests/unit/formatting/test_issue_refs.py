@@ -28,7 +28,7 @@ SKIPPED_SUFFIXES = (".css", ".scss", ".html", ".js", ".svg")
 # kernel banner. Each is matched against the text before the number.
 NOT_AN_ISSUE = (
     re.compile(r"\[[^\]]*$"),
-    re.compile(r"\b(?:mov\w*|cmp|svc|lsl|lsr|asr|ror|r\d+|PKCS)\b[^()]*$"),
+    re.compile(r"\b(?:mov\w*|cmp|svc|add|sub|lsl|lsr|asr|ror|r\d+|sp|lr|PKCS)\b[^()]*$"),
 )
 NOT_AN_ISSUE_LINES = ("SMP PREEMPT",)
 

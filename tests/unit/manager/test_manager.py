@@ -481,7 +481,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(sorted(self.listing()), ["tv1"])
 
     def test_repo_option_is_for_one_command(self):
-        """--repo names the checkout for that command only: config.toml is not written (#238);
+        """--repo names the checkout for that command only: config.toml is not written;
         `library config set repo=DIR` is the one way to store it, and without any known checkout the error says so."""
         config = os.path.join(self.lib_dir, "config.toml")
         scratch = os.path.join(self.tmp, "scratch-copy")
