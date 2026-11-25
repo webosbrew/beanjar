@@ -15,8 +15,13 @@
 # the firmware, host/scripts/vm-launcher config TARGET, e.g. build/guest-h13-afro -Dsoc=h13 -Dwebos=afro;
 # the guest build reads no firmware, its facts are in guest/targets/facts) or build/host when it does
 # not exist yet, then `meson compile`, which publishes to build/.
+#
+# Every step writes the build's outputs, so the whole script holds the build lock, build/.build.lock,
+# exclusive (scripts/buildlock.py: a wait says who holds it). BUILD_LOCKED=1 in the environment: the
+# caller holds it already (scripts/regress's build; an outer flock that sets it), so none is taken.
 set -eu
 TOP=$(cd "$(dirname "$0")/.." && pwd)
+[ -n "${BUILD_LOCKED:-}" ] || exec python3 "$TOP/scripts/buildlock.py" exclusive -- "$0" "$@"
 
 build() { # build DIR [SETUP ARGS...]
 	d=$TOP/build/$1; shift
@@ -34,6 +39,6 @@ for w in $what; do
 		build "guest-$target" --cross-file "$TOP/meson/cross/$cross" -Dsoc="${target%-*}" -Dwebos="${target#*-}" ;;
 	host) build host ;;
 	host-arm64) build host-arm64 --cross-file "$TOP/meson/cross/debian-arm64.ini" ;;
-	*) sed -n '2,9p' "$0" >&2; exit 1 ;;
+	*) sed -n '4,11p' "$0" >&2; exit 1 ;;
 	esac
 done

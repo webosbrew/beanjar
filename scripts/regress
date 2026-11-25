@@ -68,6 +68,10 @@ mitmweb, slirp4netns or viewer runs on the VM host):
              ACCEL, PMLOG_DEBUG, MEM, SMP, KERNEL_ARGS, QEMU_EXTRA and GPU_DEVICE pass through; those of them not
              given are passed empty, the launcher's defaults, never what the VM's vm.toml kept)
   boot       tests/regress/guest.sh boot: bootd's boot-done, the guest's uptime at it
+  tv-ready   tests/regress/guest.sh tv-ready: tvservice's tv-ready in bootd's log (/var/log/bootd.log)
+             within TV_READY_WAIT s, as headless's ready requires; SKIP, saying why, on the same
+             evidence as ready's (no TV service: N21D webOS 24; a tunerless legacy-broadcast's
+             booting log: the StanbyME's webOS 6) and for a platform without bootd (NetCast)
   check-m1   guest/scripts/check-m1.sh ("M1 PASS")
   app-calls  tests/regress/tvservice/app-calls.sh ("APP-CALLS PASS")
   checklist  the bring-up checklist: tests/regress/guest.sh checklist gathers the facts, and
@@ -240,7 +244,9 @@ TOP = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 IDENTITY_PY = os.path.join(TOP, "packaging", "identity.py")
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
+sys.path.insert(0, os.path.join(TOP, "scripts"))
 from beanjar import guestlayers, launch, nvm, targets, paths, qemu, vmunits  # noqa: E402
+import buildlock  # noqa: E402
 import checklist  # noqa: E402
 import hostsrc  # noqa: E402
 import device_census  # noqa: E402
@@ -252,6 +258,7 @@ STEPS = {
     "graphics": (
         "start",
         "boot",
+        "tv-ready",
         "check-m1",
         "app-calls",
         "checklist",
@@ -1033,6 +1040,7 @@ class Result:
             self.target,
             self.mode,
             self.boot_done,
+            *([self.steps["tv-ready"]] if self.mode == "graphics" else []),
             self.steps["check-m1"],
             self.steps["app-calls"],
             cl,
@@ -1085,6 +1093,7 @@ def table(results, mode="graphics", tv=False, hosts=False):
             "target",
             "mode",
             "boot-done",
+            "tv-ready",
             "check-m1",
             "app-calls",
             "checklist",
@@ -2221,6 +2230,8 @@ def boot_and_check(h, a, r, out, rel, target, fw):
     if a.tv:
         tv_suite(h, a, r, out, target, fw)
         return
+    if not a.headless:
+        tv_ready(h, a, r, out, target)
     checks = [
         (
             "check-m1",
@@ -2283,6 +2294,41 @@ def boot_and_check(h, a, r, out, rel, target, fw):
     idle_cpu(h, a, r, out, target)
     standby(h, a, r, out, rel, target)
     return
+
+
+TV_READY_WAIT = (
+    60  # s (scaled) after boot-done for bootd's tv-ready (webOS 5 and later: after core-boot-done)
+)
+
+
+def tv_ready(h, a, r, out, target):
+    """Graphics: bootd's log has tvservice's tv-ready (guest.sh tv-ready), as headless's ready step
+    requires. SKIP where the firmware sends none, on the guest's evidence as ready's (no TV service,
+    a tunerless legacy-broadcast) or for a platform without bootd (NetCast, SimpleSmart)."""
+    plat = targets.platform(target_of(target))
+    if plat != "webOS":
+        r.steps["tv-ready"] = "dry" if a.dry_run else "SKIP"
+        if not a.dry_run:
+            say(f"{target}: tv-ready SKIP ({plat}: no bootd, no tv-ready signal)")
+        return
+    say(f"{target}: tv-ready")
+    rc = guest_step(h, a, r, "tv-ready", int(TV_READY_WAIT * a.scale), out)
+    if a.dry_run:
+        r.steps["tv-ready"] = "dry"
+        return
+    line = next((x for x in r.text.splitlines() if x.startswith("TVREADY ")), None)
+    if rc == 0 and line and line.startswith("TVREADY SKIP "):
+        r.steps["tv-ready"] = "SKIP"
+        say(f"{target}: tv-ready SKIP ({line[len('TVREADY SKIP ') :]})")
+    elif rc == 0 and line:
+        r.steps["tv-ready"] = "PASS"
+        say(f"{target}: tv-ready at {line.split()[1]} s (bootd's clock)")
+    else:
+        r.steps["tv-ready"] = "TIMEOUT" if rc == 124 else "FAIL"
+        say(
+            f"{target}: tv-ready {r.steps['tv-ready']}: "
+            + "; ".join(r.text.strip().splitlines()[:4])
+        )
 
 
 def follow_restart(h, a, r, target, e):
@@ -2781,6 +2827,30 @@ def machine():
     return os.uname().machine
 
 
+def builds_here(a):
+    """Whether the run builds in this checkout (prepare): the guests on x86_64, the host with --local."""
+    return not a.no_build and (machine() == "x86_64" or a.local)
+
+
+def build_lock(a):
+    """The run's hold of this checkout's build lock (scripts/buildlock.py): exclusive when it builds
+    here first (prepare lets it down to shared after), else shared. None on a dry run (printed)."""
+    mode = "exclusive" if builds_here(a) else "shared"
+    if a.dry_run:
+        say_raw(
+            f"  [here] hold {os.path.relpath(buildlock.LOCK, TOP)} {mode}"
+            + (", shared after the build" if mode == "exclusive" else "")
+        )
+        return None
+    return buildlock.Lock(mode, f"scripts/regress run {a.run}", say=say)
+
+
+def build_here(cmd, a, env=None):
+    """A build in this checkout (scripts/build.sh), under the run's exclusive build lock: BUILD_LOCKED
+    says so, and it takes none of its own."""
+    return local(cmd, a.dry_run, dict(env or {}, BUILD_LOCKED="1"))
+
+
 def prepare(a, sel):
     """Build (or check) and sync to every VM host; False on a failure. a.traits must hold each VM
     host's host_traits: one without a toolchain gets the cross-built arm64 host side the sync ships
@@ -2791,11 +2861,11 @@ def prepare(a, sel):
     elif x86:
         for target, fw in sel:
             say(f"build: guest {target}")
-            if local(["scripts/build.sh", "guest"], a.dry_run, {"FW": fw}):
+            if build_here(["scripts/build.sh", "guest"], a, {"FW": fw}):
                 return False
         if a.local:
             say("build: host")
-            if local(["scripts/build.sh", "host"], a.dry_run):
+            if build_here(["scripts/build.sh", "host"], a):
                 return False
     if a.no_build or x86:
         # every target run has the gl layer graphics boots with: those that make none are skipped
@@ -2822,8 +2892,13 @@ def prepare(a, sel):
             return False
     elif a.local:
         say("build: host (no guest builds here: the SDK is x86_64)")
-        if local(["scripts/build.sh", "host"], a.dry_run):
+        if build_here(["scripts/build.sh", "host"], a):
             return False
+    lock = getattr(a, "build_lock", None)
+    if lock and lock.mode == "exclusive":
+        lock.downgrade()  # built: the rest of the run only reads the outputs
+        if not lock.held:
+            say(f"holding {os.path.relpath(buildlock.LOCK, TOP)} shared")
     if not a.hosts or a.no_sync:
         return True
     if not a.sync:
@@ -3161,13 +3236,26 @@ def main(argv=None):
             f"{host}: {t['arch']}, "
             + ", ".join(f"{'' if t[k] else 'no '}{k}" for k in ("toolchain", "render", "desktop"))
         )
-    # each VM host's checkout is the run's from here to its end: its checkout, build and lanes
+    # this checkout's build/ is the run's from here to its end: exclusive while it builds here, then
+    # shared (its outputs read, synced, booted); each VM host's checkout too: its checkout, build and
+    # lanes
     try:
         with contextlib.ExitStack() as held:
+            a.build_lock = build_lock(a)
+            if a.build_lock:
+                held.enter_context(a.build_lock)
+                say(
+                    f"holding {os.path.relpath(buildlock.LOCK, TOP)} {a.build_lock.mode}"
+                    + (
+                        " (its caller's: BUILD_LOCKED or an outer flock)"
+                        if a.build_lock.held
+                        else ""
+                    )
+                )
             for host in a.hosts:
                 held.enter_context(HostLock(host, a.dest, a.run, a.dry_run))
             return lanes(a, sel, run, skipped, hosts)
-    except HostBusy as e:
+    except (HostBusy, buildlock.Held) as e:
         say(f"not starting: {e}")
         return 1
 

@@ -728,7 +728,9 @@ class DryRunTest(unittest.TestCase):
         self.assertInOrder(
             text,
             [
-                f"FW={WT1H} scripts/build.sh guest",
+                "hold build/.build.lock exclusive, shared after the build",
+                "flock -n 9",  # the host's lock after the build lock
+                f"FW={WT1H} BUILD_LOCKED=1 scripts/build.sh guest",
                 "git checkout -q -f --detach",
                 "vm-launcher config FIRMWARE_DIRS",
                 "pgrep -ax",
@@ -737,6 +739,7 @@ class DryRunTest(unittest.TestCase):
                 "build: host side on vmhost",
                 f"FW={WT1H} STATE=none BUILD=0 LAYERS=normal,gl DISPLAY_BACKEND=dbus",
                 "TIME_SCALE=1 sh /host/tests/regress/guest.sh boot 300",
+                "guest.sh tv-ready 60",
                 "guest.sh check-m1 regress-t1-h13-afro-check-m1 10",
                 "guest.sh app-calls",
                 "guest.sh checklist 0 ",
@@ -764,11 +767,12 @@ class DryRunTest(unittest.TestCase):
         self.assertNotIn("guest.sh tvservice", text)
         lines = table_lines(text)
         self.assertEqual(
-            lines[-3].split()[:8],
+            lines[-3].split()[:9],
             [
                 "target",
                 "mode",
                 "boot-done",
+                "tv-ready",
                 "check-m1",
                 "app-calls",
                 "checklist",
@@ -2260,6 +2264,52 @@ class ReadyLineTest(unittest.TestCase):
         finally:
             regress.guest_step = real
         self.assertEqual((r.steps["ready"], r.boot_done, r.tvservice), ("PASS", "79.9 s", "229"))
+
+
+class TvReadyTest(unittest.TestCase):
+    """The graphics lane's tv-ready step: guest.sh tv-ready's answer to a verdict."""
+
+    def verdict(self, text, rc=0, target="k5lp-goldilocks2"):
+        def step(h, a, r, name, arg, out):
+            self.assertEqual((name, arg), ("tv-ready", int(regress.TV_READY_WAIT * a.scale)))
+            r.text = text
+            return rc
+
+        a, _ = regress.parse(["--local", "--run", "t8"], found=FOUND, env={})
+        r = regress.Result(target, W19P)
+        with (
+            mock.patch.object(regress, "guest_step", step),
+            contextlib.redirect_stdout(io.StringIO()) as said,
+        ):
+            regress.tv_ready(None, a, r, "out", target)
+        return r.steps["tv-ready"], said.getvalue()
+
+    def test_signal(self):
+        self.assertEqual(self.verdict("Terminated\nTVREADY 12.5")[0], "PASS")
+
+    def test_none_sent_skips_saying_why(self):
+        got, said = self.verdict("TVREADY SKIP tunerless: no tv-ready")
+        self.assertEqual(got, "SKIP")
+        self.assertIn("tv-ready SKIP (tunerless: no tv-ready)", said)
+
+    def test_missing_fails(self):
+        got, said = self.verdict("no tv-ready in /var/log/bootd.log within 60 s", rc=1)
+        self.assertEqual(got, "FAIL")
+        self.assertIn("no tv-ready", said)
+        self.assertEqual(self.verdict("", rc=124)[0], "TIMEOUT")
+
+    def test_without_bootd_skips(self):
+        got, said = self.verdict("", rc=1, target="lm14-netcast45")
+        self.assertEqual(got, "SKIP")
+        self.assertIn("NetCast", said)
+
+    def test_a_failed_tv_ready_fails_the_target(self):
+        r = regress.Result("k5lp-goldilocks2", W19P)
+        r.steps = {s: "PASS" for s in r.steps}
+        r.steps["tv-ready"] = "SKIP"
+        self.assertTrue(r.ok)
+        r.steps["tv-ready"] = "FAIL"
+        self.assertFalse(r.ok)
 
 
 class FirstBootRestartTest(unittest.TestCase):

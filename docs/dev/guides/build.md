@@ -148,6 +148,20 @@ firmware cache takes `-Dfirmware`, else `FW`'s), then `meson compile`;
 `host/scripts/vm-launcher start` runs `scripts/build.sh guest`
 before booting (not on the Pi, which does not build the guest, nor for a VM directory, `--dir`).
 
+**The build lock.** `build/.build.lock` keeps a build from replacing outputs that another command
+is reading. The tools take it themselves (`scripts/buildlock.py`, an `flock`): `scripts/build.sh`
+holds it exclusive for its whole run, since every step writes the build's outputs, and
+`scripts/regress` holds it shared for its whole run (below), exclusive while it builds first.
+Each holder writes its pid, mode and command into `build/.build.lock.who`. A command that has to
+wait prints one line naming the holders (from `/proc/locks`, with their `.who` lines) and then
+waits, for example `waiting for build/.build.lock (exclusive): held by pid 4242 shared: scripts/regress
+run reg-1`. A holder never waits for itself: `BUILD_LOCKED=1` in the environment says the caller
+holds the lock already, and the command takes none (the command `buildlock.py` runs gets it, and so
+does what `scripts/regress` builds with). An outer `flock build/.build.lock CMD` needs no variable:
+a lock held by an ancestor process counts as the caller's. Holding it shared, though, it cannot be
+taken exclusive below it, so `flock -s build/.build.lock scripts/build.sh` fails at once instead
+of waiting for ever. Wrapping commands in `flock` by hand is no longer needed.
+
 Each build ends with its `publish` step (`meson/publish.py`), which copies what changed to where
 the launchers and any host sync use it: `build/Image`, `build/{lgemu,lg115x,mstar-utopia,rtk,mtk,btmtk_usb,webos_tv,dtv_soc,lgfs}.ko`,
 `build/initramfs.cpio.gz`, `build/components/{common,soc/<chip>,release/<release>,gl,...}`, `build/ssh/bin`,
@@ -266,7 +280,13 @@ command (`SRC` is the checkout).
 
 The run holds each VM host's lock, `DEST.lock` in its home (`flock`), from before the checkout to its
 end, over its checkout, build and lanes; a second run, or `host/scripts/sync-pi.sh` run by hand, fails
-at once and names the holder. The run directory's `source.json` says what was tested: the commit, the
+at once and names the holder. Here it holds this checkout's build lock ("The build lock" above), taken
+before the hosts' locks: shared for the whole run, which reads, syncs and (with `--local`) boots
+the build's outputs. A run that builds here first (not `--no-build`: the guests on x86_64, the host
+with `--local`) takes it exclusive, runs `scripts/build.sh` with `BUILD_LOCKED=1` under it, and
+then lets it down to shared for the rest. `flock` converts a lock by letting it go and taking it
+again, so another build may come in between; the run then waits for it, saying so. A dry run takes
+none and prints the mode. The run directory's `source.json` says what was tested: the commit, the
 tree (`public`, `private`, `working-tree`; `checkout` with `--local`), whether it was `filtered`, the
 `host_commit` the hosts checked out, whether this checkout had uncommitted changes (tracked or
 untracked, not ignored: left out of a commit's run, tested by `--working-tree` and `--local`) and the
@@ -321,7 +341,9 @@ DISPLAY_BACKEND=dbus` (`NET_LINK` and `NET_MODE` as given, nat and direct by def
 `ACCEL`, `PMLOG_DEBUG`, `MEM`, `SMP`, `KERNEL_ARGS`, `QEMU_EXTRA`, `GPU_DEVICE`, `GUEST_KERNEL` pass through, and those not given are passed
 empty, the launcher's defaults, so a target's development VM never brings back what its `vm.toml` kept from an
 earlier run; `KERNEL_ARGS` are extra kernel cmdline words, e.g. `mstar_utopia.mbx_trace=1`, a module parameter `/init` passes on; `QEMU_EXTRA` extra QEMU arguments, e.g. `-trace virtio_snd_*`): boot-done (`tests/regress/guest.sh`, the guest's uptime at
-it), `guest/scripts/check-m1.sh`, `tests/regress/tvservice/app-calls.sh`, the bring-up checklist (below), HOME on the remote once the
+it), tvservice's `tv-ready` in bootd's own `/var/log/bootd.log` (`guest.sh tv-ready`, within 60 s of
+boot-done, times 4 under TCG: the same signal the headless ready step requires, below; the run
+directory's `saved/*/var-log/bootd.log` keeps it), `guest/scripts/check-m1.sh`, `tests/regress/tvservice/app-calls.sh`, the bring-up checklist (below), HOME on the remote once the
 compositor shows no launcher by itself (`guest.sh home-idle`: webOS 3.5's Home Auto Launch shows it
 for a few seconds after the first app, and a HOME then hides it; `tests/regress/ir-key.py`, over
 `ir.sock`; webOS 4.5's Home, a HOME window that stays up after boot, gets HOME twice, hide and show) and a `tests/regress/virgl/dbus-grab.py` screenshot (the UI
@@ -350,7 +372,7 @@ slirp4netns, a viewer or a regress unit (`beanjar-vm-regress-*`) runs on the VM 
 ends the run if a stopped VM leaves any of them behind. Results, copied back here:
 `build/regress/<run>/<target>.png`, `build/regress/<run>/<target>/` (the steps' output, the logs
 saved at stop and check-m1's in `saved/`, the launcher's host logs in `host/`) and
-`summary.txt`, the table it prints (target, mode, boot-done, check-m1, app-calls, checklist,
+`summary.txt`, the table it prints (target, mode, boot-done, tv-ready, check-m1, app-calls, checklist,
 screenshot, idle cpu, standby (seconds from POWER to the standby, QEMU's CPU in it, seconds from the power
 key to the wake and from the wake line to Active), capture, run window; "Bring-up checklist" below), and `summary.json`; the exit status is 1 if any target failed. A target whose build makes
 no gl layer (`guest/layers/gl/meson.build`: its chip's table, `guest/layers/soc/<chip>/meson.build`, has neither
@@ -378,7 +400,13 @@ KVM) and means tvservice initialised. A `core-boot-done` by bootd's timeout (30 
 and 2, 60 s on 3 and 4) fails the target at once. On webOS 5 (W20L) there is no tvservice: its TV
 service is legacy-broadcast, and bootd sends `core-boot-done` without waiting for it (3 s in, before
 legacy-broadcast's `tv-ready`), so ready there waits for the `tv-ready` line itself and its table
-shows that line's time; app-calls there calls only the services webOS 5 still has
+shows that line's time. Two kinds of firmware send no `tv-ready` at all, as on the set, and are
+ready at `core-boot-done`: one with no TV service (neither a tvservice pak nor legacy-broadcast:
+N21D's webOS 24) and a tunerless legacy-broadcast, whose booting log has `[PreInitTask] Do Not Create
+task because it's tunerless model!` (N21D's webOS 6 StanbyME, `docs/research/n21d-bringup.md`).
+The graphics lane's tv-ready step decides on the same evidence, read in the running guest, and is
+SKIP there with that reason, as it is for a platform without bootd (NetCast, SimpleSmart); the
+headless lane has no step of its own for it, since ready already requires it. On webOS 5, app-calls calls only the services it still has
 (tv.systemproperty, sdx, eim, nop, tvpower). Then check-m1, which waits up to 150 s for
 boot-done itself and skips its gl checks (no `libegl-kms.so` without the gl layer), app-calls,
 and `guest.sh tvservice`: tvservice (`RELEASE`) is the process it was at ready and answers

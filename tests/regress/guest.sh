@@ -10,6 +10,9 @@
 #                                                     of core-boot-done> <tvservice's pids>"
 #                                                     (every RELEASE process, sorted, comma-joined;
 #                                                     "none" in a firmware with no TV service)
+#   sh /host/tests/regress/guest.sh tv-ready SECONDS  graphics, after boot-done: bootd's log has
+#                                                     tvservice's tv-ready: "TVREADY <bootd's time>",
+#                                                     or "TVREADY SKIP <why>" where none is sent
 #   sh /host/tests/regress/guest.sh tvservice PIDS    tvservice (RELEASE) still processes PIDS (as
 #                                                     ready printed them), answering
 #   sh /host/tests/regress/guest.sh check-m1 LOGNAME [WAIT]  guest/scripts/check-m1.sh (WAIT for boot-done,
@@ -159,6 +162,37 @@ ready() {
 		sleep 1
 	done
 	echo "no core-boot-done within $1 s; last status: $s"
+	return 1
+}
+# Graphics (scripts/regress's tv-ready step, after boot-done): bootd's log has tvservice's tv-ready,
+# within SECONDS: "TVREADY <bootd's time of it>". Headless's ready requires it already. On the same
+# evidence as ready, a firmware with no TV service (no_tv) and a tunerless legacy-broadcast
+# (fe_tunerless) send none, as on the set: "TVREADY SKIP <why>".
+tv_ready() {
+	end=$(($(up | cut -d. -f1) + $1))
+	while :; do
+		log=$(in_webos "grep -E 'generateSignal.*\"name\":\"tv-ready\"' /var/log/bootd.log")
+		case $log in *tv-ready*)
+			tv=$(printf '%s\n' "$log" | sed -n 's/^[A-Z]*( *\([0-9.]*\)).*/\1/p' | head -n 1)
+			echo "TVREADY ${tv:-?}"; return 0 ;;
+		esac
+		if no_tv; then
+			echo "TVREADY SKIP no TV service (neither a tvservice pak nor legacy-broadcast): nothing sends tv-ready"
+			return 0
+		fi
+		if webos5 && fe_tunerless; then
+			echo "TVREADY SKIP tunerless: legacy-broadcast's front end did not start (its booting log), so it sends no tv-ready"
+			return 0
+		fi
+		[ "$(up | cut -d. -f1)" -lt $end ] || break
+		sleep 2
+	done
+	echo "no tv-ready in /var/log/bootd.log within $1 s"
+	echo "tvservice: $(release_pids | grep . || echo not running)"
+	if webos5; then
+		echo "legacy-broadcast's booting log ends:"
+		in_webos "tail -n 3 /var/log/legacy-broadcast-booting.log"
+	fi
 	return 1
 }
 # tvservice still the processes it was at ready (none dead, none respawned) and answering on Luna
@@ -389,6 +423,7 @@ fi
 case $step in
 boot) boot "${2:-300}" ;;
 ready) ready "${2:-300}" ;;
+tv-ready) tv_ready "${2:-60}" ;;
 tvservice) tvservice "$2" ;;
 home-idle) home_idle "${2:-60}" ;;
 standby-prep) standby_prep ;;
