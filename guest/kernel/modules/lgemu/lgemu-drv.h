@@ -11,7 +11,8 @@
  * - Parameters: the chip table's "a:b:c" values (guest/targets/soc/).
  * - Character devices at a vendor's fixed major (or a dynamic one).
  * - GPIO lines: the SoC's pins in the kernel's global numbering, for /sys/class/gpio.
- * - The graphics memory (gfx.c): the fops of the SoC's gfx node. */
+ * - The graphics memory (gfx.c): the fops of the SoC's gfx node.
+ * - The secondary screen's frame buffer (fb.c). */
 #ifndef LGEMU_DRV_H
 #define LGEMU_DRV_H
 #include <linux/cdev.h>
@@ -232,5 +233,14 @@ void lgemu_capture_to_yc(const u8 *rgba, u32 width, u32 height, u8 *y_plane, u8 
 int __lgemu_v4l2_capture_add(struct module *owner);
 /* undoes lgemu_v4l2_capture_add, if it added the node */
 void lgemu_v4l2_capture_remove(void);
+
+/* ---- the secondary screen's frame buffer (fb.c) ---- */
+
+/* A memory frame buffer at /dev/fb<node>, "fbnode:widthxheight" (32 bpp), for the compositor's
+ * second display: lgemu's own `fb`, or a SoC driver module's. -EBUSY when one is there already;
+ * 0 without registering when the kernel gives another node. */
+int lgemu_fb_add(const char *spec);
+/* undoes lgemu_fb_add */
+void lgemu_fb_remove(void);
 
 #endif

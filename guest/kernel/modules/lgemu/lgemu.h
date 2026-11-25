@@ -44,6 +44,8 @@ void lgemu_earc_exit(void);
 int lgemu_earc_bar_port(void);
 int lgemu_thermal_init(void);
 void lgemu_thermal_exit(void);
+int lgemu_fb_init(void);
+void lgemu_fb_exit(void);
 #if IS_ENABLED(CONFIG_I2C)
 int lgemu_i2c_adapters_init(void);
 void lgemu_i2c_adapters_exit(void);

@@ -33,6 +33,7 @@ static const struct {
     {"capture", lgemu_capture_init, lgemu_capture_exit},
     {"cec", lgemu_cec_init, lgemu_cec_exit},
     {"thermal", lgemu_thermal_init, lgemu_thermal_exit},
+    {"fb", lgemu_fb_init, lgemu_fb_exit},
 };
 
 static int __init lgemu_init(void)
