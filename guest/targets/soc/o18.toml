@@ -22,6 +22,12 @@
 #   amplifiers (RELEASE.cfg's AMP_NTP7519_2AMP, NTP7518_2AMP_F and _W) 0:0x54 and 0:0x56, at 7-bit
 #   addresses; the OLED rows on adapter 2 (TCON, PMIC, the OLED EEPROMs) are not modelled.
 #   GPIO: the device tree's 18 pl061 controllers, 144 lines.
+# - gpio_level 87:1: libdile_gpio's table (W19O and W19K, the same row in both) maps
+#   GPIO_RD_HAWK2_CMD_READY to line 87, and RELEASE.cfg has eHDMISwitchType HDMI_SWITCH_HAWK2, so
+#   the board has the HAWK2 HDMI 2.1 switch, which drives that line high while it is ready for a
+#   command. tvservice's hdmi21sw_drv_gpio_hawk2_cmd_ready polls it up to 1000 times at 1 ms for
+#   each HDMI port in every pass of its tHDMISignal thread, so a line stuck low costs ~800 wakeups
+#   a second.
 # The audio master, BE, logm and DVBv5 numbers are W19H's (m16p3.toml).
 
 base = "m16p3"
@@ -54,6 +60,7 @@ params = [
     "de_vtm_buffers=5",
     "de_src_status=56",
     "gpio_lines=144",
+    "gpio_level=87:1",
     "pe_hdr=0x7a100000",
     "amst=27:76:23:66:67",
     "be=0:16",
