@@ -538,6 +538,44 @@ class HelpersTest(unittest.TestCase):
         self.assertIsNone(locs)
         self.assertIn("no role or services.d file provides", src)
 
+    def test_non_utf8_file_names(self):
+        """A pak's file names that are not UTF-8 (N21D has a symlink usr/lib/\\xb1\\xfb) are listed,
+        followed and read, and go back to their bytes in an unsquashfs list file (tee_init_of)."""
+        import shutil
+        import subprocess
+        import tempfile
+
+        if not shutil.which("mksquashfs") or not shutil.which("unsquashfs"):
+            self.skipTest("no squashfs-tools here")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.fsencode(os.path.join(tmp, "src"))
+            os.makedirs(os.path.join(src, b"usr/lib"))
+            os.makedirs(os.path.join(src, b"usr/\xb1\xfb"))
+            with open(os.path.join(src, b"usr/lib/libvocon.so.4"), "wb") as f:
+                f.write(b"vocon")
+            os.symlink(b"libvocon.so.4", os.path.join(src, b"usr/lib/\xb1\xfb"))
+            with open(os.path.join(src, b"usr/\xb1\xfb/" + gen.TEE_INIT.encode()), "wb") as f:
+                f.write(b"chmod 666 /dev/tee0\n")
+            subprocess.run(
+                [
+                    "mksquashfs",
+                    src,
+                    os.path.join(tmp, "rootfs.pak"),
+                    "-quiet",
+                    "-noappend",
+                    "-no-progress",
+                ],
+                check=True,
+                capture_output=True,
+            )
+            fw = gen.Firmware(tmp)
+            odd = os.fsdecode(b"usr/lib/\xb1\xfb")
+            self.assertEqual(fw.files("rootfs.pak")[odd], "libvocon.so.4")
+            self.assertEqual(fw.find(odd), ("rootfs.pak", "usr/lib/libvocon.so.4"))
+            init = os.fsdecode(b"usr/\xb1\xfb/" + gen.TEE_INIT.encode())
+            self.assertEqual(fw.read("rootfs.pak", init), b"chmod 666 /dev/tee0\n")
+            self.assertEqual(gen.tee_init_of(fw, ["rootfs.pak"]), [f"rootfs.pak:/{init}"])
+
     def test_super_pak_firmware(self):
         """A super.pak firmware's rootfs and otncabi are logical images: the release and the browser's
         requiredEULA (the eula row) are read from them at their offsets."""

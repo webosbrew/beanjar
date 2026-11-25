@@ -85,14 +85,15 @@ class Firmware:
         return self._src.get(pak) or (os.path.join(self.dir, pak), 0)
 
     def files(self, pak):
-        """{path: symlink target or None} of a pak's files ({} when it is not squashfs)."""
+        """{path: symlink target or None} of a pak's files ({} when it is not squashfs). Names are
+        decoded as the file system's (os.fsdecode: UTF-8, any other byte as a lone surrogate), so a
+        name that is not UTF-8 (N21D's usr/lib/\\xb1\\xfb) is still a str that compares with the
+        generator's paths and goes back to its bytes as an unsquashfs argument or list line."""
         if pak not in self._lists:
             src, offset = self.source(pak)
-            r = subprocess.run(
-                ["unsquashfs", "-lls", "-o", str(offset), src], capture_output=True, text=True
-            )
+            r = subprocess.run(["unsquashfs", "-lls", "-o", str(offset), src], capture_output=True)
             out = {}
-            for line in r.stdout.splitlines():
+            for line in os.fsdecode(r.stdout).splitlines():
                 m = re.match(
                     r"^([dl-])\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+squashfs-root/(\S.*?)(?: -> (.*))?$",
                     line,
@@ -721,8 +722,8 @@ def tee_init_of(fw, pak_order):
             continue
         with tempfile.TemporaryDirectory() as d:
             lst = os.path.join(d, "list")
-            with open(lst, "w") as f:
-                f.write("".join(x + "\n" for x in files))
+            with open(lst, "wb") as f:
+                f.write(b"".join(os.fsencode(x) + b"\n" for x in files))
             subprocess.run(
                 [
                     "unsquashfs",
@@ -768,8 +769,8 @@ def tee_of(fw, pak_order, target):
             continue
         with tempfile.TemporaryDirectory() as d:
             lst = os.path.join(d, "list")
-            with open(lst, "w") as f:
-                f.write("".join(x + "\n" for x in files))
+            with open(lst, "wb") as f:
+                f.write(b"".join(os.fsencode(x) + b"\n" for x in files))
             subprocess.run(
                 [
                     "unsquashfs",
