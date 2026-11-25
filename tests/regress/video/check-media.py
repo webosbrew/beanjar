@@ -26,6 +26,9 @@ import re
 import struct
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+import tvsuite  # noqa: E402  (sound_status, judge_media_level: the TV's volume scales the recording)
+
 
 def ppm(path):
     d = open(path, "rb").read()
@@ -72,6 +75,9 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--rect", default="320,180,960,540")
     ap.add_argument("--no-audio", action="store_true")
+    ap.add_argument(
+        "--sound-status", help="the run's sound-status file (the TV's volume; none: unity)"
+    )
     ap.add_argument("--no-pause", action="store_true")
     a = ap.parse_args()
     rect = [int(v) for v in a.rect.split(",")]
@@ -164,10 +170,16 @@ def main():
             loud = [s for s in samples if s != 0.0]
             rms = math.sqrt(sum(s * s for s in loud) / len(loud)) if loud else 0
             db = 20 * math.log10(rms) if rms > 0 else -math.inf
+            try:
+                with open(a.sound_status, errors="replace") as f:
+                    status = tvsuite.sound_status(f.read())
+            except (OSError, TypeError):
+                status = None
+            ok, why = tvsuite.judge_media_level(db if db > -math.inf else None, status, -40.0)
             result(
-                db > -40,
+                ok,
                 f"media audio recorded: {len(loud) / 2 / 48000:.1f} s non-silent of {n / 2 / 48000:.1f} s, "
-                f"{db:.1f} dBFS",
+                f"{why}",
             )
     cpu = re.search(r"media: viewer cpu .*", log)
     if cpu:

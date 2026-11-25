@@ -2381,7 +2381,49 @@ DECODE_RECT = (
 )  # the page's video element, scaled to 1920x1080 (1/6 in, half the page)
 DECODE_SHOWN = 0.75  # share of the clip's pictures the viewer must show
 DECODE_SPAN = 1.5  # s: shown pts and the page's currentTime reach the clip's end within
-DECODE_AUDIO_DB = -40.0  # dBFS: the recorded media audio must be louder
+DECODE_AUDIO_DB = -40.0  # dBFS: the recorded media audio must be louder, at the TV's unity gain
+SOUND_UNITY = 65536  # sound-status gain (Q16) of the TV at full scale; the viewer core scales the media mix by it
+
+
+def sound_status(text):
+    """(gain, mute) of the TV's master volume from a sound-status file's text, as the viewer core
+    reads it (host/viewer/core/sound-status.c): the last whole line (ending in a newline) that has
+    gain=N, N capped at SOUND_UNITY; mute=1 when that line says so. None: no such line or no file
+    (unity, as the core does)."""
+    lines = (text or "").split("\n")[:-1]  # the last element is a partial line, or empty
+    for ln in reversed(lines):
+        m = re.search(r"(?:^| )gain=(\d+)(?= |$)", ln)
+        if m:
+            mute = re.search(r"(?:^| )mute=1(?= |$)", ln) is not None
+            return min(int(m.group(1)), SOUND_UNITY), mute
+    return None
+
+
+def gain_db(gain):
+    """The TV's gain in dB (Q16 gain; None for silence)."""
+    return 20 * math.log10(gain / SOUND_UNITY) if gain > 0 else None
+
+
+def judge_media_level(db, status, floor=DECODE_AUDIO_DB):
+    """(ok, text) for a recorded media level db (dBFS, None for none) against floor at the TV's
+    volume in status (sound_status(): (gain, mute), or None for unity). The viewer scales the media
+    mix by the gain, so the level must be louder than floor + the gain in dB. Mute or gain 0 is its
+    own result: the recording must then be silent, and a muted TV is no evidence of audio."""
+    gain, mute = status if status else (SOUND_UNITY, False)
+    if mute or gain == 0:
+        if db is None or db <= AUDIO_FLOOR:
+            return (
+                False,
+                "the TV is muted (sound-status mute=1 or gain=0): silence, no evidence of audio",
+            )
+        return False, f"the TV is muted (sound-status) yet {db} dBFS was recorded"
+    need = floor + gain_db(gain)
+    how = f"TV gain {gain}/{SOUND_UNITY} = {gain_db(gain):.1f} dB, floor {need:.1f} dBFS"
+    if db is None or db < need:
+        return False, f"recorded media audio {db if db is not None else '-inf'} dBFS ({how})"
+    return True, f"{db} dBFS ({how})"
+
+
 DECODE_HEADLESS = (
     "headless: no web engine, compositor or viewer to play and show the clips (graphics only)"
 )
@@ -2584,6 +2626,13 @@ def media_facts(d, rect=DECODE_RECT):
         if loud:
             rms = math.sqrt(sum(v * v for v in loud) / len(loud))
             out["wav_db"] = round(20 * math.log10(rms), 1) if rms > 0 else None
+    # the TV's volume while it played (the run's sound-status, copied beside the log)
+    try:
+        with open(os.path.join(d, "sound-status"), errors="replace") as f:
+            st = sound_status(f.read())
+    except OSError:
+        st = None
+    out["gain"], out["mute"] = st if st else (SOUND_UNITY, False)
     return out
 
 
@@ -2878,10 +2927,11 @@ def judge_decode(case, path, vcodec, acodec, exp, page, media, crashes_before=No
         elif a["frames"] < (DECODE_CLIP - 2) * 48000:
             bad.append(f"{a['frames'] / 48000:.1f} s of {acodec} audio played")
         db = media.get("wav_db")
-        if db is None or db < DECODE_AUDIO_DB:
-            bad.append(f"recorded media audio {db if db is not None else '-inf'} dBFS")
+        ok, why = judge_media_level(db, (media.get("gain", SOUND_UNITY), media.get("mute", False)))
+        if not ok:
+            bad.append(why)
         elif a:
-            good.append(f"{acodec} {a['frames'] / 48000:.1f} s, {db} dBFS")
+            good.append(f"{acodec} {a['frames'] / 48000:.1f} s, {why}")
     new = [c for c in page.get("crashes", []) if c not in (crashes_before or [])]
     if new:
         bad.append(f"crash reports: {' '.join(new)}")

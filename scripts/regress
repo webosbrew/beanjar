@@ -2177,7 +2177,8 @@ def tv_decode(h, a, r, out, target, ctx, state):
         h.run(
             f"python3 tests/regress/lib/tvsuite.py slice {log} {start[0]} {d}/viewer.log && "
             f"python3 tests/regress/lib/tvsuite.py slice {wav} {start[1]} {d}/media.wav && "
-            f"python3 tests/regress/lib/tvsuite.py slice {helper_log} {start[2]} {d}/media-helper.log; true",
+            f"python3 tests/regress/lib/tvsuite.py slice {helper_log} {start[2]} {d}/media-helper.log; "
+            f"tail -c 4096 {h.inst.run_dir}/sound-status > {d}/sound-status 2>/dev/null; true",  # the TV's volume
             60,
         )
         if item is None and not a.dry_run:

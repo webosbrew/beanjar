@@ -75,7 +75,7 @@ else
 	echo "viewer ran $(( $(date +%s) - start )) s after the launch"
 	python3 "$TOP/tests/regress/lib/tvsuite.py" slice "$HELPER_LOG" "$helper_start" "$OUT/media-helper.log"
 	case $SCRIPT in *pause*) checks= ;; *) checks=--no-pause ;; esac
-	python3 "$TOP/tests/regress/video/check-media.py" $checks "$OUT" && pass "media checks" || fail "media checks"
+	python3 "$TOP/tests/regress/video/check-media.py" $checks --sound-status "$TOP/build/sound-status" "$OUT" && pass "media checks" || fail "media checks"
 fi
 
 r=$(luna luna://com.webos.applicationManager/dev/closeByAppId "{\"id\":\"$APP_ID\"}")

@@ -1682,6 +1682,7 @@ def decode_dir(
     audio=True,
     window=True,
     whole=True,
+    quiet=False,
 ):
     """A decode case's viewer directory as decode_viewer leaves it: viewer.log, captures, media.wav."""
     import math
@@ -1737,9 +1738,69 @@ def decode_dir(
         f.write(b"\0" * 44)
         f.write(
             struct.pack(
-                "<%df" % (2 * n), *[0.3 * math.sin(i / 7.0) if audio else 0.0 for i in range(2 * n)]
+                "<%df" % (2 * n),
+                *[
+                    (0.002 if quiet else 0.3) * math.sin(i / 7.0) if audio else 0.0
+                    for i in range(2 * n)
+                ],
             )
         )
+
+
+class SoundGainTest(unittest.TestCase):
+    """The decode check's audio floor follows the TV's gain in sound-status (Q16, 65536 unity)."""
+
+    def test_parse(self):
+        ss = tvsuite.sound_status
+        self.assertEqual(ss("level=0x1 mute=0 gain=2117\n"), (2117, False))
+        self.assertEqual(ss("gain=10 mute=0\nlevel=0x2 mute=1 gain=0\n"), (0, True))
+        self.assertEqual(ss("gain=99999\n"), (65536, False))
+        self.assertEqual(ss("gain=5\ngain=7"), (5, False))  # the last line is not whole
+        self.assertIsNone(ss(""))
+        self.assertIsNone(ss(None))
+
+    def test_unity(self):
+        ok, why = tvsuite.judge_media_level(-30.0, (65536, False))
+        self.assertTrue(ok, why)
+        self.assertFalse(tvsuite.judge_media_level(-45.0, (65536, False))[0])
+        self.assertFalse(tvsuite.judge_media_level(None, None)[0])
+
+    def test_tv_volume(self):
+        ok, why = tvsuite.judge_media_level(-53.3, (2117, False))  # -29.8 dB
+        self.assertTrue(ok, why)
+        self.assertIn("gain 2117", why)
+        self.assertFalse(tvsuite.judge_media_level(-71.0, (2117, False))[0])
+
+    def test_mute(self):
+        ok, why = tvsuite.judge_media_level(None, (2117, True))
+        self.assertFalse(ok)
+        self.assertIn("muted", why)
+        self.assertFalse(tvsuite.judge_media_level(-20.0, (0, False))[0])
+        self.assertIn("yet -20.0", tvsuite.judge_media_level(-20.0, (0, True))[1])
+
+    def test_decode_reads_the_file(self):
+        import tempfile
+
+        page = tvsuite.page_facts(PAGE)
+        for status, verdict, text in (
+            (None, "FAIL", "-inf"),  # no file: unity; set below to a quiet recording
+            ("level=0x1 mute=0 gain=2117\n", "PASS", "gain 2117"),
+            ("level=0x1 mute=1 gain=0\n", "FAIL", "muted"),
+        ):
+            with tempfile.TemporaryDirectory() as d:
+                decode_dir(d, quiet=status is None or "gain=2117" in status)
+                if status:
+                    with open(os.path.join(d, "sound-status"), "w") as f:
+                        f.write(status)
+                m = tvsuite.media_facts(d)
+                item = tvsuite.judge_decode("file.h264", "file", "h264", "aac", {}, page, m)
+            if status is None:
+                self.assertEqual(m["gain"], 65536)
+                self.assertEqual(item[1], "FAIL")
+                self.assertIn("recorded media audio", item[2])
+            else:
+                self.assertEqual(item[1], verdict, item)
+                self.assertIn(text, item[2])
 
 
 PAGE = """page=start file media/file-h264.mp4
