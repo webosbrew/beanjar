@@ -178,7 +178,8 @@ int main(void)
     CHECK(images == NULL, "Mesa's image was taken as a pixmap's");
     destroy(dpy, image);
 
-    /* A pixmap this library does not take fails with an EGL error, as the caller checks */
+    /* A pixmap this library does not recognise goes to Mesa unchanged, which refuses it with an
+     * EGL error, as the caller checks */
     put(pixmap, 0x34, 2);
     image = create(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR, pixmap, NULL);
     CHECK(image == EGL_NO_IMAGE_KHR, "a 16-bit pixmap made an image");

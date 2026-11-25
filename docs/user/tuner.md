@@ -90,8 +90,9 @@ events = [
   They go out as CEA-608 CC1 in the pictures' user data (ATSC A/53), with the caption service
   descriptor in the PMT and the guide. They repeat with the picture, so they must fit in
   `loop_seconds`. `language` defaults to `eng`. The built-in 7.1 has a pair of test captions
-  (`lineups/captions-eng.scc` in the source). A US set finds and decodes them once its captions
-  are on, but does not draw them yet: its caption window's graphics are not emulated.
+  (`lineups/captions-eng.scc` in the source). A US set finds, decodes and draws them once its
+  captions are on (the system setting `caption`/`captionEnable`); drawing is checked on W23P
+  (K8LPN) so far.
 
 ### ARIB (Japan, ISDB-T)
 

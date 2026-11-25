@@ -26,8 +26,13 @@
  *
  * Like the empty stand-in (pvr-stub.c) the library NEEDs Mesa's libraries, so everything else
  * comes from Mesa. It defines eglGetProcAddress, which gives these two for their names and Mesa's
- * for the rest; any other image goes to Mesa unchanged. With /etc/default/mali-pixmap-debug
- * present, every pixmap image is logged to syslog (PmLog). */
+ * for the rest; any other image goes to Mesa unchanged.
+ *
+ * Built twice by the gl layer: as the vendor's one GL library (o22's libmali.so.0, which the
+ * firmware NEEDs), and on chips with the standard EGL ABI (gl_standard_abi) as libEGL.so.1 itself,
+ * the name libgm-wayland NEEDs, in front of Mesa's libEGL under another file name
+ * (MESA_EGL libEGL-mesa.so.1), as egl-window-formats.c is on m16p. With
+ * /etc/default/mali-pixmap-debug present, every pixmap image is logged to syslog (PmLog). */
 #define _GNU_SOURCE
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -65,9 +70,11 @@ static struct {
 
 static int mesa_load(void); /* the unit test has its own */
 #ifndef MALI_PIXMAP_TEST
+#ifndef MESA_EGL
 #define MESA_EGL "libEGL.so.1"
+#endif
 /* Mesa's own definitions: dlsym on its handle searches Mesa first (a global lookup would find this
- * library's eglGetProcAddress again). */
+ * library's eglGetProcAddress again). As the libEGL.so.1 wrapper, MESA_EGL is libEGL-mesa.so.1. */
 static int mesa_load(void)
 {
     if (mesa.proc && mesa.create && mesa.destroy)
@@ -151,7 +158,10 @@ static const uint8_t *map_phys(uint32_t phys, size_t size, void **base, size_t *
     return (const uint8_t *)*base + (offset - start);
 }
 
-static EGLImageKHR pixmap_image(EGLDisplay dpy, const void *pixmap)
+/* An image of a Mali pixmap; a pixmap this library does not recognise as one goes to Mesa as the
+ * caller made the call (ctx, attr), so it fails there with Mesa's own error. */
+static EGLImageKHR pixmap_image(EGLDisplay dpy, EGLContext caller_ctx, const void *pixmap,
+                                const EGLint *caller_attr)
 {
     uint32_t h = field(pixmap, PIXMAP_HEIGHT), w = field(pixmap, PIXMAP_WIDTH);
     uint32_t pitch = field(pixmap, PIXMAP_PITCH), bpp = field(pixmap, PIXMAP_BPP);
@@ -167,8 +177,8 @@ static EGLImageKHR pixmap_image(EGLDisplay dpy, const void *pixmap)
                "mali-pixmap: not a pixmap this library takes: %ux%u pitch %u bpp %u "
                "data %#lx flags %#x context %p",
                w, h, pitch, bpp, (unsigned long)data, flags, (void *)ctx);
-        /* A Mesa call that sets the error EGL_BAD_PARAMETER, as a driver would */
-        return mesa.create(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR, NULL, NULL);
+        return mesa.create(dpy, caller_ctx, EGL_NATIVE_PIXMAP_KHR, (EGLClientBuffer)pixmap,
+                           caller_attr);
     }
     const uint8_t *src = (const uint8_t *)data;
     void *map = NULL;
@@ -243,7 +253,7 @@ static EGLImageKHR create_image(EGLDisplay dpy, EGLContext ctx, EGLenum target,
     if (!mesa_load())
         return EGL_NO_IMAGE_KHR;
     if (target == EGL_NATIVE_PIXMAP_KHR && buffer)
-        return pixmap_image(dpy, buffer);
+        return pixmap_image(dpy, ctx, buffer, attr);
     return mesa.create(dpy, ctx, target, buffer, attr);
 }
 

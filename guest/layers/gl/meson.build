@@ -4,6 +4,10 @@
 # the compositor's KMS native window, and stubs for the PVR libraries. Nothing firmware-derived goes
 # in; the layer only adds files on top of the stock rootfs. All under /usr/lib unless noted:
 #   libEGL.so{,.1,.1.4}, libGLESv2.so{,.2,.2.0}  Mesa; the firmware links the unversioned names
+#                                               (gl_standard_abi with gl_vendor_mali_pixmap:
+#                                               libEGL's names are libEGL-mali-pixmap.so,
+#                                               images of Mali native pixmaps (src/mali-pixmap.c)
+#                                               over Mesa's, libEGL-mesa.so.1)
 #   libGLESv1_CM.so{,.1,.1.1}                   Mesa's GLES 1, under the vendor's names as on a set
 #   libgallium-*.so, libgbm.so.1, gbm/dri_gbm.so, libdrm.so.2
 #   libffi.so.6{,.0.1}                        our pinned 3.0.13, used by Wayland
@@ -137,6 +141,11 @@ endforeach
 # answers them without its GPU driver (src/mali-compute.c; m16p: LG's HAL loads libehsp, which
 # imports them from libmali).
 vendor_extra_src = get_variable('gl_vendor_mali_compute', false) ? ['src/mali-compute.c'] : []
+# Where a library of ours is libEGL.so.1 (gl_vendor_window_rgba, gl_egl_mali_pixmap below), Mesa's
+# libEGL is NEEDed as libEGL-mesa.so.1, the SONAME of an empty library linked for that only (the
+# layer ships Mesa's file under that name).
+mesa_egl_name = shared_library('EGL-mesa', 'src/pvr-stub.c', soversion: '1',
+  link_args: ['-nostdlib'], build_by_default: false)
 if gl_vendor_gl != ''
   # by the stage's unversioned names, which every version has (a -l would make Meson record the
   # file it resolves to when configuring, such as libwayland-egl.so.1.26.0, as an input)
@@ -171,13 +180,10 @@ if gl_vendor_gl != ''
   else
     # With the chip's gl_vendor_window_rgba: the vendor driver's window-config rule
     # (src/egl-window-formats.c), and the library stands in for the vendor's libEGL wrappers too.
-    # Mesa's libEGL is NEEDed as libEGL-mesa.so.1, the SONAME of an empty library linked for
-    # that only (the layer ships Mesa's file under that name), as libEGL.so.1 is this library.
+    # Mesa's libEGL is NEEDed as libEGL-mesa.so.1 (mesa_egl_name), as libEGL.so.1 is this library.
     if vendor_soname != '' or 'EGL' not in gl_vendor_gl_needs
       error('gl_vendor_window_rgba: needs EGL in gl_vendor_gl_needs and no gl_vendor_gl_soname')
     endif
-    mesa_egl_name = shared_library('EGL-mesa', 'src/pvr-stub.c', soversion: '1',
-      link_args: ['-nostdlib'], build_by_default: false)
     other_needs = []
     foreach n : gl_vendor_gl_needs
       if n != 'EGL'
@@ -196,6 +202,27 @@ if gl_vendor_gl != ''
                   '-L' + mesa_lib, '-Wl,--no-as-needed'] + other_needs,
       link_depends: mesa)}
   endif
+endif
+
+# Chips with the standard EGL ABI (gl_standard_abi, no vendor library) and the soc table's
+# gl_vendor_mali_pixmap: libgm-wayland, the window of the broadcast services' captions and of
+# hybridtv-manager's data broadcast, makes an EGLImage of a Mali native pixmap on each update
+# (GM_WL_UpdateWindow, W23P 33.31.61), with the eglCreateImageKHR of eglGetProcAddress, which Mesa
+# refuses. It NEEDs libEGL.so.1 and no vendor library, so this library is libEGL.so.1:
+# src/mali-pixmap.c, the o22 vendor library's code, in front of Mesa's libEGL (libEGL-mesa.so.1,
+# mesa_egl_name), as m16p's window-format rule is. It defines only eglGetProcAddress and takes only
+# EGL_NATIVE_PIXMAP_KHR images of a Mali pixmap; every other call is Mesa's unchanged
+# (docs/research/tuner-emulation.md, "Captions on the standard-ABI chips").
+gl_egl_mali_pixmap = (gl_vendor_gl == '' and get_variable('gl_standard_abi', false)
+                      and get_variable('gl_vendor_mali_pixmap', false))
+if gl_egl_mali_pixmap
+  egl_mali_pixmap = shared_library('EGL-mali-pixmap', 'src/mali-pixmap.c',
+    dependencies: mesa_dep,
+    c_args: ['-fvisibility=hidden', '-DMESA_EGL="libEGL-mesa.so.1"'],
+    link_with: mesa_egl_name,
+    link_args: ['-Wl,--hash-style=both', '-Wl,-soname,libEGL.so.1', '-ldl', '-lpthread',
+                '-L' + mesa_lib, '-Wl,--no-as-needed', mesa_lib / 'libGLESv2.so'],
+    link_depends: mesa)
 endif
 
 # ---- the layer ----
@@ -287,6 +314,12 @@ if fw_wayland == ''
 endif
 if gl_adapt_compositor
   links += {'libstarfishsurface.so.0.0.0': ['libstarfishsurface.so.0']}
+endif
+if gl_egl_mali_pixmap
+  # every libEGL name but Mesa's own file is the pixmap library (above)
+  gl_layer_args += ['--file', egl_mali_pixmap, L + 'libEGL-mali-pixmap.so', '755']
+  links += {'libEGL.so.1.0.0': ['libEGL-mesa.so.1'],
+            'libEGL-mali-pixmap.so': ['libEGL.so', 'libEGL.so.1', 'libEGL.so.1.4']}
 endif
 if gl_window_rgba.length() > 0
   # every libEGL name but Mesa's own file is the vendor library (above), as on the set

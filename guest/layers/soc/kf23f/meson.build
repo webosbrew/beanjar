@@ -13,6 +13,9 @@ gl_vendor_stubs = []
 gl_vendor_gl = 'mali'
 gl_vendor_gl_soname = 'libmali.so.0'
 gl_standard_abi = false
+# K8LP's libEGL stand-in for libgm-wayland's Mali pixmaps is for the standard ABI; this vendor
+# library stays the empty one (not checked here whether libgm-wayland needs it on this chip)
+gl_vendor_mali_pixmap = false
 
 soc_layer_trees += ['--tree', meson.current_source_dir() / 'rootfs', '.']
 # The OpenGL ES version of the chip's GPU (gl_es_version), at most which the gl layer's Mesa
