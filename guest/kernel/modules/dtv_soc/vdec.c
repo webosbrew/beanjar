@@ -20,11 +20,18 @@
  *   lifts its mute, after a FRAME event of a sequence header followed by a PICINFO whose timing
  *   differs from nothing (a PICINFO before any sequence header is dropped).
  * - DECODER_STATUS (24 bytes) now and then, for logs and the stop check.
+ * - captions (W23P 33.31.61 and 43.22.76, static reading): a USERDATA event per picture with user
+ *   data, in display order. Its data is the user data's length (u32, bytes 0 to 3), the picture's
+ *   type (byte 4), repeat_first_field (5), top_field_first (6) and temporal_reference's low byte
+ *   (7); the service then reads that many bytes with G_EXT_CTRLS V4L2_CID_EXT_VDEC_USER_EVENT_DATA:
+ *   the user_data() after its start code ('GA94', type 3, cc_data for A/53 captions), at most 128
+ *   bytes. Its caption task takes 608 or 708 from the cc_data itself.
  * So the decoder reads the stream's MPEG-2 headers as the SoC's decoder does: a sequence header
  * gives the FRAME event of type 0 and, the first time and whenever the picture's format changes,
- * the PICINFO; each picture header a FRAME event of its type. Only MPEG-2 is read; another codec
- * is passed on to the host without events. The 32-bit userland's structures, as the compat
- * ioctls carry them. */
+ * the PICINFO; each picture header a FRAME event of its type; a picture's user data, put back in
+ * display order (a B picture's at once, an I or P picture's at the next I or P), a USERDATA. Only
+ * MPEG-2 is read; another codec is passed on to the host without events. The 32-bit userland's
+ * structures, as the compat ioctls carry them. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": vdec: " fmt
 #include <linux/cdev.h>
 #include <linux/compat.h>
@@ -73,11 +80,21 @@
 #define CHANNELS           4
 #define EVENTS             32
 #define CTRLS              16
-#define CARRY              15 /* a start code and the longest header read, less a byte */
+#define CARRY              15           /* a start code and the longest header read, less a byte */
+#define UD_MAX             128          /* a picture's user data, as the service keeps it */
+#define UD_BUF             (UD_MAX + 8) /* and the next start code's bytes that end it */
 
 struct picinfo {
     u32 h, v, aspect, bitrate, num, den;
     bool progressive;
+};
+
+/* a picture's user data and what the USERDATA event says of the picture */
+struct userdata {
+    u8 type, rff, tff, tref;
+    u32 pts;
+    unsigned int len;
+    u8 data[UD_BUF];
 };
 
 struct vdec_file {
@@ -97,6 +114,13 @@ struct vdec_file {
     bool seq_seen, have_info;
     struct picinfo info, sent;
     u32 pictures, sequences, errors;
+    /* user data: the current picture's, an I or P picture's held for display order, and those
+     * sent in USERDATA events, read in order with G_EXT_CTRLS */
+    struct userdata cur, held;
+    bool in_picture, collecting, holding;
+    struct userdata sent_ud[EVENTS];
+    unsigned int ud_head, ud_count;
+    u32 userdata;
 };
 
 static DEFINE_SPINLOCK(lock); /* the files, their state and events; taken in packet context */
@@ -123,7 +147,11 @@ static void event(struct vdec_file *f, u32 id, const u8 *data, size_t size)
 
     if (!(f->subs & BIT(id - EV_FRAME)))
         return;
-    if (f->count == EVENTS) { /* the oldest goes */
+    if (f->count == EVENTS) { /* the oldest goes, and its user data if it had some */
+        if (get_unaligned_le32(f->events[f->head] + 88) == EV_USERDATA && f->ud_count) {
+            f->ud_head = (f->ud_head + 1) % EVENTS;
+            f->ud_count--;
+        }
         f->head = (f->head + 1) % EVENTS;
         f->count--;
     }
@@ -152,15 +180,88 @@ static void frame_event(struct vdec_file *f, u8 type)
     event(f, EV_FRAME, d, sizeof(d));
 }
 
+/* a picture's user data out: its USERDATA event, the bytes kept for the service's read */
+static void userdata_event(struct vdec_file *f, const struct userdata *u)
+{
+    u8 d[12];
+
+    if (!u->len || !(f->subs & BIT(EV_USERDATA - EV_FRAME)))
+        return;
+    if (f->ud_count == EVENTS) { /* cannot be: each has its event, which go first */
+        f->ud_head = (f->ud_head + 1) % EVENTS;
+        f->ud_count--;
+    }
+    f->sent_ud[(f->ud_head + f->ud_count++) % EVENTS] = *u;
+    put_unaligned_le32(u->len, d);
+    d[4] = u->type;
+    d[5] = u->rff;
+    d[6] = u->tff;
+    d[7] = u->tref;
+    put_unaligned_le32(u->pts, d + 8);
+    f->userdata++;
+    event(f, EV_USERDATA, d, sizeof(d));
+}
+
 /* ---- the stream's headers ----
- * MPEG-2's sequence header, sequence extension and picture headers, as the start codes come in the
- * video packets' payload (a start code may be split over two packets). */
+ * MPEG-2's sequence header, sequence extension, picture headers, picture coding extensions and the
+ * pictures' user data, as the start codes come in the video packets' payload (a start code may be
+ * split over two packets, user data over several). */
+
+/* the user data being read ends: at the first start code after it, whose bytes it may hold */
+static void userdata_end(struct vdec_file *f)
+{
+    struct userdata *u = &f->cur;
+
+    if (!f->collecting)
+        return;
+    f->collecting = false;
+    for (unsigned int i = 0; i + 2 < u->len; i++)
+        if (!u->data[i] && !u->data[i + 1] && u->data[i + 2] == 1) {
+            u->len = i;
+            break;
+        }
+    u->len = min(u->len, (unsigned int)UD_MAX);
+}
+
+static void userdata_add(struct vdec_file *f, const u8 *p, unsigned int n)
+{
+    struct userdata *u = &f->cur;
+
+    n = min(n, (unsigned int)UD_BUF - u->len);
+    memcpy(u->data + u->len, p, n);
+    u->len += n;
+}
+
+/* the current picture ends (the next one starts): its user data in display order */
+static void picture_end(struct vdec_file *f)
+{
+    userdata_end(f);
+    if (!f->in_picture)
+        return;
+    f->in_picture = false;
+    if (f->cur.type == 3) { /* B: shown before the I or P picture held */
+        userdata_event(f, &f->cur);
+        return;
+    }
+    if (f->holding)
+        userdata_event(f, &f->held);
+    f->held = f->cur;
+    f->holding = true;
+}
+
 static const u32 rates[9][2] = {{0, 1},  {24000, 1001}, {24, 1},       {25, 1}, {30000, 1001},
                                 {30, 1}, {50, 1},       {60000, 1001}, {60, 1}};
 
 /* a start code's byte b and the bytes after it in the packet's rest (n of them) */
 static void start_code(struct vdec_file *f, u8 b, const u8 *p, unsigned int n)
 {
+    userdata_end(f); /* any start code ends user data */
+    if (b == 0xb5 && n >= 4 && p[0] >> 4 == 8 && f->in_picture) { /* picture coding extension */
+        f->cur.tff = p[3] >> 7;
+        f->cur.rff = p[3] >> 1 & 1;
+    }
+    if (b == 0xb3 || b == 0xb8) /* a sequence or GOP header: after the picture */
+        picture_end(f);
     if (b == 0xb3 && n >= 7) { /* sequence header */
         struct picinfo i = f->info;
         unsigned int rate;
@@ -185,6 +286,13 @@ static void start_code(struct vdec_file *f, u8 b, const u8 *p, unsigned int n)
     } else if (b == 0x00 && n >= 2 && f->seq_seen) { /* picture header */
         u8 type = p[1] >> 3 & 7;
 
+        picture_end(f);
+        memset(&f->cur, 0, offsetof(struct userdata, data));
+        f->cur.type = type;
+        f->cur.tref = p[0] << 2 | p[1] >> 6; /* temporal_reference's low byte */
+        f->cur.pts = f->pts == U64_MAX || f->pts_used ? 0 : (u32)f->pts;
+        f->in_picture = true;
+
         /* the sequence's picture info, once complete (its extension read) */
         if (!f->have_info || memcmp(&f->info, &f->sent, sizeof(f->info))) {
             f->sent = f->info;
@@ -203,7 +311,18 @@ static void start_code(struct vdec_file *f, u8 b, const u8 *p, unsigned int n)
 /* the bytes a header needs after its start code */
 static unsigned int header_size(u8 b)
 {
-    return b == 0xb3 ? 7 : b == 0xb5 || b == 0x00 ? 2 : 0;
+    return b == 0xb3 ? 7 : b == 0xb5 ? 4 : b == 0x00 ? 2 : 0;
+}
+
+/* user data starts (its start code read): its bytes are the rest of the packet and what follows,
+ * up to the next start code */
+static void userdata_start(struct vdec_file *f, const u8 *p, unsigned int n)
+{
+    userdata_end(f);
+    if (!f->in_picture || f->cur.len)
+        return; /* the sequence's or the GOP's, or a picture's second: not the captions' */
+    f->collecting = true;
+    userdata_add(f, p, n);
 }
 
 /* the payload of a video packet: its start codes, across packets. A header that does not end in
@@ -213,17 +332,25 @@ static void scan(struct vdec_file *f, const u8 *p, unsigned int n)
     u8 head[2 * CARRY];
     unsigned int k = f->carried, m = k + min(n, (unsigned int)CARRY), keep;
 
+    if (f->collecting)
+        userdata_add(f, p, n);
     memcpy(head, f->carry, k);
     memcpy(head + k, p, m - k);
     /* those that begin in the carried bytes and did not end there */
     for (unsigned int i = 0; i < k && i + 3 < m; i++)
         if (!head[i] && !head[i + 1] && head[i + 2] == 1 && i + 4 + header_size(head[i + 3]) > k &&
-            i + 4 + header_size(head[i + 3]) <= m)
-            start_code(f, head[i + 3], head + i + 4, m - i - 4);
+            i + 4 + header_size(head[i + 3]) <= m) {
+            if (head[i + 3] == 0xb2)
+                userdata_start(f, p + (i + 4 - k), n - (i + 4 - k));
+            else
+                start_code(f, head[i + 3], head + i + 4, m - i - 4);
+        }
     /* those that end in this one */
     for (unsigned int i = 0; i + 3 < n; i++)
         if (!p[i] && !p[i + 1] && p[i + 2] == 1) {
-            if (i + 4 + header_size(p[i + 3]) <= n)
+            if (p[i + 3] == 0xb2)
+                userdata_start(f, p + i + 4, n - i - 4);
+            else if (i + 4 + header_size(p[i + 3]) <= n)
                 start_code(f, p[i + 3], p + i + 4, n - i - 4);
             i += 2;
         }
@@ -329,7 +456,8 @@ static void stop(struct vdec_file *f)
 static long extended(struct vdec_file *f, unsigned int cmd, void __user *arg)
 {
     u32 group[6], control[5];
-    u8 data[PICINFO_SIZE];
+    u8 data[UD_BUF];
+    unsigned int size;
     unsigned long flags;
     long ret = 0;
 
@@ -341,15 +469,25 @@ static long extended(struct vdec_file *f, unsigned int cmd, void __user *arg)
         return -EFAULT;
     if (cmd == S_EXT)
         return 0; /* the stream's modes: kept by the service, nothing here to change */
+    size = control[1];
     spin_lock_irqsave(&lock, flags);
-    if (control[0] == CID_PICINFO_EXT && control[1] == PICINFO_SIZE && f->have_info)
+    if (control[0] == CID_PICINFO_EXT && control[1] == PICINFO_SIZE && f->have_info) {
         fill_picinfo(f, data);
-    else if (control[0] == CID_DECODER_STATUS && control[1] == STATUS_SIZE)
+    } else if (control[0] == CID_DECODER_STATUS && control[1] == STATUS_SIZE) {
         fill_status(f, data);
-    else
+    } else if (control[0] == CID_USER_EVENT && f->ud_count) {
+        /* the oldest USERDATA event's bytes: the service reads each after its event */
+        const struct userdata *u = &f->sent_ud[f->ud_head];
+
+        size = min(size, u->len);
+        memcpy(data, u->data, size);
+        f->ud_head = (f->ud_head + 1) % EVENTS;
+        f->ud_count--;
+    } else {
         ret = control[0] == CID_USER_EVENT ? -ENODATA : -EINVAL;
+    }
     spin_unlock_irqrestore(&lock, flags);
-    if (!ret && copy_to_user(compat_ptr(control[3]), data, control[1]))
+    if (!ret && copy_to_user(compat_ptr(control[3]), data, size))
         ret = -EFAULT;
     return ret;
 }
@@ -398,7 +536,9 @@ static long vdec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             f->seq_seen = f->have_info = false;
             f->carried = 0;
             f->pts = U64_MAX;
-            f->pictures = f->sequences = f->errors = 0;
+            f->pictures = f->sequences = f->errors = f->userdata = 0;
+            f->in_picture = f->collecting = f->holding = false;
+            f->ud_count = 0;
             memset(&f->info, 0, sizeof(f->info));
             active = f;
         } else if (!start) {
@@ -554,10 +694,10 @@ void vdec_show(struct seq_file *m)
     list_for_each_entry(f, &files, link)
         seq_printf(m,
                    "vdec channel %u %s fourcc %#x subs %#x sequences %u pictures %u errors %u "
-                   "picinfo %ux%u %u/%u%s events queued %u\n",
+                   "picinfo %ux%u %u/%u%s events queued %u userdata %u\n",
                    f->channel, f->streaming ? "streaming" : "stopped", f->fourcc, f->subs,
                    f->sequences, f->pictures, f->errors, f->sent.h, f->sent.v, f->sent.num,
-                   f->sent.den, f->sent.progressive ? " progressive" : "", f->count);
+                   f->sent.den, f->sent.progressive ? " progressive" : "", f->count, f->userdata);
     spin_unlock_irqrestore(&lock, flags);
 }
 

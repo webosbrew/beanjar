@@ -6,7 +6,10 @@ an elementary stream cut into packet payloads at every offset: a sequence header
 event of type 0, the first picture after it the PICINFO (once; again only when the format
 changes), each picture header a FRAME event of its type, whether or not a start code is split over
 two payloads; the picture info is the sequence header's size, frame rate and bit rate, progressive
-as its extension says."""
+as its extension says. A picture's user data (captions' A/53 cc_data) comes out whole, cut at the
+next start code, with its picture's type, temporal reference and field flags, in display order:
+a B picture's at once, an I or P picture's at the next I or P picture; a sequence's or a GOP's
+user data is not a picture's."""
 
 import subprocess
 from pathlib import Path
@@ -17,6 +20,7 @@ MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/dtv_soc"
 
 RUNNER = r"""
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,17 +32,39 @@ typedef uint64_t u64;
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define EV_PICINFO 0x8002
 #define CARRY 15
+#define UD_MAX 128
+#define UD_BUF (UD_MAX + 8)
+#define U64_MAX UINT64_MAX
 struct picinfo {
     u32 h, v, aspect, bitrate, num, den;
     bool progressive;
 };
+struct userdata {
+    u8 type, rff, tff, tref;
+    u32 pts;
+    unsigned int len;
+    u8 data[UD_BUF];
+};
 struct vdec_file {
     u8 carry[CARRY];
     unsigned int carried;
+    u64 pts;
+    bool pts_used;
     bool seq_seen, have_info;
     struct picinfo info, sent;
     u32 pictures, sequences, errors;
+    struct userdata cur, held;
+    bool in_picture, collecting, holding;
 };
+static void userdata_event(struct vdec_file *f, const struct userdata *u)
+{
+    if (!u->len)
+        return;
+    printf("userdata type %u tref %u tff %u rff %u:", u->type, u->tref, u->tff, u->rff);
+    for (unsigned i = 0; i < u->len; i++)
+        printf(" %02x", u->data[i]);
+    printf("\n");
+}
 static void event(struct vdec_file *f, u32 id, const u8 *d, size_t n)
 {
     printf("picinfo %ux%u %u/%u aspect %u bitrate %u progressive %d\n", f->sent.h, f->sent.v,
@@ -52,7 +78,7 @@ static void frame_event(struct vdec_file *f, u8 type)
 int main(int argc, char **argv)
 {
     static u8 buf[1 << 16];
-    static struct vdec_file f;
+    static struct vdec_file f = {.pts = U64_MAX};
     size_t n = fread(buf, 1, sizeof buf, stdin), cut = (size_t)atoi(argv[1]);
     for (size_t at = 0; at < n; at += cut)
         scan(&f, buf + at, (unsigned)min(cut, n - at));
@@ -85,8 +111,18 @@ def extension(progressive):
     return bytes([0, 0, 1, 0xB5, 0x14, 0x82 | progressive << 3, 0x01, 0x00, 0x01, 0x00])
 
 
-def picture(kind):
-    return bytes([0, 0, 1, 0x00, 0x00, kind << 3, 0xFF, 0xF8]) + bytes(40)
+def picture(kind, tref=0, cc=None, tff=1):
+    """A picture header, its coding extension (top_field_first) and, with cc, the A/53 user
+    data carrying that 608 pair, then a slice."""
+    head = bytes([0, 0, 1, 0x00, tref >> 2, (tref & 3) << 6 | kind << 3, 0xFF, 0xF8])
+    head += bytes([0, 0, 1, 0xB5, 0x8F, 0xFF, 0xF3, tff << 7 | 0x41, 0x80])
+    if cc is not None:
+        head += user_data(cc)
+    return head + bytes([0, 0, 1, 0x01]) + bytes(40)
+
+
+def user_data(cc):
+    return bytes([0, 0, 1, 0xB2]) + b"GA94\x03\x42\xff\xfc" + cc + b"\xfd\x80\x80\xff"
 
 
 @pytest.fixture(scope="module")
@@ -149,3 +185,29 @@ def test_no_picture_before_a_sequence(runner):
         "frame 1",
         "sequences 1 pictures 1 errors 0",
     ]
+
+
+def test_user_data_in_display_order_any_cut(runner):
+    """Coded I0 P3 B1 B2 P6 B4 B5 comes out displayed: 0 1 2 3 4 5, then 6 at the next GOP's I.
+    A picture without user data has no event.
+    The sequence's and the GOP's own user data are not a picture's."""
+    gop = (
+        sequence(704, 480, 2, 4, 3750)
+        + extension(0)
+        + user_data(b"\x11\x11")  # the sequence's
+        + bytes([0, 0, 1, 0xB8, 0, 8, 0, 0x40])  # GOP header
+        + user_data(b"\x22\x22")  # the GOP's
+    )
+    coded = [(1, 0), (2, 3), (3, 1), (3, 2), (2, 6), (3, 4), (3, 5)]
+    data = gop + b"".join(picture(k, t, bytes([0x40 + t, 0x80])) for k, t in coded)
+    # P6 is shown before the next I, so it goes once that I has ended: at the picture after it
+    data += gop + picture(1, 0, bytes([0x50, 0x80]), tff=0) + picture(2, 3)
+
+    def ud(kind, tref, b, tff=1):
+        return f"userdata type {kind} tref {tref} tff {tff} rff 0: 47 41 39 34 03 42 ff fc {b:02x} 80 fd 80 80 ff"
+
+    want = [ud(k, t, 0x40 + t) for k, t in sorted(coded, key=lambda c: c[1])][:6]
+    want += [ud(2, 6, 0x46)]  # P6, at the next I
+    for cut in (len(data), 184, 100, 13, 7, 5, 4, 3, 2, 1):
+        got = [line for line in run(runner, data, cut) if line.startswith("userdata")]
+        assert got == want, cut
