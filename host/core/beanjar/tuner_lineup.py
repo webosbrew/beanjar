@@ -207,9 +207,11 @@ def _unique(w, where, values, what):
 
 def _media(w, where, s, base, check):
     """A service's picture, label and sound."""
+    picture = _picture(w, f"{where}.picture", s.get("picture", "testsrc2"), base, check)
     return {
-        "picture": _picture(w, f"{where}.picture", s.get("picture", "testsrc2"), base, check),
-        "label": _bool(w, f"{where}.label", s.get("label", False)),
+        "picture": picture,
+        # the label goes on a test pattern, not over a picture of the user's, unless asked
+        "label": _bool(w, f"{where}.label", s.get("label", "pattern" in picture)),
         "sound": _sound(w, f"{where}.sound", s.get("sound", {"tone": 1000}), base, check),
     }
 

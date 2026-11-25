@@ -32,6 +32,7 @@ service_id = 0x0400
 name = "ビーンジャー１"
 provider = "ビーンジャー"
 picture = "smptebars"
+label = false
 sound = { tone = 1000 }
 bml = "arib-bml"
 events = [

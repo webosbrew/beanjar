@@ -101,6 +101,7 @@ def main():
         ).stdout
     )
     mapped = [c["channel"] for c in st["channels"] if c["mapped"] and not c.get("stream")]
+    streams = [c["channel"] for c in st["channels"] if c["mapped"] and c.get("stream")]
     lineup = json.loads(
         subprocess.run(
             [BEANJAR, "io", "tuner", "lineup", "show", a.name, "--json"],
@@ -112,7 +113,7 @@ def main():
     )["values"]
     broadcast = st.get("broadcast", "atsc")
     service = f"legacy-broadcast-{broadcast}"
-    if not mapped:
+    if not mapped and not streams:
         print("FAIL: no channel mapped (beanjar io tuner map NAME RF...)")
         return 1
     for _ in range(90):  # legacy-broadcast runs a while after boot
@@ -157,6 +158,8 @@ def main():
         on_air.setdefault(n, set()).add(title)
     missing = sorted(set(want) - set(got_channels))
     extra = sorted(set(got_channels) - set(want))
+    # a user's stream's services are its own: found, not expected
+    from_streams, extra = (extra, []) if streams else ([], extra)
     no_event = sorted(n for n, title in want.items() if title not in on_air.get(n, ()))
     numbers = {
         "broadcast": broadcast,
@@ -171,6 +174,8 @@ def main():
         "events_listed": int(r.get("events", ["0"])[0] or 0),
         "missing": missing,
         "extra": extra,
+        "stream_rf": streams,
+        "from_streams": from_streams,
         "without_current_event": no_event,
     }
     print(json.dumps(numbers))

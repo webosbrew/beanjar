@@ -105,6 +105,9 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(svc["long_name"], "MINE")
         self.assertEqual(svc["program"], 1)
         self.assertEqual(svc["picture"], {"pattern": "testsrc2"})
+        self.assertTrue(svc["label"])  # a test pattern is labelled; a picture of the user's not
+        own = parse(ATSC_MIN + 'picture = { image = "a.png" }\n', check_files=False)
+        self.assertFalse(own["rf"][0]["services"][0]["label"])
         self.assertEqual(svc["events"], [{"title": "Show", "minutes": 30, "text": ""}])
         self.assertEqual(lu["timezone"], "America/New_York")
         self.assertEqual(lu["video"], tuner_lineup.default("atsc")["video"])  # the built-in's
