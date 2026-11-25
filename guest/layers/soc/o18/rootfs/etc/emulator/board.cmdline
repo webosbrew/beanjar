@@ -1,0 +1,36 @@
+# Board parameters the LG bootloader (lxboot) puts on the kernel command line, as on M16P
+# (guest/layers/soc/m16p/rootfs/etc/emulator/board.cmdline says who reads them). W19O's lxboot
+# (lxboot.pak 05.50.00, V4.04.37) has W19H's format and prints 6 ToolOpt words; its chip table maps
+# lg1211 to O18, which W19O's kernel (4.4.84-169.gld4tv.5) reads as id 0x22 with the revision:
+# chip=O18A0, CHIP_REV 0x22a0 (guest/targets/soc/o18.toml). Its supportR9 (the rollable R9's jobs)
+# is not given.
+#
+# The values describe an OLED65C9PUA, a US model the models DB lists for this firmware's OTA ID
+# (HE_DTV_W19O_AFABATAA: US, CA_EN), proposed by host/tools/research/model-config.py from W19O
+# 05.50.00's own tables with szCountryGroupCode=US continent=10 eLanguageCountry=LANG_COUNTRY_US
+# eHWSettingGroup=HWSETTING_US tuner=none ddr_size=DDR_SIZE_3G; they are not read from a real set.
+# This ATSC firmware's RELEASE.cfg is the factory default of a Korean 65" C9 (BOARD_O18_ATSC_KR,
+# TOOL_C9, INCH_65): the region values here are the US group's of the same tables.
+ethaddr=a8:23:fe:12:34:56 rev=1 chip=O18A0 bver=4.04.37 devtmpfs.mount=1
+# 7.5 GB eMMC, as the others (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# 16 straps: W19O's kernel reads none (its BASE_PLT_Probe is O18's, above); libdile_boardinfo reads
+# the line. W19H's line (M16PP's straps), the strap tables not decoded.
+modelopt=0010010000000000
+# 18 digits, W19O's hardware option fields as model-config.py encodes them for its tvconfig-gen:
+# country US (digit 0 '0': W19O's gmodelopt_country_type is US, KR, BR, KR), V-by-One, UD panel,
+# panel V18, the US row of gmodelopt_lg1211_tuner_comb, DDR 3 GB (digit 11 '6': lxboot knows only
+# 3.0GB boards, "3.0GB" and "3.0GB,QUHD"; the kernel's default too), graphic resolution 1920x1080,
+# FRC type 0 (digit 17: the kernel's FRC internal)
+hwopt=002217000006002000
+# 6 tool option words (lxboot prints ToolOption1..6 of W19O's tvservice; the EEPROM keeps all 9),
+# RELEASE.cfg's C9 defaults, the model's own series and inch: ToolOpt1 INCH_65, TOOL_C9, OLED;
+# ToolOpt3 AMP_NTP7519_2AMP ("[i2c]NTP2AMP_M:1:0x54" and "_W:1:0x56"); ToolOpt4 the HAWK2 HDMI
+# switch; ToolOpt5 row 3 of video_external_input_adjust (HDMI x4)
+ToolOpt=2097297:19:1234:193:59218019:1884281673
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=OLED65C9PUA serialNum=905RAXX00002
+cmdEnd

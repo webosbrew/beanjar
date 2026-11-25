@@ -6,7 +6,7 @@
 # and off, screenshots. Leaves nothing behind (the volume is set to what it was). The replies that
 # name the firmware or differ between its tvservice releases are chosen by the board's chip= and modelName=
 # (guest/layers/soc/<chip>/rootfs/etc/emulator/board.cmdline): WT1H on H13, W15M on M14, W15U on LM15U, W15L on mtka5lr (A5LR), W16R on M2, W17H
-# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W18M on M16PP lite (a 43UK6300PJF), W19H on M16P3 (a 55SM9000PUA), W17R on M2R, W18R on M3, W18A on LM18A, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
+# on M16P, W17M on M16P lite (a 43UJ6300-UA), W18H on M16PP (a 55SK8000PUA), W18M on M16PP lite (a 43UK6300PJF), W19H on M16P3 (a 55SM9000PUA), W19O on O18 (an OLED65C9PUA), W17R on M2R, W18R on M3, W18A on LM18A, W19R on M3R and W19P on K5LP. Every later board (webOS 5 on: only the services they still
 # have) takes its expectations from the firmware's own files (model_id.json, tvconfig) and the firmware's name.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/tvservice/app-calls.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/tvservice/app-calls.sh [FIRMWARE]
@@ -109,6 +109,15 @@ M16P*/43UK6300*) model=W18M ota=AFADJAAA fw=05.50.60 platform=lg1313c sound_bad_
 	private_answer='Denied method call' tv_system=arib
 	no_keys='contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
 	tool_options='"panelInch":"43","backlightType":"edgeLed","cameraReady":"off","headphone":"true"'
+	reset3d='"returnValue":true' ;;
+# W19O (O18: lxboot's chip=O18A0), webOS 4.10 on LG's own SoC, the ATSC build: an OLED65C9PUA
+# (US), RELEASE.cfg's C9 defaults: an OLED panel, no camera, a headphone output; tvservice lists HDMI
+# x4 (row 3 of video_external_input_adjust). The rest as W19H's.
+O18*)   model=W19O ota=AFABATAA fw=05.50.00 platform=lg1211 sound_bad_type=SOUND_ERROR_013
+	capture_no_video='CAPTURE_ERROR_01 CAPTURE_ERROR_09' max_devices= calibration= inputs=4
+	input_count=deviceid private_answer='Denied method call' tv_system=atsc
+	no_keys='clearPlus contiLockRatingAU contiLockRatingNZ contiLockRatingSG'
+	tool_options='"panelInch":"65","backlightType":"oled","cameraReady":"off","headphone":"true"'
 	reset3d='"returnValue":true' ;;
 # W19H (M16P3: lxboot's chip=M19A0, matched by its chip), webOS 4.10 on LG's own SoC, the ATSC
 # build: a 55SM9000PUA (US), RELEASE.cfg's SM85 defaults with the model's: direct LED, no camera, a

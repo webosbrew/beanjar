@@ -1,0 +1,70 @@
+# The LG O18 (LG1211; the firmware's machine name o18), W19O's SoC: M16P3's platform
+# (guest/targets/soc/m16p3.toml, M16PP's before it, say where each value comes from) with W19O
+# 05.50.00's own values. W19O's kernel is W19H's build tree (4.4.84-169.gld4tv.5, AArch64) and its
+# libkadaptor takes the same ioctl numbers and structures as W19H's (4 debug functions differ);
+# what differs, each from W19O's own files:
+# - CHIP_REV 0x22a0: the kernel's chip_list maps O18 to 0x22 and lxboot's chip table names it O18;
+#   chip=O18A0 (A0 is the only revision libkadaptor names: O18A0_PQE_FW.bin, LX_CHIP_REV(O18, A0);
+#   its O18 range is 0x22a0..0x239f). ACE_REV the same without ace=.
+# - BASE_PLT_Probe is O18's own: it reads no modelopt and of hwopt only digit 17 (type_frc, 0:
+#   FRC internal), and keeps gMemCfgHdr's defaults otherwise: DDR 3 GB 0x1000, the base 0x100000,
+#   FRC internal 0x4, 120 Hz 0x800000, OLED 0x40, always 0x2000000: BOARD_OPT 0x2901044. CHIP_PLT is
+#   the constant 0x2000 ("BSP always runs as UHD TV"), GFX_RES 1920x1080.
+# - The security engine: SE_InitCfg gives every chip but 0x20 and 0x23 row 0 of gMemCfgSE and
+#   gMemCfgSE_TZFW: 0x7d300000:0x1100000 and 0x7e400000:0x1c00000. So de_mem and pe_hdr (the
+#   emulator's places) move below 0x7d300000, de_mem grown to 48 MiB for its three frames at
+#   3840x2160 (below). Netlink family 31 as W19H's.
+# - The display engine: DE_REG_O18_GetCapacity: chip 8, VT up to 3840x2160 (M17's and M19's
+#   1920x1080 at 1.5 GB), the rest as M17's.
+# - I2C: libdile_i2c (map 190110) opens /dev/i2c-0 to -9 at its first use and fails on any it
+#   cannot open (W19H's six; tvservice's CEC thread then dies in its error print), so ten
+#   adapters. Its gsI2cAllConf has W19H's rows: MICOM 1:0x52, NVM 4:0xA0 and the C9's two
+#   amplifiers (RELEASE.cfg's AMP_NTP7519_2AMP, NTP7518_2AMP_F and _W) 0:0x54 and 0:0x56, at 7-bit
+#   addresses; the OLED rows on adapter 2 (TCON, PMIC, the OLED EEPROMs) are not modelled.
+#   GPIO: the device tree's 18 pl061 controllers, 144 lines.
+# The audio master, BE, logm and DVBv5 numbers are W19H's (m16p3.toml).
+
+base = "m16p3"
+board_cmdline = "/etc/emulator/board.cmdline"
+# The OLED65C9PUA's area, a US set's (board.cmdline): W19O's _aDefineContinent entry 10 ("US", in
+# the RMM country list of the US group), LANG_COUNTRY_US 14, HWSETTING_US 5
+continent = [10, 14, 5]
+# Its input ports, EXT_VIDEO_INPUT_ADJ and EXT_AUDIO_INPUT_ADJ of tvservice's gToolOptionDB, from
+# W19O's RELEASE.cfg (C9 defaults), read by host/tools/research/model-config.py
+inputs = [1, 2, 3, 4, 1, 0, 0, 1, 0, 2, 0, 0, 0, 0, 0, 2, 0, 0, 4, 3, 2, 1, 0, 0, 0, 0]
+# W19O's Linux I2C adapters (above): micom on 1, the NVM on 4, the two amplifiers on 0
+lgemu = ["i2c_buses=0,1,2,3,4,5,6,7,8,9", "i2c_dev=micom:1:0x29,nvm:4:0x50,amp:0:0x2a,amp:0:0x2b"]
+
+[[modules]]
+name = "lg115x"
+params = [
+    "chip_rev=0x22a0",
+    "ace_rev=0x22a0",
+    "platform=0x2000",
+    "graphic_res=0x07800438",
+    "board_opt=0x2901044",
+    "spi_cs=2",
+    "se_mem=0x7d300000:0x1100000",
+    "se_tzfw=0x7e400000:0x1c00000",
+    "se_netlink=31",
+    "logm_obj=84",
+    "de_mem=0x7a300000:0x3000000",
+    "de_capacity=8:4:4:3840:2160:3840:2160:0:60:2:1:3840:2160:0:1:1:1:3840:2160:1:320:240:2",
+    "de_panel=4",
+    "de_vtm_buffers=5",
+    "de_src_status=56",
+    "gpio_lines=144",
+    "pe_hdr=0x7a100000",
+    "amst=27:76:23:66:67",
+    "be=0:16",
+    "be_led=45:0xc9020000:0xc9020000:0x4c0:0x4c4:0x4c8:0x4e4:0x4e8:0x4dc:0x4e0:0x4cc:0x4d0:0x4d4:0x4d8:0x290",
+]
+
+# W19O's libdvbfrontend: W19H's code, GetLIBVersion 0xc1, CheckLockState 0xaf, TunePostJob 0xb1
+[[modules]]
+name = "webos_tv"
+params = [
+    "version_cmd=0xc1",
+    "lock_cmd=0xaf",
+    "postjob_cmd=0xb1",
+]
