@@ -25,6 +25,11 @@
 #                                   /dev/tee0, tests/regress/tee/tee-probe's sessions of SSTORE and the TAs
 #                                   and the secure-store TA's commands (round trips), the crash
 #                                   reports and those of a TEE client (TEEC_*, sstore in them)
+#   tv.sh histogram SUITE           libvtcapture's histogram calls through
+#                                   tests/regress/histogram/hist-probe.so preloaded into SUITE (the
+#                                   firmware's vtCaptureTestSuite, which has the library's luna role),
+#                                   with /var/luna/preferences/vt_devmode (the calls' caller gate) made
+#                                   for the run and removed after if it was not there; the crash reports
 #   tv.sh audio DIR SVC N [RB [HW]] the Audio API (SVC: its luna:// URL; RB: the read-back,
 #                                   SVC/getVolume or audiod's master/getVolume): getVolume, a tone
 #                                   (DIR/native.wav) through paplay, one (DIR/aplay.wav) through
@@ -373,6 +378,24 @@ tee_step() {
 	echo "TV FACTS END"
 }
 
+histogram() {
+	suite=$1
+	probe=/mnt/host/build/tests/regress/histogram/hist-probe.so
+	dev=/var/luna/preferences/vt_devmode
+	echo "crashes_before=$(ls /var/log/reports/librdx 2>/dev/null | sed -n 's/^RDXDErr[0-9]*_\([^_]*\)__.*\.\([0-9][0-9]*\)\.[^.]*\.gz$/\1.\2/p' | tr '\n' ' ')"
+	made=
+	if [ -e $dev ]; then echo "vt_devmode=existed"; else touch $dev && made=1; echo "vt_devmode=${made:+made}"; fi
+	o=/tmp/tvsuite-histogram.$$
+	HIST_PROBE=1 HIST_WAIT_MS=$((2000 * scale)) LD_PRELOAD=$probe $T $((60 * scale)) "$suite" </dev/null >$o 2>&1
+	echo "probe_rc=$?"
+	grep -E '^hist\.|LSRegister|rror|denied|refused' $o | cut -c1-20000
+	rm -f $o
+	[ -z "$made" ] || rm -f $dev
+	echo "vt_devmode_after=$([ -e $dev ] && echo yes || echo no)"
+	echo "crashes=$(ls /var/log/reports/librdx 2>/dev/null | sed -n 's/^RDXDErr[0-9]*_\([^_]*\)__.*\.\([0-9][0-9]*\)\.[^.]*\.gz$/\1.\2/p' | tr '\n' ' ')"
+	echo "TV FACTS END"
+}
+
 # the audio step: the Audio API's own calls as an app makes them (the public hub where there are
 # two), one tone per phase through PulseAudio (paplay, a native client's path), a pause after each
 # so the host's recording keeps the phases apart; read-back with getVolume after every change
@@ -495,6 +518,7 @@ app-close) app_close "$2" "$3" "$4" ;;
 app-install) app_install "$2" "$3" ;;
 app-remove) app_remove "$2" ;;
 tee) shift; tee_step "$@" ;;
+histogram) histogram "$2" ;;
 audio) audio_step "$2" "$3" "$4" "$5" "$6" ;;
 decode-log) decode_log "$2" ;;
 smp) smp "$2" "$3" ;;

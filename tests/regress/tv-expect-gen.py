@@ -13,7 +13,9 @@ the evidence, the stock app of each of the apps step's roles (apps_of), and for 
 each case's codecs as the stock decoder elements, umediaserver's capability table and (MSE) the
 web engine claim them (decode_of; and whether the engine ends an MSE stream without audio at all,
 mse_audio_eos_of), and for the smp step whether the StarfishMediaAPIs library exports what
-tests/regress/smp/smpcheck.c looks up (smp_of). A check is expected (present) unless the firmware shows it absent:
+tests/regress/smp/smpcheck.c looks up (smp_of), and for the histogram step whether libvtcapture has
+working histogram calls and the vtCaptureTestSuite to run them in (histogram_of). A check is
+expected (present) unless the firmware shows it absent:
   service  no role (usr/share/ls2/roles, luna-service2/roles.d: allowedNames) or services.d file
            (Name=) provides the name; the tv.* services are tvservice's (targets.TVSERVICE's pak) where
            the firmware has that pak; a com.palm.* name the hub maps (ls-hubd has "com.palm.") is
@@ -1427,6 +1429,78 @@ def smp_of(fw):
     )
 
 
+VTCAPTURE = "usr/lib/libvtcapture.so.1"
+VTCAPTURE_SUITE = "usr/bin/vtCaptureTestSuite"  # the executable the library's luna role is bound to
+VTCAPTURE_CONTROL = re.compile(r"^usr/lib/opkg/info/(?:lib32-)?screen-capture-webos\.control$")
+HIST_API = "vtCapture_initHistogram"
+HIST_INIT = "_ZN11VtHistogram13initHistogramEv"  # VtHistogram::initHistogram(), the C call's work
+# 1.0.0-54's VtHistogram::initHistogram (Thumb): movs r0, #7; bx lr, the "not supported" it returns
+# before any device call (docs/research/video/capture-histogram.md)
+HIST_STUB = bytes.fromhex("07207047")
+
+
+def symbol_bytes(data, name, n):
+    """The first n bytes of an ELF's .dynsym function name (its Thumb bit cleared), None if it has
+    none or they cannot be read."""
+    try:
+        from elftools.elf.elffile import ELFFile
+
+        elf = ELFFile(io.BytesIO(data))
+        sym = elf.get_section_by_name(".dynsym")
+        s = next((s for s in sym.iter_symbols() if s.name == name), None) if sym else None
+        if s is None or s["st_shndx"] == "SHN_UNDEF":
+            return None
+        addr = s["st_value"] & ~1
+        for seg in elf.iter_segments():
+            if (
+                seg["p_type"] == "PT_LOAD"
+                and seg["p_vaddr"] <= addr < seg["p_vaddr"] + seg["p_filesz"]
+            ):
+                off = seg["p_offset"] + addr - seg["p_vaddr"]
+                return data[off : off + n]
+    except Exception:
+        return None
+    return None
+
+
+def histogram_of(fw):
+    """The histogram step's row: whether the firmware's libvtcapture has working histogram calls
+    (it exports vtCapture_initHistogram, and VtHistogram::initHistogram is not -54's stub), the
+    executable to run them in (vtCaptureTestSuite), and the package version, as evidence."""
+    ctl = next((p for p in fw.files("rootfs.pak") if VTCAPTURE_CONTROL.match(p)), None)
+    m = re.search(rb"^Version: *(\S+)", fw.read("rootfs.pak", ctl), re.M) if ctl else None
+    version = (
+        f"screen-capture-webos {m.group(1).decode()}"
+        if m
+        else "no screen-capture-webos package record"
+    )
+    loc = fw.find(VTCAPTURE)
+    if not loc:
+        return dict(present=False, source=f"no {VTCAPTURE} in {', '.join(fw.paks)}")
+    label = f"{loc[0]}:/{loc[1]}"
+    data = fw.read(*loc)
+    defined = exports(data)
+    if defined is None:
+        return dict(
+            present=True, source=f"{label}: its dynamic symbols could not be read ({version})"
+        )
+    if HIST_API not in defined:
+        return dict(present=False, source=f"{label} exports no {HIST_API} ({version})")
+    head = symbol_bytes(data, HIST_INIT, len(HIST_STUB))
+    if head == HIST_STUB:
+        return dict(
+            present=False,
+            source=f"{label}: VtHistogram::initHistogram is a stub returning 7 ({version})",
+        )
+    suite = fw.find(VTCAPTURE_SUITE)
+    return dict(
+        present=True,
+        suite="/" + VTCAPTURE_SUITE if suite else None,
+        source=f"{label} exports {HIST_API}, VtHistogram::initHistogram not the stub ({version})"
+        + ("" if suite else f"; no {VTCAPTURE_SUITE}"),
+    )
+
+
 def release_of(fw):
     loc = fw.find("etc/starfish-release")
     text = fw.read(*loc).decode() if loc else ""
@@ -1696,6 +1770,7 @@ def target_row(target, fw_name, fw_dir):
         audio=audio_of(fw, provs, tvpak),
         decode=decode_of(fw, mse_of(fw)),
         smp=smp_of(fw),
+        histogram=histogram_of(fw),
     )
 
 
@@ -1709,7 +1784,7 @@ Hand edits are fine for fixes across many targets (sed, scripts), but the genera
 of truth: make the same change there, or regenerate the file."""
 
 # the tables in this order, the rest by name after them; [sources] last
-TABLES = ("release", "online", "checks", "apps", "tee", "audio", "decode", "smp")
+TABLES = ("release", "online", "checks", "apps", "tee", "audio", "decode", "smp", "histogram")
 LINE = 100  # a longer list has one item a line
 
 
@@ -1802,7 +1877,7 @@ def write_expect(directory, target, row):
 
 
 # --table: the tables that can be made on their own (their checks cite no [sources] entry)
-TABLE_ROWS = {"decode": lambda fw: decode_of(fw, mse_of(fw))}
+TABLE_ROWS = {"decode": lambda fw: decode_of(fw, mse_of(fw)), "histogram": histogram_of}
 
 
 def replace_tables(directory, target, fw_name, fw, names):
@@ -1819,6 +1894,12 @@ def replace_tables(directory, target, fw_name, fw, names):
         text, n = re.subn(
             rf"\n\[{re.escape(name)}\]\n.*?(?=\n\[|\Z)", lambda m: block, text, flags=re.S
         )
+        if n == 0:
+            # a table new to the file: before [sources], else at the end
+            text, n = re.subn(r"\n(?=\n\[sources\]\n)", lambda m: "\n" + block, text, count=1)
+            if n == 0:
+                text = text.rstrip("\n") + "\n" + block
+                n = 1
         if n != 1:
             raise SystemExit(f"{path}: no [{name}] table to replace")
     tmp = f"{path}.tmp{os.getpid()}"

@@ -169,6 +169,12 @@ boot checks, in either mode, with NET_LINK=nat NET_MODE=direct (another network 
              report of a TEE client since the boot (tvsuite.judge_tee)
   draw       graphics: the test app's pattern with canvas 2D and with WebGL, judged on the
              screenshot (tvsuite.judge_draw)
+  histogram  graphics: the test app's histogram picture ({"mode":"histogram"}), a screenshot, and
+             guest.sh histogram: libvtcapture's histogram calls through the firmware's own library,
+             tests/regress/histogram/hist-probe.so preloaded into its vtCaptureTestSuite (the
+             expected table's histogram row; else SKIP, citing it), every preset read;
+             tvsuite.judge_histogram: block counts, totals and bins against a real set's region map
+             (tests/regress/lib/vthist.py). Headless: SKIP
   audio      QEMU records the card on the VM host (tests/regress/audio/capture.py: HMP wavcapture on its
              audiodev) while guest.sh audio plays a tone per phase with paplay: the set's volume,
              five volumeDown, setMuted, unmuted and five volumeUp, each read back with the Audio
@@ -294,6 +300,7 @@ TV_STEPS = {
         "apps",
         "tee",
         "draw",
+        "histogram",
         "audio",
         "decode",
         "smp",
@@ -1534,6 +1541,8 @@ def tv_suite(h, a, r, out, target, fw):
         tv_tee(h, a, r, out, target, ctx)
     if "draw" in a.tv_steps:
         tv_draw(h, a, r, out, target, state)
+    if "histogram" in a.tv_steps:
+        tv_histogram(h, a, r, out, target, ctx, state)
     if "audio" in a.tv_steps:
         tv_audio(h, a, r, out, target, ctx, state)
     if "decode" in a.tv_steps:
@@ -1543,7 +1552,9 @@ def tv_suite(h, a, r, out, target, fw):
     if state["installed"]:
         say(f"{target}: remove the test app")
         step = next(
-            s for s in ("decode", "audio", "draw", "apps") if s in a.tv_steps and s in r.steps
+            s
+            for s in ("decode", "audio", "histogram", "draw", "apps")
+            if s in a.tv_steps and s in r.steps
         )
         gstep(h, a, r, out, "app-remove", tvsuite.TEST_APP, save="apps/testapp.remove")
         if not a.dry_run:
@@ -1849,6 +1860,63 @@ def tv_draw(h, a, r, out, target, state):
         return
     r.items["draw"] = items
     r.steps["draw"] = tvsuite.verdict(items)
+
+
+def tv_histogram(h, a, r, out, target, ctx, state):
+    """--tv histogram: the test app's histogram picture, a screenshot of it, and libvtcapture's
+    histogram calls on it through the firmware's vtCaptureTestSuite (tv.sh histogram), judged
+    against a real set's region map (tvsuite.judge_histogram); SKIP where the expected table says
+    the firmware has no working calls."""
+    say(f"{target}: histogram")
+    suite, items = tvsuite.histogram_plan(ctx["expect"], a.mode)
+    if suite is None or a.dry_run:
+        r.items["histogram"] = items
+        r.steps["histogram"] = "dry" if a.dry_run else tvsuite.verdict(items)
+        return
+    h.run(f"mkdir -p {out}/apps", 30)
+    if not state["installed"]:
+        items.append(install(h, a, r, out, target, state))
+    if not state.get("ok"):
+        items.append(("histogram.calls", "FAIL", "the test app is not installed"))
+    else:
+        gstep(
+            h,
+            a,
+            r,
+            out,
+            "app-launch",
+            tvsuite.TEST_APP,
+            json.dumps({"mode": "histogram"}, separators=(",", ":")),
+            a.mode,
+            40 * a.scale,
+            save="apps/histogram.launch",
+        )
+        if "front_wait=none" in r.text or "TV FACTS END" not in r.text:
+            items.append(
+                (
+                    "histogram.calls",
+                    "FAIL",
+                    f"the test app is not in front: {r.text.strip()[-160:]}",
+                )
+            )
+        else:
+            h.run(f"sleep {a.settle}", a.settle + 30)
+            grab(h, a, f"{out}/apps/histogram.png")
+            gstep(h, a, r, out, "histogram", suite)
+            items += tvsuite.judge_histogram(r.text)
+        gstep(
+            h,
+            a,
+            r,
+            out,
+            "app-close",
+            tvsuite.TEST_APP,
+            20 * a.scale,
+            a.mode,
+            save="apps/histogram.close",
+        )
+    r.items["histogram"] = items
+    r.steps["histogram"] = tvsuite.verdict(items)
 
 
 def record(h, a, wav, start):

@@ -32,6 +32,12 @@ it. There is no WARN: a check that fails needs treatment.
              the boot on (judge_tee)
   draw       the test app's pattern (tvapp/pattern.js) with canvas 2D and WebGL, on the screenshot
              where the pattern puts it (image_facts on the VM host, judge_draw here)
+  histogram  graphics: libvtcapture's histogram calls (1.0.0-56 on) through the firmware's own
+             library, preloaded into its vtCaptureTestSuite (tests/regress/histogram/hist-probe.so), on
+             the test app's histogram picture: every preset's blocks, totals and bins against a real
+             set's region map (vthist.py, judge_histogram); SKIP where the expected table's histogram
+             row says the firmware has no working calls (none, or -54's stub init); headless SKIP
+             (the composed picture needs a front end)
   audio      tones through the firmware's sound path, recorded by QEMU (judge_audio)
   decode     graphics: the test app plays each of DECODE_CASES (clips made at test time,
              tests/regress/video/make-clips.sh --decode) with <video> and with its Media Source player,
@@ -56,7 +62,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REGRESS = os.path.dirname(HERE)  # tests/regress: the suite's data, the app, the guest scripts
 TOP = os.path.dirname(os.path.dirname(REGRESS))
 EXPECT_DIR = os.path.join(REGRESS, "tv-expect")  # the expected table: a <target>.toml each
-STEPS = ("luna-info", "network", "apps", "tee", "draw", "audio", "decode", "smp")
+STEPS = ("luna-info", "network", "apps", "tee", "draw", "histogram", "audio", "decode", "smp")
 # The guest's network, link=nat's namespace (host/core/beanjar/netns.py, which a unit test holds these
 # to): the lease (GUEST), slirp4netns's router (ROUTER), the name server DHCP hands out (NET_DNS:
 # lg_mock.py at the TAP's own address, MOCK_DNS, with LG's services mocked, the default), and the
@@ -1421,6 +1427,64 @@ def judge_draw(mode, img, pat=None):
             f", background {bg * 100:.0f} %)"
         ),
     )
+
+
+# --- histogram ---
+
+HISTOGRAM_HEADLESS = "headless: no front end composes the picture the histogram counts"
+
+
+def histogram_plan(row, lane="graphics"):
+    """(the firmware's vtCaptureTestSuite, []) to run the histogram step, else (None, its SKIP
+    items): the expected table's histogram row (tv-expect-gen.py histogram_of) says the firmware
+    has no working calls, or no suite to run them in; headless SKIPs."""
+    h = (row or {}).get("histogram") or {}
+    if lane != "graphics":
+        return None, [("histogram.calls", "SKIP", HISTOGRAM_HEADLESS)]
+    if not h:
+        return None, [
+            (
+                "histogram.calls",
+                "FAIL",
+                "the expected table has no histogram row: tv-expect-gen.py --table histogram",
+            )
+        ]
+    if h.get("present") is False:
+        return None, [
+            ("histogram.calls", "SKIP", f"no working histogram calls: {h.get('source', '')}")
+        ]
+    if not h.get("suite"):
+        return None, [
+            (
+                "histogram.calls",
+                "SKIP",
+                f"no vtCaptureTestSuite to run them in: {h.get('source', '')}",
+            )
+        ]
+    return h["suite"], []
+
+
+def judge_histogram(text, pat=None):
+    """The histogram step's checks (vthist.judge) on PATTERN.histogram, and no crash report from the
+    probe's run (histogram.crash)."""
+    import sys
+
+    sys.path.insert(0, HERE)
+    import vthist  # noqa: E402
+
+    pat = pat or pattern()
+    items = vthist.judge(text, pat["histogram"])
+    f = parse(text)
+    before = set(f.get("crashes_before", "").split())
+    new = [c for c in f.get("crashes", "").split() if c not in before]
+    items.append(
+        ("histogram.crash", "FAIL", f"crash reports: {' '.join(new)}")
+        if new
+        else ("histogram.crash", "PASS", "no crash report from the run")
+    )
+    if f.get("vt_devmode_after") == "yes" and f.get("vt_devmode") == "made":
+        items.append(("histogram.cleanup", "FAIL", "vt_devmode, made for the run, is still there"))
+    return items
 
 
 # --- audio ---

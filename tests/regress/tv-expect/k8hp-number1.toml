@@ -218,6 +218,10 @@ webaudio = { level_db = 0.0, level_source = "rootfs.pak:/usr/lib/libcbe.so names
 present = true
 source = "rootfs.pak:/usr/lib/libplayerAPIs.so.1.0.0 exports all 8 StarfishMediaAPIs symbols the app looks up"
 
+[histogram]
+present = false
+source = "rootfs.pak:/usr/lib/libvtcapture.so.1.0.0 exports no vtCapture_initHistogram (screen-capture-webos 1.0.0-48-r5)"
+
 [sources]
 absent-by-design-no-096a9b = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-arib.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module (case 17))"
 absent-by-design-no-a57e4d = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-arib.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module runs hcitool, which the firmware does not have)"

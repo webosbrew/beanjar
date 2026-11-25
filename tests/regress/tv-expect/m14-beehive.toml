@@ -199,6 +199,10 @@ missing = ["_ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_"]
 present = false
 source = "rootfs.pak:/usr/lib/libplayerAPIs.so.1.0.0 exports no _ZN17StarfishMediaAPIs4LoadEPKcPFvixS1_PvES2_"
 
+[histogram]
+present = false
+source = "no usr/lib/libvtcapture.so.1 in rootfs.pak, fonts.pak, otncabi-dvb.pak, otycabi-dvb.pak, smartkey.pak, tvservice-dvb.pak"
+
 [sources]
 absent-by-design-no-307597 = "absent by design: no Wi-Fi/BT hardware (out of scope) (rootfs.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module runs hcitool, which the firmware does not have)"
 absent-by-design-no-b81a55 = "absent by design: no Wi-Fi/BT hardware (out of scope) (rootfs.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module (case 17))"

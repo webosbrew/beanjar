@@ -216,7 +216,7 @@ if guest_lane
       'guest/layers/rootssh', 'guest/layers/devmode', 'guest/layers/hbchannel',
       'guest/kernel',
       'guest/initramfs',                 # the same for every target: no layers in it; busybox, src/
-      'tests/regress/tcg', 'tests/regress/devmode', 'tests/regress/virgl', 'tests/regress/gm', 'tests/regress/tee', 'tests/regress/smp', 'guest/layers/gl/test',
+      'tests/regress/tcg', 'tests/regress/devmode', 'tests/regress/virgl', 'tests/regress/gm', 'tests/regress/tee', 'tests/regress/smp', 'tests/regress/histogram', 'guest/layers/gl/test',
     ])
   if simplesmart
     guest_modules = ['guest/layers/simplesmart', 'guest/kernel', 'guest/initramfs']

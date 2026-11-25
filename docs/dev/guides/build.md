@@ -661,7 +661,7 @@ it), and the lines under it give each target's numbers; `summary.json` has them 
 `scripts/regress --tv` tests what the TV offers beyond the boot, separate from the default run so
 that one does not get slower. It boots as the default run does (`--headless` too, `-j` and
 `--local` as there), then runs its steps in place of the boot checks (`luna-info`, `network`,
-`apps`, `tee`, in graphics `draw`, `audio`, `decode` and `smp`; `--tv-steps LIST` runs only some), and stops:
+`apps`, `tee`, in graphics `draw` and `histogram`, `audio`, `decode` and `smp`; `--tv-steps LIST` runs only some), and stops:
 
 ```sh
 scripts/regress --tv --headless --keep-going             # every target on the Pi, two at a time
@@ -819,6 +819,20 @@ judging, the generator's parsing and the files.
   patch's middle within 48 of each channel); a black screen, the UI over black, or the page's
   no-WebGL colour fails. The page logs what it drew to the console (`TVSUITE ...` in the
   guest's messages).
+- `histogram` (graphics; headless SKIP): libvtcapture's histogram calls (screen-capture-webos
+  1.0.0-56 on), as a TV app reads them. The test app shows its histogram picture
+  (`{"mode":"histogram"}`: four flat quadrants, white, red, blue and grey 128, their edges on the
+  histogram's 160 × 90 sample grid), and `tv.sh histogram` runs the firmware's own calls through
+  `tests/regress/histogram/hist-probe.so` (the guest build's `build/tests/regress/histogram/`)
+  preloaded into the firmware's `vtCaptureTestSuite`, the executable the library's luna role is
+  bound to, with `/var/luna/preferences/vt_devmode` (the calls' caller gate) for the run only. It
+  sets presets 1, 2, 3 and 0, each read once its layout has arrived. `tests/regress/lib/vthist.py`
+  judges: the calls answer, each preset's block count, indices and sample totals are a real set's
+  (an OLED C2 on ponytail, `docs/research/video/capture-histogram.md`), and every block's R, G and B
+  bins are exactly the picture counted over that set's region map; no crash report. SKIP where the
+  table's `histogram` row (`tv-expect-gen.py`: libvtcapture exports `vtCapture_initHistogram` and
+  `VtHistogram::initHistogram` is not -54's `movs r0, #7; bx lr` stub) says the firmware has no
+  working calls. The screenshot is `apps/histogram.png`.
 
 - `audio`: the guest plays tones through LG's own sound path while QEMU records the card on the VM
   host: `tests/regress/audio/capture.py` starts HMP `wavcapture` (over QMP) on the card's audiodev, whatever

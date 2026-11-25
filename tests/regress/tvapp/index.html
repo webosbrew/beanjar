@@ -247,6 +247,11 @@ function draw() {
 	cv.width = W; cv.height = H;
 	document.body.appendChild(cv);
 	var bg = PATTERN.modes[mode], P = PATTERN.patches;
+	// {"mode": "histogram"}: the histogram step's picture, with canvas 2D
+	if (p.mode === 'histogram') {
+		bg = PATTERN.histogram.background;
+		P = PATTERN.histogram.patches;
+	}
 	if (mode === 'canvas') {
 		var c = cv.getContext('2d');
 		paint = function () {

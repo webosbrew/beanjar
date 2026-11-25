@@ -39,6 +39,8 @@
 #                                                     close, install, remove)
 #   sh /host/tests/regress/guest.sh tee LIB SSTORE TA...  scripts/regress --tv's tee step:
 #                                                     tests/regress/tv.sh tee (with build/tests/regress/tee)
+#   sh /host/tests/regress/guest.sh histogram SUITE  scripts/regress --tv's histogram step:
+#                                                     tests/regress/tv.sh histogram (with build/tests/regress/histogram)
 #   sh /host/tests/regress/guest.sh audio DIR SVC N RB HW  scripts/regress --tv's audio step:
 #                                                     tests/regress/tv.sh audio (the host records)
 #   sh /host/tests/regress/guest.sh decode-log CASE   scripts/regress --tv's decode step: tests/regress/tv.sh
@@ -440,7 +442,7 @@ app-calls) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tvservic
 luna-info) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tv.sh luna-info </dev/null ;;
 network) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tv.sh network "$2" "$3" </dev/null ;;
 app-*) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tv.sh "$@" </dev/null ;;
-tee|audio|decode-log|smp) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tv.sh "$@" </dev/null ;;
+tee|histogram|audio|decode-log|smp) webos-enter env TIME_SCALE=$scale sh /mnt/host/tests/regress/tv.sh "$@" </dev/null ;;
 *) echo "unknown step $step"; false ;;
 esac > $out/$step.txt 2>&1
 echo $? > $out/$step.rc.tmp && mv $out/$step.rc.tmp $out/$step.rc

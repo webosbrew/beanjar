@@ -221,6 +221,10 @@ webaudio = { level_db = 0.0, level_source = "rootfs.pak:/usr/lib/libcbe.so names
 present = true
 source = "rootfs.pak:/usr/lib/libplayerAPIs.so.1.0.0 exports all 8 StarfishMediaAPIs symbols the app looks up"
 
+[histogram]
+present = false
+source = "no usr/lib/libvtcapture.so.1 in rootfs.pak, bsppart-dvb.pak, fonts.pak, license.pak, otncabi-dvb.pak, otycabi-dvb.pak, tvservice-dvb.pak"
+
 [sources]
 absent-by-design-no-cf9904 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-dvb.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module (case 17))"
 absent-by-design-no-dbdb50 = "absent by design: no Wi-Fi/BT hardware (out of scope) (otycabi-dvb.pak:/usr/lib/nyx/modules/nyxDeviceInfoMain.module runs hcitool, which the firmware does not have)"

@@ -1577,6 +1577,7 @@ class ResultTest(unittest.TestCase):
                 "apps",
                 "tee",
                 "draw",
+                "histogram",
                 "audio",
                 "decode",
                 "smp",
