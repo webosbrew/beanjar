@@ -1,0 +1,49 @@
+models = ["W19H"]
+# tv.capture's video frames: lg115x.ko's de0 fills the frozen VT frame from the viewer, as on W17H
+viewer_capture = true
+
+# W19H goldilocks2 (05.50.00, "goldilocks2-grampians" 4.10.2, HE_DTV_W19H_AFADATAA, the ATSC build):
+# goldilocks2's paks (named -atsc, which the release's -dvb names resolve to) and EEPROM layout, on
+# LG's own board rather than W19P's Realtek one. Its partition table (the `partinfo` object of
+# tvservice-atsc's lginit_app2, 54 partitions: W18H's without efs) and its mount jobs pin p29
+# tvservice, p31 otncabi, p32 otycabi, p33 fonts, p35 license, uhdcp p46 and the state partitions
+# p51 db8, p52 cmn_data, p53 appstore: goldilocks2's state disks and partitions with uhdcp.
+# The NVM records are tvservice-atsc's (DWARF and DIL_NVM_*: ModelInfoDB 0x924, 56 bytes, mark
+# 0x20160630; ToolOptionDB 0x4E4, 76 bytes, mark 0x20150625, nine words, the input ports at +48;
+# continent 0x1C54, last input 0x1BC8, factory 0x294; the local key type in ToolOption4's bits 0-1
+# as W19P's), and lxboot copies ToolOption1..6 onto the command line, as Realtek's U-Boot does on
+# W19P: goldilocks2's. Its debug status is the 32-byte block at 0x1C6 with no plain copy (W18H's).
+# Its kernel's USB and filesystem drivers (modules.builtin and modules.order of
+# 4.4.84-169.gld4tv.5) are W18H's for these: no ipw, joydev, nls_cp949, nls_iso8859-1, exfat or
+# hid-microsoft; hid-axff, hid-pl and ftdi_sio.
+[release]
+base = "goldilocks2"
+state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G", uhdcp = "16M" }
+peripherals = [
+    "sit",
+    "usbhid", "hid-axff", "hid-dr", "hid-logitech", "hid-pl", "hid-sony", "hid-zpff", "xpad",
+    "uvcvideo", "usb-storage", "sd_mod", "vfat", "ntfs3", "fuse", "nls_cp437", "nls_ascii",
+    "nls_utf8", "snd-usb-audio", "cdc-acm", "uhid", "input-leds",
+    "hid-playstation", "ftdi_sio", "pl2303", "option", "sierra", "lgfs",
+]
+
+[release.nvm]
+eeprom = "eeprom"
+records = { pak = "tvservice-atsc", path = "/mnt/lg/tvservice/lgapp/tvservice" }
+modelinfo_offset = 0x924
+modelinfo_mark = 0x20160630
+model_field = [4, 24]
+serial_field = [28, 17]
+tooloption_offset = 0x4E4
+tool_option_words = 9
+tool_option_word_bytes = 4
+tool_option_first = 8
+tool_option_mark = 0x20150625
+continent_offset = 0x1C54
+continent_table = { symbol = "_aDefineContinent", size = 36 }
+lastinput_offset = 0x1BC8
+inputs_field = [48, 26]
+tool_option_given = 6
+factory_offset = 0x294
+local_key = { word = 4, offset = 0, width = 2, names = ["joystick", "onekey", "ninekey"] }
+debug_block_offset = 0x1C6

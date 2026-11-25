@@ -348,7 +348,8 @@ static char *be;
 module_param(be, charp, 0444);
 MODULE_PARM_DESC(
     be, "the BE's ABI, fwinfo:reg: BE_IOR_GET_FIRMWARE_INFO_ADDR's and BE_IORW_REG_ACCESS's "
-        "numbers (H13 21:19, M14 22:20, M16P 24:22); unset: be0 answers no query");
+        "numbers (H13 21:19, M14 22:20, M16P 24:22; fwinfo 0 where the kdrivers have none, M19 "
+        "0:16); unset: be0 answers no query");
 static char *be_led;
 module_param(be_led, charp, 0444);
 MODULE_PARM_DESC(
@@ -366,7 +367,7 @@ static long be_query(unsigned int cmd, void __user *uarg)
     struct lx_be_reg r;
     void *v;
 
-    if (be && cmd == _IOR('D', be_fwinfo_nr, struct lx_be_fw_info))
+    if (be && be_fwinfo_nr && cmd == _IOR('D', be_fwinfo_nr, struct lx_be_fw_info))
         return copy_to_user(uarg, &fw, sizeof(fw)) ? -EFAULT : 0;
     if (be && cmd == _IOWR('D', be_reg_nr, struct lx_be_reg)) {
         if (copy_from_user(&r, uarg, sizeof(r)))
@@ -394,9 +395,8 @@ static int lx_be_parse(void)
     u32 v[2];
 
     if (be) {
-        if (lgemu_parse_u32s(be, 0, v, 2) || !v[0] || v[0] >= 256 || !v[1] || v[1] >= 256 ||
-            v[0] == v[1]) {
-            pr_err("be: be is fwinfo:reg, two ioctl numbers\n");
+        if (lgemu_parse_u32s(be, 0, v, 2) || v[0] >= 256 || !v[1] || v[1] >= 256 || v[0] == v[1]) {
+            pr_err("be: be is fwinfo:reg, two ioctl numbers (fwinfo 0: none)\n");
             return -EINVAL;
         }
         be_fwinfo_nr = v[0];

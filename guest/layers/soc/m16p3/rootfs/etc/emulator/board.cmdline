@@ -1,0 +1,40 @@
+# Board parameters the LG bootloader (lxboot) puts on the kernel command line, as on M16P
+# (guest/layers/soc/m16p/rootfs/etc/emulator/board.cmdline says who reads them). W19H's lxboot
+# (lxboot.pak 05.50.00, V4.04.37) has W18H's format ("%s ethaddr=%s rev=1 ... chip=%s", bver=,
+# modelopt=, hwopt=, ToolOpt=, countryGrp=, debugMode=, modelName=, serialNum=, cmdEnd) but prints
+# 6 ToolOpt words, not 9. Its chip table maps lg1314 to M19, which W19H's kernel (4.4.84-169.gld4tv.5)
+# reads as id 0x23 with the revision: it has A0 paths only, so chip=M19A0, CHIP_REV 0x23a0
+# (guest/targets/soc/m16p3.toml).
+#
+# The values describe a 55SM9000PUA, a US model the models DB lists for this firmware's OTA ID
+# (HE_DTV_W19H_AFADATAA: US, CA_EN, MX), proposed by host/tools/research/model-config.py from W19H
+# 05.50.00's own tables with szCountryGroupCode=US continent=10 eLanguageCountry=LANG_COUNTRY_US
+# eHWSettingGroup=HWSETTING_US tuner=none; they are not read from a real set. This ATSC firmware's
+# RELEASE.cfg is the factory default of a Korean SM85 (BOARD_M16P3_ATSC_KR): the region values
+# here are the US group's of the same tables, the inch and tool type the model's.
+ethaddr=a8:23:fe:12:34:56 rev=1 chip=M19A0 bver=4.04.37 devtmpfs.mount=1
+# 7.5 GB eMMC, as the others (the state disks' sizes are the launcher's, not this)
+emmc_size=0x1d2000000
+# 16 straps. W19H's lxboot still reads them from its SAR ADC ("sadc[%d]:%d"), but its strap tables
+# were not decoded; the kernel's BASE_PLT_Probe reads only straps 6-9 (STB "1101", OLED "10 0 x",
+# else LCD 0x20), so W18H's line (DDR 1.5 GB, a UD FRC V-by-One panel row) with an LCD's 6-9 holds.
+modelopt=0010010000000000
+# 18 digits, W19H's hardware option fields as model-config.py encodes them for its tvconfig-gen:
+# country US (digit 0 '2': W19H's gmodelopt_country_type is BR, KR, US, KR), V-by-One, UD panel
+# (digit 3 '2', the kernel's UHD), FRC (digit 4 '1', the kernel's 120 Hz; RELEASE.cfg's
+# FRC_CHIP_LG1154 on a UD panel), panel V18, DDR 1.5 GB (digit 11 '3', the kernel's 0x208000),
+# graphic resolution 1920x1080
+hwopt=202217001003002000
+# 6 tool option words (lxboot prints ToolOption1..6 of W19H's tvservice, TOOL_OPTIONn_T; the EEPROM
+# keeps all 9), RELEASE.cfg's SM85 defaults with the model's inch and tool type: ToolOpt1
+# INCH_55 14, TOOL_SM90 9, LGD, direct LED, LED bar 12; ToolOpt3 Dolby Vision, local dimming,
+# AMP_NTP7519_1AMP (libdile_i2c's NTP7518 at 0:0x54); ToolOpt4 the one-key local key, WOL, no HDMI
+# switch; ToolOpt5 row 3 of video_external_input_adjust (HDMI x4), three USB ports, a headphone
+# output; ToolOpt6 the MTK dual combo, the motion remote, Dolby Atmos sound mode, TV link, ISF.
+ToolOpt=33685806:6683:5297:65:59218019:1884282121
+# 2 = US (libdile_boardinfo's group, configd's USA RMM group)
+countryGrp=2
+# 3 = DEBUG, as every board here
+debugMode=3
+modelName=55SM9000PUA serialNum=905RAXX00001
+cmdEnd
