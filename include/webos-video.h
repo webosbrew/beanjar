@@ -25,7 +25,7 @@
  * sends them for: register = the window opened, connect = connected to its input, rect = output
  * region set, info = input region set (the stream size), mute = blanked or unblanked, disconnect,
  * unregister = closed. */
-#define WEBOS_VIDEO_MAGIC       "WOSVID2"
+#define WEBOS_VIDEO_MAGIC       "WOSVID3"
 #define WEBOS_VIDEO_MAX         8
 #define WEBOS_VIDEO_CONTEXT_LEN 48
 enum webos_video_event {
@@ -50,6 +50,10 @@ struct webos_video_context {
     uint32_t input;         /* the scaler input: 0 AVD, 1 ADC, 2 HDMI, 3 VDEC, 4 JPEG */
     uint32_t input_port;    /* its port: for VDEC the pipeline's VDEC resource, which is also
                                the vdecsink's vdec-ch (include/webos-media.h channel) */
+    /* The scaler's input region inside the source of width x height: the part of the picture the
+     * window shows (overscan, picture size). crop_w or crop_h 0, or a region not inside the
+     * source: the whole source. */
+    uint32_t crop_x, crop_y, crop_w, crop_h;
 };
 struct webos_video_packet {
     char magic[8];
@@ -62,6 +66,6 @@ struct webos_video_packet {
     uint32_t count;              /* valid entries at the start of contexts[] */
     struct webos_video_context contexts[WEBOS_VIDEO_MAX];
 };
-_Static_assert(sizeof(struct webos_video_context) == 108, "video context wire record");
-_Static_assert(sizeof(struct webos_video_packet) == 900, "video wire frame");
+_Static_assert(sizeof(struct webos_video_context) == 124, "video context wire record");
+_Static_assert(sizeof(struct webos_video_packet) == 1028, "video wire frame");
 #endif

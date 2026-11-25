@@ -153,19 +153,32 @@ long rtk_vsc_legacy_ioctl(unsigned int cmd, unsigned long arg)
     case VSC_SET_INPUT_REGION:
     case VSC_SET_INPUT_ADAPTIVE:
     case VSC_SET_INPUT_REGION_EX:
+        /* no source size beside it: the region is taken as the whole source */
         memcpy(&r, buf + 4, sizeof(r));
         w->width = r.w;
         w->height = r.h;
+        w->crop_x = w->crop_y = w->crop_w = w->crop_h = 0;
         vsc_publish(wid, WEBOS_VIDEO_INFO);
         break;
     case VSC_SET_OUTPUT_REGION:
         memcpy(&r, buf + 4, sizeof(r));
         goto output;
-    case VSC_SET_IN_OUT_REGION:
-        memcpy(&r, buf + 8, sizeof(r));
-        w->width = r.w;
-        w->height = r.h;
+    case VSC_SET_IN_OUT_REGION: {
+        /* the input region (the crop: overscan, the aspect modes) inside the original input */
+        struct vsc_rect in, original;
+
+        memcpy(&in, buf + 8, sizeof(in));
+        memcpy(&original, buf + 16, sizeof(original));
+        if (!original.w || !original.h)
+            original = (struct vsc_rect){0, 0, in.w, in.h};
+        w->width = original.w;
+        w->height = original.h;
+        w->crop_x = in.x;
+        w->crop_y = in.y;
+        w->crop_w = in.w;
+        w->crop_h = in.h;
         memcpy(&r, buf + 24, sizeof(r));
+    }
     output:
         w->x = r.x;
         w->y = r.y;
@@ -179,7 +192,8 @@ long rtk_vsc_legacy_ioctl(unsigned int cmd, unsigned long arg)
 
         memcpy(&ptr, buf + 4, 4);
         r = cmd == VSC_GET_OUTPUT_REGION ? (struct vsc_rect){w->x, w->y, w->w, w->h}
-                                         : (struct vsc_rect){0, 0, w->width, w->height};
+            : w->crop_w ? (struct vsc_rect){w->crop_x, w->crop_y, w->crop_w, w->crop_h}
+                        : (struct vsc_rect){0, 0, w->width, w->height};
         if (copy_to_user(compat_ptr(ptr), &r, sizeof(r)))
             ret = -EFAULT;
     }
@@ -331,6 +345,10 @@ static void vsc_v4l2_set(unsigned int idx, u32 id, const u8 *p, u32 size)
         w->open = true;
         w->width = get_unaligned_le16(p + 12);
         w->height = get_unaligned_le16(p + 14);
+        w->crop_x = get_unaligned_le16(p);
+        w->crop_y = get_unaligned_le16(p + 2);
+        w->crop_w = get_unaligned_le16(p + 4);
+        w->crop_h = get_unaligned_le16(p + 6);
         w->x = get_unaligned_le16(p + 16);
         w->y = get_unaligned_le16(p + 18);
         w->w = get_unaligned_le16(p + 20);

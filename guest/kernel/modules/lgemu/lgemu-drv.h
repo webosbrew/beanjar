@@ -206,6 +206,8 @@ struct lgemu_video_window {
     u32 w, h;
     u32 width, height;     /* the input (the stream's size), 0 if not known */
     u32 input, input_port; /* webos-video.h's input (3: VDEC) and its port */
+    /* the scaler's input region inside the width x height source; crop_w 0: the whole source */
+    u32 crop_x, crop_y, crop_w, crop_h;
 };
 /* The screen the outputs are in (1920x1080 until set) */
 void lgemu_video_screen(u32 w, u32 h);

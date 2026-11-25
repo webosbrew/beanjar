@@ -35,15 +35,16 @@ HM_SIZE = 560  # include/host-media.h
 
 
 def video_packet():
-    """One WOSVID2 frame (include/webos-video.h): screen 1920x1080, MAIN shown on VDEC port 0."""
+    """One WOSVID3 frame (include/webos-video.h): screen 1920x1080, MAIN shown on VDEC port 0."""
     ctx = (
         b"MAIN".ljust(48, b"\0")
         + struct.pack("<IIIII", 1, 1, 0, 1, 0)  # registered connected av_mute has_rect full_screen
         + struct.pack("<iiII", 480, 270, 960, 540)
         + struct.pack("<IIIIII", 1920, 1080, 30000, 0, 3, 0)  # stream, fps, scan, input VDEC 0
+        + struct.pack("<IIII", 0, 0, 0, 0)  # no crop: the whole source
     )
-    contexts = ctx + b"\0" * (108 * 7)
-    head = b"WOSVID2\0" + struct.pack("<IIIIIII", 900, 1, 1, 0, 1920, 1080, 1)
+    contexts = ctx + b"\0" * (124 * 7)
+    head = b"WOSVID3\0" + struct.pack("<IIIIIII", 1028, 1, 1, 0, 1920, 1080, 1)
     return head + contexts
 
 

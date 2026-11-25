@@ -3,6 +3,7 @@
 #define _DEFAULT_SOURCE
 #include "video.h"
 #include "media.h"
+#include "video-place.h"
 #include <endian.h>
 #include <errno.h>
 #include <stdio.h>
@@ -82,10 +83,13 @@ static void describe(const struct webos_video_packet *p)
         const struct webos_video_context *c = &p->contexts[i];
         fprintf(stderr,
                 "video:   %s%s registered=%u connected=%u mute=%u window=%d,%d %ux%u%s"
-                " stream=%ux%u@%u.%03u input=%u:%u\n",
+                " stream=%ux%u@%u.%03u input=%u:%u",
                 c->context, shown(c) ? " SHOWN" : "", c->registered, c->connected, c->av_mute, c->x,
                 c->y, c->w, c->h, c->full_screen ? " (full screen)" : "", c->width, c->height,
                 c->fps_x1000 / 1000, c->fps_x1000 % 1000, c->input, c->input_port);
+        if (video_crop(c))
+            fprintf(stderr, " crop=%u,%u %ux%u", c->crop_x, c->crop_y, c->crop_w, c->crop_h);
+        fputc('\n', stderr);
     }
 }
 
@@ -125,7 +129,7 @@ int video_poll(struct video *v)
                 words[i] = le32toh(words[i]);
             for (unsigned i = 0; i < WEBOS_VIDEO_MAX; ++i) {
                 uint32_t *cw = &p.contexts[i].registered;
-                for (unsigned k = 0; k < 15; ++k)
+                for (unsigned k = 0; k < 19; ++k)
                     cw[k] = le32toh(cw[k]);
                 p.contexts[i].context[WEBOS_VIDEO_CONTEXT_LEN - 1] = 0;
             }
@@ -158,7 +162,7 @@ void video_draw(struct video *v, struct rect r)
     const struct webos_video_packet *p = &v->table;
     if (!p->count || r.w <= 0 || r.h <= 0)
         return;
-    double sx = (double)r.w / p->screen_w, sy = (double)r.h / p->screen_h;
+    double sy = (double)r.h / p->screen_h;
     glDisable(GL_BLEND);
     glEnable(GL_SCISSOR_TEST);
     glUseProgram(v->program);
@@ -168,17 +172,13 @@ void video_draw(struct video *v, struct rect r)
         const struct webos_video_context *c = &p->contexts[i];
         if (!shown(c))
             continue;
-        /* Guest y grows downwards; GL's upwards from the bottom of the viewport. */
-        int left = r.x + (int)(c->x * sx + 0.5),
-            right = r.x + (int)((c->x + (double)c->w) * sx + 0.5);
-        int top = r.y + r.h - (int)(c->y * sy + 0.5);
-        int bottom = r.y + r.h - (int)((c->y + (double)c->h) * sy + 0.5);
-        int cl = left < r.x ? r.x : left, cr = right > r.x + r.w ? r.x + r.w : right;
-        int cb = bottom < r.y ? r.y : bottom, ct = top > r.y + r.h ? r.y + r.h : top;
-        if (cr <= cl || ct <= cb)
+        /* the window, and the whole source around it so that its crop fills the window */
+        struct video_place at =
+            video_place(c, p->screen_w, p->screen_h, (struct video_box){r.x, r.y, r.w, r.h});
+        if (!at.clip.w || !at.clip.h)
             continue;
-        glScissor(cl, cb, cr - cl, ct - cb);
-        glViewport(left, bottom, right - left, top - bottom);
+        glScissor(at.clip.x, at.clip.y, at.clip.w, at.clip.h);
+        glViewport(at.picture.x, at.picture.y, at.picture.w, at.picture.h);
         v->drawn++;
         /* VDEC 3: the picture of the media stream whose vdec-ch is this input's port; HDMI 2:
          * a stream whose pictures arrive there (an H13's UHD companion), else nothing (no
@@ -201,7 +201,7 @@ void video_draw(struct video *v, struct rect r)
         glUseProgram(v->program);
         glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, xy);
         glEnableVertexAttribArray(0);
-        glUniform2f(v->origin, (float)left, (float)top);
+        glUniform2f(v->origin, (float)at.left, (float)at.top);
         glUniform1f(v->square, (float)(SQUARE * sy));
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }

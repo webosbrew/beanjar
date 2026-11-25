@@ -503,7 +503,7 @@ class HubBase(unittest.TestCase):
         self.assertLess(time.monotonic() - start, 5)
 
     def test_video_table_replayed(self):
-        frame = b"WOSVID2\0" + bytes(900 - 8)
+        frame = b"WOSVID3\0" + bytes(1028 - 8)
         self.guest["qemu-video.sock"].sendall(b"junk" + frame)
         time.sleep(0.05)
         v = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

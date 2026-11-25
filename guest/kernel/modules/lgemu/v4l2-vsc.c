@@ -214,9 +214,9 @@ static long extended(struct vsc_file *f, unsigned int cmd, void __user *arg)
     if (cmd == S_EXT && copy_from_user(payload, ptr, size))
         return -EFAULT;
     /* Rotated images have no emulated producer. An input crop inside the source (live TV's
-     * overscan: videooutputd's DTV input [11,7,682,466] of [0,0,704,480]) is accepted and
-     * answered back, as rtk-vsc does, but not yet applied: the host shows the whole source, as
-     * webos-video.h carries no crop (a follow-up). One outside the source is refused. */
+     * overscan: videooutputd's DTV input [11,7,682,466] of [0,0,704,480]; the picture-size modes)
+     * goes to the viewer with the window, which shows that part of the source in it. One outside
+     * the source is refused. */
     if (cmd == S_EXT && id == REGION &&
         (get_unaligned_le32(payload + 24) ||
          (get_unaligned_le16(payload + 12) &&
@@ -246,6 +246,10 @@ static long extended(struct vsc_file *f, unsigned int cmd, void __user *arg)
         w->open = w->has_rect = true;
         w->width = get_unaligned_le16(payload + 12);
         w->height = get_unaligned_le16(payload + 14);
+        w->crop_x = get_unaligned_le16(payload);
+        w->crop_y = get_unaligned_le16(payload + 2);
+        w->crop_w = get_unaligned_le16(payload + 4);
+        w->crop_h = get_unaligned_le16(payload + 6);
         w->x = get_unaligned_le16(payload + 16);
         w->y = get_unaligned_le16(payload + 18);
         w->w = get_unaligned_le16(payload + 20);

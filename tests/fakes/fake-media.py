@@ -101,9 +101,11 @@ def table_thread(path, rect, stop):
     while not stop.is_set():
         seq += 1
         # struct webos_video_context: MAIN, open, connected, not muted, the window, VDEC port 1
-        ctx = struct.pack("<48s5I2i8I", b"MAIN", 1, 1, 0, 1, 0, x, y, w, h, 0, 0, 0, 0, 3, 1)
-        body = ctx + b"\0" * (108 * 7)
-        pkt = b"WOSVID2\0" + struct.pack("<7I", 900, seq, 0, 8, 1920, 1080, 1) + body
+        ctx = struct.pack(
+            "<48s5I2i12I", b"MAIN", 1, 1, 0, 1, 0, x, y, w, h, 0, 0, 0, 0, 3, 1, 0, 0, 0, 0
+        )
+        body = ctx + b"\0" * (124 * 7)
+        pkt = b"WOSVID3\0" + struct.pack("<7I", 1028, seq, 0, 8, 1920, 1080, 1) + body
         try:
             conn.sendall(pkt)
         except OSError:

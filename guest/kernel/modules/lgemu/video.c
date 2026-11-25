@@ -77,6 +77,10 @@ static void make(struct webos_video_packet *p, u32 seq, u32 event, unsigned subj
         c->height = w->height;
         c->input = w->input;
         c->input_port = w->input_port;
+        c->crop_x = w->crop_x;
+        c->crop_y = w->crop_y;
+        c->crop_w = w->crop_w;
+        c->crop_h = w->crop_h;
         p->count++;
     }
 }
@@ -112,9 +116,10 @@ void lgemu_video_window(unsigned int idx, const struct lgemu_video_window *w, u3
     windows[idx] = *w;
     newest++;
     make(&queue[newest % QUEUE], newest, event, idx);
-    pr_debug("%s %s%s%s %d,%d %ux%u input %u:%u event %u\n", names[idx],
+    pr_debug("%s %s%s%s %d,%d %ux%u crop %u,%u %ux%u of %ux%u input %u:%u event %u\n", names[idx],
              w->open ? "open" : "closed", w->connected ? " connected" : "", w->mute ? " muted" : "",
-             w->x, w->y, w->w, w->h, w->input, w->input_port, event);
+             w->x, w->y, w->w, w->h, w->crop_x, w->crop_y, w->crop_w, w->crop_h, w->width,
+             w->height, w->input, w->input_port, event);
     mutex_unlock(&lock);
     wake_up_interruptible(&readers);
 }

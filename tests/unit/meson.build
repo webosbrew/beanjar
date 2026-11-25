@@ -80,6 +80,12 @@ test('check-ir', check_ir, suite: ['unit', 'viewer'], timeout: 10)
 check_disable = executable('check-disable', 'viewer/check-disable.c',
   override_options: ['c_std=c11', 'warning_level=2', 'werror=true'])
 test('check-disable', check_disable, suite: ['unit', 'viewer'], timeout: 10)
+# a scaler window's placement (host/viewer/core/video-place.h): the source crop (overscan, picture
+# size) fills the window, the rest of the source clipped
+check_video_place = executable('check-video-place', 'viewer/check-video-place.c',
+  dependencies: meson.get_compiler('c').find_library('m'),
+  override_options: ['c_std=c11', 'warning_level=2', 'werror=true'])
+test('check-video-place', check_video_place, suite: ['unit', 'viewer'], timeout: 10)
 
 # host/viewer/core: the virtual AMP (master gain and mute on the final media mix, the real mixer
 # driven with synthetic chunks), the capture port's availability (reaching a guest that opens after
