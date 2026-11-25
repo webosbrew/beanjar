@@ -143,9 +143,9 @@ class TestComponentsTest:
             publisher.publish(
                 self.root,
                 *target,
-                {"hbchannel@0.7.3": old, "hbchannel@0.8.0-rc1": new},
-                metas={"hbchannel@0.7.3": meta, "hbchannel@0.8.0-rc1": meta},
-                defaults={"hbchannel": "0.8.0-rc1"},
+                {"hbchannel@0.7.3": old, "hbchannel@0.8.0": new},
+                metas={"hbchannel@0.7.3": meta, "hbchannel@0.8.0": meta},
+                defaults={"hbchannel": "0.8.0"},
             )
         return old, new, meta
 
@@ -154,18 +154,18 @@ class TestComponentsTest:
         layer.toml for the layer; the package ships them all and an image of each version."""
         old, new, meta = self.publish_versions()
         assert (self.root / "hbchannel/layer.toml").read_bytes() == meta.read_bytes()
-        assert (self.root / "hbchannel/versions/default").read_text() == "0.8.0-rc1\n"
+        assert (self.root / "hbchannel/versions/default").read_text() == "0.8.0\n"
         assert not (self.root / "hbchannel/selections.json").exists()
         assert not (self.root / "hbchannel@0.7.3").exists()
-        for version, tree in (("0.7.3", old), ("0.8.0-rc1", new)):
+        for version, tree in (("0.7.3", old), ("0.8.0", new)):
             selected = guestlayers.select(
                 self.root, ("o22", "queue"), guestlayers.versioned("hbchannel", version)
             )
             assert Path(selected).name == publisher.digest(tree)
         out = self.top / "package/guest"
         debian.components(self.root, out / "layers")
-        assert (out / "layers/hbchannel/versions/default").read_text() == "0.8.0-rc1\n"
-        for version in ("0.7.3", "0.8.0-rc1"):
+        assert (out / "layers/hbchannel/versions/default").read_text() == "0.8.0\n"
+        for version in ("0.7.3", "0.8.0"):
             assert (out / f"layers/hbchannel/versions/{version}/selections.json").is_file()
         from beanjar import layerimage
 
@@ -182,9 +182,7 @@ class TestComponentsTest:
 
         old, new, _meta = self.publish_versions()
         loaded = layermeta.load(self.tree)
-        assert loaded["hbchannel"].versions == layermeta.Versions(
-            "0.8.0-rc1", ("0.7.3", "0.8.0-rc1")
-        )
+        assert loaded["hbchannel"].versions == layermeta.Versions("0.8.0", ("0.7.3", "0.8.0"))
         target = ("o22", "queue")
         with mock.patch.object(targets_mod(), "always_layers", return_value=()):
             for entry, tree in (("hbchannel@0.7.3", old), ("hbchannel", new)):
@@ -194,12 +192,12 @@ class TestComponentsTest:
             with pytest.raises(share.Error) as e:
                 share.resolve_layers(self.tree, target, ["hbchannel@0.9.0"])
             assert "no version '0.9.0'" in str(e.value)
-            assert "0.7.3, 0.8.0-rc1 (plain hbchannel: 0.8.0-rc1)" in str(e.value)
+            assert "0.7.3, 0.8.0 (plain hbchannel: 0.8.0)" in str(e.value)
             _layers, missing = share.resolve_layers(
                 self.tree, ("m14", "beehive"), ["hbchannel@0.7.3"]
             )
             assert missing == ["hbchannel@0.7.3 (not built for m14-beehive)"]
-        assert layermeta.versions_of(["normal", "hbchannel"], loaded) == {"hbchannel": "0.8.0-rc1"}
+        assert layermeta.versions_of(["normal", "hbchannel"], loaded) == {"hbchannel": "0.8.0"}
         assert layermeta.versions_of(["hbchannel@0.7.3"], loaded) == {"hbchannel": "0.7.3"}
 
     def test_shippable_check_scans_what_the_package_ships(self):

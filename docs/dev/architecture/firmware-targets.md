@@ -133,12 +133,12 @@ component `build/components/<name>/versions/<version>` (`meson/components.py`) w
 `versions/default` beside them. `layermeta.Layer.versions` lists the versions of the source tree
 and the published ones, with the published default (what the build made). A version the layer
 lacks is refused with the list (`layer hbchannel has no version '0.9.0'; its versions: 0.7.3,
-0.8.0-rc1 (plain hbchannel: 0.8.0-rc1)`), as is a version of a layer built once and one layer
+0.8.0 (plain hbchannel: 0.8.0)`), as is a version of a layer built once and one layer
 named at two versions. The rules in `layer.toml` are the layer's whatever its version, and the
 guest knows the layer by its name only (`boot.conf`, the disk serial `layer-hbchannel`):
 `share.resolve_layers` takes the version's component. A version not built for the VM's target is
 left out like any optional layer that is not built. `beanjar config show` shows
-`layer_versions.<name>` and `beanjar list` a `VERSIONS` column (`hbchannel@0.8.0-rc1` for plain
+`layer_versions.<name>` and `beanjar list` a `VERSIONS` column (`hbchannel@0.8.0` for plain
 `hbchannel`): the version of the layer, not what the guest's state may have updated it to.
 
 Which always-used layers a target gets (`common`, `soc` and `webos`, or `simplesmart`, or
@@ -181,9 +181,8 @@ The layer is laid out per HBC release: `versions/<version>/release.env` pins the
 sha256; downloaded once into Meson's package cache), `versions/<version>/captured/<name>/` holds the
 captures and `versions/<version>/releases` names each webOS release's capture; releases whose installs
 wrote the same files share one. Every release that `meson.build`'s `hbchannel_versions` lists is
-built and shipped side by side (`hbchannel@0.7.3`, `hbchannel@0.8.0-rc1`); `versions/default` names
-the one plain `hbchannel` means: 0.8.0-rc1, the maintainer's release candidate until webosbrew
-publishes 0.8.0. Both share this map):
+built and shipped side by side (`hbchannel@0.7.3`, `hbchannel@0.8.0`); `versions/default` names
+the one plain `hbchannel` means: 0.8.0, webosbrew's latest release. Both share this map:
 
 | Capture | Releases | Files |
 |---|---|---|
@@ -217,7 +216,7 @@ its service's `install` method downloads the IPK, forks, installs it through app
 `dev/install` (into the state disks, over the read-only layer) and runs the new `elevate-service`.
 On a TV that updated itself the newer copy is what runs, and so it is here: a VM started on
 `hbchannel@0.7.3` that updated itself to 0.8.0 keeps 0.8.0 at the next boot, after a switch to
-plain `hbchannel` (0.8.0-rc1, the same version: the layer's copy is installed) and after a switch
+plain `hbchannel` (then 0.8.0-rc1, the same version from another IPK: the layer's copy is installed) and after a switch
 back to `@0.7.3`. A layer's newer release (a later default) is installed over an older copy in the
 state. To run an older release on a VM whose state has a newer one, wipe its state (`beanjar
 wipe`). Checked on queue (W22O 43.21.89), 2026-11-08. Then `emulator-hbchannel` puts the VM's root `authorized_keys` and

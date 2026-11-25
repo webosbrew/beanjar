@@ -10,7 +10,7 @@
 # as build/components/hbchannel/versions/<version> (meson/components.py); versions/default names
 # the one plain hbchannel means (host/core/beanjar/layermeta.py). The layer holds no key: the
 # host key and root's authorized_keys are each VM's own, brought in through the per-VM layer.
-hbchannel_versions = ['0.7.3', '0.8.0-rc1']   # the shipped releases, each a directory of versions/
+hbchannel_versions = ['0.7.3', '0.8.0']   # the shipped releases, each a directory of versions/
 hbchannel_default = fs.read('versions/default').strip()
 if hbchannel_default not in hbchannel_versions
   error('guest/layers/hbchannel: versions/default names ' + hbchannel_default + ', not one of hbchannel_versions')

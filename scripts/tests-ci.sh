@@ -74,7 +74,7 @@ unit() {
 	for env in "$TOP"/guest/layers/hbchannel/versions/*/release.env; do
 		(
 			. "$env"
-			ipk=$cache/${URL##*/}
+			ipk=$cache/$SHA256-${URL##*/}
 			[ -f "$ipk" ] && [ "$(sha256sum "$ipk" | cut -d' ' -f1)" = "$SHA256" ] && exit 0
 			curl -fsSL --retry 3 -o "$ipk.part" "$URL"
 			[ "$(sha256sum "$ipk.part" | cut -d' ' -f1)" = "$SHA256" ] ||

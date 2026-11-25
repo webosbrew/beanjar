@@ -162,7 +162,7 @@ def _versions(dirs):
 
 
 def version_text(layer):
-    """'0.7.3, 0.8.0-rc1 (plain NAME: 0.8.0-rc1)': a versioned layer's versions, for messages."""
+    """'0.7.3, 0.8.0 (plain NAME: 0.8.0)': a versioned layer's versions, for messages."""
     v = layer.versions
     return f"{', '.join(v.available)} (plain {layer.name}: {v.default})"
 

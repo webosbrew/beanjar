@@ -208,8 +208,9 @@ Pi fetches none).
 
 One pinned input is not a source tarball: Homebrew Channel's release IPKs (ar archives, which
 Meson's wrap handling cannot unpack). `guest/layers/hbchannel/versions/<version>/release.env` holds
-each one's URL and sha256; `build-layer.sh` downloads it once into the same package cache and
-refuses it if the hash differs.
+each one's URL and sha256; `build-layer.sh` downloads it once into the same package cache, as
+`<sha256>-<file name>` (a release candidate and its release share a file name), and refuses it if
+the hash differs.
 
 None of them is configured as a Meson subproject. They are built by their own build systems from
 custom targets, for these reasons:

@@ -34,7 +34,7 @@ elevated, as on a rooted TV. It needs `devmode` and replaces `rootssh`:
 beanjar config set tv1 layers=normal,gl,devmode,hbchannel
 ```
 
-`hbchannel` is the default release (0.8.0-rc1); `hbchannel@0.7.3` picks the other one built.
+`hbchannel` is the default release (0.8.0); `hbchannel@0.7.3` picks the other one built.
 Homebrew Channel can update itself in the VM, and its newer copy then stays until `beanjar wipe`.
 See [Homebrew Channel](../../host/core/README.md#homebrew-channel) in the manager guide.
 

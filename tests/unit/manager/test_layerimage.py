@@ -97,8 +97,8 @@ def run_referenced(vms, units=None, resolved=None):
 
 
 def test_every_vm_pins_its_own_versions():
-    got = run_referenced([vm("a", ["hbchannel@0.8.0-rc1"]), vm("b", ["hbchannel@0.9.0", "gl"])])
-    want = {layerimage.key(f"/l/{n}") for n in ("hbchannel@0.8.0-rc1", "hbchannel@0.9.0", "gl")}
+    got = run_referenced([vm("a", ["hbchannel@0.8.0"]), vm("b", ["hbchannel@0.9.0", "gl"])])
+    want = {layerimage.key(f"/l/{n}") for n in ("hbchannel@0.8.0", "hbchannel@0.9.0", "gl")}
     assert got == want
 
 

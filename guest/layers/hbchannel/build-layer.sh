@@ -13,7 +13,8 @@
 #      CAPTURE      the webOS release's capture of a real install of it, versions/<HBC>/captured/<name>
 #                   (versions/<HBC>/releases names it per release; meson.build), which capture.sh makes
 #      IPK          its IPK (default: the one versions/<HBC>/release.env pins, downloaded once into
-#                   Meson's package cache, subprojects/packagecache or $MESON_PACKAGE_CACHE_DIR)
+#                   Meson's package cache, subprojects/packagecache or $MESON_PACKAGE_CACHE_DIR, as
+#                   <sha256>-<file name>: release candidates and releases may share a file name)
 #      IPK_SHA256   its sha256 (default the pinned one; tests give their own IPK and its hash)
 #
 # /media and /var are bound from the state disks at mount-readwrite, which hides anything the
@@ -69,7 +70,7 @@ sha() { sha256sum "$1" | cut -d' ' -f1; }
 
 if [ -z "${IPK:-}" ]; then
 	CACHE=${MESON_PACKAGE_CACHE_DIR:-$TOP/subprojects/packagecache}
-	IPK=$CACHE/$(basename "$URL")
+	IPK=$CACHE/$SHA256-$(basename "$URL")	# by hash: releases may share a file name
 	if [ ! -f "$IPK" ] || [ "$(sha "$IPK")" != "$IPK_SHA256" ]; then
 		mkdir -p "$CACHE"
 		echo "hbchannel: downloading $URL" >&2

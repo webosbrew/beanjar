@@ -20,10 +20,10 @@
 #
 #   guest/layers/hbchannel/capture.sh HBC FIRMWARE RELEASE
 #
-# HBC: a directory of versions/ (0.8.0-rc1, 0.7.3, ...); its IPK is downloaded into Meson's package
+# HBC: a directory of versions/ (0.8.0, 0.7.3, ...); its IPK is downloaded into Meson's package
 # cache if it is not there yet. FIRMWARE: a name in the host's firmware collections (beanjar create
 # --firmware); it is imported (hard links) into the VM. Env: VM (default hbcap-HBC-RELEASE), OUT, REASON (beanjar start --reason),
-# KEEP. Runs on the x86 PC or any host with beanjar and ares-cli.
+# SETTLE, KEEP. Runs on the x86 PC or any host with beanjar and ares-cli.
 set -eu
 HERE=$(dirname "$(readlink -f "$0")")
 TOP=$(readlink -f "$HERE/../../..")
@@ -38,7 +38,7 @@ SVC_DIR=/media/developer/apps/usr/palm/services/$APP.service
 [ -f "$HERE/versions/$HBC/release.env" ] || { echo "hbcap: no versions/$HBC" >&2; exit 1; }
 . "$HERE/versions/$HBC/release.env"
 CACHE=${MESON_PACKAGE_CACHE_DIR:-$TOP/subprojects/packagecache}
-IPK=$CACHE/$(basename "$URL")
+IPK=$CACHE/$SHA256-$(basename "$URL")	# by hash: releases may share a file name
 if [ "$(sha256sum "$IPK" 2>/dev/null | cut -d' ' -f1)" != "$SHA256" ]; then
 	mkdir -p "$CACHE"
 	curl -fsSL --retry 3 -o "$IPK.part" "$URL"
@@ -72,7 +72,10 @@ done
 LS2='/var/luna-service2-dev /var/palm/ls2-dev'
 left=$(root "find /media/developer/apps $LS2 -type f 2>/dev/null; true")
 [ -z "$left" ] || { echo "hbcap: $VM is not fresh:" >&2; echo "$left" >&2; exit 1; }
-sleep 60	# the rest of the boot settles, so the list of other changes below is the install's
+# The rest of the boot settles, so the list of other changes below is the install's. SETTLE (seconds,
+# default 60) longer where a busy first boot reacts to the install: spacebuns' eula-service reboots
+# the set (tvpower power2/reboot, micomReset) when settingsservice does not answer within 10 s.
+sleep "${SETTLE:-60}"
 root 'rm -f /tmp/hbcap.*; touch /tmp/hbcap.mark' >/dev/null
 sleep 1
 

@@ -1,0 +1,13 @@
+{
+    "appId": "org.webosbrew.hbchannel",
+    "type": "regular",
+    "allowedNames": ["org.webosbrew.hbchannel-*"],
+    "trustLevel": "public",
+    "permissions": [
+        {
+            "service":"org.webosbrew.hbchannel-*",
+            "outbound":["*"]
+        }
+    ]
+}
+

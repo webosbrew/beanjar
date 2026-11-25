@@ -60,7 +60,7 @@ DEFAULT = (VERSIONS_DIR / "default").read_text().strip()
 
 
 def ipk_of(version):
-    return CACHE / Path(VERSIONS[version]["URL"]).name
+    return CACHE / f"{VERSIONS[version]['SHA256']}-{Path(VERSIONS[version]['URL']).name}"
 
 
 def captures(version):

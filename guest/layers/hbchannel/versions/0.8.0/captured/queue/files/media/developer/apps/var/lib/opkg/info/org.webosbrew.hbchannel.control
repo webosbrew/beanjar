@@ -1,0 +1,10 @@
+Package: org.webosbrew.hbchannel
+Version: 0.8.0
+Section: misc
+Priority: optional
+Architecture: all
+Installed-Size: 4213222
+Maintainer: N/A <nobody@example.com>
+Description: This is a webOS application.
+webOS-Package-Format-Version: 2
+webOS-Packager-Version: x.y.x
