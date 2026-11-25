@@ -16,6 +16,7 @@
 #include <linux/mman.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/poll.h>
 #include <linux/proc_fs.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -495,6 +496,18 @@ int rtk_vsc_open(struct file *file, const char *name, int idx)
     mutex_unlock(&vsc_lock);
     file->private_data = f;
     return 0;
+}
+
+/* A scaler file's poll, as V4L2's for events (v4l2_event_pending): EPOLLPRI while one is queued,
+ * nothing otherwise, woken by vsc_event. libval-starfish's Val_Thread epolls video30 and video31
+ * for IN or PRI and calls DQEVENT only once its events are on; an always-ready answer made it spin
+ * in epoll_wait. */
+__poll_t rtk_vsc_poll(struct file *file, struct poll_table_struct *wait)
+{
+    struct vsc_file *f = file->private_data;
+
+    poll_wait(file, &f->wait, wait);
+    return READ_ONCE(f->count) ? EPOLLPRI : 0;
 }
 
 int rtk_vsc_release(struct inode *inode, struct file *file)

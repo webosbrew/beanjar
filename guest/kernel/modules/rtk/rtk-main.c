@@ -100,14 +100,6 @@ static char *waits[16];
 static int waits_count;
 module_param_array(waits, charp, &waits_count, 0444);
 MODULE_PARM_DESC(waits, "ioctls that wait for an event that never comes, node:cmd");
-/* Nodes whose poll never reports an event, as the hardware's would when no data comes (W16K's
- * libhal_rtd2999l SDEC thread polls /dev/rtkdemux for 300 ms at a time and reads its section
- * buffers whenever it is readable): node,... The other nodes keep a file's default poll, always
- * ready, which such a thread turns into a busy loop. */
-static char *quiet[8];
-static int quiet_count;
-module_param_array(quiet, charp, &quiet_count, 0444);
-MODULE_PARM_DESC(quiet, "nodes whose poll never reports an event");
 /* ARC on or off: KADP_VFE_ARC_Enable's _IOW('w', 0x8f, int) on /dev/vfedev (W19P), whose int
  * lgemu keeps as the sound output's "VFE ARC Enable" (lgemu snd.c, /proc/lgemu/sound_out) */
 static char *arc_ioctl;
@@ -351,15 +343,19 @@ static ssize_t node_write(struct file *file, const char __user *buf, size_t n, l
 #define MINOR_NODE0  160
 #define MINORS       (MINOR_NODE0 + ARRAY_SIZE(nodes))
 
-/* the node's name from its minor: a scaler window's file keeps its window, not the name */
+/* A node's poll (its name from the minor: a scaler window's file keeps its window, not the name).
+ * A scaler window reports its queued events (rtk-vsc.c). The other nodes model no data or events,
+ * so they report nothing, as the hardware's do while none comes: an always-ready node turns a
+ * thread that waits on it into a busy loop (W16K's libhal_rtd2999l SDEC thread on /dev/rtkdemux,
+ * 300 ms at a time). Without any .poll, epoll would refuse them (EPERM) and poll() and select()
+ * would see them always ready. */
 static __poll_t node_poll(struct file *file, struct poll_table_struct *wait)
 {
     const char *name = node_names[iminor(file_inode(file)) - MINOR_NODE0];
 
-    for (int i = 0; i < quiet_count; i++)
-        if (!strcmp(quiet[i], name))
-            return 0;
-    return DEFAULT_POLLMASK;
+    if (rtk_vsc_index(name) >= 0)
+        return rtk_vsc_poll(file, wait);
+    return 0;
 }
 
 static const struct file_operations node_fops = {

@@ -44,6 +44,7 @@ const char *rtk_vsc_counter_name(int idx); /* module-lifetime canonical label */
 bool rtk_vsc_legacy_node(const char *name);
 int rtk_vsc_open(struct file *file, const char *name, int idx);
 int rtk_vsc_release(struct inode *inode, struct file *file);
+__poll_t rtk_vsc_poll(struct file *file, struct poll_table_struct *wait);
 long rtk_vsc_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 long rtk_vsc_legacy_ioctl(unsigned int cmd, unsigned long arg);
 

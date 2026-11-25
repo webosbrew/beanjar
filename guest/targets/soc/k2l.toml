@@ -50,9 +50,6 @@ params = [
     "stores=rtkaudio:0x80046107:0x40046106",
     "pwms=pwm-I-0,pwm-I-1,pwm-I-2,pwm-I-3,pwm-M-0,pwm-M-1,pwm-M-2,pwm-M-3",
     "vt=vivtdev:1920:1080:60:3",
-    # libhal_rtd2999l's SDEC thread polls rtkdemux (300 ms) for its section buffers: always
-    # readable, it ran tvservice at 128% of a core idle at Home
-    "quiet=rtkdemux",
     "rpc_fn009=201:248",
     "rpc_audio_config=201:16",
     "rpc_spdifo_source=201:90",
