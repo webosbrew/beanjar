@@ -51,8 +51,9 @@ DEFAULT_GUEST_KERNEL = "arm64"
 # that one; none decodes in software only, locked against the viewers' preferences (no GPU driver
 # is loaded in the helper), with a short codec list and the media sandbox required
 # (docs/research/media-helper-isolation.md, "Software-only decoding and a smaller FFmpeg").
-# The device types are FFmpeg's (av_hwdevice_find_type_by_name) that a Linux host's decoders use.
-HWDEC_TYPES = ("cuda", "drm", "qsv", "v4l2request", "vaapi", "vdpau", "vulkan")
+# The device types are the hwaccels of the helper's minimal FFmpeg (ffmpeg-helper: CUDA/NVDEC, V4L2
+# request, VA-API, Vulkan); the viewers' --hwdec only reaches that helper.
+HWDEC_TYPES = ("cuda", "v4l2request", "vaapi", "vulkan")
 HWDECS = ("auto", "none") + HWDEC_TYPES
 DEFAULT_HWDEC = "auto"
 

@@ -188,6 +188,9 @@ def test_hwdec():
         assert vmsettings.launcher_env(cfg)["MEDIA_HWDEC"] == value
     with pytest.raises(core.Error, match="hardware.hwdec: hwdec=gpu: one of auto, none, cuda"):
         vmconfig.decode(dict(base, hardware={"hwdec": "gpu"}))
+    for gone in ("drm", "qsv", "vdpau"):
+        with pytest.raises(core.Error, match=f"hwdec={gone}: one of auto, none, cuda, v4l2request"):
+            vmconfig.decode(dict(base, hardware={"hwdec": gone}))
     with pytest.raises(core.Error, match="advanced.env.MEDIA_HWDEC is owned by the launcher"):
         vmconfig.decode(dict(base, advanced={"env": {"MEDIA_HWDEC": "none"}}))
     with pytest.raises(core.Error, match="MEDIA_SANDBOX=off is refused") as e:

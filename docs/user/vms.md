@@ -181,7 +181,7 @@ beanjar config set tv1 guest_kernel=x86-64
 
 `hwdec` is how the guest's video is decoded on this host. `auto`, the default, uses a hardware
 decoder where one opens (CUDA, VA-API, Vulkan, V4L2 request) and lets a viewer's `--hwdec` prefer
-another or none; a device type (`cuda`, `drm`, `qsv`, `v4l2request`, `vaapi`, `vdpau`, `vulkan`)
+another or none; a device type (`cuda`, `v4l2request`, `vaapi`, `vulkan`)
 allows only that one. `none` is for a VM whose guest you do not trust with the host's GPU drivers:
 it decodes in software only and is locked, so a viewer asking for hardware is refused and no GPU
 driver is ever loaded in the media helper; it decodes only common codecs (H.264, HEVC, VP8, VP9,
