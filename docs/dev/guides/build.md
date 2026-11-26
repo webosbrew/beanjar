@@ -351,7 +351,10 @@ over an opaque black video plane, as a TV shows it with no video), the guest's i
 (`idle-cpu`, "Bring-up checklist" below; headless: after ssh), Quick Start+'s standby and
 resume where the firmware and the model offer it (tvpowerd opens `/dev/lgib`, and tvservice's
 `instantBooting` is `quickStartPlus` or `true`; SKIP on WT1H and W15M's 42LF652V-ZA): `guest.sh
-standby-prep` turns it on, POWER on the remote (headless: tvpower's `powerOff`, reason
+standby-prep` turns it on, graphics first `guest.sh screensaver` (two rounds of tvpower's
+`turnOnScreenSaver` until Screen Saver with nothing processing and `turnOnScreen` until Active,
+each within `SCREENSAVER_WAIT`, 60 s: a Screen Saver Ready that stays, with every power call
+refused as busy, fails the step), POWER on the remote (headless: tvpower's `powerOff`, reason
 `remoteKey`), `tests/regress/standby.py` waits for the standby (the guest's `webos.standby` port in
 QMP), checks QEMU idles in it (`STANDBY_CPU`, 10 % of a host CPU, over 5 s from `STANDBY_SETTLE`, 2 s, after the
 standby: the s2idle entry follows the micom's standby) and presses the power key (QMP

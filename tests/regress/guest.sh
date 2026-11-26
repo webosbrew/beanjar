@@ -27,6 +27,15 @@
 #                                                     "STANDBY READY <tvservice's pids> <tvpowerd's
 #                                                     pid>", or "STANDBY SKIP ..." where the
 #                                                     firmware or the model has no Quick Start+
+#   sh /host/tests/regress/guest.sh screensaver [S]   graphics, before the standby: two rounds of
+#                                                     tvpower's turnOnScreenSaver, each until the
+#                                                     state is Screen Saver with nothing processing,
+#                                                     then turnOnScreen until Active: "SCREENSAVER N
+#                                                     <s to Screen Saver> <s to Active>" a round,
+#                                                     then "SCREENSAVER PASS"; "SCREENSAVER SKIP
+#                                                     <why>" where tvpower has no such request; a
+#                                                     state that stays (Screen Saver Ready, busy)
+#                                                     past S s (default 60): "SCREENSAVER FAIL"
 #   sh /host/tests/regress/guest.sh power-off         tvpower's powerOff (reason remoteKey), a
 #                                                     second later, in the background (headless)
 #   sh /host/tests/regress/guest.sh resumed PIDS PID [SECONDS]  after the wake: tvpowerd Active
@@ -313,6 +322,42 @@ standby_prep() {
 	echo "$f" | tr -d ' ' | grep -q '"checkFactoryState":"false"' || { echo "STANDBY FAIL: factory state"; return 1; }
 	echo "STANDBY READY $(release_pids) $(in_webos 'pidof tvpowerd')"
 }
+# tvpower's state until it is $1 with nothing processing (getPowerState: "state" and, while a
+# transition runs, "processing"), up to $2 s: the seconds it took, or nothing
+power_state_until() {
+	end=$(($(up | cut -d. -f1) + $2))
+	t0=$(up)
+	want=$(echo "$1" | tr -d ' ')  # compared with the reply's spaces taken out
+	while :; do
+		s=$(in_webos "luna-send -n 1 luna://com.webos.service.tvpower/power/getPowerState '{}'" | tr -d ' \n')
+		case $s in *"\"state\":\"$want\""*) case $s in *processing*) ;; *)
+			awk -v a="$(up)" -v b="$t0" 'BEGIN { printf "%.1f", a - b }'; return 0 ;; esac ;; esac
+		[ "$(up | cut -d. -f1)" -lt $end ] || { echo "$s" >&2; return 1; }
+		sleep 1
+	done
+}
+# Two screen-saver rounds as a set idling at Home has them (the second request of webOS 12's
+# built-in saver once stayed in Screen Saver Ready, and tvpower then refused every power call as
+# busy); the standby that follows is the power-off after them.
+screensaver() {
+	limit=${1:-60}
+	i=0
+	while [ $i -lt 2 ]; do i=$((i + 1))
+		r=$(in_webos "luna-send -n 1 luna://com.webos.service.tvpower/power/turnOnScreenSaver '{}'" | tr -d ' \n')
+		case $r in
+		*'"returnValue":true'*) ;;
+		*'Unknown method'*|*'Service does not exist'*) echo "SCREENSAVER SKIP: $r"; return 0 ;;
+		*) echo "SCREENSAVER FAIL: request $i: $r"; return 1 ;;
+		esac
+		on=$(power_state_until 'Screen Saver' "$limit" 2>&1) || {
+			echo "SCREENSAVER FAIL: request $i: no Screen Saver in $limit s: $on"; return 1; }
+		r=$(in_webos "luna-send -n 1 luna://com.webos.service.tvpower/power/turnOnScreen '{}'" | tr -d ' \n')
+		off=$(power_state_until Active "$limit" 2>&1) || {
+			echo "SCREENSAVER FAIL: round $i: not Active $limit s after turnOnScreen ($r): $off"; return 1; }
+		echo "SCREENSAVER $i $on $off"
+	done
+	echo "SCREENSAVER PASS"
+}
 power_off() {
 	webos-enter sh -c "(sleep 1; luna-send -n 1 luna://com.webos.service.tvpower/power/powerOff '{\"reason\":\"remoteKey\"}') </dev/null >/dev/null 2>&1 &" </dev/null
 	echo "POWEROFF requested"
@@ -468,6 +513,7 @@ tv-ready) tv_ready "${2:-60}" ;;
 tvservice) tvservice "$2" ;;
 home-idle) home_idle "${2:-60}" ;;
 standby-prep) standby_prep ;;
+screensaver) screensaver "$((${2:-60} * scale))" ;;
 power-off) power_off ;;
 resumed) resumed "$2" "$3" "$4" ;;
 checklist) checklist "$2" ;;

@@ -87,7 +87,10 @@ mitmweb, slirp4netns or viewer runs on the VM host):
              both windows: WARN, with its busiest threads (guest.sh idle-threads: wchan, syscall);
              numbers in <target>/idle-cpu.json
   standby    Quick Start+ (docs/dev/architecture/suspend.md), where the firmware and the model offer it
-             (tvpowerd opens /dev/lgib, tvservice's instantBooting; SKIP elsewhere): guest.sh standby-prep turns it on; the remote's POWER
+             (tvpowerd opens /dev/lgib, tvservice's instantBooting; SKIP elsewhere): guest.sh standby-prep turns it on;
+             guest.sh screensaver: two rounds of tvpower's turnOnScreenSaver to Screen Saver and
+             turnOnScreen back to Active, each within SCREENSAVER_WAIT s (a stuck Screen Saver Ready
+             fails the step; the summary's "saver ON/ON s", "saver -" where tvpower has no request); the remote's POWER
              (ir-key.py 0x08); tests/regress/standby.py waits for the standby (the guest's
              webos.standby port), measures QEMU's CPU in it from STANDBY_SETTLE s on (the vCPUs
              idle in s2idle: under STANDBY_CPU %), presses the power key (QMP system_powerdown) and waits for the wake;
@@ -349,6 +352,7 @@ TV_NET = {
 }  # the suite's server runs in the VM's namespace (netns-exec), its network judged as direct's
 STANDBY_CPU = 10.0  # QEMU's CPU in standby, % of one host CPU, at most
 RESUME_SETTLE = 12  # s from the resume to HOME for its screenshot
+SCREENSAVER_WAIT = 60  # s for each screen-saver transition (guest.sh screensaver), times the scale
 STANDBY_SETTLE = 2  # s from the standby port to the CPU measure: the micom's
 # standby comes first, then the s2idle entry (under 1 s on TCG)
 PASSTHROUGH = (
@@ -1488,6 +1492,25 @@ def standby(h, a, r, out, rel, target):
         r.steps["standby"] = "TIMEOUT" if rc == 124 else "FAIL"
         return
     pids, tvpowerd = m.groups() if m else ("dry", "dry")
+    # graphics: two screen-saver rounds first (guest.sh screensaver), so the power-off below is the
+    # one after them; a saver state that stays (Screen Saver Ready, power busy) fails the step
+    saver = ""
+    if not a.headless:
+        rc = guest_step(h, a, r, "screensaver", str(SCREENSAVER_WAIT), out)
+        rounds = re.findall(r"^SCREENSAVER [0-9]+ ([0-9.]+) ([0-9.]+)$", r.text, re.M)
+        if a.dry_run:
+            pass
+        elif rc == 0 and "SCREENSAVER SKIP" in r.text:
+            saver = "saver - "
+        elif rc or "SCREENSAVER PASS" not in r.text:
+            say(f"{target}:   screensaver: {r.text.strip() or rc}")
+            r.steps["standby"] = "TIMEOUT" if rc == 124 else "FAIL"
+            return
+        else:
+            saver = f"saver {'/'.join(on for on, _ in rounds)}s "
+            say(
+                f"{target}:   screen saver {', '.join(f'{on} s on, {off} s off' for on, off in rounds)}"
+            )
     early = a.headless and os.environ.get("STANDBY_KEY_EARLY")
     if early:
         # test hook (docs/dev/guides/build.md): the power key the moment the standby shows, before the s2idle,
@@ -1542,7 +1565,7 @@ def standby(h, a, r, out, rel, target):
     if not a.dry_run and (rc or not found):
         r.steps["standby"] = "TIMEOUT" if rc == 124 else "FAIL"
         return
-    r.standby = (
+    r.standby = saver + (
         f"{numbers['wait']:.1f}s cpu{numbers['cpu']:.0f}% wake{numbers['wake']:.1f}s "
         f"active{found.group(1) if found else '?'}s"
     )
