@@ -548,6 +548,16 @@ def select(want, fws, found, default_fw=paths.FW_NAME):
     return out
 
 
+def instance_id(target, fw):
+    """The INSTANCE a target's lane runs in: the target's name, or for a bring-up model's firmware on a
+    target that is not in bring-up (W21Z on W21P's k7lp-kisscurl, only with --fw) <target>-<model>: a
+    development VM is bound to one firmware, so the default firmware's VM cannot boot it."""
+    model = paths.model_of(fw)
+    if model in targets.BRING_UP and not targets.in_bring_up(targets.by_name(target)):
+        return f"{target}-{model.lower()}"
+    return target
+
+
 def parser():
     p = argparse.ArgumentParser(
         prog="scripts/regress",
@@ -3586,7 +3596,7 @@ def lanes(a, sel, run, skipped, hosts):
         peaked = [p for p in mine if book[p, host][1] == "peak"]
         say(
             (f"{host}: " if len(hosts) > 1 else "")
-            + f"{n} VM(s) at once, each in an instance of its own (INSTANCE=<target>, build/instances/<target>)"
+            + f"{n} VM(s) at once, each in an instance of its own (INSTANCE=<target>, build/instances/<target>; instance_id)"
             + (f"; -j {a.jobs} capped by {why}" if n < a.jobs and why else "")
         )
         say(
@@ -3626,14 +3636,19 @@ def lanes(a, sel, run, skipped, hosts):
             return REFUSED
         try:
             r = run_target(
-                Host(host, a.dest, a.dry_run, Instance(target) if a.instances else None),
+                Host(
+                    host,
+                    a.dest,
+                    a.dry_run,
+                    Instance(instance_id(target, fw)) if a.instances else None,
+                ),
                 a,
                 target,
                 fw,
             )
         finally:
             gate.done(host, target)
-        r.instance = target if a.instances else None
+        r.instance = instance_id(target, fw) if a.instances else None
         r.host = host
         r.memory.update(
             ram_mb=ram[target],

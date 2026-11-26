@@ -234,6 +234,12 @@ class SelectTest(unittest.TestCase):
                 env={},
             )
 
+    def test_bring_up_firmware_runs_in_an_instance_of_its_own(self):
+        # a development VM is bound to one firmware: W21Z's lane cannot use W21P's instance
+        w21z = "03.20.25.01-HE_PJT_W21Z_AFADATAA"
+        self.assertEqual(regress.instance_id("k7lp-kisscurl", W21P), "k7lp-kisscurl")
+        self.assertEqual(regress.instance_id("k7lp-kisscurl", w21z), "k7lp-kisscurl-w21z")
+
     def test_viewer_graphics_only(self):
         a, _ = regress.parse(["--viewer", "--tv"], found=FOUND, env={})
         self.assertTrue(a.viewer)
