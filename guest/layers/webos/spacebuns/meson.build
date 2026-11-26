@@ -19,3 +19,6 @@ endif
 if soc == 'o22n2' and webos == 'spacebuns'
   webos_layer_args += ['--tree', meson.current_source_dir() / 'audio-rootfs', '.']
 endif
+
+# SAM after the Flutter zygote, which a set's snapshot boot starts first (zygote-rootfs/.../sam.service.d).
+webos_layer_args += ['--tree', meson.current_source_dir() / 'zygote-rootfs', '.']
