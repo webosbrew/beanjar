@@ -2646,6 +2646,15 @@ class LbStoppedItselfTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("started again since as 8891", r.stdout)
 
+    def test_closed_again_after_the_call_passes(self):
+        # o22n2-spacebuns with no channels: servicemanager's policy closes the instance the call
+        # started moments later, so a second look at the pids finds none; the first one counts
+        r = self.run_case(
+            "n=0; release_pids() { n=$((n + 1)); [ $n -gt 1 ] || echo 7272; }; lb_stopped_itself none"
+        )
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("pids now 7272", r.stdout)
+
     def test_everything_else_fails(self):
         ok = {
             "Result": "success",

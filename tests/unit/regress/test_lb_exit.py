@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """tests/regress/lb-exit.sh: legacy-broadcast's clean exits (it stops itself when idle and a call
 starts it again) told apart from a crash or another abnormal exit, on recorded evidence: systemd's
-result for the boot instance, the hub's LSHUB_SRV_EXIT for those it started, the crash reports."""
+result for the boot instance, the hub's LSHUB_SRV_EXIT for those it started, the crash reports. And servicemanager's lifecycle
+policy closing it (lb_policy_closed), which guest.sh's ready accepts in place of its tv-ready."""
 
 import shutil
 import subprocess
@@ -22,6 +23,36 @@ HUB_CLEAN = (
 OTHER = (
     "2026-11-24T14:22:15.000000Z [79.0] user.info ls-hubd [] ls-hubd LSHUB_SRV_EXIT "
     '{"SERVICE_NAME":"com.webos.service.other","EXE":"/usr/sbin/other","STATE":3,"EXIT_CODE":139,"PID":3000}'
+)
+
+
+# servicemanager's log lines (/var/log/messages) on o22n2-spacebuns (W24G 02.68.80.01) under TCG,
+# the second boot of a fresh state: the policy closes legacy-broadcast with priority_lowest
+SM = "2026-11-26T05:06:09.589174Z [{t}] user.info servicemanager [] servicemanager SERVICE_MANAGER_CLOSE "
+LOWEST = SM + '{{"isServiceCloseRequired":"yes","reason":"priority_lowest"}} '
+STOPPING = SM + '{{"service":"com.webos.service.{svc}","set_status":"stopping"}} '
+CHAIN = (
+    SM + '{{"where":"add_call_chain","service":"com.webos.service.legacybroadcast.broadcast",'
+    '"uri":"luna://com.webos.service.legacybroadcast.broadcast/close"}} '
+)
+POLICY_CLOSE = "\n".join(
+    (
+        LOWEST.format(t="515.261023548"),
+        LOWEST.format(t="515.261084613"),
+        STOPPING.format(t="515.261174164", svc="legacybroadcast.broadcast"),
+        CHAIN.format(t="515.261274184"),
+    )
+)
+# the first boot of the same state: bootd launched livetv, one of the policy's dependsOn apps, so
+# servicemanager closed nothing; the same priority_lowest closed fancontroller (its own policy)
+KEPT = "\n".join(
+    (
+        LOWEST.format(t="189.258911416"),
+        STOPPING.format(t="189.280022930", svc="fancontroller"),
+        SM.format(t="189.491421608")
+        + '{"isServiceCloseRequired":"no","service_id":"com.webos.service.legacybroadcast.broadcast",'
+        '"reason":"dependent_app_is_launching"} ',
+    )
 )
 
 
@@ -72,6 +103,24 @@ class LbExit(unittest.TestCase):
         rc, out = self.run_fn("lb_crash_free", "legacy-broadcast-atsc.1131.core.gz\n")
         self.assertEqual(rc, 1)
         self.assertIn("crash report", out)
+
+    def test_policy_closed(self):
+        rc, out = self.run_fn("lb_policy_closed", POLICY_CLOSE + "\n")
+        self.assertEqual((rc, out.strip()), (0, "515.261174164"))
+        # after the fancontroller close, a later lowest-priority close of legacy-broadcast counts
+        rc, out = self.run_fn("lb_policy_closed", KEPT + "\n" + POLICY_CLOSE + "\n")
+        self.assertEqual((rc, out.strip()), (0, "515.261174164"))
+
+    def test_policy_kept(self):
+        for text in (KEPT, "", CHAIN.format(t="1.0")):
+            self.assertEqual(self.run_fn("lb_policy_closed", text + "\n")[0], 1, text)
+        # a close for another reason (not the priority policy) is not the stock no-channel close
+        other = POLICY_CLOSE.replace("priority_lowest", "low_memory")
+        self.assertEqual(self.run_fn("lb_policy_closed", other + "\n")[0], 1)
+        # the decision line alone, its service another one
+        self.assertEqual(
+            self.run_fn("lb_policy_closed", "\n".join(KEPT.splitlines()[:2]) + "\n")[0], 1
+        )
 
 
 if __name__ == "__main__":

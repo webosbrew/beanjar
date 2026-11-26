@@ -49,3 +49,23 @@ lb_crash_free() {
 		echo "a crash report names legacy-broadcast"; return 1
 	fi
 }
+
+# lb_policy_closed: on stdin, /var/log/messages (its rotated files first). servicemanager's
+# lifecycle policy closed legacy-broadcast: a SERVICE_MANAGER_CLOSE decision with "reason":
+# "priority_lowest", then that close's "set_status":"stopping" line for the legacy-broadcast service
+# (one decision line per policy that matched, then the service it stops). The stock policy
+# (/etc/palm/servicemanager/policy/lifecycle/com.webos.service.legacybroadcast.broadcast.json) gives
+# the service priority lowest while iepg's channel list is empty and none of its tuner apps runs, from
+# rest-boot-done on; the service then exits before the end of its init, where it sends tv-ready.
+# Prints the first such close's log time (the line's [uptime]); false without one.
+lb_policy_closed() {
+	awk '
+	/SERVICE_MANAGER_CLOSE/ && /"isServiceCloseRequired"/ { lowest = /"reason":"priority_lowest"/; next }
+	/SERVICE_MANAGER_CLOSE/ && /"set_status":"stopping"/ {
+		if (lowest && /"service":"com\.webos\.service\.legacybroadcast\.broadcast"/) {
+			t = $0; sub(/^[^[]*\[/, "", t); sub(/\].*/, "", t); print t; found = 1; exit
+		}
+		lowest = 0
+	}
+	END { exit !found }'
+}

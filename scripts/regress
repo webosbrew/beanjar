@@ -104,7 +104,10 @@ mitmweb, slirp4netns or viewer runs on the VM host):
   start      FW=<fw> STATE=none LAYERS=normal,headless DISPLAY_BACKEND=none BUILD=0 host/scripts/vm-launcher start
   ready      tests/regress/guest.sh ready: core-boot-done made by tvservice's tv-ready (bootd's
              log has the generateSignal), not by bootd's timeout, which fails at once; the guest's
-             uptime at it (a firmware with no TV service, N21D: core-boot-done itself). Headless
+             uptime at it (a firmware with no TV service, N21D: core-boot-done itself; a
+             legacy-broadcast that servicemanager's lifecycle policy closed with priority_lowest,
+             no channels and no tuner app, before its tv-ready: core-boot-done too); "ready on
+             WHAT" says which, and summary.json's ready_on. Headless
              boot-done waits on the first app and the CPU-idle check, so
              it is left to check-m1, which waits up to 150 s for it
   check-m1   as above (its gl checks skip: no gl layer)
@@ -1067,6 +1070,7 @@ class Result:
         self.items = {}  # --tv: {step: [(check, PASS/FAIL/SKIP, reason)]}
         self.boot_done = "-"  # graphics: boot-done; headless: core-boot-done (tv-ready)
         self.tvservice = ""  # headless: tvservice's pids at ready (guest.sh's comma-joined set)
+        self.ready_on = None  # headless: what ready saw (guest.sh READY-ON: tv-ready, policy-close)
         self.shot = "-"
         self.window = ("", "")
         self.orphans = ""
@@ -2406,6 +2410,11 @@ def boot_and_check(h, a, r, out, rel, target, fw):
         meminfo(h, out, "ready")
         r.boot_done = f"{float(line.split()[1]):.1f} s"
         r.tvservice = " ".join(line.split()[3:4])
+        r.ready_on = next(
+            (x.split()[1] for x in r.text.splitlines() if x.startswith("READY-ON ")), None
+        )
+        if r.ready_on:
+            say(f"{target}: ready on {r.ready_on}")
     else:
         r.boot_done = r.steps[boot] = "TIMEOUT" if rc == 124 else "FAIL"
         return
@@ -3753,6 +3762,7 @@ def lanes(a, sel, run, skipped, hosts):
                         vm_env=a.vm_env,
                         steps=r.steps,
                         **{"core_boot_done" if r.mode == "headless" else "boot_done": r.boot_done},
+                        ready_on=r.ready_on,
                         shot=r.shot,
                         standby=r.standby,
                         window=r.window,

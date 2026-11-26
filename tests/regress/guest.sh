@@ -9,7 +9,9 @@
 #                                                     tv-ready: "READY <guest uptime> <bootd's time
 #                                                     of core-boot-done> <tvservice's pids>"
 #                                                     (every RELEASE process, sorted, comma-joined;
-#                                                     "none" in a firmware with no TV service)
+#                                                     "none" in a firmware with no TV service),
+#                                                     after "READY-ON <what it saw>": tv-ready,
+#                                                     policy-close, tunerless or no-tv-service
 #   sh /host/tests/regress/guest.sh tv-ready SECONDS  graphics, after boot-done: bootd's log has
 #                                                     tvservice's tv-ready: "TVREADY <bootd's time>",
 #                                                     or "TVREADY SKIP <why>" where none is sent
@@ -105,6 +107,13 @@ boot() { # with the normal layer (LAYERS=normal,...) bootd ends at boot-done, it
 # webOS 5 (W20L) has no tvservice: its TV service is legacy-broadcast, and its bootd sends
 # core-boot-done without waiting for tv-ready (the first app's utp.boot answer, 3 s in, before
 # legacy-broadcast's tv-ready at 7 s on KVM); there ready waits for the tv-ready line itself.
+# Or for servicemanager's lifecycle policy closing legacy-broadcast (lb-exit.sh's lb_policy_closed):
+# with no channels and none of its tuner apps running, the stock policy closes it from rest-boot-done
+# on, each time it comes back, and an instance closed before the end of its init sends no tv-ready.
+# A set (and KVM) usually finishes one instance in time; a slow guest (TCG) may never do, so the close
+# is stock readiness too (docs/research/spacebuns-fresh-state-restarts.md), once no instance has sent
+# tv-ready for LB_CLOSE_GRACE s (scaled) after the first close.
+LB_CLOSE_GRACE=20
 in_webos() { wt $((10 * scale)) sh -c "$1" </dev/null 2>/dev/null; }
 # every tvservice (RELEASE, webOS 5's legacy-broadcast) process as one token, sorted and
 # comma-joined, so the sets compare (sorted in webOS: the initramfs's busybox has no sort)
@@ -137,17 +146,31 @@ ready() {
 			done
 			core=$(printf '%s\n' "$log" | sed -n 's/^[A-Z]*( *\([0-9.]*\)).*SIGNAL_core-boot-done.*/\1/p' | head -n 1)
 			case $log in *tv-ready*)
+				echo "READY-ON tv-ready"
 				echo "READY $t ${core:-?} $(release_pids)"; mem; return 0 ;;
 			esac
 			if webos5; then         # tv-ready comes after core-boot-done: wait for it
+				closed=
 				while [ "$(up | cut -d. -f1)" -lt $end ]; do
 					log=$(in_webos "grep -E 'generateSignal.*\"name\":\"tv-ready\"' /var/log/bootd.log")
 					case $log in *tv-ready*)
 						tv=$(printf '%s\n' "$log" | sed -n 's/^[A-Z]*( *\([0-9.]*\)).*/\1/p' | head -n 1)
+						echo "READY-ON tv-ready"
 						echo "READY $(up) ${tv:-?} $(release_pids)"; mem; return 0 ;;
 					esac
+					# closed by the policy: a later instance may still send tv-ready (KVM: 0.5 s after
+					# it starts), so give it LB_CLOSE_GRACE s before taking the close
+					if [ -z "$closed" ] && closed=$(in_webos 'for f in /var/log/messages*; do case $f in *.gz) zcat $f ;; *) cat $f ;; esac; done | grep SERVICE_MANAGER_CLOSE' | lb_policy_closed); then
+						grace=$(($(up | cut -d. -f1) + LB_CLOSE_GRACE * scale))
+					fi
+					if [ -n "$closed" ] && { [ "$(up | cut -d. -f1)" -ge "$grace" ] || [ "$(up | cut -d. -f1)" -ge $((end - 2)) ]; }; then
+						echo "legacy-broadcast closed by servicemanager's lifecycle policy (priority_lowest: no channels, no tuner app) at $closed s, and no tv-ready $LB_CLOSE_GRACE s (x$scale) later; ready at core-boot-done"
+						echo "READY-ON policy-close"
+						echo "READY $t ${core:-?} $(release_pids)"; mem; return 0
+					fi
 					if fe_tunerless; then
 						echo "tunerless: legacy-broadcast's front end did not start (its booting log), so it sends no tv-ready; ready at core-boot-done"
+						echo "READY-ON tunerless"
 						echo "READY $t ${core:-?} $(release_pids)"; mem; return 0
 					fi
 					sleep 1
@@ -157,6 +180,7 @@ ready() {
 				return 1
 			fi
 			if no_tv; then
+				echo "READY-ON no-tv-service"
 				echo "READY $t ${core:-?} none"; mem; return 0
 			fi
 			echo "core-boot-done at ${core:-?} s (bootd's clock) without tvservice's tv-ready in /var/log/bootd.log: bootd's timeout"
@@ -215,10 +239,11 @@ lb_exits_clean() {
 		lb_hub_exits_clean || return 1
 	in_webos "ls /var/log/reports/librdx /var/log/crashd 2>/dev/null" | lb_crash_free
 }
-lb_call() {
+lb_call() { # the pids read once: servicemanager's policy may close it again right after the call
 	r=$(wt $((30 * scale)) luna-send -n 1 luna://com.webos.service.legacybroadcast.broadcast/getCurrentChannel '{}' </dev/null 2>&1)
-	echo "legacybroadcast.broadcast getCurrentChannel: $r; pids now $(release_pids)"
-	echo "$r" | tr -d ' ' | grep -q '"returnValue":' && [ -n "$(release_pids)" ]
+	p=$(release_pids)
+	echo "legacybroadcast.broadcast getCurrentChannel: $r; pids now $p"
+	echo "$r" | tr -d ' ' | grep -q '"returnValue":' && [ -n "$p" ]
 }
 lb_stopped_itself() { # PIDS
 	lb_exits_clean || return 1
