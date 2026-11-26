@@ -356,9 +356,11 @@ software storage, including after OPEN, CAPS and FLUSH. The extra decoder-surfac
 the quarantine, and repeated disconnects cannot grow it. This conservative path does not claim
 that any particular consumer driver publishes usable reservation fences.
 
-The helper accepts `--hwdec auto|none|TYPE`; the launcher passes `MEDIA_HWDEC` as its initial
-policy. Viewer `--hwdec` remains a preference sent to the helper and acknowledged for the next
-codec-open boundary; an active decoder continues unchanged. With decoding on, a shown video
+The helper accepts `--hwdec auto|none|TYPE`; the launcher passes the VM's `hwdec` setting
+(`MEDIA_HWDEC`) as its initial policy, with `--software-only` for `none`. Viewer `--hwdec` remains a
+preference sent to the helper and acknowledged for the next codec-open boundary; an active decoder
+continues unchanged. A software-only helper refuses any preference but none, and the viewer logs
+`refused: software only (hwdec=none)`. With decoding on, a shown video
 window without a decoded picture is black, as on a TV. `--no-media` turns decoding off for this
 viewer (the helper goes on decoding) and draws such windows as the diagnostic checkerboard.
 `MEDIAHUB=0` omits the helper and writes `media = "off"` to the

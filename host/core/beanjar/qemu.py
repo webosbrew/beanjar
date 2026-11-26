@@ -34,6 +34,10 @@ Environment (both):
             free page reporting on the VM's virtio-balloon (every VM has one, for the guest's memory
             statistics, never inflated, so the guest still has all of MEM), and the host takes back
             the free 4 MiB blocks the guest reports. Opt-in: it has a cost.
+  MEDIA_HWDEC  auto (default), none or a hardware device type (vm.toml's hardware.hwdec,
+            vmsettings.HWDECS): the media helper's --hwdec. none adds --software-only: software
+            decoding locked against the viewers' preferences, with a short codec list; it needs
+            the media sandbox, so MEDIA_SANDBOX=off is refused with it
   UPDATABLE  on or off (default; vm.toml's firmware.updatable): on attaches a whole-disk
             /dev/mmcblk0 (a dm-linear device the guest builds, bin/beanjar-emmc) so the stock
             firmware updater (/usr/sbin/update) can run its raw partition writes for study. It adds
@@ -1100,6 +1104,12 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # with the media hub (host/helpers/media-helper), QEMU's video and media sockets are the hub's alone and
     # it serves the viewers at the usual names; the viewers' sockets are QEMU's without it
     hub = media_helper(top, env)
+    hwdec = env.get("MEDIA_HWDEC") or vmsettings.DEFAULT_HWDEC
+    if hwdec not in vmsettings.HWDECS:
+        raise Error(f"MEDIA_HWDEC={hwdec}: one of {', '.join(vmsettings.HWDECS)}")
+    refusal = vmsettings.hwdec_refusal(hwdec, env.get("MEDIA_SANDBOX"))
+    if refusal:
+        raise Error(refusal)
     media_dir = os.path.join(p.run_dir, MEDIA_DIR)
     guest_video = qemu_side(media_dir, socks["VIDEO_SOCK"]) if hub else socks["VIDEO_SOCK"]
     guest_media = qemu_side(media_dir, socks["MEDIA_SOCK"]) if hub else socks["MEDIA_SOCK"]
@@ -1126,7 +1136,9 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             "--ports",
             str(MEDIA_PORTS),
             "--hwdec",
-            env.get("MEDIA_HWDEC", "auto"),
+            hwdec,
+            # hwdec=none: locked against the viewers' preferences, the short codec list
+            *(["--software-only"] if hwdec == "none" else []),
         ]
     for port, path in (
         ("cursor", socks["CURSOR_SOCK"]),

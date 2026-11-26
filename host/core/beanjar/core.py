@@ -1082,6 +1082,9 @@ class Library:
             elif k == "guest_kernel" and v == vmsettings.DEFAULT_GUEST_KERNEL:
                 cfg.pop(k, None)  # arm64 is the default, not written out
                 continue
+            elif k == "hwdec" and v in ("", vmsettings.DEFAULT_HWDEC):
+                cfg.pop(k, None)  # auto is the default, not written out
+                continue
             elif k == "free_page_reporting" and v == "off":
                 cfg.pop(k, None)  # off is the default, not written out
                 continue

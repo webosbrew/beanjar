@@ -526,10 +526,12 @@ raw compressed sockets cannot be fed directly to this viewer.
 - Pictures and samples are presented at the guest pipeline's clock (base time + running time),
   mapped to the host's monotonic clock; a paused pipeline freezes the picture, a seek shows the
   prerolled frame, the last picture stays after EOS until the window goes.
-- The helper defaults to `--hwdec auto` (the launcher's `MEDIA_HWDEC` setting), selecting an
-  available FFmpeg device for the codec and falling back to software. `none` selects software;
-  `TYPE` restricts the device type. Viewer `--hwdec auto|none|TYPE` sends a preference which the
-  helper acknowledges for the next codec-open boundary; an active GOP continues unchanged.
+- The helper defaults to `--hwdec auto` (the VM's `hwdec` setting), selecting an
+  available FFmpeg device for the codec and falling back to software. `TYPE` restricts the device
+  type; a VM's `hwdec=none` runs it software only, locked. Viewer `--hwdec auto|none|TYPE` sends a
+  preference which the helper acknowledges for the next codec-open boundary; an active GOP
+  continues unchanged. A software-only helper refuses any preference but none, and the viewer
+  logs `refused: software only (hwdec=none)`.
   Hardware availability and import support depend on the actual host and codec.
 - Media audio arrives already decoded/resampled as 48 kHz float stereo and plays through its own SDL device,
   next to the guest's PulseAudio stream (the OS mixes the two); `--media-latency MS` is the output

@@ -283,9 +283,8 @@ class SandboxTest(unittest.TestCase):
 
 
 class ArgvTest(unittest.TestCase):
-    def test_owned_logs(self):
-        """The helper is given its two logs in its own RUN_DIR/media: the sessions' and the
-        decoder's."""
+    def plan(self, **extra):
+        """qemu.plan of a fake tree with a media helper, env extra added: (plan, top, run)."""
         tmp = tempfile.mkdtemp(prefix="beanjar-launch-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         top, fw, state = fake_tree(tmp)
@@ -302,6 +301,7 @@ class ArgvTest(unittest.TestCase):
             "LOG_DIR": run,
             "IDENTITY_DIR": os.path.join(top, "local"),
             "SLOT": "1",
+            **extra,
         }
         with (
             mock.patch.object(qemu, "first_rendernode", return_value=None),
@@ -312,6 +312,12 @@ class ArgvTest(unittest.TestCase):
             mock.patch.object(qemu, "host_aarch32_el0", return_value=None),
         ):
             p = qemu.plan(env, [], accel="tcg", tree=paths.Tree(top), say=lambda m: None, dry=True)
+        return p, helper, run
+
+    def test_owned_logs(self):
+        """The helper is given its two logs in its own RUN_DIR/media: the sessions' and the
+        decoder's."""
+        p, helper, run = self.plan()
         argv = p.hub_argv
         media = os.path.join(run, "media")
         self.assertEqual(argv[0], helper)
@@ -332,6 +338,31 @@ class ArgvTest(unittest.TestCase):
             [(f"{run}/video.sock", "stream")]
             + [(f"{run}/media-{n}.sock", "seqpacket") for n in range(qemu.MEDIA_PORTS)],
         )
+
+    def test_hwdec_auto(self):
+        """auto, the default: --hwdec auto, not locked."""
+        argv = self.plan()[0].hub_argv
+        self.assertEqual(argv[argv.index("--hwdec") + 1], "auto")
+        self.assertNotIn("--software-only", argv)
+        argv = self.plan(MEDIA_HWDEC="vaapi")[0].hub_argv
+        self.assertEqual(argv[argv.index("--hwdec") + 1], "vaapi")
+        self.assertNotIn("--software-only", argv)
+
+    def test_hwdec_none_is_software_only(self):
+        """hwdec=none: --hwdec none and --software-only, the sandbox on or by default."""
+        for sandbox in ({}, {"MEDIA_SANDBOX": "on"}):
+            argv = self.plan(MEDIA_HWDEC="none", **sandbox)[0].hub_argv
+            self.assertEqual(argv[argv.index("--hwdec") + 1], "none")
+            self.assertIn("--software-only", argv)
+
+    def test_hwdec_none_refuses_the_sandbox_off(self):
+        with self.assertRaisesRegex(qemu.Error, "MEDIA_SANDBOX=off is refused"):
+            self.plan(MEDIA_HWDEC="none", MEDIA_SANDBOX="off")
+        self.plan(MEDIA_HWDEC="auto", MEDIA_SANDBOX="off")  # only with none
+
+    def test_hwdec_unknown(self):
+        with self.assertRaisesRegex(qemu.Error, "MEDIA_HWDEC=d3d11va: one of"):
+            self.plan(MEDIA_HWDEC="d3d11va")
 
 
 if __name__ == "__main__":

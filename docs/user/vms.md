@@ -164,6 +164,24 @@ sudo apt install ./beanjar-guest-x86-64_*.deb
 beanjar config set tv1 guest_kernel=x86-64
 ```
 
+`hwdec` is how the guest's video is decoded on this host. `auto`, the default, uses a hardware
+decoder where one opens (CUDA, VA-API, Vulkan, V4L2 request) and lets a viewer's `--hwdec` prefer
+another or none; a device type (`cuda`, `drm`, `qsv`, `v4l2request`, `vaapi`, `vdpau`, `vulkan`)
+allows only that one. `none` is for a VM whose guest you do not trust with the host's GPU drivers:
+it decodes in software only and is locked, so a viewer asking for hardware is refused and no GPU
+driver is ever loaded in the media helper; it decodes only common codecs (H.264, HEVC, VP8, VP9,
+AV1, MPEG-1, MPEG-2 and MPEG-4 video; AAC, AC-3, E-AC-3, MPEG audio, Opus, Vorbis, FLAC and PCM)
+and refuses the rest (WMV, VC-1, RealVideo, MSMPEG4, FLV, H.263, MJPEG, DTS, AMR, WMA, A-law,
+mu-law); and it needs the media helper's sandbox, so `MEDIA_SANDBOX = "off"` in `advanced.env` is
+refused with it. Software decoding costs CPU: about 15 to 18 % of a PC core for 1080p30 H.264 or
+HEVC, 40 % of a Raspberry Pi 5 core for HEVC. The VM's GPU is not changed by it: the guest's 3D
+still reaches the host's GL driver.
+
+```sh
+beanjar config set tv1 hwdec=none
+beanjar config unset tv1 hwdec    # back to auto
+```
+
 ## Network
 
 These settings decide a VM's network ([guest networking](../dev/architecture/network.md)):

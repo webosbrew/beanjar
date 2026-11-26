@@ -177,6 +177,50 @@ def test_guest_kernel():
     assert "needs an x86-64 host" in vmsettings.guest_kernel_host_refusal("x86-64", "aarch64")
 
 
+def test_hwdec():
+    """hardware.hwdec: auto, the default, is not written out; any other value is MEDIA_HWDEC,
+    which advanced.env no longer takes; none refuses MEDIA_SANDBOX=off."""
+    base = {"firmware": {"directory": "firmware"}}
+    assert "hwdec" not in vmconfig.decode(base)
+    assert "MEDIA_HWDEC" not in vmsettings.launcher_env(vmconfig.decode(base))
+    for value in ("none", "vaapi", "cuda", "v4l2request", "auto"):
+        cfg = vmconfig.decode(dict(base, hardware={"hwdec": value}))
+        assert vmsettings.launcher_env(cfg)["MEDIA_HWDEC"] == value
+    with pytest.raises(core.Error, match="hardware.hwdec: hwdec=gpu: one of auto, none, cuda"):
+        vmconfig.decode(dict(base, hardware={"hwdec": "gpu"}))
+    with pytest.raises(core.Error, match="advanced.env.MEDIA_HWDEC is owned by the launcher"):
+        vmconfig.decode(dict(base, advanced={"env": {"MEDIA_HWDEC": "none"}}))
+    with pytest.raises(core.Error, match="MEDIA_SANDBOX=off is refused") as e:
+        vmconfig.decode(
+            dict(base, hardware={"hwdec": "none"}, advanced={"env": {"MEDIA_SANDBOX": "off"}})
+        )
+    assert e.value.key == "hwdec"
+    vmconfig.decode(
+        dict(base, hardware={"hwdec": "none"}, advanced={"env": {"MEDIA_SANDBOX": "on"}})
+    )
+    vmconfig.decode(dict(base, advanced={"env": {"MEDIA_SANDBOX": "off"}}))
+    assert vmsettings.SETTING_HELP["hwdec"][3] == "auto"  # config unset takes it
+
+
+def test_configure_hwdec(broken_vm):
+    """config set NAME hwdec=none writes hardware.hwdec; auto or an empty value (unset) removes
+    it; an unknown device type is refused and nothing is written."""
+    lib, toml = broken_vm
+    lib.configure("tv", prepare=False, hwdec="none")
+    assert 'hwdec = "none"' in toml.read_text()
+    assert lib.vm("tv").config["hwdec"] == "none"
+    before = toml.read_text()
+    with pytest.raises(core.Error, match="hwdec=d3d11va") as e:
+        lib.configure("tv", prepare=False, hwdec="d3d11va")
+    assert e.value.key == "hwdec"
+    assert toml.read_text() == before
+    lib.configure("tv", prepare=False, hwdec="")
+    assert "hwdec =" not in toml.read_text()
+    lib.configure("tv", prepare=False, hwdec="vaapi")
+    lib.configure("tv", prepare=False, hwdec="auto")
+    assert "hwdec" not in lib.vm("tv").config
+
+
 @pytest.mark.parametrize(
     "guest_kernel, accel, aarch32, userland, why",
     [

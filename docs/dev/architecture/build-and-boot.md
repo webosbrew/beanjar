@@ -167,8 +167,9 @@ media elements) are such rules. Chip-keyed tables (a chip's directory and its `b
 
 The launcher starts one `media-helper` beside each VM. `host/helpers/media-helper/meson.build`
 builds it with the `host/media/decode/` engine on the private FFmpeg; `host/viewer/meson.build` links the
-presentation code and shared decoded-IPC helpers only. `MEDIA_HWDEC=auto|none|TYPE` selects the
-helper's initial hardware preference. `MEDIAHUB=0` omits the helper and turns decoding off: the
+presentation code and shared decoded-IPC helpers only. The VM's `hwdec` setting
+(`MEDIA_HWDEC=auto|none|TYPE`) selects the helper's initial hardware preference; `none` locks it to
+software (`--software-only`). `MEDIAHUB=0` omits the helper and turns decoding off: the
 launch writes `media = "off"` to `vm-info.toml`, and the viewer cores then show the video windows'
 checkerboard (as with `--no-media`); the viewer cannot decode compressed QEMU sockets directly. See
 [the video architecture](video.md#transport-and-session-ownership).

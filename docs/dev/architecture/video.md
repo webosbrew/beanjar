@@ -84,9 +84,12 @@ picture/audio scheduling use that mapping; viewer receipt delay is not a new clo
 Pause freezes presentation, and flush clears queued output and pauses timing until new state
 arrives. Audio-device drift is corrected in viewer playback.
 
-FFmpeg video/audio decoding and media-audio resampling run in the helper. `MEDIA_HWDEC` selects
-its initial hardware policy; viewer `--hwdec` is acknowledged for the next codec-open boundary,
-without changing an active decoder. The viewer imports supported DRM PRIME pictures as EGL
+FFmpeg video/audio decoding and media-audio resampling run in the helper. A VM's `hwdec`
+setting (`MEDIA_HWDEC`) selects its initial hardware policy; viewer `--hwdec` is acknowledged for
+the next codec-open boundary, without changing an active decoder. With `hwdec=none` the helper runs
+`--software-only`: it refuses a viewer's preference other than none (ACK status
+`HM_PREFERENCE_LOCKED`), never opens a hardware device, and opens only the short codec list of
+`caps_software_only` (`host/media/decode/caps.c`). The viewer imports supported DRM PRIME pictures as EGL
 images or uploads native software planes. Genuine hardware downloads and required GLES2
 10-bit reduction happen in the helper. Historical hardware measurements are specific to their
 host, codec and implementation; software/ownership tests do not qualify GPU synchronization.

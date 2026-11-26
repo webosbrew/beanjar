@@ -46,6 +46,28 @@ GUEST_KERNELS = ("arm64", "x86-64")
 DEFAULT_GUEST_KERNEL = "arm64"
 
 
+# hwdec (qemu.py MEDIA_HWDEC): the media helper's decoding. auto, the default, uses a hardware
+# decoder where one opens and lets a viewer prefer another (or none); a device type limits it to
+# that one; none decodes in software only, locked against the viewers' preferences (no GPU driver
+# is loaded in the helper), with a short codec list and the media sandbox required
+# (docs/research/media-helper-isolation.md, "Software-only decoding and a smaller FFmpeg").
+# The device types are FFmpeg's (av_hwdevice_find_type_by_name) that a Linux host's decoders use.
+HWDEC_TYPES = ("cuda", "drm", "qsv", "v4l2request", "vaapi", "vdpau", "vulkan")
+HWDECS = ("auto", "none") + HWDEC_TYPES
+DEFAULT_HWDEC = "auto"
+
+
+def hwdec_refusal(hwdec, sandbox):
+    """Why hwdec cannot run with the media sandbox setting MEDIA_SANDBOX (on, off, or None for
+    the default, on), or None: software-only decoding needs the sandbox."""
+    if hwdec == "none" and sandbox == "off":
+        return (
+            "hwdec=none decodes in software only, inside the media sandbox: MEDIA_SANDBOX=off is "
+            "refused with it"
+        )
+    return None
+
+
 # The firmware lines that need native 32-bit execution, whatever the host can do, with the reason.
 # NetCast 4.5 (LM14) emulates stores into MMIO windows by decoding the faulting AArch32 instruction
 # (lgemu's store_mmio_fault), which a translated program does not have: its HWI2C, OTP and PQ pages
@@ -290,6 +312,7 @@ SETTINGS = {
     "free_page_reporting": "FREE_PAGE_REPORTING",
     "userland": "USERLAND",
     "guest_kernel": "GUEST_KERNEL",
+    "hwdec": "MEDIA_HWDEC",
     "debug_mode": "DEBUG_MODE",
     "updatable": "UPDATABLE",
     "layers": "LAYERS",
@@ -375,6 +398,17 @@ SETTING_HELP = {
         "KVM, the whole ARM userland under qemu-user (userland=native is refused), not NetCast "
         "or SimpleSmart",
         DEFAULT_GUEST_KERNEL,
+    ),
+    "hwdec": (
+        "auto|none|" + "|".join(HWDEC_TYPES),
+        DEFAULT_HWDEC,
+        "the media helper's video decoding: auto uses a hardware decoder where one opens, and a "
+        "viewer may prefer another or none; a device type allows only that one; none decodes in "
+        "software only, locked: a viewer's preference for hardware is refused, no GPU driver is "
+        "loaded in the helper, only common codecs are decoded (H.264, HEVC, VP8, VP9, AV1, MPEG-1, "
+        "MPEG-2, MPEG-4; AAC, AC-3, E-AC-3, MPEG audio, Opus, Vorbis, FLAC, PCM; not WMV, VC-1, "
+        "RealVideo, MJPEG, H.263, DTS, WMA, AMR), and MEDIA_SANDBOX=off is refused",
+        DEFAULT_HWDEC,
     ),
     "debug_mode": (
         "|".join(DEBUG_MODES),
@@ -629,6 +663,7 @@ def validate(cfg, saved=False):
         ("lg_services", LG_SERVICES),
         ("userland", USERLANDS),
         ("guest_kernel", GUEST_KERNELS),
+        ("hwdec", HWDECS),
         ("debug_mode", tuple(DEBUG_MODES)),
     )
     for key, allowed in checks:
@@ -657,6 +692,9 @@ def validate(cfg, saved=False):
     )
     if refusal:
         raise Error(refusal, refusal.split("=", 1)[0])
+    refusal = hwdec_refusal(cfg.get("hwdec", DEFAULT_HWDEC), cfg.get("MEDIA_SANDBOX"))
+    if refusal:
+        raise Error(refusal, "hwdec")
     if cfg.get("audio") == "dbus" and cfg.get("display") != "dbus":
         raise Error("audio=dbus needs display=dbus", "audio")
     if "slot" in cfg:
