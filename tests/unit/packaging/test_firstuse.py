@@ -50,38 +50,152 @@ def test_unit_interpreter_selection(available, expected, tmp_path):
     assert result.stdout.strip() == expected + " /usr/sbin/emulator-firstuse"
 
 
-def test_marker_made_on_an_existing_state(tmp_path):
-    # /var is the state's own partition, so the layer's ran-firstuse never reaches a state
-    # that was first booted without the normal layer; the early unit's script makes it
-    script = LAYER / "usr/sbin/emulator-ran-firstuse"
-    marker = tmp_path / "var/luna/preferences/ran-firstuse"
-    for existing in (False, True):
-        if existing:
-            marker.write_text("kept")
+def test_no_marker_shipped():
+    # a new state boots in FirstUse as a new set does; bootd writes ran-firstuse on firstUseDone
+    assert not (LAYER / "var/luna/preferences/ran-firstuse").exists()
+    assert not list(LAYER.rglob("emulator-ran-firstuse*"))
+
+
+def done_env(
+    root, country="GBR", service="GBR", minimal=True, writes=True, init="systemd", migrator="exited"
+):
+    """Stubs for emulator-firstuse-done under EMULATOR_ROOT ROOT: luna-send answers settings'
+    country and smart service country, bootd's status (minimal-boot-done as MINIMAL) and, for
+    firstUseDone as com.palm.app.firstuse, writes ran-firstuse as bootd does; every call is
+    logged. INIT: systemd (emulator-firstuse and its marks, WRITES; systemctl: webos-mbd.target
+    active, data-migrator-init.service MIGRATOR: exited, running or absent) or upstart (with
+    emulator-service-country)."""
+    prefs = root / "var/luna/preferences"
+    prefs.mkdir(parents=True)
+    bin_dir, calls = root / "bin", root / "calls"
+    bin_dir.mkdir()
+    if init == "systemd":
+        (root / "run/systemd/system").mkdir(parents=True)
+        (root / "usr/sbin").mkdir(parents=True)
+        (root / "usr/sbin/emulator-firstuse").write_text("")
+        if writes:
+            (prefs / "emulator-firstuse").write_text("")
+            (prefs / "emulator-firstuse-lastinput").write_text("")
+    else:
+        (root / "etc/init").mkdir(parents=True)
+        (root / "etc/init/emulator-service-country.conf").write_text("")
+    flag = "true" if minimal else "false"
+    stubs = {
+        "luna-send": f"""echo "luna-send $*" >> "{calls}"
+case "$*" in
+*'"country"'*) echo '{{"returnValue": true, "settings": {{"country": "{country}"}}}}' ;;
+*smartServiceCountryCode3*) echo '{{"returnValue":true,"settings":{{"smartServiceCountryCode3":"{service}"}}}}' ;;
+*getBootStatus*) echo '{{"returnValue":true,"signals":{{"minimal-boot-done": {flag}}}}}' ;;
+*'-a com.palm.app.firstuse'*firstUseDone*) : > "{prefs}/ran-firstuse"; echo '{{"returnValue":true}}' ;;
+esac
+""",
+        "systemctl": f"""echo "systemctl $*" >> "{calls}"
+case "$*" in
+*webos-mbd.target*) printf 'LoadState=loaded\nActiveState=active\n' ;;
+*data-migrator-init*)
+\tcase {migrator} in
+\texited) printf 'LoadState=loaded\nActiveState=inactive\nExecMainExitTimestampMonotonic=146905442\n' ;;
+\trunning) printf 'LoadState=loaded\nActiveState=active\nExecMainExitTimestampMonotonic=0\n' ;;
+\t*) printf 'LoadState=not-found\n' ;;
+\tesac ;;
+esac
+""",
+        "logger": "exit 0\n",
+        "sleep": "exit 0\n",
+        "sync": "exit 0\n",
+        "date": f'n=$(cat "{root}/now" 2>/dev/null || echo 1000)\necho $((n + 100)) > "{root}/now"\necho "$n"\n',
+    }
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text("#!/bin/sh\n" + body)
+        stub.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "EMULATOR_ROOT": str(root)}
+    return env, calls, prefs
+
+
+def run_done(env):
+    return subprocess.run(
+        ["sh", str(LAYER / "usr/sbin/emulator-firstuse-done")],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
+@pytest.mark.parametrize("init", ["systemd", "upstart"])
+def test_done_calls_first_use_done(tmp_path, init):
+    # country, FirstUse's writes and minimal-boot-done there: the call, as the FirstUse app
+    env, calls, prefs = done_env(tmp_path, init=init)
+    result = run_done(env)
+    assert result.returncode == 0, result.stdout
+    assert (prefs / "ran-firstuse").exists()
+    lines = calls.read_text().splitlines()
+    assert lines[-1] == (
+        "luna-send -a com.palm.app.firstuse -n 1 -w 180000 "
+        "luna://com.webos.bootManager/firstUseDone {}"
+    )
+    assert any("getBootStatus" in ln for ln in lines[:-1])
+    # systemd: data-migrator-init.service, which reads ran-firstuse, has run first
+    assert any("data-migrator-init" in ln for ln in lines) == (init == "systemd")
+    assert any(("smartServiceCountryCode3" in ln) == (init == "upstart") for ln in lines)
+    assert "FirstUse done" in result.stdout
+
+
+def test_done_leaves_a_finished_state_alone(tmp_path):
+    env, calls, prefs = done_env(tmp_path)
+    (prefs / "ran-firstuse").write_text("kept")
+    assert run_done(env).returncode == 0
+    assert not calls.exists()
+    assert (prefs / "ran-firstuse").read_text() == "kept"
+
+
+@pytest.mark.parametrize(
+    "missing, kw",
+    [
+        ("country in settings", {"country": "other"}),
+        ("emulator-firstuse marks", {"writes": False}),
+        ("smart service country", {"service": "other", "init": "upstart"}),
+        ("webos-mbd.target and data-migrator-init", {"migrator": "running"}),
+    ],
+)
+def test_done_waits_bounded(tmp_path, missing, kw):
+    # each wait ends after EMULATOR_FIRSTUSE_WAIT; the call is made all the same
+    env, calls, prefs = done_env(tmp_path, **kw)
+    env["EMULATOR_FIRSTUSE_WAIT"] = "900"
+    result = run_done(env)
+    assert f"no {missing} within 900 s" in result.stdout
+    assert calls.read_text().splitlines()[-1].endswith("firstUseDone {}")
+    assert (prefs / "ran-firstuse").exists()
+
+
+def test_done_waits_for_minimal_boot_done(tmp_path):
+    # never called before minimal-boot-done (webOS 5 on: bootd would drop boot-done for good)
+    env, calls, prefs = done_env(tmp_path, minimal=False)
+    with pytest.raises(subprocess.TimeoutExpired):
         subprocess.run(
-            ["/bin/sh", str(script)],
-            env={"PATH": "/usr/bin:/bin", "EMULATOR_ROOT": str(tmp_path)},
+            ["sh", str(LAYER / "usr/sbin/emulator-firstuse-done")],
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True,
+            timeout=3,
         )
-        assert marker.exists()
-        assert marker.read_text() == ("kept" if existing else "")
-    unit = (LAYER / "etc/systemd/system/emulator-ran-firstuse.service").read_text()
-    assert "Before=bootd.service" in unit
+    assert not (prefs / "ran-firstuse").exists()
+    assert "getBootStatus" in calls.read_text()
+
+
+def test_done_wiring():
+    unit = (LAYER / "etc/systemd/system/emulator-firstuse-done.service").read_text()
+    assert "ExecStart=/usr/sbin/emulator-firstuse-done" in unit
+    assert "After=settings-service.service" in unit
     wants = (
-        LAYER / "etc/systemd/system/mount-readwrite.service.d/emulator-ran-firstuse.conf"
+        LAYER / "etc/systemd/system/settings-service.service.d/emulator-firstuse.conf"
     ).read_text()
-    assert "Wants=emulator-ran-firstuse.service" in wants
-
-
-def test_marker_job_on_upstart():
-    # upstart releases: a task job that holds bootd and utp back until the marker exists
-    job = (LAYER / "etc/init/emulator-ran-firstuse.conf").read_text()
+    assert "Wants=emulator-firstuse.service emulator-firstuse-done.service" in wants
+    job = (LAYER / "etc/init/emulator-firstuse-done.conf").read_text()
     lines = [ln.strip() for ln in job.splitlines() if not ln.startswith("#")]
-    assert "start on starting bootd or starting utp" in lines
-    assert "task" in lines
-    assert "exec /usr/sbin/emulator-ran-firstuse" in lines
+    assert "start on started bootd" in lines
+    assert "exec /usr/sbin/emulator-firstuse-done" in lines
 
 
 # W23P's /etc/palm/defaultTimeZone.json (an excerpt) and systemservice's AU zones
@@ -432,11 +546,10 @@ echo "luna-send $*" >> "{calls}"
     return {"PATH": f"{bin_dir}:/usr/bin:/bin", "EMULATOR_ROOT": str(root)}, calls
 
 
-def test_data_migrator_first_boot(tmp_path):
-    """Without platform_upgrade/version (a blank state), data-migrator.service records the
-    version (writeVersion) and runs no /run, as FirstUse's boot does on a set; with it, the stock
-    script runs, untouched (a VM that keeps its state). Both start only once the hub lists
-    surfacemanager's showSpinner and the list has stopped changing."""
+def test_data_migrator_waits_then_runs_the_stock_script(tmp_path):
+    """data-migrator.service runs the stock script, untouched (a new state's first boot is FirstUse,
+    whose data-migrator-init.sh records the version), only once the hub lists surfacemanager's
+    showSpinner and the list has stopped changing."""
     dropin = (
         LAYER / "etc/systemd/system/data-migrator.service.d/emulator-firstuse.conf"
     ).read_text()
@@ -451,18 +564,8 @@ def test_data_migrator_first_boot(tmp_path):
     # the list changes three times, then stays the same for two more polls
     assert lines[:6] == ["hub"] * 6
     assert lines[6].startswith("logger ") and "settled after" in lines[6]
-    assert lines[7] == "luna-send -n 1 -f luna://com.webos.service.datamigrator/writeVersion {}"
-    assert lines[8].startswith("logger ")
-    assert "stock" not in lines
-
-    calls.unlink()
-    version = tmp_path / "mnt/lg/cmn_data/platform_upgrade/version"
-    version.parent.mkdir(parents=True)
-    version.write_text('{"previous_version":"11","current_version":"11"}')
-    subprocess.run(["sh", str(script)], env=env, check=True)
-    lines = calls.read_text().splitlines()
-    assert lines[-1] == "stock"
-    assert "hub" in lines and "settled after" in lines[-2]
+    assert lines[7:] == ["stock"]
+    assert not any("writeVersion" in ln for ln in lines)
 
 
 def test_data_migrator_wait_times_out(tmp_path):
@@ -475,7 +578,7 @@ def test_data_migrator_wait_times_out(tmp_path):
     polls = lines.count("hub")
     assert 5 < polls <= 13
     assert "not settled after 120 s" in lines[polls]
-    assert lines[polls + 1].endswith("/writeVersion {}")
+    assert lines[polls + 1] == "stock"
 
 
 @pytest.mark.parametrize(
@@ -499,4 +602,4 @@ def test_data_migrator_no_wait(tmp_path, readiness, replies, logged):
     assert lines.count("hub") == (1 if logged else 0)
     if logged:
         assert logged in lines[1]
-    assert any(ln.endswith("/writeVersion {}") for ln in lines)
+    assert lines[-1] == "stock"

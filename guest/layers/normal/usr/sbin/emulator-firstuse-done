@@ -1,0 +1,106 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The normal layer's end of FirstUse: the call the FirstUse app makes when its user presses the
+# last screen's button, bootManager/firstUseDone, made as com.palm.app.firstuse once the set is
+# where that button can be pressed. A state without /var/luna/preferences/ran-firstuse boots in
+# FirstUse as a new set does (bootd's mode choice, StaticEventDB::parseCmdLine); bootd's handler
+# (W16P to W25P, and WT1H and W15M by their call graph) then writes ran-firstuse itself, runs the
+# release's completion call (factorymanager doFirstUseCompleted from webOS 5, tv.power's on
+# webOS 4), launches the last input app (W16P: Live TV) and goes on to rest-boot-done, boot-done
+# and bootStatus normal in the same boot. A state that has the marker is left alone.
+#
+# Waited for first, each up to WAIT seconds:
+# - the set's country in settings (option country an alpha-3, not "other"): devicereset's from
+#   LLS from webOS 5 (it then sends bootd firstuse-ready), tvservice's on its first power-on before;
+#   FirstUse's location screen shows it;
+# - the FirstUse writes of the other parts of the normal layer, made in FirstUse as on a set:
+#   systemd, emulator-firstuse's marks (usr/sbin/emulator-firstuse); upstart releases with
+#   emulator-service-country (dreadlocks on), the smart service country it stores;
+# - bootd's minimal-boot-done, which in FirstUse comes once the FirstUse app is up (or its waits
+#   have timed out): W20L, W23A and W25P's onFirstUseDone send no boot-done before it, and drop it
+#   for good when it comes later ("signal is not yet generated").
+# - systemd: what bootd's minimal-boot-done starts (webos-mbd.target) started, and
+#   data-migrator-init.service ended: in FirstUse it records the platform's version (writeVersion)
+#   and in Normal it does nothing, deciding by ran-firstuse when it runs; on a set it runs while
+#   the user is still in the wizard (W23A: a call 3 s after minimal-boot-done came before it, and
+#   the state was left without a version record).
+# After WAIT the call is made all the same, with a log line; but not before minimal-boot-done,
+# which is waited for as long as it takes (bootd's own waits before it are all bounded; a call
+# before it would lose boot-done on webOS 5 and later for good).
+ROOT=${EMULATOR_ROOT:-}
+PREFS=$ROOT/var/luna/preferences
+WAIT=${EMULATOR_FIRSTUSE_WAIT:-900}
+
+log() {
+	echo "emulator-firstuse-done: $*"
+	logger -t emulator-firstuse-done "$*" 2>/dev/null || :
+}
+
+get() { # get CATEGORY KEY: the setting's value (a string), or nothing
+	luna-send -n 1 -w 5000 luna://com.webos.settingsservice/getSystemSettings \
+		"{\"category\":\"$1\",\"keys\":[\"$2\"]}" </dev/null 2>/dev/null |
+		sed -n "s/.*\"$2\": *\"\\([^\"]*\\)\".*/\\1/p"
+}
+
+until_ok() { # until_ok WHAT COMMAND...: run COMMAND every 5 s until it succeeds, up to WAIT s
+	# (seldom: bootd sends minimal-boot-done only once the CPU has gone idle)
+	what=$1
+	shift
+	since=$(date +%s)
+	while ! "$@"; do
+		if [ "$WAIT" -gt 0 ] && [ $(($(date +%s) - since)) -ge "$WAIT" ]; then
+			log "no $what within $WAIT s; going on"
+			return 1
+		fi
+		sleep 5
+	done
+}
+
+country_set() { case $(get option country) in [A-Z][A-Z][A-Z]) return 0 ;; esac; return 1; }
+firstuse_marks() { [ -e "$PREFS/emulator-firstuse" ] && [ -e "$PREFS/emulator-firstuse-lastinput" ]; }
+service_country_set() {
+	c=$(get option smartServiceCountryCode3)
+	[ -n "$c" ] && [ "$c" != other ]
+}
+minimal_boot_done() {
+	luna-send -n 1 -w 5000 luna://com.webos.bootManager/getBootStatus '{}' </dev/null 2>/dev/null |
+		tr -d ' \n' | grep -q '"minimal-boot-done":true'
+}
+
+prop() { systemctl show -p "$2" "$1" 2>/dev/null | sed -n "s/^$2=//p"; }
+mbd_started() {
+	[ "$(prop webos-mbd.target ActiveState)" = active ] || return 1
+	[ "$(prop data-migrator-init.service LoadState)" = loaded ] || return 0
+	[ "$(prop data-migrator-init.service ExecMainExitTimestampMonotonic)" != 0 ] &&
+		[ "$(prop data-migrator-init.service ActiveState)" != active ] &&
+		[ "$(prop data-migrator-init.service ActiveState)" != activating ]
+}
+
+[ -e "$PREFS/ran-firstuse" ] && exit 0
+start=$(date +%s)
+until_ok "country in settings" country_set
+if [ -e "$ROOT/usr/sbin/emulator-firstuse" ] && [ -d "$ROOT/run/systemd/system" ]; then
+	until_ok "emulator-firstuse marks" firstuse_marks
+elif [ -e "$ROOT/etc/init/emulator-service-country.conf" ]; then
+	until_ok "smart service country" service_country_set
+fi
+bounded=$WAIT
+WAIT=0
+until_ok "minimal-boot-done" minimal_boot_done
+WAIT=$bounded
+if [ -d "$ROOT/run/systemd/system" ] && [ -n "$(prop webos-mbd.target LoadState | grep -x loaded)" ]; then
+	until_ok "webos-mbd.target and data-migrator-init" mbd_started
+fi
+log "FirstUse ready after $(($(date +%s) - start)) s: bootManager/firstUseDone"
+# bootd answers once the app it launches is up (or after its 30 s wait), so allow for that; the
+# marker it writes first is what counts
+reply=$(luna-send -a com.palm.app.firstuse -n 1 -w 180000 \
+	luna://com.webos.bootManager/firstUseDone '{}' </dev/null 2>&1)
+if [ -e "$PREFS/ran-firstuse" ]; then
+	log "FirstUse done ($reply)"
+	sync
+	exit 0
+fi
+log "bootd refused firstUseDone: $reply"
+exit 1

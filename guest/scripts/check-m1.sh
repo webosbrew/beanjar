@@ -10,14 +10,16 @@
 #
 # bootd runs in its real-TV modes (hostname LGSmartTV, bootTarget "hardware"); the real-TV
 # modes of the WT1H boot. What is expected depends on the mode:
-#   Normal (LAYERS=normal,gl or normal,headless): boot-done, about 5 s after boot on the Pi and
-#     16 s on TCG); the check first waits up
-#     to WAIT seconds (default 150) for it.
-#   FirstUse (the default, no normal layer): bootd launches the web app com.palm.app.firstuse,
+#   FirstUse completed by the normal layer (LAYERS=normal,gl or normal,headless): a new state boots
+#     in FirstUse; the layer's emulator-firstuse-done calls bootManager/firstUseDone as the
+#     FirstUse app once bootd has sent minimal-boot-done, and bootd writes ran-firstuse, launches
+#     the last input app and goes on to boot-done, bootStatus normal, in the same boot. Later boots
+#     are Normal: boot-done. Either way the check first waits up to WAIT seconds (default 150) for
+#     boot-done and wants bootStatus normal.
+#   FirstUse (no normal layer): bootd launches the web app com.palm.app.firstuse,
 #     waits for it to come to the foreground, waits for the CPU to go idle and sends
-#     minimal-boot-done. That is where FirstUse ends: bootd sends boot-done only in Normal, after
-#     the user finishes first use (firstUseDone writes ran-firstuse, then a reboot comes up in
-#     Normal). So FirstUse checks firstAppLaunched and, with the gl layer, that
+#     minimal-boot-done. That is where it stays until the user finishes first use (firstUseDone).
+#     So FirstUse checks firstAppLaunched and, with the gl layer, that
 #     com.palm.app.firstuse is in the foreground and minimal-boot-done came; boot-done is reported
 #     as INFO. Headless the app can never come to the foreground, so minimal-boot-done is OPEN.
 # With the gl layer (LAYERS=...gl) it also checks that the compositor and WebAppMgr are running.
@@ -35,15 +37,17 @@ check() { # check NAME COMMAND...: print PASS/FAIL for a command's exit status
 }
 status() { $T $((20 * scale)) luna-send -n 1 luna://com.webos.bootManager/getBootStatus '{}' 2>&1; }
 gl=0; [ -f /usr/lib/libegl-kms.so ] && gl=1
+normal=0; [ -e /usr/sbin/emulator-firstuse-done ] && normal=1
 
-# Wait for bootd to get as far as it will: boot-done in Normal; in FirstUse minimal-boot-done
-# with the gl layer, the first app headless.
+# Wait for bootd to get as far as it will: boot-done in Normal and with the normal layer; in
+# FirstUse without it minimal-boot-done with the gl layer, the first app headless.
 wait=${1:-150}
 while [ "$wait" -gt 0 ]; do
 	s=$(status)
 	case $s in
 	*'"boot-done":true'*) break ;;
 	*'"bootStatus":"firstUse"'*)
+		[ $normal = 1 ] && { sleep 5; wait=$((wait - 5)); continue; }
 		if [ $gl = 1 ]; then
 			case $s in *'"minimal-boot-done":true'*) break ;; esac
 		else
@@ -82,7 +86,10 @@ for f in $hubconfs; do
 done
 check "hostname is not an emulator's" sh -c '! hostname | grep -q qemu'
 check "bootTarget hardware" sh -c "echo '$status' | grep -q '\"bootTarget\":\"hardware\"'"
-if echo "$status" | grep -q '"bootStatus":"firstUse"'; then
+if [ $normal = 1 ]; then
+	check "boot-done" sh -c "echo '$status' | grep -q '\"boot-done\":true'"
+	check "bootStatus normal (FirstUse completed)" sh -c "echo '$status' | grep -q '\"bootStatus\":\"normal\"'"
+elif echo "$status" | grep -q '"bootStatus":"firstUse"'; then
 	check "firstUse: com.palm.app.firstuse launched" sh -c "echo '$status' | grep -q '\"firstAppLaunched\":true'"
 	if [ $gl = 1 ]; then
 		check "firstUse: com.palm.app.firstuse in the foreground" sh -c "$T $((20 * scale)) luna-send -n 1 luna://com.webos.applicationManager/getForegroundAppInfo '{}' | grep -q '\"appId\":\"com.palm.app.firstuse\"'"

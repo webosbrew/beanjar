@@ -1,4 +1,4 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 # The normal layer (host/core/beanjar/layermeta.py reads this file).
-description = "Skips the FirstUse wizard (the ran-firstuse marker)"
+description = "Completes the first-use setup with its defaults (bootd's firstUseDone)"

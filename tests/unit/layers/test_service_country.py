@@ -44,7 +44,7 @@ def script_body():
     return re.search(r"^script\n(.*?)^end script", text, re.S | re.M).group(1)
 
 
-def run(code3, country, sdx_after=None):
+def run(code3, country, sdx_after=None, ran=True, normal=False):
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         (d / "bin").mkdir()
@@ -53,10 +53,14 @@ def run(code3, country, sdx_after=None):
             p.write_text(body)
             p.chmod(p.stat().st_mode | stat.S_IXUSR)
         (d / "sdx.xml").write_text(XML)
-        (d / "ran-firstuse").write_text("")
+        if ran:
+            (d / "ran-firstuse").write_text("")
+        if normal:
+            (d / "emulator-firstuse-done").write_text("")
         (d / "state").write_text(code3 + "\n")
         body = script_body().replace("/usr/palm/sdx/country_codes_v5.xml", str(d / "sdx.xml"))
         body = body.replace("/var/luna/preferences/ran-firstuse", str(d / "ran-firstuse"))
+        body = body.replace("/usr/sbin/emulator-firstuse-done", str(d / "emulator-firstuse-done"))
         env = dict(os.environ, PATH=f"{d / 'bin'}:{os.environ['PATH']}", STATE=str(d / "state"))
         env["COUNTRY"] = country
         if sdx_after is not None:
@@ -74,6 +78,11 @@ class ServiceCountryTest(unittest.TestCase):
         self.assertEqual(final, "USA")
         self.assertIn('"smartServiceCountryCode2":"US"', sets[0])
         self.assertIn("emulator-service-country: US USA", out)
+
+    def test_first_use(self):
+        # in FirstUse only where the normal layer completes it (its firstUseDone waits for this)
+        self.assertEqual(run("other", "USA", ran=False)[1:], ([], "other"))
+        self.assertEqual(run("other", "USA", ran=False, normal=True)[2], "USA")
 
     def test_left_alone_when_already_set(self):
         _, sets, final = run("DEU", "USA")

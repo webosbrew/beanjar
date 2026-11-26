@@ -1,9 +1,10 @@
 #!/usr/bin/python
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# The normal layer's FirstUse writes (systemd releases). ran-firstuse alone says FirstUse finished; what FirstUse itself writes
-# on its way out is replayed here, once, through LG's own services, with the values FirstUse
-# computes from them. From W20L's com.palm.app.firstuse (main.js), on a set whose user takes every
+# The normal layer's FirstUse writes (systemd releases). A new state boots in FirstUse as a new set
+# does; what the FirstUse app writes before its last button is replayed here, once, through LG's
+# own services, with the values FirstUse computes from them, and emulator-firstuse-done then makes
+# the button's call, bootManager/firstUseDone, after them (usr/sbin/emulator-firstuse-done). From W20L's com.palm.app.firstuse (main.js), on a set whose user takes every
 # screen's default with no network connected:
 #   location  the country selected is the set's own (settings' country in the list, W21P's
 #             main.js: the index of countryCode3 in countryList[0]'s countries; W20L's list has
@@ -21,8 +22,7 @@
 #   eula      not shown without Internet
 #   confirm   the watch type and the zip code are the user's input; not replayed
 #   done      Jd: category network deviceName = deviceName + " " + the model's series, 25 chars
-# Not replayed: bootManager/firstUseDone (bootd's FirstUse-mode callback; this boot is not one)
-# and asc startAdvertising (no state).
+# Not replayed: asc startAdvertising (no state).
 # After FirstUse, the last input (last_input below; its own mark, so a state already past the
 # writes above gets it too). W21A's com.palm.app.firstuse ends on Next with firstUseDone
 # {action "launch", params {supportOOBE}, appId com.webos.app.channelsetting for a watch type

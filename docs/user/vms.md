@@ -131,7 +131,7 @@ The layers add to the stock firmware; the first listed wins where two have the s
 
 | Layer | What it does |
 |---|---|
-| `normal` | Skips the first-use wizard |
+| `normal` | Completes the first-use setup with its defaults, as its last screen's button does |
 | `gl` | Graphics through Mesa (virgl) under the stock compositor |
 | `headless` | No graphics; instead of `gl` |
 | `devmode` | LG Developer Mode and its SSH, for the webOS SDK tools ([apps](apps.md)) |

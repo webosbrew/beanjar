@@ -1,0 +1,13 @@
+# The normal layer's end of FirstUse (usr/sbin/emulator-firstuse-done): bootManager/firstUseDone as
+# the FirstUse app, once the set has its country, emulator-firstuse's writes are made and bootd has
+# sent minimal-boot-done; bootd then writes ran-firstuse and boots on to boot-done. Nothing on a
+# state that has ran-firstuse.
+[Unit]
+Description=Emulator: the normal layer's end of FirstUse
+After=settings-service.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=infinity
+ExecStart=/usr/sbin/emulator-firstuse-done
+StandardOutput=journal+console

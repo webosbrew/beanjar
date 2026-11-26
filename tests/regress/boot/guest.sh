@@ -5,7 +5,8 @@
 # VM's share with `host/scripts/vm-launcher put` and types it):
 #   sh /host/tests/regress/boot/guest.sh NAME [APP [SETTLE]]
 # Waits for bootd's last signal, reading bootd.log through /proc/<webOS init>/root so that nothing
-# runs inside webOS meanwhile: boot-done in Normal, minimal-boot-done in FirstUse. With APP it
+# runs inside webOS meanwhile: boot-done in Normal and with the normal layer, minimal-boot-done in
+# FirstUse without it. With APP it
 # then waits SETTLE seconds (default 20), launches APP once and waits up to 120 s for WebAppMgr to
 # report the page loaded (WAM APPLOADED; needs the gl layer), then up to 20 s more for the
 # compositor to map its surface (LSM "surfaceMapped", the app's first frame; needs a GPU: without
@@ -27,13 +28,16 @@ root=/proc/$pid/root
 # /var/log is a symlink to /tmp/var/log inside webOS
 logdir=$root/tmp/var/log
 log=$logdir/bootd.log
-# Normal ends at boot-done, FirstUse at minimal-boot-done (see guest/scripts/check-m1.sh).
+# Normal ends at boot-done, FirstUse without the normal layer at minimal-boot-done
+# (see guest/scripts/check-m1.sh).
 i=0
 until grep -q 'FirstUse=' "$log" 2>/dev/null; do
 	sleep 0.5; i=$((i + 1)); [ $i -lt 600 ] || { echo "BOOTTEST FAIL no bootd.log"; break; }
 done
+# The normal layer completes FirstUse in the same boot (emulator-firstuse-done): boot-done there too.
 target=boot-done
-grep -q 'FirstUse=YES' "$log" 2>/dev/null && target=minimal-boot-done
+grep -q 'FirstUse=YES' "$log" 2>/dev/null && [ ! -e "$root/usr/sbin/emulator-firstuse-done" ] &&
+	target=minimal-boot-done
 i=0
 until grep -q "SIGNAL_$target\$" "$log" 2>/dev/null; do
 	sleep 0.5; i=$((i + 1)); [ $i -lt 600 ] || { echo "BOOTTEST FAIL no $target within 300 s"; break; }

@@ -1,17 +1,9 @@
 #!/bin/sh
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# data-migrator.service's start in the normal layer. The layer's ran-firstuse stands for a
-# FirstUse this state never had. On a set, FirstUse's own boot ran data-migrator-init.sh in its
-# FIRSTUSE mode: writeVersion, which records the platform's version in platform_upgrade/version,
-# and no /run (data-migrator.sh runs only in NORMAL mode). Every later boot's /run compares that
-# record with nyx's version. A state without the record is that first boot, so data-migrator
-# writes it here as it does there; with the record, the stock script runs, as on a set. Without
-# this, data-migrator took a blank state for an upgrade into the firmware's release (no_file for
-# both versions, case 4-3) and ran its migrations; webOS 11's familycare one resets the locks and
-# raises the Parental Controls alert.
+# data-migrator.service's start in the normal layer: the stock script, after a wait.
 #
-# Either way, it first waits for surface-manager. data-migrator subscribes to the hub's list of
+# It first waits for surface-manager. data-migrator subscribes to the hub's list of
 # surfacemanager's methods, counts it ready once showSpinner is listed and never cancels that
 # subscription: each method registered after that frees its readiness monitor again, which crashes
 # it (SIGSEGV, and faultmanager's alert). Our VMs' slow surface-manager start made that common.
@@ -53,8 +45,4 @@ if grep -q registerServiceCategory "$ROOT/usr/sbin/data-migrator" 2>/dev/null; t
 	*) logger -s "[data-migrator] surfacemanager's methods not settled after ${WAIT} s; starting anyway" ;;
 	esac
 fi
-if [ -e "$ROOT/mnt/lg/cmn_data/platform_upgrade/version" ]; then
-	exec "$ROOT/etc/systemd/system/scripts/data-migrator.sh"
-fi
-luna-send -n 1 -f luna://com.webos.service.datamigrator/writeVersion '{}' || exit 1
-logger -s "[data-migrator] first boot of this state (the normal layer's FirstUse) /writeVersion executed"
+exec "$ROOT/etc/systemd/system/scripts/data-migrator.sh"

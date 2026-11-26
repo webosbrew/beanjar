@@ -84,7 +84,8 @@ wt() {
 up() { cut -d' ' -f1 /proc/uptime; }
 # the guest's RAM at that point, after the step's mark line
 mem() { grep -E '^(MemTotal|MemFree|MemAvailable|Cached|SwapTotal):' /proc/meminfo; }
-boot() { # Normal (LAYERS=normal,...) ends at boot-done; FirstUse never sends it
+boot() { # with the normal layer (LAYERS=normal,...) bootd ends at boot-done, its FirstUse completed
+	# by the layer on a new state; FirstUse without it never sends boot-done
 	end=$(($(up | cut -d. -f1) + $1))
 	while [ "$(up | cut -d. -f1)" -lt $end ]; do
 		s=$(wt $((10 * scale)) luna-send -n 1 luna://com.webos.bootManager/getBootStatus '{}' </dev/null 2>/dev/null)
