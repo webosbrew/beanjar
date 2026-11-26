@@ -469,7 +469,7 @@ def test_board_definitions_ship_with_the_guest(tmp_path):
 
 def test_every_target_board_file_ships_where_the_installed_host_reads_it(tmp_path):
     """beanjar-guest's staging puts every target's board file (targets.board_cmdline_src, for its
-    default board and each of its broadcast boards, whichever layer is its board source) where an
+    default board, each of its broadcast boards and each retail model's, whichever layer is its board source) where an
     installed paths.Tree.src finds it, each source's file at its own path."""
     from beanjar import targets
 
@@ -482,13 +482,14 @@ def test_every_target_board_file_ships_where_the_installed_host_reads_it(tmp_pat
     found = {}
     for target in targets.all_targets():
         broadcasts = [b for b, _ in targets.soc(target).broadcast_boards]
-        for broadcast in [None] + broadcasts:
-            rel = targets.board_cmdline_src(target, broadcast)
+        rels = [targets.board_cmdline_src(target, b) for b in [None] + broadcasts]
+        rels += [targets.board_cmdline_src(target, model=m) for m in targets.models(target)]
+        for rel in rels:
             installed = tree.src(rel)
             assert installed.startswith("/usr/share/beanjar/guest/boards/"), (target, rel)
             assert found.setdefault(installed, rel) == rel, f"{rel} and {found[installed]} collide"
             staged = g / os.path.relpath(installed, "/usr/share/beanjar/guest")
-            assert staged.read_bytes() == (TOP / rel).read_bytes(), (target, broadcast)
+            assert staged.read_bytes() == (TOP / rel).read_bytes(), (target, rel)
     assert set(map(str, (g / "boards").rglob("*.cmdline"))) == {
         str(g / os.path.relpath(p, "/usr/share/beanjar/guest")) for p in found
     }

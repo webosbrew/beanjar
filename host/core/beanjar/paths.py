@@ -471,7 +471,7 @@ def firmware_target(fw_dir, name=None):
 
 
 BOARDS = "/usr/share/beanjar/guest/boards"
-_BOARD_FILE = re.compile(r"board(-\w+)?\.cmdline")
+_BOARD_FILE = re.compile(r"board(-[\w-]+)?\.cmdline")
 
 
 def installed_board(*p):

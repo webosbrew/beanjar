@@ -749,14 +749,16 @@ def stage_x86_64(work, gp):
 
 
 def board_files():
-    """Every target's board files, checkout-relative (targets.board_cmdline_src): its board.cmdline
-    and its boards for a broadcast standard (targets.Soc.broadcast_boards), whichever layer carries
-    them (targets.Soc.board_src)."""
+    """Every target's board files, checkout-relative (targets.board_cmdline_src): its board.cmdline,
+    its boards for a broadcast standard (targets.Soc.broadcast_boards) and for a retail model
+    (targets.Soc.model_boards), whichever layer carries them (targets.Soc.board_src)."""
     out = set()
     for target in beanjar_targets.all_targets():
         broadcasts = [b for b, _ in beanjar_targets.soc(target).broadcast_boards]
         for broadcast in [None] + broadcasts:
             out.add(beanjar_targets.board_cmdline_src(target, broadcast))
+        for model in beanjar_targets.models(target):
+            out.add(beanjar_targets.board_cmdline_src(target, model=model))
     return sorted(out)
 
 
