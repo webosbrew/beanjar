@@ -181,9 +181,9 @@ fixes the first two, the display socket after a stop or a reset; the third stays
   spacebuns until 2026-11-23)" below. So `auto` does not leave two-output guests out.
 - What pauses or resets a VM in beanjar (audited 2026-11-07): webOS's own restart, above, is a
   normal workflow, and a cold start now; no pause is. The `stop` and `cont` targets are the IR
-  relay's in standby (2026-11-26, never with the `vgpu` chardev, above) and the media pool's guest test (`guest/kernel/modules/media-pool/tests/run-tests.py`,
-  step 3, "the doorbell across a pause"; `--skip-pause` leaves it out), which skips it for a VM
-  whose QEMU has the `vgpu` chardev (`query-chardev`). The other `cont`s resume a VM started with `-S` before its
+  relay's in standby (2026-11-26) and the media pool's guest test (`guest/kernel/modules/media-pool/tests/run-tests.py`,
+  step 3, "the doorbell across a pause"; `--skip-pause` leaves it out). Both stopped only VMs with
+  virtio-gpu-gl until the backend took a new display socket (patch 0005, above). The other `cont`s resume a VM started with `-S` before its
   guest runs: `display_setup.py` (the second output; `--keep-paused` with `QEMU_EXTRA=-S` leaves
   the `cont` to the user, still before the guest), `netns.off` (`link = "off"`'s link-down) and
   `tests/integration/viewer/check-qemu-listener-close.py`. The viewer,

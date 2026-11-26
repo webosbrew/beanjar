@@ -40,7 +40,6 @@ IR_MAGIC, EXT_MAGIC, LOCAL_MAGIC = 0x49, 0x45, 0x4B  # WEBOS_IR_MAGIC, _IR_EXT_,
 CUSTOM_LG, POWER = 0x04, 0x08  # WEBOS_IR_CUSTOM_LG, LG's KEY_POWER
 CHUNK = 4096
 POLL = 0.5  # s between QMP looks while the micom is in standby
-VGPU_CHARDEV = "vgpu"  # qemu.py's chardev of vhost-user-gpu's socket
 
 
 def qemu_path(ir_sock):
@@ -115,9 +114,8 @@ class PowerDown:
     standby() whether the micom is in standby (micom-status), which gates the QMP looks; tick() is
     called often, and looks every POLL s."""
 
-    def __init__(self, state, command, standby=lambda: True, clock=time.monotonic, stoppable=None):
+    def __init__(self, state, command, standby=lambda: True, clock=time.monotonic):
         self.state, self.command, self.standby, self.clock = state, command, standby, clock
-        self.stoppable = stoppable or (lambda: True)
         self.stopped = False  # this relay stopped the VM and has not continued it
         self.handled = False  # this time the SoC is down is done with: stopped once, or woken
         self.last = None
@@ -143,9 +141,7 @@ class PowerDown:
             return
         if status == "running" and not self.handled:
             self.handled = True
-            if not self.stoppable():
-                say("the SoC is down: VM left running (its GPU is vhost-user-gpu)")
-            elif self.command("stop"):
+            if self.command("stop"):
                 self.stopped = True
                 say("the SoC is down: VM stopped")
 
@@ -176,23 +172,10 @@ def qmp_command(qmp_sock, name):
 def power_down(qmp_sock, micom_status):
     from . import poweroff
 
-    vgpu = []  # once known: whether the GPU is vhost-user-gpu (its chardev vgpu)
-
-    def stoppable():
-        # QEMU 10.0.2's vhost-user-gpu backend loses the display at a stop and cont, and has
-        # aborted after a few (docs/dev/architecture/gpu-process.md, "Limits")
-        if not vgpu:
-            labels = poweroff.qmp_chardevs(qmp_sock)
-            if labels is None:
-                return False  # QMP busy: not this time
-            vgpu.append(VGPU_CHARDEV in labels)
-        return not vgpu[0]
-
     return PowerDown(
         lambda: poweroff.qmp_state(qmp_sock),
         lambda name: qmp_command(qmp_sock, name),
         lambda: poweroff.micom_standby(micom_status),
-        stoppable=stoppable,
     )
 
 

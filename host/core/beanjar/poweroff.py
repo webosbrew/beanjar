@@ -50,12 +50,6 @@ def qmp_state(path, timeout=1.0):
     return status, "standby" in opened, "suspended" in opened
 
 
-def qmp_chardevs(path, timeout=1.0):
-    """The labels of QEMU's chardevs (query-chardev) on path, or None if QMP does not answer."""
-    r = qmp_returns(path, ("query-chardev",), timeout)
-    return None if r is None else {c.get("label") for c in r[0] or []}
-
-
 def status_of(state):
     """The run state a qmp_state reads as: "standby" for a running guest in standby (Quick Start+,
     or suspended) and for one the IR relay stopped there (paused with its SoC down); else

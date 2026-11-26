@@ -23,7 +23,7 @@ in `/usr/lib/beanjar/neatvnc` (Debian trixie has only neatvnc 0.9.1), with the f
 on Debian's `qemu-system-arm` and `qemu-system-modules-opengl`; the launcher runs `beanjar-qemu`
 whenever it is installed. On amd64 it also carries the QEMU tree's `qemu-system-x86_64`, the
 experimental x86-64 guest kernel's, where the tree has one (beanjar-vendor's from QEMU
-10.0.2+beanjar2). It carries qemu-user's static `qemu-arm` too, which runs inside the guest
+10.0.2+beanjar3). It carries qemu-user's static `qemu-arm` too, which runs inside the guest
 (`hardware.userland = "qemu-user"`): `/usr/share/beanjar/qemu-user/arm64/qemu-arm` for the arm64
 guest kernel, and on amd64 `/usr/share/beanjar/qemu-user/amd64/qemu-arm` for the x86-64 one, each
 where the host build published it (once `packaging/vendor.toml` pins `qemu-user`, or

@@ -13,9 +13,9 @@ repository = "mariotaku/beanjar-vendor"
 
 # QEMU with Beanjar's display patches: build/qemu, beanjar-qemu
 [qemu]
-tag = "qemu-10.0.2+beanjar2"
-amd64 = "4872a52404375bc7c3ff7af7d68c211bceda34b518f29c816a8aaf6c1d9ba78b"
-arm64 = "d3bea77cee63bde013d88249ec5b70992e33263805c516f0499e61bb7207361f"
+tag = "qemu-10.0.2+beanjar3"
+amd64 = "cd03429b94c708f60072432af3a439bfc59da6d3c6b44925751480d1c5b2a495"
+arm64 = "b641ddef01b722360eed5b0910052d1c5ba7f95bd854c0f9633a3582f70aa0bb"
 
 # The static qemu-arm with the compat bridge, which runs in the guest
 # (docs/dev/architecture/qemu-user-bridge.md): arm64 for the arm64 guest kernel, build/qemu-user;

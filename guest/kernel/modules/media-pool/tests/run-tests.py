@@ -10,8 +10,7 @@ VM defaults to $VM. Needs the VM's rootssh layer (beanjar ares-shell --root). Ru
   2. media-pool.ko unloaded and loaded again LOOPS times with no file open, and LOOPS times with a
      file of the device open (rmmod must fail while it is, then the load goes on);
   3. the doorbell across a pause: QMP stop, 2 s, cont (local VMs: the run directory's QMP socket;
-     a remote VM over beanjar's host), then the selftest again (its poll wake-up check); skipped
-     for a VM whose GPU is vhost-user-gpu, which a pause leaves without a display;
+     a remote VM over beanjar's host), then the selftest again (its poll wake-up check);
   4. with KUNIT=1 (or --kunit) the KUnit module (DIR/media-pool-kunit.ko, a debug kernel build's):
      loaded, its TAP read from the kernel log and parsed with the kernel tree's kunit.py;
   5. the kernel log since the start: no WARNING, BUG, KASAN, lockdep or kmemleak report (debugfs
@@ -99,18 +98,6 @@ def qmp(vm, commands):
     return "\n".join(out)
 
 
-def gpu_process(vm):
-    """Whether the VM's GPU runs in its own process: QEMU has the vhost-user-gpu chardev vgpu."""
-    for line in qmp(vm, ["query-chardev"]).splitlines():
-        try:
-            reply = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(reply.get("return"), list):
-            return any(c.get("label") == "vgpu" for c in reply["return"])
-    return False
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--selftest", required=True)
@@ -174,12 +161,8 @@ def main():
         f"rmmod refused while a file is open, then reloaded: {out.strip()[-60:]}",
     )
 
-    # 3. the doorbell across a pause; not with the GPU in its own process (vhost-user-gpu, its
-    # chardev vgpu): QEMU 10.0.2's backend loses the display for good at a stop and cont
-    # (docs/dev/architecture/gpu-process.md)
-    if not a.skip_pause and gpu_process(a.vm):
-        print("skip after stop/cont: the VM's GPU is vhost-user-gpu, whose display a pause ends")
-    elif not a.skip_pause:
+    # 3. the doorbell across a pause
+    if not a.skip_pause:
         qmp(a.vm, ["stop"])
         qmp(a.vm, ["cont"])
         code, out = shell(a.vm, "/tmp/media-pool-selftest 20")

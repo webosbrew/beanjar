@@ -161,13 +161,12 @@ the wake. No guest kernel change beyond one export (patch 0029), no QEMU patch.
   stops a running VM whose `suspended` chardev is open, once for each time the SoC is down: after
   a wake, which the guest takes a moment to show, it does not stop it again until the port has
   closed. A VM paused for another reason is never continued.
-- **Not with vhost-user-gpu.** QEMU 10.0.2's vhost-user-gpu backend loses the display at a stop and
-  cont (docs/dev/architecture/gpu-process.md), and on the Pi (W22O queue, 2026-11-26) it aborted at
-  the third cont (`set_gpu_protocol_features: Assertion 'g->wait_in == 0' failed`); the guest's
-  captureservice then hung in virtio-gpu (D state) and every later suspend failed to freeze it. So
-  the relay never stops a VM whose QEMU has the `vgpu` chardev (the ARM hosts' default GPU), and
-  logs `VM left running (its GPU is vhost-user-gpu)`: such a VM keeps the s2idle with running
-  clocks of decisions 1 to 3, and W22O's WebAppMgr still aborts at the wake of a long standby there.
+- **With vhost-user-gpu too.** QEMU 10.0.2's own vhost-user-gpu backend lost the display at a stop
+  and cont, and on the Pi (W22O queue, 2026-11-26) aborted at the third cont; the guest's
+  captureservice then hung in virtio-gpu (D state) and every later suspend failed to freeze it.
+  beanjar-vendor's QEMU 10.0.2+beanjar3 (patch 0005) takes the new display socket QEMU hands it at
+  the cont (docs/dev/architecture/gpu-process.md, "Limits"), so the relay stops every VM, the ARM
+  hosts' default GPU included: 6 standby cycles on the Pi with W22O queue kept the display.
 - **The relay alone wakes it**: the power key (decision 3) is `system_powerdown`, then `cont` if the
   relay stopped the VM. The edge is latched by QEMU's PL061 (and ACPI's PM1 status) while the VM is
   stopped, so the guest sees the wake as soon as it runs. Every front end sends the keys to

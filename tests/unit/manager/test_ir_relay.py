@@ -287,13 +287,3 @@ def test_micom_standby(tmp_path):
     assert poweroff.micom_standby(str(p))
     p.write_text("standby=1 power=2 ready=1\nstandby=0 power=3 ready=1\n")
     assert not poweroff.micom_standby(str(p))
-
-
-def test_vhost_user_gpu_is_never_stopped(vm):
-    """A VM whose GPU is vhost-user-gpu keeps running in s2idle, as before the stop and cont."""
-    vm.down.stoppable = lambda: False
-    vm.suspend()
-    vm.tick()
-    assert vm.commands == []
-    vm.down.wake()
-    assert vm.commands == ["system_powerdown"]
