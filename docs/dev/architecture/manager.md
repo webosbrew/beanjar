@@ -77,7 +77,11 @@ ahead and kept with the VM, in `<vm>/prepared/` (`host/core/beanjar/prepare.py`)
 disk's partition map, the image a blank EEPROM becomes (the firmware's own default records
 programmed with the board's values, or on webOS 5 and later lowlevelstorage's records from the
 firmware's own programs), LLS's probe output for a later debug-mode change, the viewer's local key,
-and the chip modules' parameters and host-share files derived from the firmware. It is made when the
+the chip modules' parameters and host-share files derived from the firmware, and for a model with
+LG's far-field microphone the apps partition's factory pre-built data (`factory.py`: the firmware's
+own wake-word model under `preload/voiceinput/thinq/snsr`, which trigger_thinq reads only there; an
+inferred factory state), the contents a new `appstore` disk starts with (one the VM has is kept;
+`wipe` makes it anew). It is made when the
 VM is created (before it is published, so a failure creates nothing), when `fw`, `broadcast`,
 `debug_mode` or `serial` changes, by `identity reset` and a local `clone`, and by
 `beanjar prepare NAME`; all of them run the launcher's `prepare`. The GUI's Settings dialog saves

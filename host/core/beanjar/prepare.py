@@ -20,6 +20,8 @@ development VMs and the regress instances have one too):
   eeprom.img      what a blank EEPROM state disk becomes (nvm.new_chip), when there is a chip
   records.txt     LLS's probe output for the board (webOS 5 on): the debugstatus item a programmed
                   chip takes when the VM's debug mode changes
+  appstore.img    the apps partition's factory pre-built data (factory.py: the wake-word model of a
+                  model with the microphone), a new appstore disk's first contents
 
 What it depends on, and how a start tells it is stale without reading the firmware: the inputs
 (this module's VERSION and lls.VERSION, the firmware's directory, the target, the effective
@@ -45,9 +47,9 @@ import shutil
 import subprocess
 import sys
 
-from . import fwcache, lls, nvm, targets, partmap, paths
+from . import factory, fwcache, lls, nvm, targets, partmap, paths
 
-VERSION = 4
+VERSION = 5
 DIR = "prepared"
 # the panel's refresh where the firmware's own decode of the board is not run (before webOS 5)
 DEFAULT_PANEL_HZ = 60
@@ -55,6 +57,7 @@ RECORD = "prepared.json"
 PARTINFO = "partinfo.img"
 EEPROM = "eeprom.img"
 RECORDS = "records.txt"
+APPS = "appstore.img"
 
 
 class Error(Exception):
@@ -184,7 +187,7 @@ def stale(job):
         )
         return "made from other files (" + ", ".join(os.path.basename(p) for p in diff[:3]) + ")"
     own = [PARTINFO] if targets.board_data(job.target) else []
-    for name in own + [n for n in (EEPROM, RECORDS) if record.get(n)]:
+    for name in own + [n for n in (EEPROM, RECORDS, APPS) if record.get(n)]:
         if not os.path.isfile(os.path.join(job.dir, name)):
             return f"missing its {name}"
     return None
@@ -211,6 +214,8 @@ class Prepared:
             with open(os.path.join(job.dir, RECORDS)) as f:
                 records = f.read()
         self.chip = nvm.Chip(image, records, record.get("eeprom_note"))
+        # {state disk: its factory image}: what a new one starts with (factory.py)
+        self.factory = {factory.DISK: os.path.join(job.dir, APPS)} if record.get(APPS) else {}
 
 
 def _helpers(job, nyx):
@@ -350,6 +355,16 @@ def _make(job, new, say):
         micom = targets.led_micom_dev(job.target, tool)
         if micom:
             record["derived_params"].setdefault("lgemu", []).append("i2c_dev=" + micom)
+    # the apps partition's factory pre-built data: the wake-word model of a model with the
+    # microphone (factory.py, INFERRED factory state)
+    if factory.needed(job.target):
+        try:
+            record["factory_files"] = factory.apps_image(
+                job.fw, job.target, job.tree, os.path.join(new, APPS)
+            )
+        except (factory.Error, lls.Error, OSError, subprocess.SubprocessError) as e:
+            raise Error(f"the apps partition's factory data: {e}") from None
+        record[APPS] = True
     # lls.cache_dir keys its run on these helpers where the firmware's LLS is a nyx module
     nyx = bool(rel.nvm.lls) and lls.Root(job.fw, job.target, job.tree).read(lls.NYX_LLS) is not None
     record["inputs"] = job.inputs()
