@@ -485,6 +485,23 @@ int lgemu_gpiochip_usb_vbus(struct lgemu_gpiochip *g, const unsigned int *lines,
 }
 EXPORT_SYMBOL_GPL(lgemu_gpiochip_usb_vbus);
 
+int lgemu_gpiochip_tach(struct lgemu_gpiochip *g, const unsigned int *lines, int n)
+{
+    if (n <= 0)
+        return 0;
+    if (!g->added)
+        return -EINVAL;
+    for (int i = 0; i < n; i++)
+        if (lines[i] >= g->chip.ngpio)
+            return -EINVAL;
+    spin_lock(&g->lock);
+    for (int i = 0; i < n; i++)
+        g->line[lines[i]].tach = 1;
+    spin_unlock(&g->lock);
+    return 0;
+}
+EXPORT_SYMBOL_GPL(lgemu_gpiochip_tach);
+
 static int line_direction_input(struct gpio_chip *gc, unsigned int n)
 {
     WRITE_ONCE(gpio_line(gc, n)->is_out, 0);
@@ -510,6 +527,8 @@ static int line_get(struct gpio_chip *gc, unsigned int n)
     int v;
 
     spin_lock(&g->lock);
+    if (!g->line[n].is_out && g->line[n].tach)
+        g->line[n].level ^= 1; /* a turning fan: each read sees the next edge */
     v = g->line[n].is_out ? g->line[n].out : g->line[n].level;
     spin_unlock(&g->lock);
     return v;

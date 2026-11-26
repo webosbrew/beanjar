@@ -141,7 +141,7 @@ void lgemu_cdev_del(struct lgemu_cdev *c);
  * unless the levels name it; an output keeps what was written, apart from the input level. Each
  * family module has the chip's values as its parameters gpio_lines and gpio_level. */
 struct lgemu_gpio_line {
-    u8 level, out, is_out;
+    u8 level, out, is_out, tach;
 };
 
 struct lgemu_gpiochip {
@@ -175,6 +175,11 @@ void lgemu_gpiochip_remove(struct lgemu_gpiochip *g);
  * ports lose power at once (n > 0, every output starts at 0). -EINVAL for a bad line, nothing
  * changed. n 0: the ports stay powered, as without this call. */
 int lgemu_gpiochip_usb_vbus(struct lgemu_gpiochip *g, const unsigned int *lines, int n);
+/* The board's fan tachometers: lines (n of them, below the chip's lines) are inputs that read as
+ * a running fan's tach signal, the opposite level at each read, so a reader that counts level
+ * changes over a polling window (W21Z's projector fancontroller, fan_checkRPMTask: rpm = edges *
+ * 60 / 16 every 2000 reads) sees the fans turn. -EINVAL for a bad line, nothing changed then. */
+int lgemu_gpiochip_tach(struct lgemu_gpiochip *g, const unsigned int *lines, int n);
 
 /* ---- the graphics memory ---- */
 

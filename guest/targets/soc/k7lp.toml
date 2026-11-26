@@ -28,6 +28,11 @@ thermal = true
 
 # gpio_usb_vbus and gpio_level: the USB ports' power switches and overcurrent inputs
 # (soc/k6lp.toml says how they were read)
+# gpio_tach: W21Z's (the HU710P projector's) fan tachometers, GPIO_RD_FAN1..6_TACH of its
+# libdile_gpio (128, 122, 124, 130, 126, 118), read as turning fans. Its fancontroller
+# (mw_fan_checkAbnormal, once a second) counts the level changes of FAN1-3 (FAN1-5 for the micom's
+# fan options 1 and 2) and, after 12 s of 0 RPM on one, powers the set off ("fan3": micom 25 00 ad).
+# W21P's map has no line among them; its fancontroller has no such check.
 [[modules]]
 name = "rtk"
 params = [
@@ -61,6 +66,7 @@ params = [
     "vsc_screen=3840,2160",
     "gpio_level=40:1,152:1",
     "gpio_usb_vbus=41,151",
+    "gpio_tach=128,122,124,130,126,118",
 ]
 derived = "rpc-table"
 

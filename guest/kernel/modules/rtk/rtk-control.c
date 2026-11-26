@@ -85,6 +85,11 @@ static int gpio_usb_vbus_count;
 module_param_array(gpio_usb_vbus, uint, &gpio_usb_vbus_count, 0444);
 MODULE_PARM_DESC(gpio_usb_vbus, "outputs that switch the USB ports' 5 V, which LG's PDM turns on "
                                 "(lgemu_gpiochip_usb_vbus); none: the ports always have power");
+static unsigned int gpio_tach[8];
+static int gpio_tach_count;
+module_param_array(gpio_tach, uint, &gpio_tach_count, 0444);
+MODULE_PARM_DESC(gpio_tach, "inputs that are fan tachometers, the fans turning "
+                            "(lgemu_gpiochip_tach): a projector's");
 
 /* /sys/realtek_boards/system_parameters: the bootloader's system_parameters_N joined (Realtek's
  * mach init.c), which KADP's _load_system_parameter searches for TP<n>_FE= (the frontend boards).
@@ -343,6 +348,8 @@ int rtk_gpio_add(void)
 
     if (!err)
         err = lgemu_gpiochip_usb_vbus(&gpio_chip, gpio_usb_vbus, gpio_usb_vbus_count);
+    if (!err)
+        err = lgemu_gpiochip_tach(&gpio_chip, gpio_tach, gpio_tach_count);
     if (err)
         lgemu_gpiochip_remove(&gpio_chip);
     return err;
