@@ -27,8 +27,15 @@ re-checked when its step is implemented.
 ## What our stack offers
 
 - **QEMU 10's arm64 `virt` machine** has no PSCI `SYSTEM_SUSPEND` and refuses `system_wakeup`, so a
-  "deep" suspend of the whole VM is not possible without a QEMU patch. Under KVM on the Pi the
+  "deep" suspend of the whole VM is not possible without a QEMU patch. Under KVM the host kernel
+  answers PSCI, and it offers `SYSTEM_SUSPEND` only when the VMM enables `KVM_CAP_ARM_SYSTEM_SUSPEND`,
+  which QEMU 10.0 never does; TCG's PSCI has no `SYSTEM_SUSPEND` either. Under KVM on the Pi the
   guest's `/sys/power/mem_sleep` offers only `[s2idle]` (2026-11-26).
+- **A stopped VM's clocks stop.** With `kvm-adjvtime` (on by default for `virt` 5.0 and later) the
+  guest's virtual counter does not advance while the VM is stopped, so neither does
+  `CLOCK_MONOTONIC`: a 420 s QMP `stop` of W22O on the Pi left it 47 s further on, the time it ran,
+  with WebAppMgr unharmed. `CLOCK_REALTIME` stays behind by the pause. The x86-64 guest's clocksource
+  is kvm-clock, which QEMU holds still across a stop as well.
 - **q35 (the x86-64 guest kernel)** has ACPI S3 (`ACPI: PM: (supports S0 S3 S5)`, `mem_sleep`
   `[s2idle] deep`). QEMU's wakeup from S3 is a system reset back through the firmware, which resets
   the devices that patch 0004's virtio-pci no longer restores. Not tried here.
@@ -44,17 +51,11 @@ re-checked when its step is implemented.
 
 ## Decisions
 
-### 1. Suspend-to-RAM stops the clocks, as on a TV
+### 1. Suspend-to-RAM is the guest kernel's s2idle
 
-- **mem means deep on arm64** (2026-11-26, replacing "mem means s2idle"). A TV suspends to RAM with
-  timekeeping stopped, so `CLOCK_MONOTONIC` does not count the time asleep. The stock mechanism comes
-  first: PSCI `SYSTEM_SUSPEND` where the machine offers it. Where it doesn't (QEMU's virt), the guest
-  kernel registers minimal suspend ops of its own: the kernel's generic suspend-to-RAM (secondary
-  CPUs offline, `syscore_suspend()` stopping timekeeping), whose last CPU waits in WFI for an
-  interrupt armed for wakeup, the power key's GPIO. The launcher passes `mem_sleep_default=deep`.
-  The wake path stays the one below.
-- **x86-64 keeps s2idle for now.** Its stock deep sleep, ACPI S3, would reset the devices at the
-  resume, so it is not used until it is shown to keep them.
+- **mem means s2idle.** "mem" maps to suspend-to-idle, through the kernel parameter
+  `mem_sleep_default=s2idle`. Deep sleep doesn't exist on this machine, so this is what a "mem"
+  suspend means here.
 - **Patch 0004 is replaced.** `/sys/power/state` offers `freeze` and `mem` again, both suspending to
   idle.
 - **No QEMU patch.** The VM keeps running; its vCPUs simply idle in the guest.
