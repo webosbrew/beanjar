@@ -1,0 +1,74 @@
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# The built-in European DVB lineup: the antenna of a VM on a DVB board unless `beanjar io tuner
+# lineup set` gave it another. A DVB-T multiplex on UHF 21 (474 MHz) with two services and a DVB-C
+# one on cable channel C38 (346 MHz) with one. The network, TS and service numbers are picked from
+# the ranges for private and temporary use, not taken from a broadcaster. docs/user/tuner.md
+# describes the format; host/core/beanjar/tuner_lineup.py reads it.
+
+broadcast = "dvb"
+timezone = "Europe/Berlin"  # each service's programme cycle repeats from local midnight
+country = "DEU"             # the TOT's local time offset is this country's
+loop_seconds = 10           # of the picture and sound, looped
+
+[video]
+size = "720x576"
+fps = "25"
+bitrate = 2000000
+
+[audio]
+bitrate = 192000
+
+[[rf]]
+channel = 21
+system = "t"
+onid = 0xFF01
+tsid = 0x0101
+network_name = "Beanjar DVB-T"
+
+[[rf.services]]
+service_id = 0x2001
+name = "Beanjar Eins"
+lcn = 1
+provider = "Beanjar"
+picture = "testsrc2"
+sound = [{ tone = 440, language = "deu" }, { tone = 554, language = "eng" }]
+events = [
+  { title = "Testbild", minutes = 60, text = "Ein Testbild mit einem Ton von 440 Hz." },
+  { title = "Nachrichten", minutes = 30, text = "Es ist nichts passiert." },
+  { title = "Spielfilm", minutes = 90, text = "Ein langer Film aus Farbbalken." },
+]
+
+[[rf.services]]
+service_id = 0x2002
+name = "Beanjar Zwei"
+lcn = 2
+provider = "Beanjar"
+picture = "smptebars"
+sound = { tone = 660, language = "deu" }
+events = [
+  { title = "Wetter", minutes = 15, text = "Klarer Himmel im emulierten Land." },
+  { title = "Musik", minutes = 45, text = "Ein Ton von 660 Hz." },
+]
+
+[[rf]]
+channel = 38
+system = "c"
+onid = 0xFF02
+tsid = 0x0238
+network_name = "Beanjar Kabel"
+modulation = "qam256"
+symbol_rate = 6900000
+
+[[rf.services]]
+service_id = 0x3001
+name = "Beanjar Kabel"
+lcn = 10
+provider = "Beanjar"
+picture = "rgbtestsrc"
+sound = { tone = 880, language = "deu" }
+events = [
+  { title = "Kabelprogramm", minutes = 60, text = "Ein Programm nur im Kabel." },
+  { title = "Sport", minutes = 30, text = "Ergebnisse der emulierten Liga." },
+]

@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import tuner_lineup, tuner_stream
+from beanjar import tuner_band, tuner_lineup, tuner_stream
 from beanjar import tuner_stream_arib as arib
 
 LINEUP = tuner_lineup.default("arib")
@@ -202,10 +202,10 @@ class CarouselTest(unittest.TestCase):
         self.assertEqual(arib.data_component_info(auto_start=False)[0], 0x23)
 
     def test_uhf(self):
-        self.assertEqual(arib.uhf_center_hz(13), 473142857)
-        self.assertEqual(arib.uhf_center_hz(27), 557142857)
-        with self.assertRaises(tuner_stream.Error):
-            arib.uhf_center_hz(63)
+        self.assertEqual(tuner_band.jp_uhf_hz(13), 473142857)
+        self.assertEqual(tuner_band.jp_uhf_hz(27), 557142857)
+        with self.assertRaises(tuner_band.Error):
+            tuner_band.jp_uhf_hz(63)
 
 
 def sections(data):
@@ -225,7 +225,7 @@ class StreamTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.dir = tempfile.mkdtemp(prefix="arib-")
-        cls.ts = arib.make(os.path.join(cls.dir, "bml.ts"), LINEUP, 27, time.time())
+        cls.ts = arib.make(os.path.join(cls.dir, "bml.ts"), LINEUP, "27", time.time())
         xml = subprocess.run(
             ["tstables", "--japan", "--xml-output", "-", cls.ts], capture_output=True, check=True
         ).stdout

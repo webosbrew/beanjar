@@ -7,15 +7,18 @@
 
 Takes the VM's channel map (beanjar io tuner list NAME) and the services of the lineup in effect on
 it (beanjar io tuner lineup show NAME: the VM's own, or the built-in one of its board's standard,
-US ATSC or the Japanese ISDB-T one on an ARIB board) as what the scan must find,
-waits for its legacy-broadcast (legacy-broadcast-atsc, legacy-broadcast-arib) to be steady (the same
+US ATSC, the Japanese ISDB-T one on an ARIB board or the European DVB one on a DVB board) as what
+the scan must find, on the air and on cable: the scan keeps the passes of the mapped RFs' media
+(terrestrial digital for an air RF, cable digital for a cable one, C78) and skips the others,
+waits for its legacy-broadcast (legacy-broadcast-atsc, -arib or -dvb) to be steady (the same
 process for a minute, registered with the bus and answering; a first boot respawns it), runs tests/regress/tuner/scan.sh in the guest as root
 (beanjar ares-shell --root: the VM needs the rootssh layer), and checks its answers: every mapped
 virtual channel in iepg/getChannelList, no other, and a current event for each in
-getCurrentEventList with the title the lineup has on air now, after scan.sh has watched the first
-channel of each RF in Live TV (a set reads only the tuned RF's guide). A Japanese set lists its
-satellite presets (BS, CS) beside what it found: only its terrestrial channels (channelId 1_...)
-count. On a just-booted VM scan.sh
+getCurrentEventList with the title the lineup has on air now, after scan.sh has watched the
+channels in Live TV (a set reads only the tuned RF's guide). A channel is named as the set numbers
+it, with C before a cable one's: ATSC 7.1 and C78.1, ARIB 011, DVB its logical channel number (1,
+C10). A Japanese set lists its satellite presets (BS, CS) beside what it found: only digital
+terrestrial and cable channels (channelId 1_... and 3_...) count. On a just-booted VM scan.sh
 waits, bounded, until the broadcast service opens and startAutoScan answers (ready_s). Prints the
 numbers and PASS or FAIL; the exit status is 0 only for PASS."""
 
@@ -30,8 +33,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
-from beanjar import tuner_stream
+from beanjar import tuner_band, tuner_stream
 from beanjar import tuner_stream_arib as arib
+from beanjar import tuner_stream_dvb as dvb
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 
@@ -54,26 +58,44 @@ def shell(name, command, timeout):
     return r.stdout
 
 
-# a Japanese set's terrestrial digital channels: their channelIds start with the source type 1
-ARIB_WATCH = '"channelId":"1_[^"]*"'
+# a channelId starts with its source type: 1 digital terrestrial, 3 digital cable
+SOURCE_AIR, SOURCE_CABLE = "1", "3"
+# the channels watched for their guide: a Japanese set's digital terrestrial ones (its satellite
+# presets are not); a DVB set's digital ones, each service (no RF-first pattern of its ids)
+WATCH = {
+    "arib": '"channelId":"1_[^"]*"',
+    "dvb": '"channelId":"[13]_[^"]*"',
+}
+# the scan passes kept, by the mapped RFs' media (scan.sh's PASSES)
+PASSES = {False: "TERRESTRIAL_DIGITAL", True: "CABLE_DIGITAL"}
+
+
+def label(number, cable):
+    """A found or expected channel's name: its number as the set gives it, C before a cable one."""
+    return ("C" if cable else "") + number
 
 
 def expected(channels, now, lineup):
     """{"major.minor": current title} of the lineup's services on the mapped channels (lineup: the
-    values of beanjar io tuner lineup show NAME --json); for ARIB {"NNN": title}, the three-digit
-    number a Japanese set gives a service (remote control key times ten plus the service's number
-    within the TS). The channels of a stream of the user's are not the lineup's: not expected."""
+    values of beanjar io tuner lineup show NAME --json), "C78.1" on cable; for ARIB {"NNN": title},
+    the three-digit number a Japanese set gives a service (remote control key times ten plus the
+    service's number within the TS); for DVB the logical channel number ("C10" on cable). The
+    channels of a stream of the user's are not the lineup's: not expected."""
     out = {}
     for rf in lineup["rf"]:
-        if rf["channel"] not in channels:
+        if rf["rf"] not in channels:
             continue
+        cable = tuner_band.parse(rf["rf"])[0]
         for s in rf["services"]:
             if lineup["broadcast"] == "arib":
                 number = rf["remote_key"] * 10 + (s["service_id"] & 7) + 1
                 out[f"{number:03d}"] = arib.events(s, now)[0][2]
+            elif lineup["broadcast"] == "dvb":
+                on_air = dvb.present_following(s, now, lineup["timezone"])
+                out[label(str(s["lcn"]), cable)] = on_air[0][2] if on_air else None
             else:
                 on_air = tuner_stream.events(s, now, now + 1, lineup["timezone"])
-                out[f"{s['major']}.{s['minor']}"] = on_air[0][2] if on_air else None
+                out[label(f"{s['major']}.{s['minor']}", cable)] = on_air[0][2] if on_air else None
     return out
 
 
@@ -173,18 +195,21 @@ def main():
         env=env(),
         timeout=120,
     )
-    watch = f" '{ARIB_WATCH}'" if broadcast == "arib" else ""
-    out = shell(a.name, f"sh /tmp/scan.sh {a.timeout}{watch}", a.timeout + 300)
+    watch = f" '{WATCH[broadcast]}'" if broadcast in WATCH else ""
+    passes = " ".join(dict.fromkeys(PASSES[tuner_band.parse(c)[0]] for c in mapped + streams))
+    out = shell(a.name, f"PASSES='{passes}' sh /tmp/scan.sh {a.timeout}{watch}", a.timeout + 300)
     now = time.time()
     r = parse(out)
     want = expected(mapped, now, lineup)
     got_channels, ids = {}, {}
     for v in r.get("channel", []):
         number, cname, cid = (v.split(" ", 2) + ["", ""])[:3]
-        if broadcast == "arib" and not cid.startswith("1_"):
-            continue  # a satellite preset
-        got_channels[number.replace("-", ".")] = cname
-        ids[cid] = number.replace("-", ".")
+        source = cid.split("_")[0]
+        if source not in (SOURCE_AIR, SOURCE_CABLE):
+            continue  # a satellite preset of a Japanese set
+        n = label(number.replace("-", "."), source == SOURCE_CABLE)
+        got_channels[n] = cname
+        ids[cid] = n
     on_air = {}
     for v in r.get("event", []):
         cid, _, title = v.partition(" ")
@@ -199,6 +224,7 @@ def main():
     numbers = {
         "broadcast": broadcast,
         "mapped_rf": mapped,
+        "passes": passes.split(),
         "ready_s": int(r.get("ready_s", ["-1"])[0]),
         "start_tries": int(r.get("start_tries", ["0"])[0]),
         "scan_s": int(r.get("scan_s", ["-1"])[0]),

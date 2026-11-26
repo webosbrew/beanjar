@@ -3,8 +3,13 @@
 """Lineup files: the broadcast a VM's antenna carries, in TOML (docs/user/tuner.md): its
 physical channels, their services, each service's programme events, picture and sound, and on
 ARIB a folder of BML documents per service. The generators (tuner_stream.py for ATSC,
-tuner_stream_arib.py for ISDB-T) make their streams from a parsed lineup only; the built-in
-lineups are the files in lineups/ beside this module, one per broadcast standard.
+tuner_stream_arib.py for ISDB-T, tuner_stream_dvb.py for DVB) make their streams from a parsed
+lineup only; the built-in lineups are the files in lineups/ beside this module, one per broadcast
+standard.
+
+Each physical channel has its name, "rf" (tuner_band: "7" on the air, "C78" on cable): an ATSC one
+from its channel and medium (air or cable), a DVB one from its channel and system (t: DVB-T, c:
+DVB-C), an ARIB one from its UHF channel.
 
 parse() and load() check a file and give the normalized lineup (a dict): every key filled in,
 each picture {"pattern": NAME}, {"image": PATH} or {"video": PATH}, each sound {"tone": HZ} or
@@ -20,6 +25,7 @@ import shutil
 import tomllib
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from . import tuner_band
 from .base import Error as BaseError
 
 
@@ -29,7 +35,7 @@ class Error(BaseError):
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULTS_DIR = os.path.join(HERE, "lineups")
-BROADCASTS = ("atsc", "arib")
+BROADCASTS = ("atsc", "arib", "dvb")
 FILE = "lineup.toml"  # an installed lineup's name in its directory
 META = ("source", "base", "text", "key")  # a parsed lineup's keys that are not the file's values
 
@@ -62,7 +68,7 @@ BML_MAX = 255 * 4066  # a module's DDB blocks are numbered in a byte (tuner_stre
 
 
 def default_path(broadcast):
-    """The built-in lineup file of the broadcast standard (atsc or arib)."""
+    """The built-in lineup file of the broadcast standard (atsc, arib or dvb)."""
     return os.path.join(DEFAULTS_DIR, f"{broadcast}.toml")
 
 
@@ -164,7 +170,11 @@ def _picture(w, where, v, base, check):
     return {kind: path}
 
 
-LANGUAGE = {"atsc": "eng", "arib": "jpn"}  # a first sound track's language when it names none
+LANGUAGE = {
+    "atsc": "eng",
+    "arib": "jpn",
+    "dvb": "eng",
+}  # a first sound track's language when it names none
 TRACKS = 3  # sound tracks a service has at most
 
 
@@ -261,16 +271,31 @@ def _media(w, where, s, base, check, broadcast):
 MEDIA_KEYS = ("picture", "label", "sound", "events")
 
 
-def _atsc_rf(w, where, rf, base, check):
-    from .tuner_stream import Error as StreamError
-    from .tuner_stream import rf_center_hz
+MEDIUMS = ("air", "cable")
+MODULATIONS = ("qam64", "qam256")  # a US cable channel's, its CVCT's modulation_mode
 
-    _keys(w, where, rf, ("channel", "tsid", "services"), ())
-    ch = _int(w, f"{where}.channel", rf["channel"], 2, 36)
+
+def _band(w, where, broadcast, name):
     try:
-        rf_center_hz(ch)
-    except StreamError as e:
-        w.fail(f"{where}.channel", str(e))
+        tuner_band.center_hz(broadcast, name)
+    except tuner_band.Error as e:
+        w.fail(where, str(e))
+    return name
+
+
+def _atsc_rf(w, where, rf, base, check):
+    _keys(w, where, rf, ("channel", "tsid", "services"), ("medium", "modulation"))
+    medium = rf.get("medium", "air")
+    if medium not in MEDIUMS:
+        w.fail(f"{where}.medium", f"{medium!r}: air or cable")
+    cable = medium == "cable"
+    ch = _int(w, f"{where}.channel", rf["channel"], 1, 135 if cable else 36)
+    name = _band(w, f"{where}.channel", "atsc", tuner_band.name(ch, cable))
+    if "modulation" in rf and not cable:
+        w.fail(f"{where}.modulation", 'a cable channel\'s (medium = "cable"); air is 8VSB')
+    modulation = rf.get("modulation", "qam256")
+    if modulation not in MODULATIONS:
+        w.fail(f"{where}.modulation", f"{modulation!r}: {' or '.join(MODULATIONS)}")
     services = rf["services"]
     if not isinstance(services, list) or not 1 <= len(services) <= 16:
         w.fail(f"{where}.services", "one service or more, at most 16 ([[rf.services]])")
@@ -285,13 +310,13 @@ def _atsc_rf(w, where, rf, base, check):
             ("major", "minor", "name", "source_id"),
             ("long_name", "program", "captions") + MEDIA_KEYS,
         )
-        name = _str(w, f"{at}.name", s["name"], 7)  # the TVCT's short_name: 7 UTF-16 units
+        sname = _str(w, f"{at}.name", s["name"], 7)  # the VCT's short_name: 7 UTF-16 units
         out.append(
             {
                 "major": _int(w, f"{at}.major", s["major"], 1, 99),
                 "minor": _int(w, f"{at}.minor", s["minor"], 1, 999),
-                "name": name,
-                "long_name": _str(w, f"{at}.long_name", s.get("long_name", name)),
+                "name": sname,
+                "long_name": _str(w, f"{at}.long_name", s.get("long_name", sname)),
                 "source_id": _int(w, f"{at}.source_id", s["source_id"], 1, 0xFFFF),
                 "program": _int(w, f"{at}.program", s.get("program", i + 1), 1, 0xFFFF),
                 **_media(w, at, s, base, check, "atsc"),
@@ -302,7 +327,88 @@ def _atsc_rf(w, where, rf, base, check):
             }
         )
     _unique(w, f"{where}.services", [s["program"] for s in out], "program")
-    return {"channel": ch, "tsid": _int(w, f"{where}.tsid", rf["tsid"], 0, 0xFFFF), "services": out}
+    return {
+        "rf": name,
+        "channel": ch,
+        "medium": medium,
+        **({"modulation": modulation} if cable else {}),
+        "tsid": _int(w, f"{where}.tsid", rf["tsid"], 0, 0xFFFF),
+        "services": out,
+    }
+
+
+SYSTEMS = ("t", "c")  # DVB-T, DVB-C (tuner_band); DVB-T2 is not made yet
+
+
+def _dvb_rf(w, where, rf, base, check):
+    _keys(
+        w,
+        where,
+        rf,
+        ("channel", "onid", "tsid", "services"),
+        ("system", "network_id", "network_name", "modulation", "symbol_rate"),
+    )
+    system = rf.get("system", "t")
+    if system not in SYSTEMS:
+        w.fail(f"{where}.system", f"{system!r}: t (DVB-T) or c (DVB-C); DVB-T2 is not made yet")
+    cable = system == "c"
+    ch = _int(w, f"{where}.channel", rf["channel"], 1, 106 if cable else 69)
+    name = _band(w, f"{where}.channel", "dvb", tuner_band.name(ch, cable))
+    for k in ("modulation", "symbol_rate"):
+        if k in rf and not cable:
+            w.fail(f"{where}.{k}", 'a DVB-C channel\'s (system = "c")')
+    modulation = rf.get("modulation", "qam256")
+    if modulation not in MODULATIONS:
+        w.fail(f"{where}.modulation", f"{modulation!r}: {' or '.join(MODULATIONS)}")
+    services = rf["services"]
+    if not isinstance(services, list) or not 1 <= len(services) <= 8:
+        w.fail(f"{where}.services", "one service or more, at most 8 ([[rf.services]])")
+    out = []
+    for i, s in enumerate(services):
+        at = f"{where}.services[{i}]"
+        _table(w, at, s)
+        _keys(w, at, s, ("service_id", "name", "lcn"), ("provider",) + MEDIA_KEYS)
+        out.append(
+            {
+                "service_id": _int(w, f"{at}.service_id", s["service_id"], 1, 0xFFFF),
+                "name": _str(w, f"{at}.name", s["name"]),
+                "lcn": _int(w, f"{at}.lcn", s["lcn"], 1, 999),
+                "provider": None
+                if "provider" not in s
+                else _str(w, f"{at}.provider", s["provider"]),
+                **_media(w, at, s, base, check, "dvb"),
+                "events": _events(w, f"{at}.events", s.get("events")),
+            }
+        )
+    _unique(w, f"{where}.services", [s["service_id"] for s in out], "service_id")
+    onid = _int(w, f"{where}.onid", rf["onid"], 1, 0xFFFF)
+    network_name = _str(w, f"{where}.network_name", rf.get("network_name", out[0]["name"]))
+    for s in out:
+        s["provider"] = s["provider"] or network_name
+    return {
+        "rf": name,
+        "channel": ch,
+        "system": system,
+        **(
+            {
+                "modulation": modulation,
+                "symbol_rate": _int(
+                    w,
+                    f"{where}.symbol_rate",
+                    rf.get("symbol_rate", 6_900_000),
+                    1_000_000,
+                    7_200_000,
+                ),
+            }
+            if cable
+            else {}
+        ),
+        "onid": onid,
+        "tsid": _int(w, f"{where}.tsid", rf["tsid"], 0, 0xFFFF),
+        "network_id": _int(w, f"{where}.network_id", rf.get("network_id", onid), 1, 0xFFFF),
+        "network_name": network_name,
+        "services": out,
+    }
 
 
 def _arib_rf(w, where, rf, base, check):
@@ -346,6 +452,7 @@ def _arib_rf(w, where, rf, base, check):
     for s in out:
         s["provider"] = s["provider"] or network_name
     return {
+        "rf": str(ch),
         "channel": ch,
         "network_id": _int(w, f"{where}.network_id", rf["network_id"], 1, 0xFFFF),
         "network_name": network_name,
@@ -397,6 +504,9 @@ def _av(w, data, broadcast):
     }
 
 
+TIMEZONE = {"atsc": "America/New_York", "dvb": "Europe/Berlin"}  # where the cycle repeats
+
+
 def parse(text, source, base, broadcast=None, check_files=True):
     """The normalized lineup of TOML text (source: its name in errors; base: the folder its paths
     are relative to); Error if it is not one, or if broadcast is given and it is another standard's.
@@ -408,31 +518,46 @@ def parse(text, source, base, broadcast=None, check_files=True):
         w.fail("", f"not TOML: {e}")
     b = data.get("broadcast")
     if b not in BROADCASTS:
-        w.fail("broadcast", f"{b!r}: atsc or arib")
+        w.fail("broadcast", f"{b!r}: {', '.join(BROADCASTS)}")
     if broadcast is not None and b != broadcast:
         raise Error(f"{source}: the lineup is {b}, the board's broadcast standard is {broadcast}")
     common = ("broadcast", "video", "audio", "loop_seconds", "rf")
-    _keys(w, "", data, ("broadcast", "rf"), common[1:] + (("timezone",) if b == "atsc" else ()))
+    own = {"atsc": ("timezone",), "dvb": ("timezone", "country"), "arib": ()}[b]
+    _keys(w, "", data, ("broadcast", "rf"), common[1:] + own)
     out = {"broadcast": b, **_av(w, data, b)}
-    if b == "atsc":
-        tz = _str(w, "timezone", data.get("timezone", "America/New_York"))
+    if "timezone" in own:
+        tz = _str(w, "timezone", data.get("timezone", TIMEZONE[b]))
         try:
             ZoneInfo(tz)
         except (ZoneInfoNotFoundError, ValueError):
-            w.fail("timezone", f"no time zone {tz!r} (an IANA name: America/Chicago)")
+            w.fail("timezone", f"no time zone {tz!r} (an IANA name: {TIMEZONE[b]})")
         out["timezone"] = tz
+    if b == "dvb":
+        c = data.get("country", "DEU")
+        if not (isinstance(c, str) and len(c) == 3 and c.isascii() and c.isalpha() and c.isupper()):
+            w.fail("country", f"{c!r}: an ISO 3166 alpha-3 code, three capital letters (DEU)")
+        out["country"] = c
     rfs = data["rf"]
     if not isinstance(rfs, list) or not rfs:
         w.fail("rf", "one physical channel or more ([[rf]])")
-    make_rf = _atsc_rf if b == "atsc" else _arib_rf
+    make_rf = {"atsc": _atsc_rf, "arib": _arib_rf, "dvb": _dvb_rf}[b]
     out["rf"] = [make_rf(w, f"rf[{i}]", _table(w, f"rf[{i}]", rf), base, check_files)
                  for i, rf in enumerate(rfs)]  # fmt: skip
-    out["rf"].sort(key=lambda rf: rf["channel"])
-    _unique(w, "rf", [rf["channel"] for rf in out["rf"]], "channel")
+    out["rf"].sort(key=lambda rf: tuner_band.sort_key(rf["rf"]))
+    _unique(w, "rf", [rf["rf"] for rf in out["rf"]], "RF")
     if b == "atsc":
         services = [s for rf in out["rf"] for s in rf["services"]]
-        _unique(w, "rf", [f"{s['major']}.{s['minor']}" for s in services], "virtual channel")
+        # air and cable are two channel lists on a set: a virtual channel once in each
+        for medium in MEDIUMS:
+            _unique(w, "rf", [f"{s['major']}.{s['minor']}" for rf in out["rf"]
+                              if rf["medium"] == medium for s in rf["services"]],
+                    f"{medium} virtual channel")  # fmt: skip
         _unique(w, "rf", [s["source_id"] for s in services], "source_id")
+    if b == "dvb":
+        for system in SYSTEMS:
+            _unique(w, "rf", [s["lcn"] for rf in out["rf"] if rf["system"] == system
+                              for s in rf["services"]], f"DVB-{system.upper()} lcn")  # fmt: skip
+        _unique(w, "rf", [(rf["onid"], rf["tsid"]) for rf in out["rf"]], "onid and tsid")
     out["source"] = source
     out["base"] = base
     out["text"] = text
@@ -524,14 +649,12 @@ def _key(lu, check_files):
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
-def rf(lu, ch):
-    """The lineup's physical channel ch; Error if it has none."""
+def rf(lu, name):
+    """The lineup's physical channel named name ("7", "C78"); Error if it has none."""
     for r in lu["rf"]:
-        if r["channel"] == ch:
+        if r["rf"] == name:
             return r
-    raise Error(
-        f"the lineup has no physical channel {ch} ({', '.join(str(r['channel']) for r in lu['rf'])})"
-    )
+    raise Error(f"the lineup has no RF {name} ({', '.join(r['rf'] for r in lu['rf'])})")
 
 
 def install(src, dest, broadcast, text=None):

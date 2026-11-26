@@ -7,7 +7,7 @@ Errors (inspect): not a whole number of 188-byte packets, a packet without its s
 scrambled packets in its first seconds (a CA-protected recording: Beanjar never descrambles), no
 PAT, no PCR (its bit rate is the PCR's). Warnings, the user's tables never rewritten: a NIT or PSIP
 of another standard than the board's, a delivery descriptor whose frequency is not the RF's, no
-clock tables (ATSC STT; ARIB TDT and TOT).
+clock tables (ATSC STT; ARIB and DVB TDT and TOT).
 
 What the tuner keeps of it (the record): the bit rate from its first and last PCR, its programs,
 its PCR PIDs, and per PID the first and the last packet that starts a PES or section (cuts): the
@@ -29,7 +29,7 @@ TOLERANCE_HZ = 1_000_000
 
 # the tables looked for, by PID: PAT; NIT; TDT and TOT; ATSC PSIP (MGT, TVCT, CVCT, STT)
 SI_PIDS = (0x0000, 0x0010, 0x0014, 0x1FFB)
-TAG_ISDBT_DELIVERY, TAG_DVBT_DELIVERY = 0xFA, 0x5A
+TAG_ISDBT_DELIVERY, TAG_DVBT_DELIVERY, TAG_DVBC_DELIVERY = 0xFA, 0x5A, 0x44
 
 
 def _pcr(mm, i):
@@ -109,6 +109,9 @@ def _nit_delivery(sec):
             elif tag == TAG_DVBT_DELIVERY and len(d) >= 4:
                 kinds.add("dvb")
                 freqs.append(int.from_bytes(d[0:4], "big") * 10)
+            elif tag == TAG_DVBC_DELIVERY and len(d) >= 4:  # 8 BCD digits, 100 Hz units
+                kinds.add("dvb")
+                freqs.append(int(d[0:4].hex()) * 100 if d[0:4].hex().isdigit() else 0)
         at += 6 + n
     return kinds, freqs
 
@@ -226,7 +229,7 @@ def inspect(path, broadcast, center_hz=None, channel=None):
             f"and RF {channel} is {center_hz / 1e6:.3f} MHz: the set may skip the channel or look "
             "for it elsewhere"
         )
-    if broadcast == "arib":
+    if broadcast in ("arib", "dvb"):
         if not any(s[0] in (0x70, 0x73) for s in secs[0x0014]):
             warnings.append(f"{name} has no TDT or TOT: the set's clock does not come from it")
     elif not any(s[0] == 0xCD for s in secs[0x1FFB]):

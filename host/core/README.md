@@ -791,19 +791,26 @@ with `noMotionAutoOff` when its `addNoMotionAndNoOperationTimer` (5 minutes or l
 
 `beanjar io tuner list NAME` lists the physical channels of the VM's lineup and which of them are
 mapped and what the set is tuned to; `beanjar io tuner map NAME RF...` and `unmap NAME RF...|all`
-change the map, kept in the VM's state for its next starts. Only boards whose SoC data loads
+change the map, kept in the VM's state for its next starts. An RF is a channel number, or C and
+the number for a cable channel (`7`, `C78`; `beanjar/tuner_band.py` has each standard's plans),
+and carries its own delivery system: US air 8VSB, US cable QAM annex B, DVB-T, DVB-C annex A,
+ISDB-T; so air 7 and cable C7, both on 177 MHz, are two RFs. Only boards whose SoC data loads
 `dtv_soc` have the tuner (`targets.Soc.modules`; `k7lp`, `k8lp`, `k8lpn` but its number1, `k8lpn2`,
 `k24` ponytail and queue and `o22` ponytail and queue). The lineup is a TOML file
 (`beanjar/tuner_lineup.py`, the format in [docs/user/tuner.md](../../docs/user/tuner.md)): the
-built-in one of the board's broadcast standard, `beanjar/lineups/atsc.toml` (RF 7, 14 and 33 with
-four virtual channels) or `arib.toml` (UHF 27, one service with the BML pages of
-`lineups/arib-bml`), unless `beanjar io tuner lineup set NAME FILE` gave the VM its own: checked
+built-in one of the board's broadcast standard, `beanjar/lineups/atsc.toml` (air RF 7, 14 and 33
+with four virtual channels, cable C78 with one), `arib.toml` (UHF 27, one service with the BML
+pages of `lineups/arib-bml`) or `dvb.toml` (DVB-T on UHF 21 with two services, DVB-C on C38 with
+one), unless `beanjar io tuner lineup set NAME FILE` gave the VM its own: checked
 against the board's standard, then copied with the files it names into the state's
 `tuner-lineup/`; `lineup show NAME` prints the one in effect (TOML; `--json` its values) and
 `lineup reset NAME` goes back to the built-in one. Mapping a channel makes its transport stream
 with TSDuck and ffmpeg into the cache's `tuner/` (keyed on the lineup's values and its files'
-content, so an edit makes it again): for ATSC PAT, PMT, the PSIP tables (MGT, TVCT, RRT, STT,
-EIT-0 to 3 and their ETTs) and each service's picture and sound, 5 Mbit/s, 20 s, looped.
+content, so an edit makes it again): for ATSC PAT, PMT, the PSIP tables (MGT, TVCT on the air or
+CVCT on cable, RRT, STT, EIT-0 to 3 and their ETTs) and each service's picture and sound, 5
+Mbit/s, 20 s, looped; for DVB (`beanjar/tuner_stream_dvb.py`) PAT, PMT, NIT with the delivery
+descriptor and the logical channel numbers, SDT, EIT present/following and a day's schedule,
+TDT and TOT, MPEG-2 video and MPEG-1 layer II sound, 10 s.
 
 `beanjar io tuner map NAME RF --stream FILE` puts a transport stream of the user's on one RF
 instead (`beanjar/tuner_ts.py`): refused if it is not whole 188-byte packets, is scrambled in its
@@ -815,8 +822,9 @@ the continuity counters run on and the first PCR after it has the discontinuity 
 (`tuner.RecordedStream`). `unmap` removes the copy.
 
 Beside QEMU a helper (`python -m beanjar.tuner`, `run/tuner.log`, `run/tuner-status.json`) sends
-the map and, while frontend 0 is tuned within 1 MHz of a mapped channel with the ATSC delivery
-system, that channel's stream at its mux rate, nulls dropped and the STT's time set to now, over
+the map and, while frontend 0 is tuned within 1 MHz of a mapped channel with that channel's
+delivery system, its stream at its mux rate, nulls dropped and the clock's time (STT; TDT and
+TOT) set to now, over
 the `webos.tuner` virtio-serial port (`include/webos-tuner.h`). In the guest the initramfs's
 `virtio-tuner` pump hands it to `dtv_soc.ko`, which makes `webos_tv`'s frontend lock on a mapped
 channel and feeds its four software demuxes; `/proc/dtv_soc` shows the map, the tune and the
@@ -844,11 +852,11 @@ connection) and when `unmap` leaves nothing mapped; a VM started again is fed ag
 `map` from here. `beanjar io tuner list HOST/NAME` shows whether a feed of this machine runs.
 
 ```sh
-beanjar io tuner map tv 7 14 33
+beanjar io tuner map tv 7 14 33 C78
 beanjar io tuner list tv --json
 tests/regress/tuner/run-scan.py tv        # an automatic scan by Luna: PASS or FAIL with numbers
 tests/regress/tuner/run-watch.py tv       # Live TV's picture and sound after it: PASS or FAIL
-beanjar io tuner map rk-1/tv 7 14 33   # made here, fed over ssh
+beanjar io tuner map rk-1/tv 7 C78      # made here, fed over ssh
 tests/regress/tuner/run-watch.py rk-1/tv  # measured from here: its logs and picture through beanjar
 beanjar io tuner lineup set tv mine.toml
 beanjar io tuner map tv 30 --stream rec.ts

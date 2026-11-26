@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-# The built-in US over-the-air lineup: the antenna of a VM on an ATSC board (or on a board of a
-# standard that has no lineup of its own) unless `beanjar io tuner lineup set` gave it another.
+# The built-in US lineup: the antenna of a VM on an ATSC board unless `beanjar io tuner lineup set`
+# gave it another. Three channels on the air and one on cable (C78, QAM-256, with a CVCT).
 # docs/user/tuner.md describes the format; host/core/beanjar/tuner_lineup.py reads it.
 
 broadcast = "atsc"
@@ -94,4 +94,24 @@ sound = { tone = 1000 }
 events = [
   { title = "Documentary", minutes = 60, text = "Colour bars in their natural habitat." },
   { title = "Sports Desk", minutes = 30, text = "Scores from the emulated league." },
+]
+
+[[rf]]
+channel = 78
+medium = "cable"
+tsid = 1078
+
+[[rf.services]]
+major = 78
+minor = 1
+name = "BJC78"
+long_name = "Beanjar Cable"
+source_id = 7801
+program = 1
+picture = "colorspectrum"
+label = true
+sound = { tone = 770 }
+events = [
+  { title = "Cable Classics", minutes = 60, text = "Programme only on cable." },
+  { title = "Shopping Hour", minutes = 60, text = "Nothing for sale." },
 ]

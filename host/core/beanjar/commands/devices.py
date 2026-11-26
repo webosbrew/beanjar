@@ -19,13 +19,19 @@ def tuner_words(a):
         return verb, []
     if verb == "unmap" and rest == ["all"]:
         return verb, None
+    from .. import tuner_band
+
     try:
-        channels = [int(w) for w in rest]
-    except ValueError:
-        raise Usage(f"io tuner {verb}: {' '.join(rest)}: physical channel numbers") from None
+        channels = [tuner_band.canonical(w) for w in rest]
+    except tuner_band.Error as e:
+        raise Usage(f"io tuner {verb}: {e}") from None
     if verb == "map" and getattr(a, "stream", None) is not None and len(channels) != 1:
         raise Usage("io tuner map --stream FILE: one physical channel, RF, the stream's")
     return verb, channels
+
+
+# enum fe_delivery_system, as io tuner list names them
+DELSYS = {1: "DVB-C", 2: "QAM", 3: "DVB-T", 8: "ISDB-T", 11: "8VSB", 16: "DVB-T2"}
 
 
 def tuner_text(name, data):
@@ -38,7 +44,7 @@ def tuner_text(name, data):
         if c.get("stream"):
             what = f"stream {c['stream']}" + (f": {what}" if what else "")
         lines.append(
-            f"RF{c['channel']:<3} {c['center_hz'] / 1e6:7.1f} MHz  "
+            f"RF {c['channel']:<4} {c['center_hz'] / 1e6:7.2f} MHz  {DELSYS.get(c['delsys'], c['delsys']):<6}  "
             f"{'mapped  ' if c['mapped'] else 'unmapped'}  {what}"
         )
     tuned = data["tuned_hz"]
@@ -61,7 +67,7 @@ def lineup_text(name, data):
     """lineup set's and reset's text: what the VM's antenna carries now."""
     values = data["values"]
     rfs = ", ".join(
-        f"RF{rf['channel']} ({len(rf['services'])} service{'s' if len(rf['services']) > 1 else ''})"
+        f"RF {rf['rf']} ({len(rf['services'])} service{'s' if len(rf['services']) > 1 else ''})"
         for rf in values["rf"]
     )
     which = "its own" if data["lineup"] == "own" else "the built-in"
@@ -72,10 +78,7 @@ def lineup_done(a, name, data):
     for w in data.pop("warnings", []):
         warn(w)
     if data.get("unmapped"):
-        warn(
-            f"{name}: RF {', '.join(map(str, data['unmapped']))} unmapped: the lineup has no such "
-            "channel"
-        )
+        warn(f"{name}: RF {', '.join(data['unmapped'])} unmapped: the lineup has no such channel")
     return emit(a, data, lineup_text(name, data))
 
 
@@ -192,7 +195,7 @@ def remote_tuner(a, host, name):
         cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
         recorded = tuner.streams(mirror)
         stream = getattr(a, "stream", None)
-        words = [*(map(str, channels) if channels is not None else ["all"]), "--fed"]
+        words = [*(channels if channels is not None else ["all"]), "--fed"]
         if verb == "map" and stream is not None:
             (ch,) = channels
             rec = tuner.inspect_stream(stream, lu, ch)
@@ -453,8 +456,9 @@ def register(cli):
     tuner = group(
         "tuner",
         "the antenna of a set with our tuner: its lineup (the built-in one of its board's broadcast "
-        "standard, US ATSC channels or a Japanese ISDB-T one on an ARIB board, or the VM's own: "
-        "lineup set), its physical channels and what the set is tuned to (list); map RF... to put "
+        "standard: US ATSC channels on the air and on cable, a Japanese ISDB-T one on an ARIB board, "
+        "European DVB-T and DVB-C ones on a DVB board; or the VM's own: lineup set), its physical "
+        "channels and what the set is tuned to (list); map RF... to put "
         "a signal on them (their transport streams, with the channel tables and guide, made with "
         "TSDuck and ffmpeg; or a recording of yours, --stream, looped), unmap RF... or all; kept "
         "for the VM's next starts. For HOST/NAME the streams are made on this machine and fed to "
@@ -474,7 +478,8 @@ def register(cli):
         tuner,
         "map",
         "put a signal on physical channels RF...: the lineup's streams, or with --stream one RF "
-        "that plays your transport stream",
+        "that plays your transport stream. An RF is a channel number (7) or, on cable, C and the "
+        "cable channel's number (C78)",
         cmd_tuner,
         usage="beanjar io tuner map NAME RF... [--stream FILE] [--json]",
     )
@@ -485,7 +490,7 @@ def register(cli):
         metavar="FILE",
         help="a transport stream (.ts, 188-byte packets, not scrambled, with a PAT and a PCR) for "
         "the one RF, copied into the VM's state and looped at its own rate with the time tables set "
-        "to now (ATSC STT, ARIB TDT and TOT); its own tables are kept as they are, so they should "
+        "to now (ATSC STT, ARIB and DVB TDT and TOT); its own tables are kept as they are, so they should "
         "be of the board's standard and name the RF's frequency (warnings otherwise). Map the RF "
         "again without it to go back to the lineup's stream",
     )

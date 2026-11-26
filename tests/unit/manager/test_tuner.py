@@ -26,7 +26,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import ares, cli, remote, tuner, tuner_lineup, tuner_stream
+from beanjar import ares, cli, remote, tuner, tuner_band, tuner_lineup, tuner_stream
 from beanjar import tuner_stream_arib as arib
 
 ATSC = tuner_lineup.default("atsc")
@@ -53,9 +53,9 @@ def stt(gps):
 
 class WireTest(unittest.TestCase):
     def test_map_and_ts_frames(self):
-        f = tuner.map_frame([177000000, 473000000])
+        f = tuner.map_frame([(177000000, 11), (177000000, 2)])
         self.assertEqual(struct.unpack_from("<IIII", f), (0x4E555457, 1, 0, 16))
-        self.assertEqual(struct.unpack_from("<IIII", f, 16), (177000000, 11, 473000000, 11))
+        self.assertEqual(struct.unpack_from("<IIII", f, 16), (177000000, 11, 177000000, 2))
         pkts = packet(0) * 1100
         frames = tuner.ts_frames(177000000, pkts)
         lens, at = [], 0
@@ -76,11 +76,13 @@ class WireTest(unittest.TestCase):
             self.assertEqual((r.tuned, r.delsys), (177000000, 11))
 
     def test_find_tolerance(self):
-        streams = {177000000: "s7"}
-        self.assertEqual(tuner.find(streams, 177000000), "s7")
-        self.assertEqual(tuner.find(streams, 177310000), "s7")
-        self.assertIsNone(tuner.find(streams, 183000000))
-        self.assertIsNone(tuner.find(streams, 0))
+        streams = {(177000000, 11): "s7", (177000000, 2): "c7"}
+        self.assertEqual(tuner.find(streams, 177000000, 11), "s7")
+        self.assertEqual(tuner.find(streams, 177310000, 11), "s7")
+        self.assertEqual(tuner.find(streams, 177000000, 2), "c7")  # cable C7, same centre
+        self.assertIsNone(tuner.find(streams, 177000000, 3))
+        self.assertIsNone(tuner.find(streams, 183000000, 11))
+        self.assertIsNone(tuner.find(streams, 0, 11))
 
 
 class StreamTest(unittest.TestCase):
@@ -142,7 +144,7 @@ class LineupTest(unittest.TestCase):
         """The built-in 7.1: two AC-3 tracks (English, Spanish) with their languages in the PMT's
         ISO 639 and AC-3 descriptors and the TVCT's service location, and line 21 captions named
         by the caption service descriptor on the video in the PMT and in each EIT event."""
-        rf = tuner_stream.channel(ATSC, 7)
+        rf = tuner_stream.channel(ATSC, "7")
         t = tuner_stream._tables(rf, 1_800_000_000, ATSC["timezone"])
         pmt = t["pmt0"]
         for pid, lang, mainid in ((0x34, "eng", 0), (0x32, "spa", 1)):
@@ -189,17 +191,18 @@ class LineupTest(unittest.TestCase):
         self.assertEqual(out, seq + pic + ud[0] + sl + pic + ud[1] + sl + pic + ud[2] + sl)
 
     def test_frequencies(self):
-        self.assertEqual(tuner_stream.rf_center_hz(2), 57000000)
-        self.assertEqual(tuner_stream.rf_center_hz(7), 177000000)
-        self.assertEqual(tuner_stream.rf_center_hz(14), 473000000)
-        self.assertEqual(tuner_stream.rf_center_hz(33), 587000000)
+        hz = tuner_band.center_hz
+        self.assertEqual(hz("atsc", "2"), 57000000)
+        self.assertEqual(hz("atsc", "7"), 177000000)
+        self.assertEqual(hz("atsc", "14"), 473000000)
+        self.assertEqual(hz("atsc", "33"), 587000000)
+        with self.assertRaises(tuner_band.Error):
+            hz("atsc", "37")
         with self.assertRaises(tuner_stream.Error):
-            tuner_stream.rf_center_hz(37)
-        with self.assertRaises(tuner_stream.Error):
-            tuner_stream.channel(ATSC, 8)
+            tuner_stream.channel(ATSC, "8")
 
     def test_events_cover_now(self):
-        svc = tuner_stream.channel(ATSC, 7)["services"][0]
+        svc = tuner_stream.channel(ATSC, "7")["services"][0]
         now = 1_800_000_000
         for t in range(now, now + 86400, 1800):
             on_air = tuner_stream.events(svc, t, t + 1)
@@ -210,8 +213,8 @@ class LineupTest(unittest.TestCase):
     def test_map_kept(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(tuner.mapped(d), [])
-            tuner.save_map(d, [14, 7, 14])
-            self.assertEqual(tuner.mapped(d), [7, 14])
+            tuner.save_map(d, ["14", "C7", "7", "14"])
+            self.assertEqual(tuner.mapped(d), ["7", "14", "C7"])
 
 
 def fake_make(cache, lu, ch, now):
@@ -250,13 +253,13 @@ class Guest:
             with self.lock:
                 for kind, freq, payload in self.reader.feed(data):
                     if kind == tuner.MAP:
-                        self.maps.append(tuner.map_freqs(payload))
+                        self.maps.append(tuner.map_channels(payload))
                     elif kind == tuner.TS:
                         self.ts += len(payload) // 188
                         self.ts_freqs.add(freq)
 
-    def tune(self, freq):
-        self.sock.sendall(tuner.tune_frame(freq, tuner.SYS_ATSC))
+    def tune(self, freq, delsys=tuner.SYS_ATSC):
+        self.sock.sendall(tuner.tune_frame(freq, delsys))
 
 
 def until(check, timeout=10.0):
@@ -276,11 +279,11 @@ class FeedTest(unittest.TestCase):
         self.tmp = tmp.name
         for d in ("run", "state", "host-cache", "pc-cache"):
             os.makedirs(os.path.join(self.tmp, d))
-        put_stream(os.path.join(self.tmp, "pc-cache"), 7)
+        put_stream(os.path.join(self.tmp, "pc-cache"), "7")
         patch = mock.patch.object(tuner_stream, "make", fake_make)
         patch.start()
         self.addCleanup(patch.stop)
-        tuner.save_map(os.path.join(self.tmp, "state"), [7, 14])
+        tuner.save_map(os.path.join(self.tmp, "state"), ["7", "14"])
         self.feeder = tuner.Tuner(
             os.path.join(self.tmp, "run"),
             os.path.join(self.tmp, "state"),
@@ -314,7 +317,7 @@ class FeedTest(unittest.TestCase):
         self.assertFalse(self.status()["fed"])
 
     def test_a_feed_brings_the_tuned_channel_and_ends_cleanly(self):
-        rf7, rf14 = tuner_stream.rf_center_hz(7), tuner_stream.rf_center_hz(14)
+        rf7, rf14 = tuner.ATSC.tuning("7"), tuner.ATSC.tuning("14")
         until(lambda: self.guest.maps)
         conn = socket.socket(socket.AF_UNIX)
         conn.connect(self.path)
@@ -331,16 +334,19 @@ class FeedTest(unittest.TestCase):
         # the feed's map: of the wanted rf7 and rf14, the one it has a stream of
         until(lambda: self.guest.maps[-1] == [rf7])
         self.assertEqual(self.guest.ts, 0)  # nothing tuned yet
-        self.guest.tune(rf7)
+        self.guest.tune(rf7[0], tuner_band.SYS_DVBC_ANNEX_B)  # cable C7 on the same centre: no
+        time.sleep(0.3)
+        self.assertEqual(self.guest.ts, 0)
+        self.guest.tune(*rf7)
         until(lambda: self.guest.ts >= 50)
-        self.assertEqual(self.guest.ts_freqs, {rf7})
+        self.assertEqual(self.guest.ts_freqs, {rf7[0]})
         until(lambda: self.status()["fed"] and self.status()["sent_packets"] > 0)
-        self.assertEqual(self.status()["map_hz"], [rf7])
-        self.assertEqual(self.status()["tuned_hz"], rf7)
+        self.assertEqual(self.status()["map"], [list(rf7)])
+        self.assertEqual(self.status()["tuned_hz"], rf7[0])
         # the map changes on the feeder's host: the feed follows
-        tuner.save_map(os.path.join(self.tmp, "state"), [14])
+        tuner.save_map(os.path.join(self.tmp, "state"), ["14"])
         until(lambda: self.guest.maps[-1] == [])
-        put_stream(os.path.join(self.tmp, "pc-cache"), 14)
+        put_stream(os.path.join(self.tmp, "pc-cache"), "14")
         until(lambda: self.guest.maps[-1] == [rf14])
         # the feeder ends the feed (its VM stopped): the feed returns, the feeder is alone again
         self.feeder.drop_feed(self.feeder.feed)
@@ -361,9 +367,7 @@ class FeedTest(unittest.TestCase):
         hello = tuner.TuneReader()
         while hello.wanted is None:
             hello.feed(b.recv(4096))
-        self.assertEqual(
-            hello.wanted, [tuner_stream.rf_center_hz(7), tuner_stream.rf_center_hz(14)]
-        )
+        self.assertEqual(hello.wanted, [tuner.ATSC.tuning("7"), tuner.ATSC.tuning("14")])
         a.close()
         b.close()
         until(lambda: self.feeder.feed is None)
@@ -500,22 +504,23 @@ class RemoteCliTest(unittest.TestCase):
 
     def transport(self, argv, stdin=None, on_stderr=None, timeout=None):
         words = argv[argv.index("--") + 2].split()[1:]
+        if words[:1] == ["--version"]:
+            return 1, b"", "an older beanjar"  # remote.identity: no drift to report
         self.calls.append(words)
         verb = words[2]  # io tuner VERB local/NAME [RF...]
         rest = [w for w in words[4:] if not w.startswith("-")]
         if verb == "map":
-            self.mapped = sorted(set(self.mapped + [int(w) for w in rest]))
+            self.mapped = sorted(set(self.mapped + rest))
         elif verb == "unmap":
-            self.mapped = [] if rest == ["all"] else [c for c in self.mapped if str(c) not in rest]
+            self.mapped = [] if rest == ["all"] else [c for c in self.mapped if c not in rest]
         data = {
             "name": "tv",
             "tuner": True,
             "broadcast": "atsc",
-            "delsys": 11,
             "channels": [
-                {"channel": c, "center_hz": tuner_stream.rf_center_hz(c),
+                {"channel": c, "center_hz": tuner.ATSC.center_hz(c), "delsys": tuner.ATSC.delsys(c),
                  "mapped": c in self.mapped, "services": []}
-                for c in (7, 14, 33)
+                for c in ("7", "14", "33", "C78")
             ],
             "tuned_hz": None,
             "sent_packets": 0,
@@ -535,17 +540,18 @@ class RemoteCliTest(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def test_map_makes_here_and_starts_the_feed(self):
-        rc, out, err = self.beanjar("io", "tuner", "map", "pi/tv", "7", "14")
+        rc, out, err = self.beanjar("io", "tuner", "map", "pi/tv", "07", "14", "C78")
         self.assertEqual(rc, 0, err)
         self.assertEqual(self.calls[0], ["io", "tuner", "list", "local/tv", "--json"])  # its lineup
         self.assertEqual(
-            self.calls[-1], ["io", "tuner", "map", "local/tv", "7", "14", "--fed", "--json"]
+            self.calls[-1], ["io", "tuner", "map", "local/tv", "7", "14", "C78", "--fed", "--json"]
         )
-        self.assertEqual(self.made.call_args.args[1], [7, 14])
+        self.assertEqual(self.made.call_args.args[1], ["7", "14", "C78"])
         host, uri, name, address, _cache = self.start.call_args.args
         self.assertEqual((host, uri, name, address), ("pi", "ssh://pi.example", "tv",
                                                        "/l/tv/run/tuner-feed.sock"))  # fmt: skip
-        self.assertIn("RF7", out)
+        self.assertIn("RF 7 ", out)
+        self.assertIn("RF C78   549.00 MHz  QAM", out)
 
     def test_map_of_a_stopped_vm_starts_no_feed(self):
         self.connected = False
@@ -555,7 +561,7 @@ class RemoteCliTest(unittest.TestCase):
         self.assertIn("not running", err)
 
     def test_unmap_to_nothing_stops_the_feed(self):
-        self.mapped = [7, 14]
+        self.mapped = ["7", "14"]
         self.assertEqual(self.beanjar("io", "tuner", "unmap", "pi/tv", "7")[0], 0)
         self.stop.assert_not_called()
         self.assertEqual(self.beanjar("io", "tuner", "unmap", "pi/tv", "all", "--json")[0], 0)
@@ -571,24 +577,34 @@ class RemoteCliTest(unittest.TestCase):
         self.calls.clear()
         rc, _o, err = self.beanjar("io", "tuner", "map", "pi/tv", "8")
         self.assertEqual(rc, 1)
-        self.assertIn("no physical channel 8", err)
+        self.assertIn("the lineup has no RF 8", err)
         self.assertEqual(self.calls, [["io", "tuner", "list", "local/tv", "--json"]])  # no map
+        self.calls.clear()
+        rc, _o, err = self.beanjar("io", "tuner", "map", "pi/tv", "c7")
+        self.assertEqual(rc, 2)
+        self.assertIn("C and a cable channel number (C78)", err)
+        self.assertEqual(self.calls, [])
 
 
 class FrameTest(unittest.TestCase):
     def test_reader_frames_and_wanted(self):
-        data = b"junk" + tuner.map_frame([473000000, 177000000]) + tuner.ts_frames(1, packet(0))
+        data = b"junk" + tuner.map_frame([(473000000, 11), (177000000, 2)])
+        data += tuner.ts_frames(1, packet(0))
         data += tuner.tune_frame(177000000, 11)
         r = tuner.TuneReader()
         kinds = []
         for i in range(0, len(data), 5):
             kinds += [k for k, _f, _p in r.feed(data[i : i + 5])]
         self.assertEqual(kinds, [tuner.MAP, tuner.TS, tuner.TUNE])
-        self.assertEqual(r.wanted, [177000000, 473000000])
+        self.assertEqual(r.wanted, [(177000000, 2), (473000000, 11)])
         self.assertEqual((r.tuned, r.delsys), (177000000, 11))
 
     def test_channels_of(self):
-        self.assertEqual(tuner.channels_of([473000000, 177200000, 999000000]), [7, 14])
+        wanted = [(473000000, 11), (177200000, 11), (999000000, 11), (549000000, 2)]
+        self.assertEqual(tuner.channels_of(wanted), ["7", "14", "C78"])
+        # cable C7 is on air 7's centre: the delivery system tells them apart
+        self.assertEqual(tuner.channels_of([(177000000, 2)], extra=["C7"]), ["C7"])
+        self.assertEqual(tuner.channels_of([(549000000, 11)]), [])
 
 
 def tdt(field):
@@ -607,19 +623,23 @@ class AribTest(unittest.TestCase):
         self.assertIs(tuner.lineup("arib"), tuner.ARIB)
         self.assertIs(tuner.lineup("atsc"), tuner.ATSC)
         self.assertIs(tuner.lineup(None), tuner.ATSC)
-        self.assertIs(tuner.lineup("dvb"), tuner.ATSC)  # no lineup of its own yet
-        self.assertEqual((tuner.ARIB.delsys, tuner.ARIB.channels), (8, [27]))
-        self.assertEqual(tuner.ARIB.center_hz(27), 557142857)
-        self.assertEqual(tuner.lineup_of_delsys(8), tuner.ARIB)
-        self.assertEqual(tuner.lineup_of_delsys(11), tuner.ATSC)
+        self.assertIs(tuner.lineup("dvb"), tuner.DVB)
+        self.assertEqual((tuner.ARIB.delsys("27"), tuner.ARIB.channels), (8, ["27"]))
+        self.assertEqual(tuner.ARIB.center_hz("27"), 557142857)
+        self.assertEqual(tuner.lineup_of_systems({8}), tuner.ARIB)
+        self.assertEqual(tuner.lineup_of_systems({11, 2}), tuner.ATSC)
+        self.assertEqual(tuner.lineup_of_systems({3}), tuner.DVB)
+        self.assertEqual(tuner.lineup_of_systems(set()), tuner.ATSC)
         with self.assertRaises(tuner.Error):
-            tuner.ARIB.check(28)
-        tuner.check_channels([7, 14], tuner.ATSC)
+            tuner.ARIB.check("28")
+        tuner.check_channels(["7", "14", "C78"], tuner.ATSC)
         with self.assertRaises(tuner.Error):
-            tuner.check_channels([7], tuner.ARIB)
+            tuner.check_channels(["7"], tuner.ARIB)
+        with self.assertRaises(tuner.Error):
+            tuner.ARIB.check_band("C30")
         # the firmware's DTV_FREQUENCY is its table's kHz times 1000: within the tolerance
-        self.assertEqual(tuner.channels_of([557143000], tuner.ARIB), [27])
-        self.assertEqual(tuner.channels_of([557143000]), [])
+        self.assertEqual(tuner.channels_of([(557143000, 8)], tuner.ARIB), ["27"])
+        self.assertEqual(tuner.channels_of([(557143000, 8)]), [])
 
     def test_each_channel_has_its_own_picture_and_tone(self):
         services = [s for rf in ATSC["rf"] for s in rf["services"]]
@@ -629,20 +649,20 @@ class AribTest(unittest.TestCase):
             self.assertEqual(len(set(values)), len(values), key)
         # the stream's key follows a service's picture and tone: the lineup's
         now = time.time()
-        a = tuner_stream.stream_key(ATSC, 7, now)
+        a = tuner_stream.stream_key(ATSC, "7", now)
         for old, new in (('"testsrc2"', '"zoneplate"'), ("tone = 440", "tone = 123")):
             text = ATSC["text"].replace(old, new, 1)
             other = tuner_lineup.parse(text, "t.toml", tuner_lineup.DEFAULTS_DIR)
-            self.assertNotEqual(tuner_stream.stream_key(other, 7, now), a, new)
+            self.assertNotEqual(tuner_stream.stream_key(other, "7", now), a, new)
 
     def test_map_frame_and_reader(self):
-        f = tuner.map_frame([557142857], tuner.SYS_ISDBT)
+        f = tuner.map_frame([(557142857, tuner.SYS_ISDBT)])
         self.assertEqual(struct.unpack_from("<II", f, 16), (557142857, 8))
         r = tuner.TuneReader()
         r.feed(f)
-        self.assertEqual((r.wanted, r.wanted_delsys), ([557142857], 8))
+        self.assertEqual(r.wanted, [(557142857, 8)])
         r.feed(tuner.map_frame([]))
-        self.assertEqual((r.wanted, r.wanted_delsys), ([], None))
+        self.assertEqual(r.wanted, [])
 
     def test_status_follows_the_board(self):
         class VM:
@@ -653,12 +673,18 @@ class AribTest(unittest.TestCase):
 
         with mock.patch.object(tuner, "vm_broadcast", return_value="arib"):
             st = tuner.status(VM())
-        self.assertEqual((st["broadcast"], st["delsys"]), ("arib", 8))
-        self.assertEqual([c["channel"] for c in st["channels"]], [27])
+        self.assertEqual(st["broadcast"], "arib")
+        self.assertEqual([(c["channel"], c["delsys"]) for c in st["channels"]], [("27", 8)])
         self.assertEqual(st["channels"][0]["center_hz"], 557142857)
         self.assertIn("ビーンジャー１", st["channels"][0]["services"][0])
         with mock.patch.object(tuner, "vm_broadcast", return_value="atsc"):
-            self.assertEqual([c["channel"] for c in tuner.status(VM())["channels"]], [7, 14, 33])
+            got = [(c["channel"], c["delsys"]) for c in tuner.status(VM())["channels"]]
+            self.assertEqual(got, [("7", 11), ("14", 11), ("33", 11), ("C78", 2)])
+        with mock.patch.object(tuner, "vm_broadcast", return_value="dvb"):
+            got = [
+                (c["channel"], c["center_hz"], c["delsys"]) for c in tuner.status(VM())["channels"]
+            ]
+            self.assertEqual(got, [("21", 474000000, 3), ("C38", 346000000, 1)])
 
     def test_tdt_and_tot_set_to_now(self):
         old = arib.jst_time(1_700_000_000)
@@ -688,29 +714,29 @@ class AribTest(unittest.TestCase):
             self.assertEqual(out[188:], pkts[1])  # no STT of ISDB's
 
     def test_sender_sends_to_an_isdbt_tune_only(self):
-        rf27 = tuner.ARIB.center_hz(27)
+        rf27 = tuner.ARIB.center_hz("27")
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "isdbt27.ts")
             with open(path, "wb") as f:
                 f.write(packet(0x111, b"video") * 50)
             lu = tuner.Lineup(
-                "arib", 8, 188 * 8 * 1000, [27], tuner.ARIB.center_hz, tuner.ARIB.services,
-                lambda cache, ch, now: path, tuner.ARIB.clock,
+                "arib", 188 * 8 * 1000, tuner.ARIB.services, lambda cache, ch, now: path,
+                tuner.ARIB.clock, tuner.ARIB.spec,
             )  # fmt: skip
             sent = []
             sender = tuner.Sender(tuner.Player(d, print, lu), sent.append, lambda t: None)
-            sender.tick([27], rf27, tuner.SYS_ATSC, 0.0)
-            sender.tick([27], rf27, tuner.SYS_ATSC, 0.1)
+            sender.tick(["27"], rf27, tuner.SYS_ATSC, 0.0)
+            sender.tick(["27"], rf27, tuner.SYS_ATSC, 0.1)
             frames = tuner.FrameReader().feed(b"".join(sent))
             self.assertEqual([k for k, _f, _p in frames], [tuner.MAP])
             self.assertEqual(struct.unpack_from("<II", frames[0][2]), (rf27, 8))
             sent.clear()
-            sender.tick([27], rf27, tuner.SYS_ISDBT, 0.2)
+            sender.tick(["27"], rf27, tuner.SYS_ISDBT, 0.2)
             frames = tuner.FrameReader().feed(b"".join(sent))
             self.assertEqual({(k, f) for k, f, _p in frames}, {(tuner.TS, rf27)})
 
     def test_feed_takes_the_lineup_of_the_map(self):
-        rf27 = tuner.ARIB.center_hz(27)
+        rf27 = tuner.ARIB.center_hz("27")
         a, b = socket.socketpair()
         players = []
 
@@ -720,14 +746,14 @@ class AribTest(unittest.TestCase):
                 return {}
 
         def feeder():
-            b.sendall(tuner.map_frame([rf27], tuner.SYS_ISDBT))
+            b.sendall(tuner.map_frame([(rf27, tuner.SYS_ISDBT)]))
             until(lambda: players)
             b.close()
 
         threading.Thread(target=feeder, daemon=True).start()
         tuner.feed_session(a, Player("/nonexistent", print), lambda t: None, wait=5)
         a.close()
-        self.assertEqual(players[0], ("arib", [27]))
+        self.assertEqual(players[0], ("arib", ["27"]))
 
 
 if __name__ == "__main__":

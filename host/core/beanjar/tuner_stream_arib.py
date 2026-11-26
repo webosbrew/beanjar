@@ -27,6 +27,7 @@ import subprocess
 from datetime import date, datetime, timedelta, timezone
 from xml.sax.saxutils import escape, quoteattr
 
+from .tuner_band import jp_uhf_hz
 from .tuner_stream import FF_PID0, PACKET, Error, crc32_mpeg, ff_remap
 
 MUX_RATE = 5_000_000  # bits a second
@@ -189,13 +190,6 @@ def ddb_messages(mod):
     return out
 
 
-def uhf_center_hz(ch):
-    """The Japanese UHF channel's centre frequency (13 to 62: 473 + 6 (ch - 13) + 1/7 MHz)."""
-    if not 13 <= ch <= 62:
-        raise Error(f"no Japanese UHF channel {ch} (13 to 62)")
-    return (473 + 6 * (ch - 13)) * 1000000 + 142857
-
-
 JST = timezone(timedelta(hours=9))
 
 
@@ -273,7 +267,7 @@ def _tables(rf, now, modules):
         f'  <transport_stream transport_stream_id="{tsid}" original_network_id="{onid}">\n'
         f'    <ISDB_terrestrial_delivery_system_descriptor area_code="0x{rf["area_code"]:03X}" '
         'guard_interval="1/8" transmission_mode="mode3">'
-        f'<frequency value="{uhf_center_hz(rf["channel"])}"/></ISDB_terrestrial_delivery_system_descriptor>\n'
+        f'<frequency value="{jp_uhf_hz(rf["channel"])}"/></ISDB_terrestrial_delivery_system_descriptor>\n'
         f'    <TS_information_descriptor remote_control_key_id="{rf["remote_key"]}" ts_name={_q(rf["ts_name"])}>'
         '<transmission_type transmission_type_info="0x0F">'
         + "".join(f'<service id="{s["service_id"]}"/>' for s in services)
@@ -468,7 +462,7 @@ def stream_key(lu, ch, now):
 
 
 def stream_path(cache, lu, ch, now):
-    return os.path.join(cache, f"isdbt{ch:02d}-{lu['key'][:8]}-{stream_key(lu, ch, now)}.ts")
+    return os.path.join(cache, f"isdbt{ch.zfill(2)}-{lu['key'][:8]}-{stream_key(lu, ch, now)}.ts")
 
 
 def make_cached(cache, lu, ch, now):
@@ -482,15 +476,18 @@ def make_cached(cache, lu, ch, now):
     make(path + ".tmp", lu, ch, now)
     os.replace(path + ".tmp", path)
     for name in os.listdir(cache):
-        if name.startswith(f"isdbt{ch:02d}-{lu['key'][:8]}-") and os.path.join(cache, name) != path:
+        if (
+            name.startswith(f"isdbt{ch.zfill(2)}-{lu['key'][:8]}-")
+            and os.path.join(cache, name) != path
+        ):
             os.unlink(os.path.join(cache, name))
     return path
 
 
-def jst_time(now):
+def jst_time(now, tz=JST):
     """The 40-bit JST_time field of a TDT or TOT (ARIB STD-B10): the MJD, then hours, minutes and
-    seconds in BCD."""
-    t = datetime.fromtimestamp(int(now), JST)
+    seconds in BCD; with tz UTC, DVB's UTC_time (EN 300 468), the same layout."""
+    t = datetime.fromtimestamp(int(now), tz)
     mjd = (t.date() - date(1858, 11, 17)).days
 
     def bcd(n):
@@ -499,9 +496,10 @@ def jst_time(now):
     return mjd.to_bytes(2, "big") + bytes([bcd(t.hour), bcd(t.minute), bcd(t.second)])
 
 
-def time_rewrite(packet, now):
+def time_rewrite(packet, now, tz=JST):
     """The packet with the JST_time of each whole TDT and TOT section in it set to now (and the
-    TOT's CRC made again); the packet itself when it starts no section on the TOT PID."""
+    TOT's CRC made again); the packet itself when it starts no section on the TOT PID. tz UTC:
+    DVB's TDT and TOT, whose UTC_time has the same place and layout."""
     pid = ((packet[1] & 0x1F) << 8) | packet[2]
     if pid != TOT_PID or not packet[1] & 0x40 or not packet[3] & 0x10:
         return packet
@@ -510,7 +508,7 @@ def time_rewrite(packet, now):
         return packet
     at += 1 + packet[at]  # the pointer field
     out = bytearray(packet)
-    stamp = jst_time(now)
+    stamp = jst_time(now, tz)
     while at + 3 <= PACKET and out[at] != 0xFF:
         n = 3 + (((out[at + 1] & 0xF) << 8) | out[at + 2])
         if at + n > PACKET:

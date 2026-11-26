@@ -12,15 +12,17 @@
 #
 # The passes are fixed by the region (US: terrestrial digital, terrestrial analogue, cable digital,
 # cable analogue; legacy-broadcast-atsc ignores setAutoScanChannelType; Japan: terrestrial digital
-# alone). Our lineup is digital over the air, so each other pass is skipped as it starts, as the
-# stock app's Skip button does (scan/skipAutoScan): about 40 s instead of 20 minutes under TCG.
-# ALL=1 runs every pass; PASSES names the passes kept, the source types without INPUTSOURCE_
-# (default TERRESTRIAL_DIGITAL; a US cable scan: "TERRESTRIAL_DIGITAL CABLE_DIGITAL").
+# alone; Germany: those of the US and satellite). Our lineups are digital, so each other pass is
+# skipped as it starts, as the stock app's Skip button does (scan/skipAutoScan): about 40 s instead
+# of 20 minutes under TCG. ALL=1 runs every pass; PASSES names the passes kept, the source types
+# without INPUTSOURCE_ (default TERRESTRIAL_DIGITAL; run-scan.py adds CABLE_DIGITAL when a cable
+# RF, C78, is mapped).
 #
 # WATCH_IDS: the channelIds watched after the scan, an extended regular expression for a whole
-# "channelId":"..." pair; by default each US RF's first service (..._1_0_0_0). A Japanese set
-# (run-scan.py: '"channelId":"1_[^"]*"', terrestrial digital) lists its satellite presets too,
-# which are not watched.
+# "channelId":"..." pair; by default each US RF's first service (..._1_0_0_0). A Japanese set (run-scan.py: '"channelId":"1_[^"]*"', terrestrial digital)
+# lists its satellite presets too, which are not watched; a DVB set's digital channels are watched
+# each ('"channelId":"[13]_[^"]*"'). They are watched in channelId order (the source type first:
+# 1 terrestrial, 3 cable), so Live TV is left on the last one.
 #
 # A service just started answers before it is ready: utp.broadcast/open "No resource" (-106) for
 # about 10 s, startAutoScan nothing at all, or a scan that never starts a pass. All are retried

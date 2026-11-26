@@ -5,10 +5,13 @@ channels carry a signal, and the transport stream of the one the set is tuned to
 
 `beanjar io tuner list NAME` lists the lineup's physical channels (Lineup: the lineup in effect,
 the VM's own, `io tuner lineup set`, kept in its state's tuner-lineup/, else the built-in one of
-the board's broadcast standard, lineups/atsc.toml or arib.toml; tuner_lineup.py reads them) and
+the board's broadcast standard, lineups/atsc.toml, arib.toml or dvb.toml; tuner_lineup.py reads
+them) and
 those of the user's streams, which of them are mapped and what the set is tuned to; `beanjar io
 tuner map NAME RF...` and `unmap NAME RF...|all` change the map, which is kept in the VM's state
-(tuner.json) for its next starts. A mapped channel's stream is made (Lineup.make, into the cache's
+(tuner.json) for its next starts. An RF is named by its channel number, or C and the number on
+cable ("7", "C78": tuner_band), and each has its centre frequency and delivery system: a US air
+channel 8VSB, a US cable one QAM annex B, so air 7 and cable C7, both on 177 MHz, are two RFs. A mapped channel's stream is made (Lineup.make, into the cache's
 tuner/) when it is mapped; `map NAME RF --stream FILE` instead copies a transport stream of the
 user's into the state's tuner-streams/ (checked by tuner_ts.inspect) and loops it as it is
 (RecordedStream), only its clock tables set to now.
@@ -18,8 +21,9 @@ Two halves, which may run on two machines:
 - The generator (Player, Sender) makes the streams of the wanted channels with TSDuck and ffmpeg
   and sends the map of those that are ready and, while frontend 0 is tuned to one of them, that
   channel's stream, looped at its mux rate, without its null packets and with its time tables
-  (ATSC STT, ISDB TDT and TOT) set to now (include/webos-tuner.h's frames). The map's delivery
-  system is the lineup's, and a stream goes only to a tune of that delivery system.
+  (ATSC STT, ISDB and DVB TDT and TOT) set to now (include/webos-tuner.h's frames). Each RF of the
+  map carries its own delivery system, and a stream goes only to a tune of that frequency and
+  delivery system.
 - The feeder (Tuner) runs beside QEMU: the launcher starts it (`python -m beanjar.tuner PID
   RUN_DIR STATE_DIR CACHE BROADCAST`, the board's standard) beside a VM that has the webos.tuner
   port (qemu.py). It connects to QEMU's socket for the port (RUN_DIR's tuner.sock), writes what it
@@ -53,7 +57,7 @@ import tempfile
 import threading
 import time
 
-from . import tuner_lineup, tuner_stream, tuner_stream_arib, tuner_ts
+from . import tuner_band, tuner_lineup, tuner_stream, tuner_stream_arib, tuner_stream_dvb, tuner_ts
 from .base import Error
 
 MAGIC = 0x4E555457
@@ -65,7 +69,7 @@ SOCK = "tuner.sock"
 FEED_SOCK = "tuner-feed.sock"  # in RUN_DIR: where a generator elsewhere connects
 TICK = 0.02  # seconds between sends
 TOLERANCE_HZ = 1_000_000  # dtv_soc.c's LOCK_TOLERANCE_HZ
-SYS_ISDBT, SYS_ATSC = 8, 11  # enum fe_delivery_system
+SYS_ISDBT, SYS_ATSC = tuner_band.SYS_ISDBT, tuner_band.SYS_ATSC
 CHUNK_PACKETS = 512  # include/webos-tuner.h's WEBOS_TUNER_TS_MAX
 MAP_MAX = 128  # include/webos-tuner.h's WEBOS_TUNER_MAP_MAX
 LIMITS = {MAP: MAP_MAX * 8, TS: CHUNK_PACKETS * tuner_stream.PACKET, TUNE: 64}  # payload bytes
@@ -79,18 +83,18 @@ def frame(kind, freq, payload=b""):
     return HEADER.pack(MAGIC, kind, freq, len(payload)) + payload
 
 
-def map_frame(freqs, delsys=SYS_ATSC):
-    """The map: the centre frequencies, each of the delivery system (the lineup's)."""
-    return frame(MAP, 0, b"".join(struct.pack("<II", f, delsys) for f in freqs))
+def map_frame(channels):
+    """The map: [(centre frequency, delivery system)]."""
+    return frame(MAP, 0, b"".join(struct.pack("<II", f, d) for f, d in channels))
 
 
 def tune_frame(freq, delsys):
     return frame(TUNE, freq, struct.pack("<I", delsys))
 
 
-def map_freqs(payload):
-    """The centre frequencies of a MAP frame's payload, sorted."""
-    return sorted(f for f, _d in struct.iter_unpack("<II", payload[: len(payload) // 8 * 8]))
+def map_channels(payload):
+    """The (centre frequency, delivery system) pairs of a MAP frame's payload, sorted."""
+    return sorted(struct.iter_unpack("<II", payload[: len(payload) // 8 * 8]))
 
 
 def ts_frames(freq, packets):
@@ -100,33 +104,52 @@ def ts_frames(freq, packets):
 
 
 class Lineup:
-    """A broadcast's physical channels with a signal: their delivery system, centre frequencies
-    and services, how a channel's stream is made into a cache and which of its packets carry the
-    time, rewritten to now as they are sent (clock: {PID: rewrite(packet, now)}). spec: the parsed
-    lineup file (tuner_lineup), own: a VM's own rather than the built-in one."""
+    """A broadcast's physical channels with a signal, by name ("7", "C78": tuner_band): their
+    centre frequencies, delivery systems and services, how a channel's stream is made into a cache
+    and which of its packets carry the time, rewritten to now as they are sent (clock: {PID:
+    rewrite(packet, now)}). spec: the parsed lineup file (tuner_lineup), own: a VM's own rather
+    than the built-in one."""
 
-    def __init__(self, name, delsys, rate, channels, center_hz, services, make, clock, spec=None,
-                 own=False):  # fmt: skip
-        self.name, self.delsys, self.rate = name, delsys, rate
-        self.channels = channels  # the physical channel numbers, sorted
-        self.center_hz = center_hz  # channel -> Hz, of any channel of the band; Error for another
+    def __init__(self, name, rate, services, make, clock, spec, own=False):
+        self.name, self.rate = name, rate
+        self.channels = [rf["rf"] for rf in spec["rf"]]  # in tuner_band.sort_key order
+        self.system = {rf["rf"]: rf.get("system") for rf in spec["rf"]}
         self.services = services  # channel -> ["name", ...]
         self.make = make  # (cache, channel, now) -> the stream's path
         self.clock = clock
         self.spec, self.own = spec, own
+        self.systems = SYSTEMS[name]
+
+    def center_hz(self, ch):
+        """The centre frequency of RF ch of the band (any of it, not only the lineup's); Error for
+        an RF the band does not have."""
+        try:
+            return tuner_band.center_hz(self.name, ch)
+        except tuner_band.Error as e:
+            raise Error(str(e)) from None
+
+    def delsys(self, ch):
+        return tuner_band.delsys(self.name, ch, self.system.get(ch))
+
+    def tuning(self, ch):
+        """(centre frequency, delivery system) of RF ch."""
+        return self.center_hz(ch), self.delsys(ch)
 
     def check(self, ch):
         if ch not in self.channels:
-            raise Error(
-                f"the lineup has no physical channel {ch} ({', '.join(map(str, self.channels))})"
-            )
+            raise Error(f"the lineup has no RF {ch} ({', '.join(self.channels)})")
 
     def check_band(self, ch):
-        """Error for a channel number the band does not have."""
-        try:
-            self.center_hz(ch)
-        except tuner_stream.Error as e:
-            raise Error(str(e)) from None
+        """Error for an RF the band does not have."""
+        self.center_hz(ch)
+
+
+# the delivery systems a board of each standard tunes (tuner_band)
+SYSTEMS = {
+    "atsc": {tuner_band.SYS_ATSC, tuner_band.SYS_DVBC_ANNEX_B},
+    "arib": {tuner_band.SYS_ISDBT},
+    "dvb": {tuner_band.SYS_DVBT, tuner_band.SYS_DVBT2, tuner_band.SYS_DVBC_ANNEX_A},
+}
 
 
 def fed_make(cache, ch, now):
@@ -136,24 +159,23 @@ def fed_make(cache, ch, now):
     )
 
 
+def _services(spec, label):
+    def of(ch):
+        return [label(rf, s) for rf in spec["rf"] if rf["rf"] == ch for s in rf["services"]]
+
+    return of
+
+
 def from_spec(spec, own=False, fed=False):
     """The Lineup of a parsed lineup file (tuner_lineup.load); fed: its files are with a feed on
     another machine, which makes its streams. The generators are looked up when called, so a test
     can stand in for them."""
-    channels = [rf["channel"] for rf in spec["rf"]]
-    if spec["broadcast"] == "arib":
+    b = spec["broadcast"]
+    if b == "arib":
         return Lineup(
             "arib",
-            SYS_ISDBT,
             tuner_stream_arib.MUX_RATE,
-            channels,
-            lambda ch: tuner_stream_arib.uhf_center_hz(ch),
-            lambda ch: [
-                f"{rf['remote_key']} {s['name']}"
-                for rf in spec["rf"]
-                if rf["channel"] == ch
-                for s in rf["services"]
-            ],
+            _services(spec, lambda rf, s: f"{rf['remote_key']} {s['name']}"),
             fed_make
             if fed
             else lambda cache, ch, now: tuner_stream_arib.make_cached(cache, spec, ch, now),
@@ -161,18 +183,22 @@ def from_spec(spec, own=False, fed=False):
             spec,
             own,
         )
+    if b == "dvb":
+        return Lineup(
+            "dvb",
+            tuner_stream_dvb.MUX_RATE,
+            _services(spec, lambda rf, s: f"{s['lcn']} {s['name']}"),
+            fed_make
+            if fed
+            else lambda cache, ch, now: tuner_stream_dvb.make_cached(cache, spec, ch, now),
+            {tuner_stream_dvb.TOT_PID: lambda p, now: tuner_stream_dvb.time_rewrite(p, now)},
+            spec,
+            own,
+        )
     return Lineup(
         "atsc",
-        SYS_ATSC,
         tuner_stream.MUX_RATE,
-        channels,
-        lambda ch: tuner_stream.rf_center_hz(ch),
-        lambda ch: [
-            f"{s['major']}.{s['minor']} {s['name']}"
-            for rf in spec["rf"]
-            if rf["channel"] == ch
-            for s in rf["services"]
-        ],
+        _services(spec, lambda rf, s: f"{s['major']}.{s['minor']} {s['name']}"),
         fed_make if fed else lambda cache, ch, now: tuner_stream.make(cache, spec, ch, now),
         {tuner_stream.BASE_PID: lambda p, now: tuner_stream.stt_rewrite(p, now)},
         spec,
@@ -180,21 +206,22 @@ def from_spec(spec, own=False, fed=False):
     )
 
 
-# the built-in lineups by broadcast standard (targets.BROADCASTS): lineups/atsc.toml and arib.toml;
-# a board of another standard (a DVB one: no lineup of its own yet) gets the US one.
+# the built-in lineups by broadcast standard (targets.BROADCASTS): lineups/atsc.toml, arib.toml
+# and dvb.toml
 ATSC = from_spec(tuner_lineup.default("atsc"))
 ARIB = from_spec(tuner_lineup.default("arib"))
-LINEUPS = {"atsc": ATSC, "arib": ARIB}
+DVB = from_spec(tuner_lineup.default("dvb"))
+LINEUPS = {"atsc": ATSC, "arib": ARIB, "dvb": DVB}
 
 
 def lineup(broadcast):
-    """The built-in lineup of the broadcast standard (None: the board names none)."""
+    """The built-in lineup of the broadcast standard (None: the board names none, the US one)."""
     return LINEUPS.get(broadcast, ATSC)
 
 
-def lineup_of_delsys(delsys):
-    """The built-in lineup whose delivery system delsys is, else the US one."""
-    return next((x for x in LINEUPS.values() if x.delsys == delsys), ATSC)
+def lineup_of_systems(systems):
+    """The built-in lineup whose board tunes the delivery systems, else the US one."""
+    return next((x for x in LINEUPS.values() if systems and systems <= x.systems), ATSC)
 
 
 # ---- a VM's own lineup and streams, in its state (or, for a VM on another host, in the
@@ -248,16 +275,16 @@ def vm_lineup(state_dir, broadcast=None):
     return own or base
 
 
-def lineup_for_delsys(state_dir, delsys):
-    """A feed's lineup for its feeder's delivery system: the own one in state_dir (None: none) if it
-    is of that delivery system, else the built-in one."""
+def lineup_for_systems(state_dir, systems):
+    """A feed's lineup for the delivery systems of its feeder's map: the own one in state_dir (None:
+    none) if its board tunes them, else the built-in one."""
     try:
         own = own_lineup(state_dir) if state_dir else None
     except Error:
         own = None
-    if own is not None and own.delsys == delsys:
+    if own is not None and systems and systems <= own.systems:
         return own
-    return lineup_of_delsys(delsys)
+    return lineup_of_systems(systems)
 
 
 def streams(state_dir):
@@ -273,7 +300,7 @@ def streams(state_dir):
         rec = dict(rec)
         if not rec.get("fed"):
             rec["path"] = os.path.join(state_dir, STREAMS_DIR, rec["file"])
-        out[int(ch)] = rec
+        out[ch] = rec
     return out
 
 
@@ -301,15 +328,14 @@ class FrameReader:
 
 class TuneReader:
     """What a generator hears: feed() bytes (the frames in them), tuned the last TUNE's frequency
-    and delsys its delivery system, wanted the last MAP's frequencies (a feeder's: the channels
-    its VM's map wants) and wanted_delsys their delivery system (None: an empty map)."""
+    and delsys its delivery system, wanted the last MAP's (frequency, delivery system) pairs (a
+    feeder's: the channels its VM's map wants)."""
 
     def __init__(self):
         self.frames = FrameReader()
         self.tuned = None  # None: not heard yet; 0: tuned to nothing
         self.delsys = 0
         self.wanted = None  # None: no MAP heard
-        self.wanted_delsys = None
 
     def feed(self, data):
         frames = self.frames.feed(data)
@@ -318,10 +344,7 @@ class TuneReader:
                 self.tuned = freq
                 self.delsys = struct.unpack_from("<I", payload)[0] if len(payload) >= 4 else 0
             elif kind == MAP:
-                self.wanted = map_freqs(payload)
-                self.wanted_delsys = (
-                    struct.unpack_from("<I", payload, 4)[0] if len(payload) >= 8 else None
-                )
+                self.wanted = map_channels(payload)
         return frames
 
 
@@ -424,10 +447,10 @@ class RecordedStream(Stream):
 
 
 def mapped(state_dir):
-    """The physical channels mapped for the VM, sorted."""
+    """The physical channels mapped for the VM ("7", "C78"), air before cable, by number."""
     try:
         with open(os.path.join(state_dir, STATE)) as f:
-            return sorted(set(json.load(f).get("channels", [])))
+            return sorted(set(json.load(f).get("channels", [])), key=tuner_band.sort_key)
     except (OSError, ValueError):
         return []
 
@@ -441,13 +464,11 @@ def save_map(state_dir, channels, streams=None):
             old = json.load(f)
     except (OSError, ValueError):
         old = {}
-    data = {"channels": sorted(set(channels))}
+    data = {"channels": sorted(set(channels), key=tuner_band.sort_key)}
     if streams is None:
         kept = old.get("streams") or {}
     else:
-        kept = {
-            str(ch): {k: v for k, v in rec.items() if k != "path"} for ch, rec in streams.items()
-        }
+        kept = {ch: {k: v for k, v in rec.items() if k != "path"} for ch, rec in streams.items()}
     if kept:
         data["streams"] = kept
     tmp = os.path.join(state_dir, STATE + ".tmp")
@@ -457,14 +478,15 @@ def save_map(state_dir, channels, streams=None):
     os.replace(tmp, os.path.join(state_dir, STATE))
 
 
-def channels_of(freqs, lu=ATSC, extra=()):
-    """The physical channels, of the lineup and extra (the user's streams' channels), whose centre
-    frequencies are among freqs (within TOLERANCE_HZ), sorted; frequencies of none are left out."""
-    return [
-        ch
-        for ch in sorted(set(lu.channels) | set(extra))
-        if any(abs(lu.center_hz(ch) - f) <= TOLERANCE_HZ for f in freqs)
-    ]
+def channels_of(wanted, lu=ATSC, extra=()):
+    """The physical channels, of the lineup and extra (the user's streams' channels), among wanted
+    [(frequency, delivery system)] (within TOLERANCE_HZ), sorted; pairs of none are left out."""
+    out = []
+    for ch in sorted(set(lu.channels) | set(extra), key=tuner_band.sort_key):
+        f, d = lu.tuning(ch)
+        if any(abs(f - wf) <= TOLERANCE_HZ and d == wd for wf, wd in wanted):
+            out.append(ch)
+    return out
 
 
 def cache_dir(tree):
@@ -522,8 +544,8 @@ def stream_services(rec):
 
 
 def status(vm):
-    """{"name", "tuner", "broadcast", "delsys", "lineup", "channels": [{"channel", "center_hz",
-    "mapped", "services", "stream"}], "tuned_hz", "sent_packets", "connected", "fed",
+    """{"name", "tuner", "broadcast", "lineup", "channels": [{"channel", "center_hz", "delsys",
+    "mapped", "services", "stream"}], "tuned_hz", "tuned_delsys", "sent_packets", "connected", "fed",
     "feed_socket"} of the VM: the lineup in effect (lineup: "own" or "built-in") on its board's
     broadcast, and the channels of the user's streams (stream: the file's name, else None); fed
     while a generator elsewhere feeds it, feed_socket where one connects."""
@@ -540,19 +562,20 @@ def status(vm):
         "name": vm.name,
         "tuner": has_tuner(vm.target()),
         "broadcast": lu.name,
-        "delsys": lu.delsys,
         "lineup": "own" if lu.own else "built-in",
         "channels": [
             {
                 "channel": ch,
                 "center_hz": lu.center_hz(ch),
+                "delsys": lu.delsys(ch),
                 "mapped": ch in on,
                 "services": stream_services(recorded[ch]) if ch in recorded else lu.services(ch),
                 "stream": recorded[ch]["name"] if ch in recorded else None,
             }
-            for ch in sorted(set(lu.channels) | set(recorded))
+            for ch in sorted(set(lu.channels) | set(recorded), key=tuner_band.sort_key)
         ],
         "tuned_hz": st.get("tuned_hz"),
+        "tuned_delsys": st.get("tuned_delsys"),
         "sent_packets": st.get("sent_packets", 0),
         "connected": st.get("connected", False),
         "fed": st.get("fed", False),
@@ -586,10 +609,11 @@ def inspect_stream(path, lu, ch):
 
 
 def put_stream(state_dir, ch, path, rec):
-    """Copies the stream at path into state_dir as RF ch's; the record, with its file."""
+    """Copies the stream at path into state_dir as RF ch's ("7", "C78"); the record, with its
+    file."""
     d = os.path.join(state_dir, STREAMS_DIR)
     os.makedirs(d, exist_ok=True)
-    name = f"rf{ch:02d}.ts"
+    name = f"rf{ch.zfill(2)}.ts"
     tmp = os.path.join(d, name + ".tmp")
     shutil.copyfile(path, tmp)
     os.replace(tmp, os.path.join(d, name))
@@ -732,11 +756,11 @@ class Player:
     def __init__(self, cache, log, lu=ATSC, streams=None):
         self.cache, self.log, self.lineup = cache, log, lu
         self.streams_of = streams or dict
-        self.streams = {}  # centre Hz -> Stream
+        self.streams = {}  # (centre Hz, delivery system) -> Stream
         self.failed = {}  # channel -> the reason last logged
 
     def ready(self, channels):
-        """{centre Hz: Stream} of channels whose streams are there."""
+        """{(centre Hz, delivery system): Stream} of channels whose streams are there."""
         out = {}
         now = time.time()
         lu = self.lineup
@@ -744,7 +768,7 @@ class Player:
         for ch in channels:
             rec = recorded.get(ch)
             try:
-                f = lu.center_hz(ch)
+                f = lu.tuning(ch)
                 if rec is not None and rec.get("fed"):
                     raise Error(f"{rec['name']} is played by the machine that feeds this VM")
                 path = rec["path"] if rec is not None else lu.make(self.cache, ch, now)
@@ -772,8 +796,8 @@ class Player:
 
 class Sender:
     """The generator's half of a connection: tick() sends, through send, the map of the wanted
-    channels whose streams are ready (each second, when it changed), in the player's lineup's
-    delivery system, and the tuned one's packets since the last tick while the guest tunes that
+    channels whose streams are ready (each second, when it changed), each with its delivery system,
+    and the tuned one's packets since the last tick while the guest tunes its frequency and
     delivery system; counted(n) is told the packets sent."""
 
     def __init__(self, player, send, log, counted=None):
@@ -789,10 +813,10 @@ class Sender:
             self.last_check = now
             freqs = sorted(self.player.ready(wanted))
             if freqs != self.map_sent:
-                self.send(map_frame(freqs, self.player.lineup.delsys))
+                self.send(map_frame(freqs))
                 self.map_sent = freqs
                 self.log(f"map: {freqs}")
-        s = find(self.player.streams, tuned) if delsys == self.player.lineup.delsys else None
+        s = find(self.player.streams, tuned, delsys)
         if s is not None and self.last is not None:
             packets = s.next(min(now - self.last, 0.2))
             if packets:
@@ -837,12 +861,16 @@ class Tuner:
             self.lineup = self.player.lineup = lu
 
     def wanted(self):
+        """[(frequency, delivery system)] of the mapped channels."""
         recorded = streams(self.state_dir)
-        return [
-            self.lineup.center_hz(ch)
-            for ch in mapped(self.state_dir)
-            if ch in self.lineup.channels or ch in recorded
-        ]
+        out = []
+        for ch in mapped(self.state_dir):
+            if ch in self.lineup.channels or ch in recorded:
+                try:
+                    out.append(self.lineup.tuning(ch))
+                except Error:
+                    continue  # an RF of another band: a lineup of another standard was mapped
+        return out
 
     def to_qemu(self, data):
         with self.qemu_lock:
@@ -865,10 +893,11 @@ class Tuner:
                 {
                     "connected": self.connected,
                     "fed": feed is not None,
-                    "map_hz": map_freqs(self.feed_map[HEADER.size :])
+                    "map": map_channels(self.feed_map[HEADER.size :])
                     if feed is not None and self.feed_map
                     else sorted(self.player.streams),
                     "tuned_hz": self.reader.tuned,
+                    "tuned_delsys": self.reader.delsys,
                     "sent_packets": self.sent,
                 },
                 f,
@@ -910,7 +939,7 @@ class Tuner:
         if old is not None:
             self.drop_feed(old)
         self.log("feed connected")
-        hello = map_frame(self.feed_wanted, self.lineup.delsys)
+        hello = map_frame(self.feed_wanted)
         if tuned is not None:
             hello += tune_frame(tuned, delsys)
         threading.Thread(target=self._from_feed, args=(conn,), daemon=True).start()
@@ -1004,7 +1033,7 @@ class Tuner:
                         wanted = self.wanted()
                         if wanted != self.feed_wanted:
                             self.feed_wanted = wanted
-                            self.to_feed(feed, map_frame(wanted, self.lineup.delsys))
+                            self.to_feed(feed, map_frame(wanted))
                         self.write_status()
                 else:
                     if fed is not None or local is None:
@@ -1027,10 +1056,11 @@ class Tuner:
             self.write_status()
 
 
-def find(streams, tuned):
-    """The stream of the mapped centre frequency within TOLERANCE_HZ of tuned, or None."""
-    for f, s in streams.items():
-        if tuned and abs(f - tuned) <= TOLERANCE_HZ:
+def find(streams, tuned, delsys):
+    """The stream of the mapped channel of delivery system delsys whose centre frequency is within
+    TOLERANCE_HZ of tuned, or None."""
+    for (f, d), s in streams.items():
+        if tuned and d == delsys and abs(f - tuned) <= TOLERANCE_HZ:
             return s
     return None
 
@@ -1085,8 +1115,8 @@ def main(argv):
 
 def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT, content=None):
     """Serves the feeder at the other end of sock (the channels its MAP frames want, of the lineup
-    of their delivery system: the VM's own in content, this machine's directory for it, if it is of
-    that system, else the built-in one; the tune its TUNE frames pass on) until the connection ends;
+    of their delivery systems: the VM's own in content, this machine's directory for it, if its
+    board tunes them, else the built-in one; the tune its TUNE frames pass on) until it ends;
     Error if it says nothing within wait seconds (no feeder there). on_status(dict) is told what it
     does each second."""
     reader = TuneReader()
@@ -1129,15 +1159,15 @@ def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT, content=None
                 continue
             with lock:
                 wanted, tuned, delsys = reader.wanted, reader.tuned, reader.delsys
-                if reader.wanted_delsys is not None:
-                    player.lineup = lineup_for_delsys(content, reader.wanted_delsys)
+                if wanted:
+                    player.lineup = lineup_for_systems(content, {d for _f, d in wanted})
             sender.tick(channels_of(wanted, player.lineup, player.streams_of()), tuned, delsys, now)
             if on_status and now - last_status >= 1.0:
                 last_status = now
                 on_status(
                     {
                         "connected": True,
-                        "map_hz": sender.map_sent,
+                        "map": sender.map_sent,
                         "tuned_hz": tuned,
                         "sent_packets": sent[0],
                     }

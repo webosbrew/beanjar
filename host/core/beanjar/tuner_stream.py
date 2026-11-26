@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The broadcast the host's tuner sends: one ATSC transport stream per physical channel of
 an ATSC lineup (tuner_lineup.py: the built-in lineups/atsc.toml or a VM's own), with the PSIP
-tables a US set scans and builds its guide from (PAT, PMT, MGT, TVCT, RRT, STT, EIT-0 to EIT-3
-with their ETTs) and each service's picture and sound.
+tables a US set scans and builds its guide from (PAT, PMT, MGT, TVCT on the air or CVCT on cable,
+RRT, STT, EIT-0 to EIT-3 with their ETTs) and each service's picture and sound. A cable channel's
+CVCT gives each virtual channel the RF's modulation (QAM-256 unless the lineup says 64).
 
 Made with TSDuck (tsp, tstabcomp; upstream's Debian 13 package) and ffmpeg: ffmpeg encodes the
 A/V loop (MPEG-2 video, AC-3 audio) once per lineup and channel, tsp injects the tables at their usual
@@ -116,27 +117,12 @@ def caption_descriptor(c):
     )
 
 
-def rf_center_hz(ch):
-    """The US (ATSC) physical channel's centre frequency in Hz."""
-    if 2 <= ch <= 4:
-        return (57 + 6 * (ch - 2)) * 1000000
-    if 5 <= ch <= 6:
-        return (79 + 6 * (ch - 5)) * 1000000
-    if 7 <= ch <= 13:
-        return (177 + 6 * (ch - 7)) * 1000000
-    if 14 <= ch <= 36:
-        return (473 + 6 * (ch - 14)) * 1000000
-    raise Error(f"no US physical channel {ch} (2 to 36)")
-
-
-def channel(lu, ch):
-    """The lineup's physical channel ch; Error if it has none."""
+def channel(lu, name):
+    """The lineup's physical channel named name ("7", "C78"); Error if it has none."""
     for rf in lu["rf"]:
-        if rf["channel"] == ch:
+        if rf["rf"] == name:
             return rf
-    raise Error(
-        f"the lineup has no physical channel {ch} ({', '.join(str(r['channel']) for r in lu['rf'])})"
-    )
+    raise Error(f"the lineup has no RF {name} ({', '.join(r['rf'] for r in lu['rf'])})")
 
 
 def gps_seconds(unix):
@@ -182,6 +168,11 @@ def _q(s):
     return quoteattr(str(s))
 
 
+def vct_name(rf):
+    """The virtual channel table of the physical channel: the CVCT on cable, else the TVCT."""
+    return "CVCT" if rf.get("medium") == "cable" else "TVCT"
+
+
 def _tables(rf, now, timezone):
     """{name: TSDuck XML body} of the physical channel's tables at now (without the MGT)."""
     t = {}
@@ -213,11 +204,13 @@ def _tables(rf, now, timezone):
                 "  </component>\n"
             )
         t[f"pmt{i}"] = pmt + "</PMT>\n"
-    tvct = f'<TVCT version="0" transport_stream_id="{rf["tsid"]}">\n'
+    vct = vct_name(rf)
+    modulation = {"qam64": "64-QAM", "qam256": "256-QAM"}.get(rf.get("modulation"), "8-VSB")
+    tvct = f'<{vct} version="0" transport_stream_id="{rf["tsid"]}">\n'
     for i, s in enumerate(rf["services"]):
         tvct += (
             f'  <channel short_name={_q(s["name"])} major_channel_number="{s["major"]}" '
-            f'minor_channel_number="{s["minor"]}" modulation_mode="8-VSB" carrier_frequency="0" '
+            f'minor_channel_number="{s["minor"]}" modulation_mode="{modulation}" carrier_frequency="0" '
             f'channel_TSID="{rf["tsid"]}" program_number="{s["program"]}" ETM_location="0" '
             f'service_type="dtv" source_id="{s["source_id"]}">\n'
             f'    <service_location_descriptor PCR_PID="0x{video_pid(i):X}">\n'
@@ -233,7 +226,7 @@ def _tables(rf, now, timezone):
             "</extended_channel_name_descriptor>\n"
             "  </channel>\n"
         )
-    t["tvct"] = tvct + "</TVCT>\n"
+    t["tvct"] = tvct + f"</{vct}>\n"
     t["rrt"] = (
         '<RRT rating_region="1">\n  <rating_region_name><string language="eng" '
         'text="US (50 states + possessions)"/></rating_region_name>\n'
@@ -298,7 +291,7 @@ def _write_tables(rf, d, now, timezone):
         v = re.search(r'version="(\d+)"', tables[n]) if n[:3] in ("eit", "ett") else None
         versions[n] = int(v.group(1)) if v else 0
     mgt = '<MGT version="0">\n'
-    mgt += f'  <table type="TVCT-current" PID="0x{BASE_PID:X}" version_number="0" number_bytes="{sizes["tvct"]}"/>\n'
+    mgt += f'  <table type="{vct_name(rf)}-current" PID="0x{BASE_PID:X}" version_number="0" number_bytes="{sizes["tvct"]}"/>\n'
     mgt += f'  <table type="RRT-1" PID="0x{BASE_PID:X}" version_number="0" number_bytes="{sizes["rrt"]}"/>\n'
     for k in range(4):
         mgt += f'  <table type="EIT-{k}" PID="0x{eit_pid(k):X}" version_number="{versions[f"eit{k}"]}" number_bytes="{sizes[f"eit{k}"]}"/>\n'
@@ -560,14 +553,14 @@ def stream_key(lu, ch, now):
 def stream_prefix(lu, ch):
     """A channel's streams' names start with the lineup's key: VMs of other lineups share the cache
     without removing each other's."""
-    return f"rf{ch:02d}-{lu['key'][:8]}-"
+    return f"rf{ch.zfill(2)}-{lu['key'][:8]}-"
 
 
 def stream_path(cache, lu, ch, now):
     return os.path.join(cache, f"{stream_prefix(lu, ch)}{stream_key(lu, ch, now)}.ts")
 
 
-_OWNER = re.compile(r"^(?:rf|loop|isdbt)\d+-([0-9a-f]{8})-.*\.ts$")
+_OWNER = re.compile(r"^(?:rf|loop|isdbt|dvb)C?\d+-([0-9a-f]{8})-.*\.ts$")
 
 
 def cache_owner(name):
@@ -597,7 +590,7 @@ def prune(cache, keep):
 
 
 def make(cache, lu, ch, now):
-    """The path of the lineup's physical channel's stream for the EIT block of now, made into the
+    """The path of the stream of the lineup's physical channel named ch for the EIT block of now, made into the
     directory cache if it is not there yet (validated before it is kept)."""
     path = stream_path(cache, lu, ch, now)
     if os.path.exists(path):
@@ -614,7 +607,7 @@ def make(cache, lu, ch, now):
         loop_key = hashlib.sha256(
             json.dumps([VERSION, lu["key"], ch], sort_keys=True).encode()
         ).hexdigest()[:16]
-        loop = os.path.join(cache, f"loop{ch:02d}-{lu['key'][:8]}-{loop_key}.ts")
+        loop = os.path.join(cache, f"loop{ch.zfill(2)}-{lu['key'][:8]}-{loop_key}.ts")
         if not os.path.exists(loop):
             _make_loop(lu, rf, loop + ".tmp")
             os.replace(loop + ".tmp", loop)
@@ -623,7 +616,7 @@ def make(cache, lu, ch, now):
         report = validate(work + "/out.ts")
         if report["bad_crc"] or not report["ok_crc"] or report["mgt_mismatch"]:
             raise Error(f"rf{ch}: the made stream does not validate: {report}")
-        for table in ("PAT", "TVCT", "MGT", "STT", "EIT"):
+        for table in ("PAT", vct_name(rf), "MGT", "STT", "EIT"):
             if table not in report["tables"]:
                 raise Error(f"rf{ch}: the made stream has no {table}")
         os.replace(work + "/out.ts", path)
@@ -655,6 +648,7 @@ NAMES = {
     0x02: "PMT",
     0xC7: "MGT",
     0xC8: "TVCT",
+    0xC9: "CVCT",
     0xCA: "RRT",
     0xCB: "EIT",
     0xCC: "ETT",
