@@ -531,6 +531,34 @@ def output(sock, argv, timeout=10.0):
 
 
 HANDLED = (signal.SIGINT, signal.SIGQUIT, signal.SIGTERM, signal.SIGHUP, signal.SIGWINCH)
+# the command's own stdin made /dev/null in the guest, as this side's is: LG's luna-send quits
+# without its answer, status 0, when its stdin is a pipe already at its end (`true | luna-send`)
+NULL_STDIN = ["/bin/sh", "-c", 'exec "$@" </dev/null', "sh"]
+
+
+def stdin_empty(fd=0):
+    """Whether fd holds nothing to read, known without reading it: closed, /dev/null or an empty
+    regular file."""
+    import stat
+
+    try:
+        st = os.fstat(fd)
+    except OSError:
+        return True
+    if stat.S_ISREG(st.st_mode):
+        return st.st_size == 0
+    if stat.S_ISCHR(st.st_mode):
+        try:
+            return st.st_rdev == os.stat(os.devnull).st_rdev
+        except OSError:
+            return False
+    return False
+
+
+def session_argv(argv, tty, empty):
+    """The words to open: a command without a terminal whose stdin here is empty (stdin_empty) gets
+    /dev/null there rather than a pipe closed at once; a login shell and a terminal stay as asked."""
+    return NULL_STDIN + list(argv) if argv and not tty and empty else argv
 
 
 def run(sock, argv, tty):
@@ -549,7 +577,9 @@ def run(sock, argv, tty):
     os.set_blocking(wfd, False)
     old_wake = signal.set_wakeup_fd(wfd, warn_on_full_buffer=False)
     old = {s: signal.signal(s, lambda *_: None) for s in HANDLED}
-    session = Session(sock, argv, tty)
+    empty = not tty and stdin_empty(0)
+    session = Session(sock, session_argv(argv, tty, empty), tty)
+    session.stdin_open = not empty
     try:
         return session.run(wake=rfd)
     except (BrokenPipeError, ConnectionError):

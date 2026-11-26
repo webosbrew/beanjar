@@ -362,3 +362,65 @@ def test_output_gives_up_at_its_deadline():
     assert (status, text) == (gs.LOST, "")
     a.close()
     b.close()
+
+
+def test_stdin_empty(tmp_path):
+    empty, full = tmp_path / "empty", tmp_path / "full"
+    empty.write_bytes(b"")
+    full.write_bytes(b"data")
+    r, w = os.pipe()
+    with open(os.devnull, "rb") as null, open(empty, "rb") as e, open(full, "rb") as f:
+        assert gs.stdin_empty(null.fileno())
+        assert gs.stdin_empty(e.fileno())
+        assert not gs.stdin_empty(f.fileno())
+        assert not gs.stdin_empty(r), "a pipe may yet bring data: forwarded as it comes"
+    os.close(r)
+    os.close(w)
+    assert gs.stdin_empty(r), "a closed descriptor"
+
+
+@pytest.mark.parametrize(
+    "argv, tty, empty, want",
+    [
+        (["luna-send", "x"], False, True, gs.NULL_STDIN + ["luna-send", "x"]),
+        (["luna-send", "x"], False, False, ["luna-send", "x"]),
+        (["luna-send", "x"], True, True, ["luna-send", "x"]),
+        ([], False, True, []),
+    ],
+)
+def test_session_argv(argv, tty, empty, want):
+    assert gs.session_argv(argv, tty, empty) == want
+
+
+@pytest.mark.parametrize("null", [True, False])
+def test_run_gives_the_command_null_stdin(relay, null):
+    """`beanjar shell VM -- CMD </dev/null`: CMD's stdin is /dev/null in the guest, not a pipe
+    closed at once (which LG's luna-send takes for its end, answering nothing); data piped in is
+    forwarded as before."""
+    path, guest, r = relay
+    wait_for(lambda: r.ready)
+    saved = os.dup(0)
+    pr, pw = os.pipe()
+    try:
+        if null:
+            src = os.open(os.devnull, os.O_RDONLY)
+        else:
+            os.write(pw, b"in")
+            os.close(pw)
+            pw, src = None, pr
+        os.dup2(src, 0)
+        os.close(src)
+        with client(path) as sock:
+            sock.settimeout(None)
+            gs.run(sock, ["7"], False)
+    finally:
+        os.dup2(saved, 0)
+        os.close(saved)
+        for fd in (pr, pw):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+    argv = guest.opened[-1][1]
+    assert argv == (gs.NULL_STDIN + ["7"] if null else ["7"])
