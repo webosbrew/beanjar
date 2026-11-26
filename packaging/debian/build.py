@@ -576,6 +576,8 @@ def stage_host(work, hp, arch, ident):
         ("virtcam/beanjar-virtcam", h / "virtcam/beanjar-virtcam"),
         ("virtcam/libusbipdcpp.so", h / "virtcam/libusbipdcpp.so"),
         ("virtcam/libusbipdcpp_virtual_device.so", h / "virtcam/libusbipdcpp_virtual_device.so"),
+        # the virtual USB gamepad
+        ("virtpad/beanjar-virtpad", host / "usr/libexec/beanjar/beanjar-virtpad"),
         ("vnc/beanjar-vnc", vnc / "usr/bin/beanjar-vnc"),
     ):
         copy(hp / relative, destination)

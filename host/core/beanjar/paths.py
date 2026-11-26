@@ -561,6 +561,8 @@ class Tree:
                 return "/usr/libexec/beanjar/beanjar-lan-helper"
             if p == ("network", "beanjar-relay"):
                 return "/usr/libexec/beanjar/beanjar-relay"
+            if p == ("virtpad", "beanjar-virtpad"):
+                return "/usr/libexec/beanjar/beanjar-virtpad"
             if p[:1] == ("virtcam",):
                 return os.path.join("/usr/lib/beanjar/virtcam", *p[1:])
             if p == ("manager", "beanjar.gresource") or p == ("viewer", "beanjar-viewer.gresource"):
@@ -664,6 +666,10 @@ class Tree:
     def virtcam(self):
         """The virtual USB camera (host/helpers/virtcam; BEANJAR_VIRTCAM: another build's)."""
         return os.environ.get("BEANJAR_VIRTCAM") or self.build("virtcam", "beanjar-virtcam")
+
+    def virtpad(self):
+        """The virtual USB gamepad (host/helpers/virtpad; BEANJAR_VIRTPAD: another build's)."""
+        return os.environ.get("BEANJAR_VIRTPAD") or self.build("virtpad", "beanjar-virtpad")
 
     def layer(self, target, *p):
         """A layer the guest build of target published: build/layers/<chip>-<release>/..."""

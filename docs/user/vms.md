@@ -90,6 +90,11 @@ beanjar stop tv1
 - `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
   synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
 - `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the
+- `io usb gamepad attach NAME` plugs a virtual gamepad, a wired Xbox 360 controller, into the
+  running TV; it stays plugged in until `io usb gamepad detach NAME`. `io usb gamepad press NAME a
+  b down` presses and releases its buttons, triggers and d-pad in turn (`--hold 500ms` for longer
+  presses), for scripted tests of games and apps; the TV's own driver and device list see it as
+  the real pad ([manager README](../../host/core/README.md#usb-devices)).
   `normal` layer skips it); `delete NAME` removes the VM.
 - `identity reset NAME` makes the VM another TV (new MAC, serial and keys, state wiped);
   `clone SRC DEST` copies a VM as another TV with its state kept.

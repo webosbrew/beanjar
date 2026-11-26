@@ -8,7 +8,7 @@ import os
 
 from .. import remote
 from ..core import Library
-from .common import Usage, emit, progress, table, warn
+from .common import DURATION_HELP, Usage, duration, emit, progress, table, warn
 
 
 def tuner_words(a):
@@ -337,6 +337,41 @@ def plug_usb(lib, a, host=None):
     return usb.plug_local(lib.vm(a.name), client, a.id, ready, out)
 
 
+def gamepad_controls(a):
+    """io usb gamepad press's controls, checked here, also before they go to another host."""
+    from .. import gamepad
+
+    try:
+        return gamepad.check_controls(a.controls)
+    except gamepad.Error as e:
+        raise Usage(f"io usb gamepad press: {e}") from None
+
+
+def cmd_gamepad(lib, a):
+    from .. import gamepad
+
+    controls = gamepad_controls(a) if a.gamepad_verb == "press" else None
+    vm = lib.vm(a.name)
+    if a.gamepad_verb == "attach":
+        data = gamepad.attach(vm, a.id)
+        text = (
+            f"{a.name}: an Xbox 360 controller ({data['device']}) plugged in as USB device "
+            f"{data['id']}"
+        )
+        return emit(a, data, text)
+    if a.gamepad_verb == "press":
+        data = gamepad.press(vm, controls, a.hold if a.hold is not None else gamepad.HOLD, a.id)
+        if not data["polled"]:
+            warn(
+                f"{a.name}: the guest does not poll the pad (nothing has its input device open), "
+                "so the presses went nowhere"
+            )
+        text = f"{a.name}: pressed {' '.join(data['controls'])} ({data['reports']} reports)"
+        return emit(a, data, text)
+    data = gamepad.detach(vm, a.id)
+    return emit(a, data, f"{a.name}: gamepad {data['id']} unplugged")
+
+
 def soundbar_text(name, data):
     if not data["cec"] and not data["earc"]:
         return f"{name}: no sound bar connection of ours on its board (no CEC bus, no eARC)"
@@ -499,8 +534,9 @@ def register(cli):
 
     g = group(
         "usb",
-        "USB devices plugged into a running VM: a device of a machine over usbredir, or a disk "
-        "image as a USB stick; on its xHCI, gone when the VM stops (not a setting)",
+        "USB devices plugged into a running VM: a device of a machine over usbredir, a virtual "
+        "camera or gamepad, or a disk image as a USB stick; on its xHCI, gone when the VM stops "
+        "(not a setting)",
         under=io,
     )
     s = command(
@@ -564,7 +600,7 @@ def register(cli):
     s = command(
         g,
         "list",
-        "the VM's USB devices: id, kind (redir or storage), whether a client is connected to a "
+        "the VM's USB devices: id, kind (redir, gamepad or storage), whether a client is connected to a "
         "usb-redir device's socket, whether the guest has the device, the socket or the image",
         cmd_usb_list,
     )
@@ -584,6 +620,62 @@ def register(cli):
     s.add_argument("--size", default="64M", help="the disk's size, whole MiB (default 64M)")
     s.add_argument("--label", default="BEANJAR", help="the filesystem's label (default BEANJAR)")
     s.add_argument("--overwrite", action="store_true", help="replace FILE if it exists")
+
+    from ..gamepad import CONTROLS, DEVICE
+
+    pad = group(
+        "gamepad",
+        f"a virtual gamepad: a wired Xbox 360 controller ({DEVICE}) with the real one's "
+        "descriptors, which the guest's own xpad driver binds, made on the VM's host by "
+        "beanjar-virtpad and fed into the running VM over usbredir (a usb-redir device, as io usb "
+        "attach); it stays plugged in after attach, across a restart of the guest, until detach "
+        "or the VM stops",
+        under=g,
+        dest="gamepad_verb",
+    )
+    s = command(
+        pad,
+        "attach",
+        "plug a gamepad into the running VM; returns once the guest has it",
+        cmd_gamepad,
+        usage="beanjar io usb gamepad attach NAME [--id ID] [--json]",
+    )
+    vm_name(s)
+    s.add_argument("--id", metavar="ID", help="its USB id (default the lowest free number)")
+    s = command(
+        pad,
+        "press",
+        "press and release each CONTROL in turn, each held --hold and released as long, as "
+        "input reports to the guest; they arrive only while the guest polls the pad (an app or "
+        "a reader has its input device open; otherwise a warning)",
+        cmd_gamepad,
+        usage="beanjar io usb gamepad press NAME CONTROL... [--hold DURATION] [--id ID] [--json]",
+    )
+    vm_name(s, "gamepad-press")
+    s.add_argument(
+        "controls",
+        nargs="+",
+        metavar="CONTROL",
+        help="a button, a trigger (pulled all the way) or a direction of the d-pad: "
+        + ", ".join(CONTROLS),
+    )
+    s.add_argument(
+        "--hold",
+        type=duration,
+        metavar="DURATION",
+        help=f"how long each control is held, and released after it (default 100ms); "
+        f"{DURATION_HELP}",
+    )
+    s.add_argument("--id", metavar="ID", help="the gamepad, when the VM has more than one")
+    s = command(
+        pad,
+        "detach",
+        "unplug the VM's gamepad: the guest sees it go, and its program on the VM's host ends",
+        cmd_gamepad,
+        usage="beanjar io usb gamepad detach NAME [--id ID] [--json]",
+    )
+    vm_name(s)
+    s.add_argument("--id", metavar="ID", help="the gamepad, when the VM has more than one")
 
     g = group(
         "soundbar",

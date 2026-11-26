@@ -313,6 +313,7 @@ else
       'host/helpers/kvm',                 # opt-in per-VM halt polling on the Pi
       'host/helpers/media-helper',            # the VM's end of the media ports
       'host/helpers/virtcam',             # the virtual USB camera (beanjar io usb attach --camera)
+      'host/helpers/virtpad',             # the virtual USB gamepad (beanjar io usb gamepad attach)
       'host/ui',                   # the GTK windows: beanjar_ui and its layouts
       'host/scripts',              # the firmware cache
       'host/helpers/network',             # the port relay and the LAN helper

@@ -12,7 +12,7 @@ import tempfile
 from .. import framing, remote
 from ..core import Error
 from .common import Usage, emit, kv_lines, parse_size, read_new_password
-from .devices import plug_usb, remote_tuner, usb_attach_usage
+from .devices import gamepad_controls, plug_usb, remote_tuner, usb_attach_usage
 from .mitm import mitm_cleared
 from .shell import remote_shell
 
@@ -183,6 +183,8 @@ def remote_command(a, words, host, name):
             a.name = name
             return plug_usb(None, a, host)
         usb_attach_usage(a, host)
+    if kind == "gamepad-press":
+        gamepad_controls(a)
     if kind == "tuner":
         return remote_tuner(a, host, name)
     if kind == "shell":

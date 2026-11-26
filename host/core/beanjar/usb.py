@@ -17,6 +17,10 @@ and at the end (Ctrl-C, SIGTERM, SIGHUP, the device unplugged, usbredirect gone)
 C920 showing GStreamer's test pattern) in usbredirect's place, here, where GStreamer is: a remote
 VM's host needs nothing of it.
 
+`io usb gamepad attach` is a virtual Xbox 360 pad served from the VM's host (gamepad.py,
+host/helpers/virtpad), which stays after the command; `io usb list` shows its device as kind
+`gamepad`, and `io usb detach` ends its program too.
+
 `io usb attach --image FILE` is a USB stick instead: QMP `blockdev-add` of the raw image (read-only
 with --readonly) and `device_add usb-storage` with it on the same bus; `io usb detach` removes the
 device and then the block node. `io usb mkimage` makes such an image: an MBR with one partition and a
@@ -288,8 +292,20 @@ def state(vm):
         return out
     _running(vm)
     with Qmp(vm.qmp_sock) as q:
-        out["devices"] = query(q)
+        out["devices"] = _kinds(vm, query(q))
     return out
+
+
+def _kinds(vm, devices):
+    """devices with a usb-redir device that the virtual gamepad serves (gamepad.py) as kind
+    "gamepad"."""
+    from . import gamepad
+
+    pads = gamepad.records(vm)
+    for d in devices:
+        if d["kind"] == "redir" and d["id"] in pads:
+            d["kind"] = "gamepad"
+    return devices
 
 
 def query(q):
@@ -425,8 +441,11 @@ def detach(vm, id_):
     """Removes vm's USB device id_: the guest sees it unplugged. A usb-redir device's chardev, and
     so its socket, goes with it (QEMU destroys it); a disk image's block node is deleted after it,
     which releases the image."""
+    from . import gamepad
+
     _running(vm)
     check_id(id_)
+    gamepad.stop(vm, id_)  # a virtual gamepad's program unplugs it first
     with Qmp(vm.qmp_sock) as q:
         kind = {d["id"]: d["kind"] for d in query(q)}.get(id_)
         if kind is None:
@@ -453,7 +472,7 @@ def detach(vm, id_):
 def devices(vm):
     _running(vm)
     with Qmp(vm.qmp_sock) as q:
-        return query(q)
+        return _kinds(vm, query(q))
 
 
 # ------------------------------------------------------------------ the device here (plug)

@@ -461,6 +461,7 @@ commands follow is in [AGENTS.md](../../AGENTS.md#follow-the-command-line-guidel
 | `shell [-t \| -T] NAME [[--] CMD [ARG...]]` | A root shell inside webOS on the running VM, or one command, over the VM's own `webos.shell` port: no SSH, developer mode, network or layer (see Shell). Exits with the command's status. |
 | `mitm show NAME [--password]` | The traffic inspector of a running `mode = "mitm"` VM: its mode, status (`Running`, `Inspector is not ready`, `Inspector off: REASON`, `Not running`, ...), whether it is ready, its URL (with `link = "lan"` the LAN one, and `local_url`, the host's way in), its password file, and `mitmweb`: the `version` and `path` the start found and the `problem` that kept the inspector off (no mitmweb, older than 12.0.1, or it failed; the guest then goes out directly); the password itself only with `--password`. |
 | `io usb attach NAME [--id ID] [--image FILE [--readonly] \| --device VENDOR:PRODUCT\|BUS-DEVICE [--sudo] \| --camera [--pattern NAME]]` / `io usb detach NAME ID` / `io usb list NAME` | USB devices plugged into a running VM over usbredir: `attach` without a source adds a `usb-redir` device with a unix socket in the run directory and prints the socket; with `--image` a disk image as a USB stick; with `--device` or `--camera` it does the lot for a device of this machine, or for the virtual camera, until Ctrl-C. `detach` unplugs one, `list` shows each with whether a client is on its socket and whether the guest has the device (see [USB devices](#usb-devices)). |
+| `io usb gamepad attach NAME [--id ID]` / `io usb gamepad press NAME CONTROL... [--hold DURATION] [--id ID]` / `io usb gamepad detach NAME [--id ID]` | A virtual gamepad, a wired Xbox 360 controller (045e:028e), in a running VM: `attach` plugs it in and returns, the pad stays until `detach` or the VM stops; `press` presses and releases each control in turn (`a b x y lb rb lt rt back start guide ls rs up down left right`, each held `--hold`, default `100ms`). See [USB devices](#usb-devices). |
 | `io soundbar attach NAME [--formats FORMAT,...]` / `io soundbar detach NAME` / `io soundbar show NAME` | A sound bar on the running VM's HDMI ARC input, on its CEC bus: `attach` plugs one in with the audio formats it reports (default `lpcm,ac3,eac3,dts`), `detach` switches it off and unplugs it, `show` shows it, what it agreed with the TV (ARC, System Audio Mode, volume) and the TV's `getCECState` (see [Sound bar](#sound-bar)). Not kept across a restart. |
 | `mitm connect NAME` | Makes the inspector reachable from this machine and keeps it so until stdin ends, across the VM's restarts (`stop` and `start`, a guest reboot): prints one JSON line, `{"url", "password"}`, and another whenever they change (a restarted VM's inspector has a new password and no flows); stderr says when the inspector is gone and when it is back. Every 5 s it asks mitmweb with the session cookie of its first login, and when that fails asks for the VM's state again (at most every 10 s). For `HOST/NAME` it asks the host's `mitm show --password` and adds a forward from `127.0.0.1:PORT` here to the inspector there to the host's shared ssh connection; those requests keep that connection open (`ControlPersist` ends an idle one after 60 s, and the forward with it), and should it end anyway the same forward is added to a new one. It is cancelled at the end (also on SIGTERM, SIGHUP, Ctrl-C; one left by a killed run is cancelled by the next remote run, as `ares-TOOL`'s). Refused for a VM without mitm, not running, or whose inspector is not ready. beanjar-web serves the inspector through it ([web viewer](../../docs/dev/architecture/web-viewer.md#the-traffic-inspector)). |
 | `mitm clear NAME` | Empties the inspector's flow list, as its page's Clear does (`POST /clear` with the password and tornado's XSRF pair: the `_mitmproxy_xsrf` cookie and an equal `X-XSRFToken` header). For `HOST/NAME` through a forward as `mitm connect`'s, for the one request. |
@@ -906,6 +907,41 @@ beanjar io usb attach tv --camera                    # until Ctrl-C
 beanjar io usb attach rk-1/tv --camera --pattern ball
 ```
 
+A virtual gamepad is a wired Xbox 360 controller (045e:028e) with that controller's own
+descriptors (from a published USB capture of a genuine one), so the guest's own `xpad` driver
+binds it and LG's PDM lists it as an `XPAD` device. Unlike `--device` and `--camera` it is not held
+by the command: `io usb gamepad attach` adds a `usb-redir` device on the VM's host and starts
+`beanjar-virtpad` (`host/helpers/virtpad`, installed in `/usr/libexec/beanjar`) against its
+socket in a session of its own, so the pad stays plugged in for scripts to press its controls.
+For `HOST/NAME` the whole command runs on that host, which needs the program installed.
+
+```sh
+beanjar io usb gamepad attach tv                     # returns once the guest has the pad
+beanjar io usb gamepad press tv a a down start       # each pressed and released in turn
+beanjar io usb gamepad press tv lt --hold 2s         # a trigger pulled all the way for 2 s
+beanjar io usb gamepad detach tv
+```
+
+- **`io usb gamepad attach NAME [--id ID]`**: `io usb attach`'s `usb-redir` device, then
+  `beanjar-virtpad --unix run/usb-ID.sock --control run/usb-ID-pad.sock`, its output in
+  `run/usb-ID-pad.log` and its pid in the unit's `RuntimeDirectory` (`gamepad-ID.json`); returns
+  when the guest has the device (30 s at most). The program answers the standard requests from the
+  controller's descriptors, sends its power-up messages (LED, headset) and then one 20-byte input
+  report per change, as the controller does, and takes the LED and rumble messages the driver
+  sends. When the guest restarts QEMU does too, and the program connects again to the device's
+  socket, which the new QEMU has back; with no socket for 180 s (the VM stopped) it ends.
+- **`io usb gamepad press NAME CONTROL... [--hold DURATION] [--id ID]`**: each control pressed and
+  released in turn, held `--hold` and released as long; a trigger (`lt`, `rt`) is pulled all the
+  way. Reports reach the guest only while its driver polls the pad, which `xpad` does while the
+  pad's input device is open (webOS's surface manager opens it); otherwise the presses go nowhere,
+  as on a real pad, and `press` warns (`--json`: `reports`, the input reports sent, and `polled`).
+- **`io usb gamepad detach NAME [--id ID]`**: ends the program, which unplugs the pad
+  (`device_disconnect`), then removes the device as `io usb detach` does. `io usb detach NAME ID`
+  of a gamepad's device ends its program too; `io usb list` shows the device with `KIND`
+  `gamepad`. `--id` picks a pad when the VM has more than one.
+
+`tests/regress/virtpad/run-gamepad.py NAME` checks it end to end in the guest.
+
 A disk image is plugged in as a USB stick instead, with no client: `io usb attach --image`, on the
 VM's host as the other steps.
 
@@ -926,8 +962,9 @@ beanjar io usb detach tv 1
   of one image (another VM, another attachment). IDs are shared with the `usb-redir` devices.
 - **`io usb detach NAME ID`**: `device_del`, then `blockdev-del` of its node, which releases the
   image. Like pulling a stick out: eject it in webOS first unless the test is the pulling.
-- **`io usb list NAME`**: `KIND` is `redir` or `storage`; `SOURCE` the socket, or the image and
-  whether it is read-only (`--json`: `kind`, and `image` and `readonly` for a stick).
+- **`io usb list NAME`**: `KIND` is `redir`, `gamepad` (a `usb-redir` device the virtual gamepad
+  serves) or `storage`; `SOURCE` the socket, or the image and whether it is read-only (`--json`:
+  `kind`, and `image` and `readonly` for a stick).
 - **`io usb mkimage FILE --fs fat32|exfat|ntfs [--size 64M] [--label BEANJAR] [--overwrite]`**, on this machine
   (no VM): an MBR (`sfdisk`) with one partition from sector 2048 to the end, type `0c` for FAT32
   and `07` for exFAT and NTFS, the layout LG's PDM mounts, and in it `mkfs.vfat -F 32`,

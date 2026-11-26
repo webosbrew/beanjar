@@ -187,7 +187,10 @@ VM's host hot-plugs a QEMU `usb-redir` device whose usbredir socket is a unix so
 directory, and `io usb attach`, where the device is, runs `usbredirect` against it through a relay
 (local) or an `ssh -L` forward of the shared connection to that socket (remote), and detaches at
 the end. `io usb attach --image FILE` makes a disk image a USB stick instead (`blockdev-add` and
-`usb-storage`); the image is a file of the VM's host, never copied, as the guest writes to it. A
+`usb-storage`); the image is a file of the VM's host, never copied, as the guest writes to it.
+`io usb gamepad attach` is the exception to the split: a virtual Xbox 360 pad
+(`beanjar/gamepad.py`, `host/helpers/virtpad`) runs on the VM's host against the socket and stays
+after the command, so that `io usb gamepad press` can reach it later. A
 hot-plugged device is the running VM's, not a setting: a guest restart keeps it (the unit records
 it and puts it back on the new QEMU, `beanjar/lifecycle.py`), a new start of the VM drops it.
 See the [manager README](../../../host/core/README.md#several-machines).

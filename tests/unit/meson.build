@@ -158,3 +158,14 @@ if have_virtcam
     override_options: ['cpp_std=c++23', 'warning_level=2', 'werror=true'])
   test('check-virtcam', check_virtcam, suite: ['unit', 'virtcam'], timeout: 60)
 endif
+
+# The virtual gamepad (host/helpers/virtpad) without a VM: the controller's descriptors and
+# requests, the input report, and the usbredir front end against a fake QEMU
+if have_virtpad
+  check_virtpad = executable('check-virtpad', 'virtpad/check-virtpad.cpp',
+    link_with: virtpad_core,
+    include_directories: virtpad_inc,
+    dependencies: [virtpad_dep],
+    override_options: ['cpp_std=c++20', 'warning_level=2', 'werror=true'])
+  test('check-virtpad', check_virtpad, suite: ['unit', 'virtpad'], timeout: 60)
+endif
