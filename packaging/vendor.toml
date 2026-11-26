@@ -29,9 +29,9 @@ amd64 = "be75b81892da27bde0d280527715e4c6dfef026ec9d59faa58d61435d0162d14"
 # FFmpeg with the V4L2 Request API hwaccels, /usr/lib/beanjar/ffmpeg: the media helper's
 # decoding and beanjar-vnc's video (beanjar)
 [ffmpeg]
-tag = "ffmpeg-7.1.5+beanjar1"
-amd64 = "bc721471faa32cc36e54e2b57400408cadb8e99f73f6400e260c7d3c5305e651"
-arm64 = "4af1e0cd93a8cd79527218706b1b45ebe0a093036bbcae9c9c0021973575e28f"
+tag = "ffmpeg-7.1.5+beanjar2"
+amd64 = "5e093492b313aeb01f6d34864ed1c8f8b8c6800cef27aa82222be360cd2787e9"
+arm64 = "d088d6b4a2ce45d4516dfe89bde8aa3f7524cc0b045b6021d34c7d25e44ff045"
 
 # neatvnc 1.0 and aml 1.0, /usr/lib/beanjar/neatvnc: beanjar-vnc
 [neatvnc]
