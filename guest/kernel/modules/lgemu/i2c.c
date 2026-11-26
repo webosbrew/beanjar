@@ -1194,7 +1194,8 @@ static int nvm_access(bool write, const u8 *sub, unsigned int subsize, u8 *buf, 
  *   amp    writes, acknowledged; a read is not
  *   accel  the BMA422's register pointer and registers (accel.c)
  *   light1, light2  the ambient light sensor's registers, as pqcontroller reads them (light.c)
- *   tof    the TMF8821 ToF motion sensor's registers, as msc reads them (tof.c) */
+ *   tof    the TMF8821 ToF motion sensor's registers, as msc reads them (tof.c)
+ *   ledmicom  the gaming LED micom's commands, as lightingcontroller writes them (ledmicom.c) */
 
 static bool is_read(const struct i2c_msg *m)
 {
@@ -1266,6 +1267,9 @@ int lgemu_i2c_xfer(enum lgemu_i2c_device dev, struct i2c_msg *msgs, int num)
     case LGEMU_I2C_TUNER:
         ret = tuner_xfer(msgs, num);
         break;
+    case LGEMU_I2C_LEDMICOM:
+        ret = lgemu_ledmicom_xfer(msgs, num);
+        break;
     default:
         return -EINVAL;
     }
@@ -1305,11 +1309,13 @@ EXPORT_SYMBOL_GPL(lgemu_i2c_user_xfer);
 int lgemu_i2c_parse(const char *spec, enum lgemu_i2c_device *dev, unsigned int *nums, int count)
 {
     static const char *const names[] = {
-        [LGEMU_I2C_MICOM] = "micom", [LGEMU_I2C_NVM] = "nvm",       [LGEMU_I2C_AMP] = "amp",
-        [LGEMU_I2C_ACCEL] = "accel", [LGEMU_I2C_LIGHT1] = "light1", [LGEMU_I2C_LIGHT2] = "light2",
-        [LGEMU_I2C_TOF] = "tof",     [LGEMU_I2C_TUNER] = "tuner",
+        [LGEMU_I2C_MICOM] = "micom",       [LGEMU_I2C_NVM] = "nvm",
+        [LGEMU_I2C_AMP] = "amp",           [LGEMU_I2C_ACCEL] = "accel",
+        [LGEMU_I2C_LIGHT1] = "light1",     [LGEMU_I2C_LIGHT2] = "light2",
+        [LGEMU_I2C_TOF] = "tof",           [LGEMU_I2C_TUNER] = "tuner",
+        [LGEMU_I2C_LEDMICOM] = "ledmicom",
     };
-    char name[8];
+    char name[12];
     int i;
 
     if (lgemu_parse_named(spec, name, sizeof(name), 0, nums, count))

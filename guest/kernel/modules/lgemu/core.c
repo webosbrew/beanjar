@@ -27,6 +27,7 @@ static const struct {
     {"gfx", lgemu_gfx_init, lgemu_gfx_exit},
     {"i2c_adapters", lgemu_i2c_adapters_init, lgemu_i2c_adapters_exit},
     {"snd", lgemu_snd_init, lgemu_snd_exit},
+    {"ledmicom", lgemu_ledmicom_init, lgemu_ledmicom_exit}, /* in snd's /proc/lgemu */
     {"mic", lgemu_mic_init, lgemu_mic_exit},
     {"video", lgemu_video_init, lgemu_video_exit},
     {"v4l2-vsc", lgemu_vsc_init, lgemu_vsc_exit},

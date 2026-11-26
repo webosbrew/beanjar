@@ -15,14 +15,15 @@
 
 enum lgemu_i2c_device {
     LGEMU_I2C_NONE,
-    LGEMU_I2C_MICOM,  /* the micom: power, the IR receiver */
-    LGEMU_I2C_NVM,    /* the NVM EEPROM, 32 KiB, 2-byte big-endian address */
-    LGEMU_I2C_AMP,    /* the speaker amplifier: writes acknowledged */
-    LGEMU_I2C_ACCEL,  /* the accelerometer, a BMA422 (accel.c): the StanbyME's orientation */
-    LGEMU_I2C_LIGHT1, /* the ambient light sensor, libdile_i2c's LIGHT_SENSOR_1 (light.c) */
-    LGEMU_I2C_LIGHT2, /* the ambient light sensor, LIGHT_SENSOR_2 (light.c) */
-    LGEMU_I2C_TOF,    /* the ToF motion sensor, a TMF8821: TMF882X_SENSOR_N (tof.c) */
-    LGEMU_I2C_TUNER,  /* a Silicon Labs Si21xx tuner's command interface: idle, always ready */
+    LGEMU_I2C_MICOM,    /* the micom: power, the IR receiver */
+    LGEMU_I2C_NVM,      /* the NVM EEPROM, 32 KiB, 2-byte big-endian address */
+    LGEMU_I2C_AMP,      /* the speaker amplifier: writes acknowledged */
+    LGEMU_I2C_ACCEL,    /* the accelerometer, a BMA422 (accel.c): the StanbyME's orientation */
+    LGEMU_I2C_LIGHT1,   /* the ambient light sensor, libdile_i2c's LIGHT_SENSOR_1 (light.c) */
+    LGEMU_I2C_LIGHT2,   /* the ambient light sensor, LIGHT_SENSOR_2 (light.c) */
+    LGEMU_I2C_TOF,      /* the ToF motion sensor, a TMF8821: TMF882X_SENSOR_N (tof.c) */
+    LGEMU_I2C_TUNER,    /* a Silicon Labs Si21xx tuner's command interface: idle, always ready */
+    LGEMU_I2C_LEDMICOM, /* the OLED Flex's gaming LED micom: GAMING_LED_MICOM (ledmicom.c) */
 };
 
 /* One transfer to dev: num messages (msgs[i].addr is not read: the caller chose dev by it), each
@@ -40,7 +41,7 @@ int lgemu_i2c_user_xfer(enum lgemu_i2c_device dev, u16 addr, const u8 *sub, u16 
                         void __user *data, u32 size, bool read);
 
 /* A bus module's parameter "device:n1[:n2...]" (device: micom, nvm, amp, accel, light1, light2,
- * tof or tuner):
+ * tof, tuner or ledmicom):
  * the device and the count numbers after it (kstrtouint, base 0), or -EINVAL. */
 int lgemu_i2c_parse(const char *spec, enum lgemu_i2c_device *dev, unsigned int *nums, int count);
 
@@ -50,5 +51,7 @@ int lgemu_accel_xfer(struct i2c_msg *msgs, int num);
 int lgemu_light_xfer(int type, struct i2c_msg *msgs, int num);
 /* tof.c: one transfer to the ToF motion sensor, as lgemu_i2c_xfer's; 0. */
 int lgemu_tof_xfer(struct i2c_msg *msgs, int num);
+/* ledmicom.c: one transfer to the gaming LED micom, as lgemu_i2c_xfer's; 0. */
+int lgemu_ledmicom_xfer(struct i2c_msg *msgs, int num);
 
 #endif

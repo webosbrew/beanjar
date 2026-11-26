@@ -35,9 +35,10 @@ MODULE_PARM_DESC(i2c_buses, "i2c_adapters: the Linux I2C adapters to register, b
 static char *i2c_dev[MAX_DEVS];
 static int i2c_dev_count;
 module_param_array(i2c_dev, charp, &i2c_dev_count, 0444);
-MODULE_PARM_DESC(i2c_dev, "i2c_adapters: the board's I2C devices on them, device:bus:addr "
-                          "(micom, nvm, amp, accel, light1, light2, tof; bus one of i2c_buses; "
-                          "the 7-bit address)");
+MODULE_PARM_DESC(i2c_dev,
+                 "i2c_adapters: the board's I2C devices on them, device:bus:addr "
+                 "(micom, nvm, amp, accel, light1, light2, tof, ledmicom; bus one of i2c_buses; "
+                 "the 7-bit address)");
 
 struct lgemu_adapter {
     struct i2c_adapter adap;

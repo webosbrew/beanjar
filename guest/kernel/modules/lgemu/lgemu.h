@@ -48,6 +48,8 @@ int lgemu_earc_init(void);
 void lgemu_earc_exit(void);
 /* the HDMI input of the sound bar on the eARC port (earc.c), 0 for none */
 int lgemu_earc_bar_port(void);
+int lgemu_ledmicom_init(void);
+void lgemu_ledmicom_exit(void);
 int lgemu_thermal_init(void);
 void lgemu_thermal_exit(void);
 int lgemu_fb_init(void);

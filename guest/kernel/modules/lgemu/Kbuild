@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # lgemu.ko (core.c): one object per part of the module.
 obj-m := lgemu.o
-lgemu-y := core.o partinfo.o emmc.o low_mem_notify.o i2c.o accel.o light.o tof.o thermal.o micom-rtc.o lgib.o gfx.o snd.o mic.o video.o v4l2-vsc.o v4l2-hdmi.o earc.o capture.o capture-histogram.o v4l2-capture.o fb.o
+lgemu-y := core.o partinfo.o emmc.o low_mem_notify.o i2c.o accel.o light.o tof.o ledmicom.o thermal.o micom-rtc.o lgib.o gfx.o snd.o mic.o video.o v4l2-vsc.o v4l2-hdmi.o earc.o capture.o capture-histogram.o v4l2-capture.o fb.o
 # What the SoC driver modules share (lgemu-drv.h): no part of its own, only exports.
 lgemu-y += drv.o
 lgemu-y += sestore.o
