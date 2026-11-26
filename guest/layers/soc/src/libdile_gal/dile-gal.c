@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #define EXPORT __attribute__((visibility("default")))
@@ -293,8 +294,15 @@ static int blit(surface_t *src, rect_t *sr, surface_t *dst, rect_t *dr, uint32_t
         }
         TRACE("Blit: source 0x%x is on screen: read back", src->offset);
     }
+    struct timespec t0, t1;
+    if (gal_trace)
+        clock_gettime(CLOCK_MONOTONIC, &t0);
     rc = gal_blit(&s, &cs, &d, &cd, flags ? *flags : 0, settings);
     free(screen);
+    if (gal_trace) {
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        gal_log("Blit: %.1f ms", (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6);
+    }
     return rc;
 }
 

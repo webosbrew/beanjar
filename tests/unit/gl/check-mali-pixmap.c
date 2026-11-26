@@ -3,8 +3,9 @@
 /* Mali native pixmaps (guest/layers/gl/src/mali-pixmap.c) on the host's Mesa, surfaceless: a
  * pixmap filled as libgm-wayland fills it, made an image the way GM_WL_UpdateWindow does
  * (eglGetProcAddress, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR, then glEGLImageTargetTexture2DOES and
- * eglDestroyImageKHR before drawing), with its pixels read back through a framebuffer. Prints "ok"
- * or what differed; exit status 2 when the host has no surfaceless GLES. */
+ * eglDestroyImageKHR before drawing), frame after frame with a few pixels changed, with its pixels
+ * read back through a framebuffer. Prints "ok" or what differed; exit status 2 when the host has
+ * no surfaceless GLES. */
 #define MALI_PIXMAP_TEST
 #include "../../../guest/layers/gl/src/mali-pixmap.c"
 #include <GLES2/gl2ext.h>
@@ -108,8 +109,11 @@ int main(void)
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
-    for (int frame = 0; frame < 4; frame++) {
-        pixels[0] = (uint8_t)(10 * frame); /* B of the first pixel: a new image sees it */
+    for (int frame = 0; frame < 6; frame++) {
+        /* a pixel of one row changes from frame to frame (the first, the last, one between): a new
+         * image of the same pixmap sees it, with the kept texture's other rows unchanged */
+        pixels[0] = (uint8_t)(10 * frame);
+        pixels[(frame % H) * PITCH + 4 * (frame + 1) + 1] ^= 0x5A;
         if (frame >= 2) {
             uint32_t phys = WEBOS_GFX_PHYS_BASE + gfx_offset;
             CHECK(pwrite(gfx_fd, pixels, sizeof pixels, gfx_offset) == (ssize_t)sizeof pixels,
@@ -156,6 +160,11 @@ int main(void)
         failures += bad;
     }
     CHECK(images == NULL, "images left after destroy");
+    /* both forms of the pixmap kept their textures: none of the images needed one of its own */
+    int kept_textures = 0;
+    for (int i = 0; i < KEPT; i++)
+        kept_textures += kept[i].texture != 0;
+    CHECK(kept_textures == 2, "%d kept textures, not 2", kept_textures);
 
     /* A physical address outside the graphics memory fails, without a fault */
     put(pixmap, 0x38, WEBOS_GFX_PHYS_BASE - 4096);

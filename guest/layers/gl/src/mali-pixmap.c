@@ -12,7 +12,13 @@
  *
  * Here an image of a Mali pixmap is the image of a GL texture (EGL_GL_TEXTURE_2D_KHR) of the
  * current context, filled from the pixmap's memory when the image is made: libgm-wayland makes a
- * new image for every update. Destroying the image deletes the texture.
+ * new image of the same pixmap for every update. The texture is kept from one image to the next,
+ * with a copy of the pixels it was last given, and only the rows that changed since are converted
+ * and uploaded (glTexSubImage2D). An update must be quick: legacy-broadcast's caption window
+ * (1366x768) is updated through libgm-wayland by a task its callers wait for only 300 ms
+ * (API_SGL_UpdateScreen), and converting and uploading the whole window every time took a good
+ * part of that on a slow host; a caption changes a few rows. When the kept texture cannot be used,
+ * the image gets a texture of its own, which destroying the image deletes.
  *
  * The pixmap as libgm-wayland fills it (W22O 43.21.89, 108 bytes; height before width, as in
  * Mali's fbdev_pixmap):
@@ -46,6 +52,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "../../../../include/webos-gfx.h"
@@ -106,7 +113,8 @@ static void trace(const char *fmt, ...)
     va_end(ap);
 }
 
-/* The images made here and their textures; a handful at most live at once. */
+/* The images made here and their textures (0: a kept texture, see below); a handful at most live
+ * at once. */
 struct pixmap_image {
     EGLImageKHR image;
     EGLDisplay dpy;
@@ -115,6 +123,21 @@ struct pixmap_image {
 };
 static struct pixmap_image *images;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* The textures kept for pixmaps, by context and pixmap (its memory, size and pitch), with the
+ * pixmap's pixels as last uploaded (packed rows of 4 * width bytes). libgm-wayland has a pixmap or
+ * two a window; the oldest goes when the table is full. */
+struct kept {
+    EGLContext ctx;
+    uintptr_t data;
+    uint32_t flags, w, h, pitch;
+    GLuint texture;
+    uint8_t *shadow;
+    unsigned used;
+};
+#define KEPT 4
+static struct kept kept[KEPT];
+static unsigned kept_clock;
 
 static uint32_t field(const void *pixmap, size_t offset)
 {
@@ -158,6 +181,131 @@ static const uint8_t *map_phys(uint32_t phys, size_t size, void **base, size_t *
     return (const uint8_t *)*base + (offset - start);
 }
 
+/* Forget a kept texture; its name is deleted when its context is the current one (else it is the
+ * context's until that goes). */
+static void drop(struct kept *k, EGLContext current)
+{
+    if (k->texture && k->ctx == current)
+        glDeleteTextures(1, &k->texture);
+    free(k->shadow);
+    memset(k, 0, sizeof *k);
+}
+
+/* Upload rows [y0, y1) of the pixmap (src, pitch) to the bound texture at those rows, converted;
+ * GL_NO_ERROR or the first GL error. */
+static GLenum upload(const uint8_t *src, uint32_t w, uint32_t y0, uint32_t y1, uint32_t pitch,
+                     int whole)
+{
+    uint8_t *rgba = malloc((size_t)w * (y1 - y0) * 4);
+    if (!rgba)
+        return GL_OUT_OF_MEMORY;
+    to_rgba(rgba, src + (size_t)y0 * pitch, w, y1 - y0, pitch);
+    GLint align = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &align);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    if (whole)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)w, (GLsizei)(y1 - y0), 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, rgba);
+    else
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)y0, (GLsizei)w, (GLsizei)(y1 - y0), GL_RGBA,
+                        GL_UNSIGNED_BYTE, rgba);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, align);
+    free(rgba);
+    return glGetError();
+}
+
+/* The kept texture of this pixmap in the current context, brought up to date with its pixels
+ * (src): the texture, or 0 when there is none to keep (caller holds lock). *rows: the rows
+ * uploaded. */
+static GLuint kept_texture(EGLContext ctx, uintptr_t data, uint32_t flags, uint32_t w, uint32_t h,
+                           uint32_t pitch, const uint8_t *src, uint32_t *rows)
+{
+    struct kept *k = NULL, *oldest = &kept[0];
+    for (int i = 0; i < KEPT && !k; i++) {
+        struct kept *c = &kept[i];
+        if (c->texture && c->ctx == ctx && c->data == data && c->flags == flags && c->w == w &&
+            c->h == h && c->pitch == pitch)
+            k = c;
+        else if (!c->texture || (oldest->texture && c->used < oldest->used))
+            oldest = c;
+    }
+    size_t row = (size_t)w * 4;
+    uint32_t y0 = 0, y1 = h;
+    int whole = !k;
+    if (!k) {
+        k = oldest;
+        drop(k, ctx);
+        k->shadow = malloc(row * h);
+        if (!k->shadow)
+            return 0;
+        glGenTextures(1, &k->texture);
+        k->ctx = ctx;
+        k->data = data;
+        k->flags = flags;
+        k->w = w;
+        k->h = h;
+        k->pitch = pitch;
+    } else {
+        while (y0 < h && !memcmp(src + (size_t)y0 * pitch, k->shadow + y0 * row, row))
+            y0++;
+        while (y1 > y0 && !memcmp(src + (size_t)(y1 - 1) * pitch, k->shadow + (y1 - 1) * row, row))
+            y1--;
+    }
+    k->used = ++kept_clock;
+    *rows = y1 - y0;
+    if (y0 == y1)
+        return k->texture;
+    GLint bound = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+    glBindTexture(GL_TEXTURE_2D, k->texture);
+    if (whole) {
+        /* complete without mipmaps, as an image's source must be */
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    GLenum error = upload(src, w, y0, y1, pitch, whole);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)bound);
+    while (glGetError() != GL_NO_ERROR) /* the caller checks glGetError after its own calls */
+        ;
+    if (error != GL_NO_ERROR) {
+        syslog(LOG_ERR, "mali-pixmap: the texture of a %ux%u pixmap: GL error %#x", w, h, error);
+        drop(k, ctx);
+        return 0;
+    }
+    for (uint32_t y = y0; y < y1; y++)
+        memcpy(k->shadow + y * row, src + (size_t)y * pitch, row);
+    return k->texture;
+}
+
+/* A texture of its own for one image (when there is no kept one): 0 on a GL error. */
+static GLuint own_texture(const uint8_t *src, uint32_t w, uint32_t h, uint32_t pitch)
+{
+    GLuint texture = 0;
+    GLint bound = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    GLenum error = upload(src, w, 0, h, pitch, 1);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)bound);
+    while (glGetError() != GL_NO_ERROR)
+        ;
+    if (error != GL_NO_ERROR) {
+        syslog(LOG_ERR, "mali-pixmap: the texture of a %ux%u pixmap: GL error %#x", w, h, error);
+        glDeleteTextures(1, &texture);
+        return 0;
+    }
+    return texture;
+}
+
+static double now_ms(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
+}
+
 /* An image of a Mali pixmap; a pixmap this library does not recognise as one goes to Mesa as the
  * caller made the call (ctx, attr), so it fails there with Mesa's own error. */
 static EGLImageKHR pixmap_image(EGLDisplay dpy, EGLContext caller_ctx, const void *pixmap,
@@ -169,8 +317,6 @@ static EGLImageKHR pixmap_image(EGLDisplay dpy, EGLContext caller_ctx, const voi
     uintptr_t data;
     memcpy(&data, (const uint8_t *)pixmap + PIXMAP_DATA, sizeof data);
     EGLContext ctx = eglGetCurrentContext();
-    trace("mali-pixmap: %ux%u pitch %u bpp %u data %#lx flags %#x context %p", w, h, pitch, bpp,
-          (unsigned long)data, flags, (void *)ctx);
     if (!w || !h || w > PIXMAP_MAX || h > PIXMAP_MAX || bpp != 4 || pitch < 4 * w || !data ||
         ctx == EGL_NO_CONTEXT) {
         syslog(LOG_ERR,
@@ -180,6 +326,7 @@ static EGLImageKHR pixmap_image(EGLDisplay dpy, EGLContext caller_ctx, const voi
         return mesa.create(dpy, caller_ctx, EGL_NATIVE_PIXMAP_KHR, (EGLClientBuffer)pixmap,
                            caller_attr);
     }
+    double t0 = now_ms();
     const uint8_t *src = (const uint8_t *)data;
     void *map = NULL;
     size_t map_len = 0;
@@ -194,51 +341,49 @@ static EGLImageKHR pixmap_image(EGLDisplay dpy, EGLContext caller_ctx, const voi
         }
     }
     struct pixmap_image *pi = calloc(1, sizeof *pi);
-    uint8_t *rgba = malloc((size_t)w * h * 4);
-    if (pi && rgba)
-        to_rgba(rgba, src, w, h, pitch);
-    if (map)
-        munmap(map, map_len);
-    if (!pi || !rgba) {
-        free(pi);
-        free(rgba);
-        return mesa.create(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR, NULL, NULL);
-    }
-
-    /* The caller's texture binding and unpack alignment stay as they were. */
-    GLint bound = 0, align = 4;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, &align);
-    glGenTextures(1, &pi->texture);
-    glBindTexture(GL_TEXTURE_2D, pi->texture);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-    /* complete without mipmaps, as an image's source must be */
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                 rgba);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, align);
-    glBindTexture(GL_TEXTURE_2D, (GLuint)bound);
-    free(rgba);
-    GLenum gl_error = glGetError();
-    while (glGetError() != GL_NO_ERROR) /* the caller checks glGetError after its own calls */
-        ;
-    if (gl_error != GL_NO_ERROR) {
-        syslog(LOG_ERR, "mali-pixmap: the texture of a %ux%u pixmap: GL error %#x", w, h, gl_error);
-        glDeleteTextures(1, &pi->texture);
-        free(pi);
+    if (!pi) {
+        if (map)
+            munmap(map, map_len);
         return mesa.create(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR, NULL, NULL);
     }
     static const EGLint attr[] = {EGL_GL_TEXTURE_LEVEL_KHR, 0, EGL_NONE};
-    pi->image =
-        mesa.create(dpy, ctx, EGL_GL_TEXTURE_2D_KHR, (EGLClientBuffer)(uintptr_t)pi->texture, attr);
+    uint32_t rows = h;
+    pthread_mutex_lock(&lock);
+    GLuint texture = kept_texture(ctx, data, flags, w, h, pitch, src, &rows);
+    if (texture) {
+        pi->image =
+            mesa.create(dpy, ctx, EGL_GL_TEXTURE_2D_KHR, (EGLClientBuffer)(uintptr_t)texture, attr);
+        if (pi->image == EGL_NO_IMAGE_KHR) {
+            /* not this texture again: an image of a texture of its own */
+            syslog(LOG_ERR, "mali-pixmap: the image of a kept %ux%u texture: EGL error %#x", w, h,
+                   eglGetError());
+            for (int i = 0; i < KEPT; i++)
+                if (kept[i].texture == texture && kept[i].ctx == ctx)
+                    drop(&kept[i], ctx);
+        }
+    }
+    pthread_mutex_unlock(&lock);
+    if (!texture || pi->image == EGL_NO_IMAGE_KHR) {
+        rows = h;
+        pi->texture = own_texture(src, w, h, pitch);
+        if (pi->texture) {
+            pi->image = mesa.create(dpy, ctx, EGL_GL_TEXTURE_2D_KHR,
+                                    (EGLClientBuffer)(uintptr_t)pi->texture, attr);
+            if (pi->image == EGL_NO_IMAGE_KHR) {
+                syslog(LOG_ERR, "mali-pixmap: the image of a %ux%u texture: EGL error %#x", w, h,
+                       eglGetError());
+                glDeleteTextures(1, &pi->texture);
+            }
+        }
+    }
+    if (map)
+        munmap(map, map_len);
     if (pi->image == EGL_NO_IMAGE_KHR) {
-        syslog(LOG_ERR, "mali-pixmap: the image of a %ux%u texture: EGL error %#x", w, h,
-               eglGetError());
-        glDeleteTextures(1, &pi->texture);
         free(pi);
         return mesa.create(dpy, EGL_NO_CONTEXT, EGL_NATIVE_PIXMAP_KHR, NULL, NULL);
     }
+    trace("mali-pixmap: %ux%u pitch %u data %#lx flags %#x context %p: %u rows in %.1f ms", w, h,
+          pitch, (unsigned long)data, flags, (void *)ctx, rows, now_ms() - t0);
     pi->dpy = dpy;
     pthread_mutex_lock(&lock);
     pi->next = images;
@@ -274,7 +419,7 @@ static EGLBoolean destroy_image(EGLDisplay dpy, EGLImageKHR image)
     if (pi) {
         /* the image keeps its storage; with no context current the texture name is the
          * context's until it goes */
-        if (eglGetCurrentContext() != EGL_NO_CONTEXT)
+        if (pi->texture && eglGetCurrentContext() != EGL_NO_CONTEXT)
             glDeleteTextures(1, &pi->texture);
         free(pi);
     }

@@ -5,9 +5,19 @@
  * blitting flags and blend functions of dile_gal.h (DirectFB's semantics, which the DILE API
  * follows). Scaling samples the nearest pixel.
  *
- * Common cases have their own loops: copies and fills between ARGB surfaces, and ARGB "source
- * over" (alpha channel blending with SRCALPHA or ONE against INVSRCALPHA). Everything else goes
- * through one per-pixel path in ARGB32. */
+ * Common cases have their own loops: 1:1 copies within a format, LUT8 onto ARGB through the
+ * palette, fills without blending (the colour converted once), and ARGB "source over" (alpha
+ * channel blending with SRCALPHA or ONE against INVSRCALPHA). Everything else goes through one
+ * per-pixel path in ARGB32, with the nearest-sample source coordinates worked out once a row and a
+ * column.
+ *
+ * Speed is part of the behaviour: callers wait for the display engine with a timeout.
+ * legacy-broadcast's SGL (API_SGL_UpdateScreen) waits 300 ms for its update task, which copies the
+ * caption window's 1366x768 LUT8 plane and converts it to ARGB on every update; past the timeout
+ * it goes on as if the update were done, its caption writer draws into the buffer the update is
+ * still presenting, and the captions never show. A divide per pixel (64-bit, a library call on
+ * 32-bit ARM) made each of those passes take over 100 ms on a slow host, and clearing the plane
+ * (a fill of LUT8 colour 0) searched the palette for every pixel: two seconds. */
 #include "gal.h"
 #include <stdlib.h>
 #include <string.h>
@@ -194,17 +204,29 @@ int gal_fill(struct pixmap *dst, const rect_t *r, uint32_t argb, uint32_t flags,
     }
     if (flags & DRAW_SRC_PREMULTIPLY)
         argb = premultiply(argb);
-    if (!(flags &
-          (DRAW_BLEND | DRAW_DST_COLORKEY | DRAW_DST_PREMULTIPLY | DRAW_DEMULTIPLY | DRAW_XOR)) &&
-        dst->format == FMT_ARGB) {
+    if (!(flags & (DRAW_BLEND | DRAW_DST_COLORKEY | DRAW_DST_PREMULTIPLY | DRAW_XOR))) {
+        /* every pixel the same: the colour in the surface's format once (a LUT8 surface's nearest
+         * palette index is a search of the palette), then whole rows */
+        uint32_t word = 0; /* aligned for put_px's 16- and 32-bit stores */
+        uint8_t *px = (uint8_t *)&word;
+        struct pixmap one = *dst;
+        unsigned bytes = gal_bpp(dst->format) / 8;
+        one.base = px;
+        one.pitch = sizeof word;
+        put_px(&one, 0, 0, flags & DRAW_DEMULTIPLY ? demultiply(argb) : argb);
+        int same = bytes == 1 || !memcmp(px, px + 1, bytes - 1);
         for (unsigned y = r->y; y < (unsigned)r->y + r->h; y++) {
-            uint32_t *row = (uint32_t *)(dst->base + (size_t)y * dst->pitch) + r->x;
-            if (!argb) {
-                memset(row, 0, (size_t)r->w * 4);
+            uint8_t *row = dst->base + (size_t)y * dst->pitch + (size_t)r->x * bytes;
+            if (same) {
+                memset(row, px[0], (size_t)r->w * bytes);
                 continue;
             }
-            for (unsigned x = 0; x < r->w; x++)
-                row[x] = argb;
+            if (bytes == 4)
+                for (unsigned x = 0; x < r->w; x++)
+                    ((uint32_t *)row)[x] = word;
+            else
+                for (unsigned x = 0; x < r->w; x++)
+                    ((uint16_t *)row)[x] = (uint16_t)word;
         }
         return GAL_OK;
     }
@@ -229,23 +251,41 @@ int gal_fill(struct pixmap *dst, const rect_t *r, uint32_t argb, uint32_t flags,
     return GAL_OK;
 }
 
-/* ARGB onto ARGB, 1:1, no flags but the alpha channel blend: the common UI blits */
+/* 1:1 blits a display engine does in a moment: a copy within a format, LUT8 onto ARGB through the
+ * palette (as get_px: an index past the palette is 0), and ARGB onto ARGB with the alpha channel
+ * blend (the common UI blits) */
 static int fast_blit(const struct pixmap *src, const rect_t *sr, struct pixmap *dst,
                      const rect_t *dr, uint32_t flags, uint32_t fs, uint32_t fd)
 {
-    if (src->format != FMT_ARGB || dst->format != FMT_ARGB || sr->w != dr->w || sr->h != dr->h)
+    if (sr->w != dr->w || sr->h != dr->h)
         return 0;
-    if (!flags) {
+    if (!flags && src->format == dst->format) {
         /* memmove per row, in the direction that survives an overlap within one surface */
+        size_t bytes = gal_bpp(src->format) / 8;
         int up = src->base == dst->base && sr->y < dr->y;
         for (unsigned i = 0; i < dr->h; i++) {
             unsigned y = up ? dr->h - 1 - i : i;
-            memmove(dst->base + (size_t)(dr->y + y) * dst->pitch + (size_t)dr->x * 4,
-                    src->base + (size_t)(sr->y + y) * src->pitch + (size_t)sr->x * 4,
-                    (size_t)dr->w * 4);
+            memmove(dst->base + (size_t)(dr->y + y) * dst->pitch + (size_t)dr->x * bytes,
+                    src->base + (size_t)(sr->y + y) * src->pitch + (size_t)sr->x * bytes,
+                    (size_t)dr->w * bytes);
         }
         return 1;
     }
+    if (!flags && src->format == FMT_LUT8 && dst->format == FMT_ARGB && src->base != dst->base) {
+        uint32_t lut[256] = {0};
+        unsigned n = src->palette ? (src->palette_length < 256 ? src->palette_length : 256) : 0;
+        if (n)
+            memcpy(lut, src->palette, n * sizeof *lut);
+        for (unsigned y = 0; y < dr->h; y++) {
+            const uint8_t *s = src->base + (size_t)(sr->y + y) * src->pitch + sr->x;
+            uint32_t *d = (uint32_t *)(dst->base + (size_t)(dr->y + y) * dst->pitch) + dr->x;
+            for (unsigned x = 0; x < dr->w; x++)
+                d[x] = lut[s[x]];
+        }
+        return 1;
+    }
+    if (src->format != FMT_ARGB || dst->format != FMT_ARGB)
+        return 0;
     if (flags != BLIT_BLEND_ALPHACHANNEL || fd != BLEND_INVSRCALPHA ||
         (fs != BLEND_SRCALPHA && fs != BLEND_ONE) || src->base == dst->base)
         return 0;
@@ -314,12 +354,19 @@ int gal_blit(const struct pixmap *src, const rect_t *sr, struct pixmap *dst, con
     int index_copy = src->format == FMT_LUT8 && dst->format == FMT_LUT8 &&
                      !(flags & ~(BLIT_VERTICAL_MIRROR | BLIT_HORIZONTAL_MIRROR | BLIT_SRC_COLORKEY |
                                  BLIT_DST_COLORKEY));
+    /* the source column of each destination column, once */
+    unsigned *column = malloc((size_t)dr->w * sizeof *column);
+    if (!column)
+        return GAL_ERR;
+    for (unsigned x = 0; x < dr->w; x++) {
+        unsigned tx = flags & BLIT_HORIZONTAL_MIRROR ? dr->w - 1 - x : x;
+        column[x] = sr->x + (unsigned)((uint64_t)tx * sr->w / dr->w);
+    }
     for (unsigned y = 0; y < dr->h; y++) {
         unsigned ty = flags & BLIT_VERTICAL_MIRROR ? dr->h - 1 - y : y;
         unsigned sy = sr->y + (unsigned)((uint64_t)ty * sr->h / dr->h);
         for (unsigned x = 0; x < dr->w; x++) {
-            unsigned tx = flags & BLIT_HORIZONTAL_MIRROR ? dr->w - 1 - x : x;
-            unsigned sx = sr->x + (unsigned)((uint64_t)tx * sr->w / dr->w);
+            unsigned sx = column[x];
             unsigned dx = dr->x + x, dy = dr->y + y;
             if ((flags & BLIT_SRC_COLORKEY) && get_raw(src, sx, sy) == skey)
                 continue;
@@ -356,5 +403,6 @@ int gal_blit(const struct pixmap *src, const rect_t *sr, struct pixmap *dst, con
             put_px(dst, dx, dy, s);
         }
     }
+    free(column);
     return GAL_OK;
 }
