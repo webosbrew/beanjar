@@ -651,6 +651,20 @@ if [ "$scale" != 1 ] && [ -f /webos/usr/sbin/sdx ] &&
 	done
 	log "sdx: Luna reply and curl timeouts x$scale"
 fi
+# The same library for eula-service (33.31 on, also a dynamic service of ls-hubd's): it waits 10 s
+# for each settings-service reply in LunaCommon::lsCallSync, which its executable exports, and on a
+# timeout at boot registers a fault that reboots the set or resets its EULA data and reboots it. The
+# library stretches lsCallSync's one-second waits by the factor (and eula-service's curl timeouts).
+if [ "$scale" != 1 ] && [ -f /webos/usr/sbin/eula-service ] &&
+	grep -q _ZN10LunaCommon10lsCallSyncEPKcS1_RN7pbnjson6JValueEi /webos/usr/sbin/eula-service; then
+	for f in /webos/usr/share/dbus-1/services /webos/usr/share/dbus-1/system-services \
+		/webos/usr/share/luna-service2/services.d; do
+		f=$f/com.webos.service.eulaservice.service
+		[ -f "$f" ] && grep -q '^Exec=/usr/sbin/eula-service$' "$f" || continue
+		sed -i "s|^Exec=/usr/sbin/eula-service\$|Exec=/bin/sh -c 'LD_PRELOAD=\"\${LD_PRELOAD:+\$LD_PRELOAD:}/usr/lib/libluna-scale.so\" LUNA_TIMEOUT_SCALE=$scale exec /usr/sbin/eula-service'|" "$f"
+	done
+	log "eula-service: Luna call waits and curl timeouts x$scale"
+fi
 
 # --- systemd (INIT_SYSTEM=systemd): /run and the BSP marker ---
 # systemd mounts a tmpfs on /run only where none is mounted yet (as when an initrd hands it over), so

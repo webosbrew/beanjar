@@ -592,6 +592,17 @@ exports from webOS 3 on: /init puts the library on the Exec line of sdx's ls-hub
 and with it sdx's curl timeouts (10 s, 5 s to connect): the library interposes `curl_easy_setopt`,
 scales `CURLOPT_TIMEOUT`, `CURLOPT_CONNECTTIMEOUT` and their `_MS` forms, and logs each new value
 once in the kernel log (`libluna-scale: curl option 13: 10 -> 40 (x4)`).
+/init puts the same library on the Exec line of eula-service's service file (33.31 on, when its
+executable exports `LunaCommon::lsCallSync`). eula-service gives each Luna call 10 s, an immediate
+at each caller, and waits in one-second steps of `pthread_cond_clockwait` on `CLOCK_MONOTONIC`; a
+settings-service call that runs out registers a fault with recovery `rebootToSuspend` or resets
+the EULA data and reboots the set. There the library interposes `pthread_cond_clockwait` and
+stretches a monotonic deadline by the factor when the call comes from the executable itself (its
+one caller there is lsCallSync), keeping the stretched deadline when the same one is waited on
+again; library calls, other clocks and other executables are left alone. It logs
+`libluna-scale: eula-service: lsCallSync waits x4`. On a first boot under qemu-user the settings
+service starts late and answers slowly while the guest is saturated, not because of one slow step
+(docs/research/country-setting.md, "eula-service's settings timeout").
 The three share `guest/layers/webos/src/scale-preload.h`.
 
 `scripts/regress` takes the same factor for the VM host's accelerator (`--local`: the one the launcher

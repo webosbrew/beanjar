@@ -1884,6 +1884,43 @@ class InitBootConfTest(unittest.TestCase):
             self.assertFalse([p for p in paths if p in files], files)
             self.assertNotIn("sdx:", out)
 
+    def test_time_scale_eula_service(self):
+        # webos.time_scale=4 with an eula-service that exports LunaCommon::lsCallSync: its ls-hubd
+        # service file runs it through a shell that adds libluna-scale.so to the inherited
+        # LD_PRELOAD, as sdx's; time_scale=1, an eula-service without the symbol, or none, changes
+        # nothing
+        exe = "usr/sbin/eula-service"
+        symbol = "_ZN10LunaCommon10lsCallSyncEPKcS1_RN7pbnjson6JValueEi"
+        service = (
+            "[D-BUS Service]\nName=com.webos.service.eulaservice\nExec=/usr/sbin/eula-service\n"
+            "Type=dynamic\n"
+        )
+        path = "usr/share/luna-service2/services.d/com.webos.service.eulaservice.service"
+        stock = {exe: f"ELF ... {symbol} ...", path: service}
+        exec_line = (
+            'Exec=/bin/sh -c \'LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}/usr/lib/libluna-scale.so" '
+            "LUNA_TIMEOUT_SCALE=4 exec /usr/sbin/eula-service'"
+        )
+        files, _, out = self.run_init(
+            ("m2", "systemdtest"), SYSTEMD_ROW, "webos.time_scale=4", stock
+        )
+        self.assertEqual(files[path].splitlines()[2], exec_line)
+        self.assertEqual(files[path].replace(exec_line, "Exec=/usr/sbin/eula-service"), service)
+        self.assertIn("eula-service: Luna call waits and curl timeouts x4", out)
+        self.assertEqual(
+            shlex.split(exec_line[len("Exec=") :])[2],
+            'LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}/usr/lib/libluna-scale.so" '
+            "LUNA_TIMEOUT_SCALE=4 exec /usr/sbin/eula-service",
+        )
+        for cmdline, files_ in (
+            ("webos.time_scale=1", stock),
+            ("webos.time_scale=4", {**stock, exe: "ELF without the symbol"}),
+            ("webos.time_scale=4", {path: service}),
+        ):
+            files, _, out = self.run_init(H13_AFRO, cmdline=cmdline, stock=files_)
+            self.assertNotIn(path, files)
+            self.assertNotIn("eula-service:", out)
+
     def test_systemd_pmlog_stock(self):
         # webos.pmlog=stock: the unit stays stock; the marker is made all the same
         files, _, _ = self.run_init(("m2", "systemdtest"), SYSTEMD_ROW, "webos.pmlog=stock")
