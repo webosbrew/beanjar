@@ -98,7 +98,8 @@ Every VM, whatever its GPU, runs this way under its unit (`beanjar/lifecycle.py`
   `stop`), says `beanjar: the host's disk is full: writing DRIVE failed (...); QEMU quits instead
   of pausing the VM`, and sends `quit`; the unit then ends as failed, and is not started again.
   `werror=report` was not taken: the guest would get I/O errors on its state disks and run on
-  half broken. A paused VM with vhost-user-gpu would never show a picture again (below).
+  half broken. Before beanjar-vendor's QEMU 10.0.2+beanjar3, a paused VM with vhost-user-gpu would
+  never have shown a picture again (below).
 
 ## virgl_fence_set_fd: failed err=-9
 
@@ -124,25 +125,51 @@ since 10.0.2 changed `contrib/vhost-user-gpu` only for hardening (size and overf
 upstream master has fixed neither the `sock_fd == -1` refusal in `vg_process_msg`
 (`VHOST_USER_GPU_SET_SOCKET`) nor the per-output `vg_wait_ok` in `virgl_cmd_resource_flush`.
 
-All three are in `contrib/vhost-user-gpu`, which we build unpatched. No beanjar-side handling
-brings the display back: the backend accepts a new display socket only after it has dropped the
-old one, and it notices that only when it writes. QEMU's frontend has no reconnect for it.
+All three are in `contrib/vhost-user-gpu`. beanjar-vendor's QEMU patch 0005 (10.0.2+beanjar3)
+fixes the first two, the display socket after a stop or a reset; the third stays.
 
-- **A device reset kills the display until QEMU ends.** webOS's restart (Settings, developer
-  mode, a reset, an update; `webos-start` turns it into `reboot -f`) and QMP `system_reset` reset
-  the device. The guest's driver then starts it again, QEMU hands the backend a new display socket,
-  and the backend refuses it as below. Measured on the Pi with `system_reset`: the same
-  `vg_process_msg: assertion 'g->sock_fd == -1' failed`. Under a unit no reset reaches the device
-  any more: a restart is a new QEMU with a new backend ("Guest restarts and a full disk").
-- **A QMP `stop` and `cont` kill the display until the VM stops.** On stop QEMU closes the
-  backend's display socket. On cont it hands the backend a new one (`VHOST_USER_GPU_SET_SOCKET`),
-  which the backend refuses while it still holds the old one (`vg_process_msg: assertion
-  'g->sock_fd == -1' failed`, unless it wrote to the old socket while the VM was stopped). Its
-  next writes then fail on the closed socket, and nothing reaches the display again. The guest
-  runs on. Beanjar sends no `stop`. The `cont` after `-S` at start (display_setup, the link-down
-  of `link = "off"`) comes before the guest's driver starts the device, and is safe. Quick
-  Start+ standby and resume do not reset the device (guest kernel patch 0004,
-  docs/dev/architecture/suspend.md) and work.
+- **A QMP `stop` and `cont` lost the display, then the backend (fixed by patch 0005).** What
+  QEMU does, from the 10.0.2 source: the VM's run state change calls the device's `set_status`
+  with the status it has. On `stop` (`vm_running` false) `vhost_user_gpu_set_status` stops
+  watching the display socket, deletes its chardev, which closes QEMU's end, and stops the vhost
+  device (`vhost_user_backend_stop`: `GET_VRING_BASE` per queue, after which libvhost-user's
+  queues are stopped and their kick and call fds closed). On `cont` (`DRIVER_OK` and running) it
+  makes a new socket pair, sends the backend one end with `VHOST_USER_GPU_SET_SOCKET`, and only
+  then starts the vhost device again (`SET_VRING_BASE`, `SET_VRING_KICK`). Nothing else changes:
+  the frontend keeps its consoles and the dma-bufs of their scanouts. The unpatched backend:
+  1. It refuses the new socket while it still holds the old one (`vg_process_msg: assertion
+     'g->sock_fd == -1' failed`); it does not watch the old one, so it has not seen it close.
+  2. Its next writes fail on the closed socket (`vg_sock_fd_write: runtime check failed`,
+     twice), and a failed write closes the socket (`sock_fd = -1`). Nothing reaches the display
+     again.
+  3. The flush that wrote then waits for its answer with a `GSource` on fd -1, which never fires.
+     The control queue is served only while no wait is open, so from then on the guest's GPU
+     commands are not answered: on the Pi, captureservice hung in D state in `virtio_gpu`, and
+     every later guest suspend failed.
+  4. At the next `cont` the socket is -1, so `SET_SOCKET` is taken, and asking for the protocol
+     features asserts that no wait is open: `set_gpu_protocol_features: Assertion 'g->wait_in ==
+     0' failed`, and the backend is gone. On the PC (2D backend, below) that was the second
+     `cont`; on the Pi (W22O queue, 2026-11-26) the third.
+
+  Patch 0005 makes `SET_SOCKET` replace the old socket, and dropping a socket drops the wait on
+  it: a flush's `DMABUF_UPDATE` counts as answered, a `GET_DISPLAY_INFO` or `GET_EDID` is asked
+  again on the new socket. A short read is the frontend closing its end, so a wait sees that
+  instead of reading garbage; a failed write keeps the socket (and raises no SIGPIPE) for the wait
+  or the next `SET_SOCKET` to settle. Commands wait in the ring while there is no socket or the
+  queue is stopped, since the frontend sets the queue's base again before it starts it and a
+  command taken in between would be taken twice; the queue is served once when it starts. QEMU's
+  frontend is unchanged. Measured below ("Reproducing them"). The `cont` after `-S` at start
+  (display_setup, the link-down of `link = "off"`) comes before the guest's driver starts the
+  device and was always safe, and Quick Start+'s standby and resume do not reset the device
+  (guest kernel patch 0004, docs/dev/architecture/suspend.md).
+- **A device reset kills the display until QEMU ends, without patch 0005.** webOS's restart
+  (Settings, developer mode, a reset, an update; `webos-start` turns it into `reboot -f`) and QMP
+  `system_reset` reset the device. The guest's driver then starts it again, QEMU hands the backend
+  a new display socket, and the unpatched backend refuses it as above. Measured on the Pi with
+  `system_reset`: the same `vg_process_msg: assertion 'g->sock_fd == -1' failed`. The reset goes
+  through the same `set_status` path as a stop, so patch 0005 should cover it too (inferred, not
+  measured). Under a unit no reset reaches the device any more: a restart is a new QEMU with a new
+  backend ("Guest restarts and a full disk").
 - **One resource on two outputs aborts the backend.** `virgl_cmd_resource_flush` sends one
   update per output that shows the resource and waits for an answer after each. The second wait
   trips `vg_wait_ok: Assertion 'g->wait_in == 0' failed`. It is not a deadlock: `vg_wait_ok`
@@ -174,18 +201,40 @@ backend; the backend's messages are in the VM's `run/gpu-backend.out`.
 
 The display after `stop` and `cont`:
 
-1. Start a VM with `gpu = "vhost-user-gpu"` and let it reach Home, e.g. W22O queue or W22H
-   (k8hp-mullet).
+1. Start a VM with `gpu = "vhost-user-gpu"` and let it reach Home, e.g. W22O queue. A backend
+   other than the build's is `VHOST_USER_GPU=PATH` in the environment of `beanjar start`.
 2. `host/scripts/vm-launcher qmp --dir VM-DIR '{"execute":"stop"}'`, wait 5 s, then
    `host/scripts/vm-launcher qmp --dir VM-DIR '{"execute":"cont"}'` (`query-status` says
-   running).
-3. Press a remote key (`beanjar remote press NAME HOME`) and take `beanjar screenshot NAME`: the
-   picture is the one from before the stop and never changes again. `gpu-backend.out` has
-   `vg_process_msg: assertion 'g->sock_fd == -1' failed`, followed by two
-   `vg_sock_fd_write: runtime check failed: (ret == buflen)`. The same VM with
-   `gpu = "virtio-gpu-gl"` keeps its display across the same steps. On the Pi (k8hp-mullet, the
-   picture grabbed with `tests/regress/virgl/dbus-grab.py` before the stop, after it with a remote key,
-   and after a HOME): all three the same with vhost-user-gpu, changed with virtio-gpu-gl.
+   running), or let the IR relay do it: Quick Start+ on (`quickStartMode`), POWER, and POWER
+   again to wake.
+3. Press a remote key (`beanjar remote press NAME HOME`) and take `beanjar screenshot NAME`.
+
+Without patch 0005: the picture is the one from before the stop and never changes again, and
+`gpu-backend.out` has `vg_process_msg: assertion 'g->sock_fd == -1' failed`, followed by two
+`vg_sock_fd_write: runtime check failed: (ret == buflen)`; a later `cont` aborts the backend
+(`set_gpu_protocol_features: Assertion 'g->wait_in == 0' failed`). The same VM with
+`gpu = "virtio-gpu-gl"` keeps its display across the same steps. Measured:
+
+- Pi (k8hp-mullet, before 2026-11-26): the picture grabbed with `tests/regress/virgl/dbus-grab.py`
+  before the stop, after it with a remote key, and after a HOME: all three the same with
+  vhost-user-gpu, changed with virtio-gpu-gl. Pi (W22O queue, the relay's standby, 2026-11-26): the
+  abort at the third `cont`, captureservice hung in `virtio_gpu`, later suspends failed.
+- PC (2026-11-26, W22O queue, x86-64 guest kernel): the PC's only render node is vgem, which
+  virgl cannot export scanouts from (`virgl_cmd_set_scanout: Assertion 'fd >= 0' failed`), so the
+  backend ran without `--virgl` (2D, a wrapper as `VHOST_USER_GPU`) on vgem's primary node; the
+  protocol over the display socket is the same. 10.0.2+beanjar2's backend: the refusal and the two
+  failed writes at the first `cont`, the abort at the second.
+
+With patch 0005, measured 2026-11-26:
+
+- PC, the same 2D setup: 5 `stop`/`cont` cycles, no warning or assertion from the backend, which
+  ran on.
+- Pi (W22O queue, the default display, so vhost-user-gpu, 10.0.2+beanjar3's arm64 backend): 6
+  Quick Start+ standby and wake cycles through the IR relay with its vhost-user-gpu guard off,
+  each paused 40 to 60 s. The relay stopped and continued the VM each time; after each wake the
+  picture followed HOME and RIGHT (Home's focus moved), the backend logged no warning or
+  assertion and ran on, captureservice slept in `do_sys_poll` with no task in D state, and
+  `getForegroundAppInfo` answered `com.webos.app.home`.
 
 The display after a guest restart (only without the unit's monitor now, e.g. a foreground
 `vm-launcher run` with `GPU_DEVICE=vhost-user-gpu`):
