@@ -363,6 +363,7 @@ PASSTHROUGH = (
     "QEMU_EXTRA",
     "GPU_DEVICE",
     "GUEST_KERNEL",
+    "MEDIA_HWDEC",
 )
 DEFAULTS = {
     "graphics": {"LAYERS": "normal,gl", "DISPLAY_BACKEND": "dbus"},
@@ -396,6 +397,7 @@ LAUNCHER_DEFAULTED = (
     "QEMU_EXTRA",
     "GPU_DEVICE",
     "GUEST_KERNEL",
+    "MEDIA_HWDEC",
 )
 # What a stopped checkout VM must not leave on its host. `pgrep -x` (a remote shell's own command line
 # never matches it); QEMU's name is cut to 15 characters (aarch64, or x86_64 for GUEST_KERNEL=x86-64).

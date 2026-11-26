@@ -338,9 +338,9 @@ Nothing is copied to the VM host: a target whose firmware is not in its collecti
 ("firmware X not in the host's firmware collections", under "not run:" in the summary). Then, per target, the checkout VM with `FW=<fw> STATE=none LAYERS=normal,gl
 DISPLAY_BACKEND=dbus` (`NET_LINK` and `NET_MODE` as given, nat and direct by default; `LAYERS`,
 `DISPLAY_BACKEND`, `NET_LINK`, `NET_MODE`, `AUDIO`,
-`ACCEL`, `PMLOG_DEBUG`, `MEM`, `SMP`, `KERNEL_ARGS`, `QEMU_EXTRA`, `GPU_DEVICE`, `GUEST_KERNEL` pass through, and those not given are passed
+`ACCEL`, `PMLOG_DEBUG`, `MEM`, `SMP`, `KERNEL_ARGS`, `QEMU_EXTRA`, `GPU_DEVICE`, `GUEST_KERNEL`, `MEDIA_HWDEC` pass through, and those not given are passed
 empty, the launcher's defaults, so a target's development VM never brings back what its `vm.toml` kept from an
-earlier run; `KERNEL_ARGS` are extra kernel cmdline words, e.g. `mstar_utopia.mbx_trace=1`, a module parameter `/init` passes on; `QEMU_EXTRA` extra QEMU arguments, e.g. `-trace virtio_snd_*`): boot-done (`tests/regress/guest.sh`, the guest's uptime at
+earlier run; `KERNEL_ARGS` are extra kernel cmdline words, e.g. `mstar_utopia.mbx_trace=1`, a module parameter `/init` passes on; `QEMU_EXTRA` extra QEMU arguments, e.g. `-trace virtio_snd_*`; `MEDIA_HWDEC=none` decodes media in software, as on a host without a hardware decoder): boot-done (`tests/regress/guest.sh`, the guest's uptime at
 it), tvservice's `tv-ready` in bootd's own `/var/log/bootd.log` (`guest.sh tv-ready`, within 60 s of
 boot-done, times 4 under TCG: the same signal the headless ready step requires, below; the run
 directory's `saved/*/var-log/bootd.log` keeps it), `guest/scripts/check-m1.sh`, `tests/regress/tvservice/app-calls.sh`, the bring-up checklist (below), HOME on the remote once the

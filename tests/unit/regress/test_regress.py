@@ -2276,7 +2276,7 @@ class InstanceTest(unittest.TestCase):
             self.assertIn(f"is-active beanjar-vm-regress-{target}.service", text)
             # MEM: each target's model's; no SSH_PORT: the instance's ports are on its own address
             self.assertIn(
-                "NET_LINK=nat NET_MODE=direct AUDIO='' MEM='' SMP='' ACCEL='' PMLOG_DEBUG='' KERNEL_ARGS='' QEMU_EXTRA='' GPU_DEVICE='' GUEST_KERNEL='' NET_DUMP='' timeout",
+                "NET_LINK=nat NET_MODE=direct AUDIO='' MEM='' SMP='' ACCEL='' PMLOG_DEBUG='' KERNEL_ARGS='' QEMU_EXTRA='' GPU_DEVICE='' GUEST_KERNEL='' MEDIA_HWDEC='' NET_DUMP='' timeout",
                 text,
             )
         self.assertNotRegex(text, r"MEM=[0-9]")  # empty: the launcher takes the model's
