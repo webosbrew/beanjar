@@ -1,4 +1,10 @@
-models = ["W23L"]
+# S23Y is LG's 32SR50F Smart Monitor (HE_MNT_S23Y_AAAAGLAA, machine KF23F, number1-nameri, a
+# 32-bit userland): the same 00-partinfo fstab pins, see-init and kernel device tree as W23L, so
+# W23L's partition map; its configd check_product.sh makes kf23f a smartMonitor product. It boots
+# on W23L's board line (W23L's retail identity, 32LR655BPUA): the firmware has no SR50 tool type
+# and does not state the monitor's RAM or panel, so it has no board line of its own yet.
+models = ["W23L", "S23Y"]
+bring_up = ["S23Y"]
 v4l2_capture = true
 
 # W23L number1 (13.50.75): W23P's paks and fstab pins (p14 cert to p59 appstore) and the same stale

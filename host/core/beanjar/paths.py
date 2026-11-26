@@ -30,8 +30,8 @@ import tomllib
 
 FW_NAME = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
 MODEL_RE = re.compile(
-    r"_(?:DTV|LCD|PJT)_([A-Za-z0-9]+)_"
-)  # webOS's _DTV_, SimpleSmart's _LCD_, projectors' _PJT_
+    r"_(?:DTV|LCD|PJT|MNT)_([A-Za-z0-9]+)_"
+)  # webOS's _DTV_, SimpleSmart's _LCD_, projectors' _PJT_, monitors' _MNT_
 MANIFEST = "manifest.toml"
 
 
