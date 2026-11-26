@@ -208,12 +208,15 @@ static enum hrtimer_restart period_done(struct hrtimer *timer)
     return HRTIMER_RESTART;
 }
 
-/* PCM 0, the microphone pair; PCMs 1 to 4, the echo canceller's references (libaec-fe's preset
- * table: spk, mix and se S32_LE, bt S16_LE, up to ten channels), silent */
+/* PCM 0, the microphone pair: S16_LE for voiceinput_sound's own probe and test_aec-fe's default,
+ * and the wider formats libaec-fe's aecfe_configure2 asks for the 32-bit capture voiceinput_sound's
+ * CCaptureSoundMixLG always configures: S24_LE at 16 kHz where /proc/lg/base/chip_rev is up to
+ * 0x299f (O22's 0x26a0), S32_LE at 48 kHz above it. PCMs 1 to 4, the echo canceller's references
+ * (libaec-fe's preset table: spk, mix and se S32_LE, bt S16_LE, up to ten channels), silent */
 static const struct snd_pcm_hardware mic_hw = {
     .info = SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID |
             SNDRV_PCM_INFO_BLOCK_TRANSFER,
-    .formats = SNDRV_PCM_FMTBIT_S16_LE,
+    .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
     .rates = SNDRV_PCM_RATE_8000_48000,
     .rate_min = 8000,
     .rate_max = 48000,
@@ -303,7 +306,8 @@ static int mic_sync_stop(struct snd_pcm_substream *substream)
     return 0;
 }
 
-/* PCM 0's frames from s->written up to frames since the start: the air at their times */
+/* PCM 0's frames from s->written up to frames since the start: the air at their times, its 16
+ * bits the top of the format's sample (S24_LE: the low three bytes of a 32-bit word) */
 static void mic_write(struct mic_stream *s, struct snd_pcm_runtime *runtime, u64 frames)
 {
     s64 start = ktime_to_ns(s->start);
@@ -315,13 +319,21 @@ static void mic_write(struct mic_stream *s, struct snd_pcm_runtime *runtime, u64
     spin_lock_irqsave(&air_lock, flags);
     for (; k < frames; k++) {
         u64 slot = k;
-        s16 *frame = (s16 *)(runtime->dma_area +
-                             frames_to_bytes(runtime, do_div(slot, runtime->buffer_size)));
+        void *frame =
+            runtime->dma_area + frames_to_bytes(runtime, do_div(slot, runtime->buffer_size));
         s64 at = start + div_u64(k * NSEC_PER_SEC, runtime->rate);
         unsigned int ch;
 
-        for (ch = 0; ch < runtime->channels; ch++)
-            frame[ch] = air_sample(air, at, ch);
+        for (ch = 0; ch < runtime->channels; ch++) {
+            s32 v = air_sample(air, at, ch);
+
+            if (runtime->format == SNDRV_PCM_FORMAT_S16_LE)
+                ((s16 *)frame)[ch] = v;
+            else if (runtime->format == SNDRV_PCM_FORMAT_S24_LE)
+                ((s32 *)frame)[ch] = v * 256; /* sign-extended, as a codec gives it */
+            else
+                ((s32 *)frame)[ch] = v * 65536;
+        }
     }
     spin_unlock_irqrestore(&air_lock, flags);
     s->written = frames;
