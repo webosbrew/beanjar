@@ -92,7 +92,6 @@ def test_package_depends_on_vendored_or_system_qemu():
     assert "beanjar-qemu | qemu-system-modules-opengl" in groups
     assert "qemu-system-arm" not in groups, "the system QEMU only as the alternative"
     assert "mesa-utils" in groups, "eglinfo: the launch log's GL renderer (qemu.gl_renderer_line)"
-    assert "e2fsprogs" in groups, "mke2fs: a microphone model's apps image (factory.apps_image)"
     assert not (TOP / "packaging/debian/build-deps/system-qemu.control").exists()
 
 

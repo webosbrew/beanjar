@@ -20,8 +20,6 @@ development VMs and the regress instances have one too):
   eeprom.img      what a blank EEPROM state disk becomes (nvm.new_chip), when there is a chip
   records.txt     LLS's probe output for the board (webOS 5 on): the debugstatus item a programmed
                   chip takes when the VM's debug mode changes
-  appstore.img    the apps partition's factory pre-built data (factory.py: the wake-word model of a
-                  model with the microphone), a new appstore disk's first contents
   macadr.img      the macadr partition as the factory leaves it (macadr.py: the MAC and the
                   identity's LGUDID), where the release's LG code reads the LGUDID (Release.lgudid);
                   the launcher attaches it with its writes discarded at power-off
@@ -50,10 +48,10 @@ import shutil
 import subprocess
 import sys
 
-from . import factory, fwcache, lls, macadr, nvm, partmap, paths, targets, vmidentity
+from . import fwcache, lls, macadr, nvm, partmap, paths, targets, vmidentity
 from .base import identity_dir
 
-VERSION = 6
+VERSION = 7
 DIR = "prepared"
 # the panel's refresh where the firmware's own decode of the board is not run (before webOS 5)
 DEFAULT_PANEL_HZ = 60
@@ -61,7 +59,6 @@ RECORD = "prepared.json"
 PARTINFO = "partinfo.img"
 EEPROM = "eeprom.img"
 RECORDS = "records.txt"
-APPS = "appstore.img"
 MACADR = "macadr.img"
 
 
@@ -207,7 +204,7 @@ def stale(job):
         )
         return "made from other files (" + ", ".join(os.path.basename(p) for p in diff[:3]) + ")"
     own = [PARTINFO] if targets.board_data(job.target) else []
-    for name in own + [n for n in (EEPROM, RECORDS, APPS, MACADR) if record.get(n)]:
+    for name in own + [n for n in (EEPROM, RECORDS, MACADR) if record.get(n)]:
         if not os.path.isfile(os.path.join(job.dir, name)):
             return f"missing its {name}"
     return None
@@ -234,8 +231,6 @@ class Prepared:
             with open(os.path.join(job.dir, RECORDS)) as f:
                 records = f.read()
         self.chip = nvm.Chip(image, records, record.get("eeprom_note"))
-        # {state disk: its factory image}: what a new one starts with (factory.py)
-        self.factory = {factory.DISK: os.path.join(job.dir, APPS)} if record.get(APPS) else {}
         # the macadr partition's image (macadr.py), None where the release reads no LGUDID
         self.macadr = os.path.join(job.dir, MACADR) if record.get(MACADR) else None
 
@@ -377,16 +372,6 @@ def _make(job, new, say):
         micom = targets.led_micom_dev(job.target, tool)
         if micom:
             record["derived_params"].setdefault("lgemu", []).append("i2c_dev=" + micom)
-    # the apps partition's factory pre-built data: the wake-word model of a model with the
-    # microphone (factory.py, INFERRED factory state)
-    if factory.needed(job.target):
-        try:
-            held = factory.apps_image(job.fw, job.target, job.tree, os.path.join(new, APPS))
-        except (factory.Error, lls.Error, OSError, subprocess.SubprocessError) as e:
-            raise Error(f"the apps partition's factory data: {e}") from None
-        if held:
-            record["factory_files"] = held
-            record[APPS] = True
     # the macadr partition, where the release reads the LGUDID (Release.lgudid)
     if targets.release(job.target).lgudid:
         macadr_image(job, os.path.join(new, PARTINFO), os.path.join(new, MACADR), say)

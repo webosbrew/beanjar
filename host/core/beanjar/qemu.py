@@ -733,12 +733,6 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
                 f"{img}: {os.path.getsize(img)} bytes, smaller than its partition's {need} "
                 f"(grow it: truncate -s {need} {img})"
             )
-        # a new disk of the apps partition starts with its factory data (factory.py), as a set's
-        # does; one the VM has is kept
-        if seed is None and p.prepared:
-            seed = p.prepared.factory.get(name)
-            if seed and not state_opt and os.path.isfile(img):
-                continue
         # a blank image is re-created if it is not blank (all zero reads as sparse: no blocks) or
         # not its size, a seeded one each time
         if (
