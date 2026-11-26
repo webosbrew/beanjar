@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Host-guest compatibility by what the guest payload has (beanjar/compat.py): the target's components,
 every module parameter the host passes declared in the guest .ko's .modinfo (cached), versions as
-information only, and a VM with no record of any kind starts."""
+information only, the identities and their drift (a warning, and the fix in a refusal skew explains),
+and a VM with no record of any kind starts."""
 
 import io
 import os
@@ -74,7 +75,8 @@ def env(tmp_path):
 
 def test_versions_are_information_only(env):
     with open(os.path.join(TOP, "packaging", "VERSION")) as f:
-        assert compat.host_version() == f.read().strip()
+        assert compat.host_version().startswith(f.read().strip())
+    assert compat.host_version() == compat.host_identity()["version"]
     assert compat.guest_version(env.tree) == "unknown"
     stamp = os.path.join(env.repo, "build", "guest-installation.toml")
     with open(stamp, "w") as f:
@@ -118,6 +120,131 @@ def test_module_params_refusal_names_module_param_and_path(env):
         f.write("not an ELF file")
     with pytest.raises(compat.Error, match="cannot read .*rtk.ko's .modinfo"):
         compat.module_params(env.tree, {"rtk": ("fb=1",)}, "tv")
+
+
+A = "a" * 40
+B = "b" * 40
+V_A = "0.7.0+git215.g" + A[:12]
+V_B = "0.7.0+git276.g" + B[:12]
+
+
+def write_guest_stamp(env, version, commit):
+    with open(os.path.join(env.repo, "build", "guest-installation.toml"), "w") as f:
+        f.write(f'version = "{version}"\ncommit = "{commit}"\n')
+
+
+def test_identity_stamps(env):
+    assert compat.guest_identity(env.tree) == {"version": "unknown", "commit": None}
+    write_guest_stamp(env, V_A, A)
+    assert compat.guest_identity(env.tree) == {"version": V_A, "commit": A}
+    write_guest_stamp(env, V_A, "not-a-commit")
+    assert compat.guest_identity(env.tree) == {"version": V_A, "commit": None}
+
+
+def test_checkout_identity_falls_back_to_build_stamp_then_version(env):
+    """A checkout with no packaging/identity.py that answers (no git, no STAMP): its host build's
+    source-version.toml, else packaging/VERSION with no commit."""
+    os.makedirs(os.path.join(env.repo, "packaging"))
+    with open(os.path.join(env.repo, "packaging", "VERSION"), "w") as f:
+        f.write("0.7.0\n")
+    assert compat._checkout_identity(env.tree) == {
+        "version": "0.7.0",
+        "commit": None,
+        "dirty": False,
+    }
+    with open(os.path.join(env.repo, "build", "source-version.toml"), "w") as f:
+        f.write(f'version = "{V_B}"\ncommit = "{B}"\n')
+    assert compat._checkout_identity(env.tree) == {"version": V_B, "commit": B, "dirty": False}
+
+
+def test_commit_of_and_same_build():
+    assert compat.commit_of({"version": V_A, "commit": A}) == A
+    assert compat.commit_of({"version": V_A}) == A[:12], "an older beanjar's version carries it"
+    assert compat.commit_of({"version": "0.7.0"}) is None
+    assert compat.same_build({"version": V_A, "commit": A}, {"version": V_A})
+    assert not compat.same_build({"version": V_A, "commit": A}, {"version": V_B, "commit": B})
+    assert compat.same_build({"version": "0.7.0"}, {"version": "0.7.0"}), "a release: by version"
+    assert not compat.same_build({"version": "unknown"}, {"version": "unknown"})
+    assert compat.label({"version": V_A, "commit": A}) == V_A
+    assert compat.label({"version": "0.7.0", "commit": A}) == f"0.7.0 ({A[:12]})"
+
+
+def own(version=V_B, commit=B):
+    return {"name": "beanjar", "version": version, "commit": commit, "source": "checkout"}
+
+
+def test_drift_none_when_one_build():
+    other = dict(own(), source="package", guest={"version": V_B, "commit": B})
+    assert compat.drift(own(), other, "pi") == []
+    # nothing to compare with: no answer, an answer with no version
+    assert compat.drift(own(), None, "pi") == []
+    assert compat.drift(own(), {"ok": True}, "pi") == []
+
+
+def test_drift_host_behind_and_guest_skew():
+    other = {
+        "name": "beanjar",
+        "version": V_A,
+        "commit": A,
+        "source": "package",
+        "guest": {"version": "0.7.0+git181.g" + "c" * 12, "commit": "c" * 40},
+    }
+    found = compat.drift(own(), other, "pi")
+    assert [d["package"] for d in found] == ["beanjar", "beanjar-guest"]
+    host, guest = found
+    assert host["found"] == {"version": V_A, "commit": A}
+    assert host["expected"] == {"version": V_B, "commit": B}
+    assert host["fix"].startswith(f"on pi: sudo apt install ./beanjar{{,-qemu,-vnc}}_{V_B}_")
+    assert f"./beanjar-{{ui,web,guest}}_{V_B}_all.deb" in host["fix"]
+    assert guest["expected"] == {"version": V_A, "commit": A}, "a guest pairs with its own host"
+    assert f"./beanjar-guest_{V_A}_all.deb" in guest["fix"]
+    text = compat.drift_text(host)
+    assert V_A in text and V_B in text and "fix: on pi: sudo apt install" in text
+
+
+def test_drift_older_beanjar_and_checkout_host():
+    """An older beanjar says only {"name", "version"}: its version's commit is compared, and its
+    guest cannot be. A host that runs a checkout is told to check out and build."""
+    found = compat.drift(own(), {"name": "beanjar", "version": V_A}, "pi")
+    assert [d["package"] for d in found] == ["beanjar"]
+    assert found[0]["found"] == {"version": V_A, "commit": None}
+    assert compat.drift(own(), {"name": "beanjar", "version": V_B}, "pi") == []
+    other = dict(own(V_A, A), guest={"version": V_A, "commit": A})
+    (item,) = compat.drift(own(), other, "pi")
+    assert item["fix"].startswith(f"on pi: check out {V_B}")
+
+
+def test_module_params_refusal_names_skew(env):
+    """A refusal skew explains names this host's beanjar, the payload and the fix."""
+    env.ko("lgemu", "mic")
+    write_guest_stamp(env, V_A, A)
+    with mock.patch.object(
+        compat, "host_identity", return_value={"version": V_B, "commit": B, "dirty": False}
+    ):
+        with pytest.raises(compat.Error) as e:
+            compat.module_params(env.tree, {"lgemu": ("tee=1",)}, "tv")
+        assert "lgemu.ko has no parameter tee" in str(e.value)
+        assert V_A in str(e.value) and V_B in str(e.value)
+        assert "scripts/build.sh guest" in str(e.value), "a checkout's fix"
+        installed = mock.patch.object(
+            type(env.tree), "installed", new=mock.PropertyMock(return_value=True)
+        )
+        build = mock.patch.object(
+            env.tree, "build", side_effect=lambda *p: os.path.join(env.repo, "build", *p)
+        )
+        cache = mock.patch.object(
+            env.tree, "cache", side_effect=lambda *p: os.path.join(env.tmp, "cache", *p)
+        )
+        with installed, build, cache:
+            with pytest.raises(compat.Error) as e:
+                compat.module_params(env.tree, {"lgemu": ("tee=1",)}, "tv")
+        assert f"sudo apt install ./beanjar-guest_{V_B}_all.deb" in str(e.value)
+    with mock.patch.object(
+        compat, "host_identity", return_value={"version": V_A, "commit": A, "dirty": False}
+    ):
+        with pytest.raises(compat.Error) as e:
+            compat.module_params(env.tree, {"lgemu": ("tee=1",)}, "tv")
+        assert "install a guest payload built with it" in str(e.value), "one build: no skew"
 
 
 def test_modinfo_cached_by_path_size_mtime(env):

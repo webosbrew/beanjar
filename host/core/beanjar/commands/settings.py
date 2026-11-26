@@ -188,6 +188,32 @@ def cmd_host_remove(lib, a):
     return emit(a, {"name": a.host_name, "removed": True}, f"removed host {a.host_name}")
 
 
+def cmd_host_show(lib, a):
+    """host show NAME: the host's beanjar and guest payload (its `beanjar --version --json`, asked
+    now) and what differs from this beanjar (compat.drift)."""
+    from .. import compat
+    from .common import version_info
+
+    hosts = remote.hosts()
+    if a.host_name not in hosts:
+        raise Error(f"no host named {a.host_name} (beanjar host list)")
+    uri = hosts[a.host_name]
+    info = remote.call_json(a.host_name, uri, ["--version"])
+    if not isinstance(info, dict) or not isinstance(info.get("version"), str):
+        raise remote.HostError(a.host_name, "its beanjar --version --json is not an object")
+    drift = compat.drift(version_info(), info, a.host_name)
+    data = {"name": a.host_name, "uri": uri, "beanjar": info, "drift": drift}
+    guest = info.get("guest") if isinstance(info.get("guest"), dict) else {}
+    lines = [
+        f"name: {a.host_name}",
+        f"uri: {uri}",
+        f"beanjar: {compat.label(info)}" + (f" ({info['source']})" if info.get("source") else ""),
+        f"beanjar-guest: {compat.label(guest) if guest else 'unknown (an older beanjar)'}",
+    ]
+    lines += [f"drift: {compat.drift_text(d)}" for d in drift] or ["drift: none"]
+    return emit(a, data, "\n".join(lines))
+
+
 def cmd_host_list(lib, a):
     rows = [{"name": n, "uri": u} for n, u in remote.hosts().items()]
     if a.json or not rows:
@@ -335,6 +361,16 @@ def register_config(cli):
         "forget a remote host",
         cmd_host_remove,
         usage="beanjar host remove NAME [--json]",
+    )
+    s.add_argument("host_name", metavar="NAME")
+    s.set_defaults(library_needed=False)
+    s = command(
+        g,
+        "show",
+        "a remote host's beanjar and guest payload versions and commits, and what differs from "
+        "this beanjar's (drift: each with the command that fixes it)",
+        cmd_host_show,
+        usage="beanjar host show NAME [--json]",
     )
     s.add_argument("host_name", metavar="NAME")
     s.set_defaults(library_needed=False)

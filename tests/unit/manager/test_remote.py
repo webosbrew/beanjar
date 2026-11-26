@@ -53,6 +53,8 @@ class Fake:
         if h.get("down"):
             return 255, b"", f"ssh: {h['down']}\n"
         words = remote_argv.split()
+        if words[1:] == ["--version", "--json"] and "version" in h:
+            return 0, json.dumps(h["version"]).encode(), ""
         # a host with hosts of its own ("indirect"): a bare name or a plain list reaches theirs
         if words[1:3] == ["config", "show"]:
             name = words[3].removeprefix("local/")
@@ -283,6 +285,61 @@ class CommandsTest(Base):
         for status in (1, 2):
             self.fake.reply = (status, b"", '{"error": "nope"}\n')
             self.assertEqual(self.beanjar("wipe", "pi/tv")[0], status)
+
+    def test_drift_warned_once_and_in_json(self):
+        """A host whose beanjar is another commit's: a warning on stderr once per command, naming
+        both versions and the fix, and with --json a "drift" field in the result or the error.
+        The host's version is asked once in PERSIST seconds; the command runs all the same."""
+        from beanjar.commands import forward
+
+        mine = {"name": "beanjar", "version": "0.7.0+git276.g" + "b" * 12, "commit": "b" * 40,
+                "source": "checkout", "dirty": False, "guest": {"version": "unknown", "commit": None}}  # fmt: skip
+        theirs = {"name": "beanjar", "version": "0.7.0+git215.g" + "a" * 12}
+        self.add(pi={"vms": ["tv"], "version": theirs})
+        with mock.patch.object(forward, "version_info", return_value=mine):
+            rc, out, err = self.beanjar("stop", "pi/tv")
+            self.assertEqual(rc, 0)
+            self.assertEqual(err.count("warning: host pi runs beanjar 0.7.0+git215"), 1)
+            self.assertIn("this one is 0.7.0+git276", err)
+            self.assertIn("fix: on pi: sudo apt install", err)
+            self.assertEqual(self.fake.calls[-1][1], "beanjar stop local/tv")
+            rc, out, err = self.beanjar("stop", "pi/tv", "--json")
+            (item,) = json.loads(out)["drift"]
+            self.assertEqual(item["package"], "beanjar")
+            self.assertEqual(item["found"]["version"], theirs["version"])
+            self.assertEqual(item["expected"]["commit"], "b" * 40)
+            self.fake.reply = (1, b"", '{"error": "nope"}\n')
+            rc, out, err = self.beanjar("wipe", "pi/tv", "--json")
+            self.assertEqual(rc, 1)
+            error = json.loads(err.strip().splitlines()[-1])
+            self.assertEqual((error["error"], error["drift"][0]["host"]), ("nope", "pi"))
+            asked = [c for c in self.fake.calls if c[1] == "beanjar --version --json"]
+            self.assertEqual(len(asked), 1, "kept for PERSIST seconds")
+            # the same build: no warning, no field
+            self.fake.reply = None
+            self.fake.hosts["pi"]["version"] = mine
+            os.unlink(os.path.join(remote.control_dir(), "version-pi.json"))
+            rc, out, err = self.beanjar("stop", "pi/tv", "--json")
+            self.assertNotIn("drift", json.loads(out))
+            self.assertNotIn("warning", err)
+
+    def test_host_show(self):
+        """host show NAME: the host's versions, asked now, and the drift from this beanjar."""
+        theirs = {"name": "beanjar", "version": "0.7.0+git215.g" + "a" * 12, "commit": "a" * 40,
+                  "source": "package", "dirty": False,
+                  "guest": {"version": "0.7.0+git181.g" + "c" * 12, "commit": "c" * 40}}  # fmt: skip
+        self.add(pi={"vms": [], "version": theirs})
+        rc, out, _ = self.beanjar("host", "show", "pi", "--json")
+        self.assertEqual(rc, 0)
+        data = json.loads(out)
+        self.assertEqual(
+            (data["name"], data["uri"], data["beanjar"]), ("pi", "ssh://pi.example", theirs)
+        )
+        self.assertIn("beanjar-guest", [d["package"] for d in data["drift"]])
+        rc, out, _ = self.beanjar("host", "show", "pi")
+        self.assertIn("beanjar-guest: 0.7.0+git181", out)
+        self.assertIn("drift: host pi's guest payload is 0.7.0+git181", out)
+        self.assertEqual(self.beanjar("host", "show", "nope")[0], 1)
 
     def test_snapshot(self):
         """snapshot VERB HOST/NAME [SNAP] runs on the VM's host, where its snapshots are."""

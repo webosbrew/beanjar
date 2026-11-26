@@ -44,7 +44,7 @@ def global_options(words):
 
 def json_error(e, code):
     """Error e as --json reports it, one JSON object on stderr ({"error": message, "key": setting
-    or absent, "usage": true or absent}, commands/common.py's conventions): code, the exit status."""
+    or absent, "usage": true or absent, "drift": [...] or absent}, commands/common.py's conventions): code, the exit status."""
     import json
 
     error = {"error": str(e)}
@@ -52,6 +52,8 @@ def json_error(e, code):
         error["key"] = e.key
     if code == 2:
         error["usage"] = True
+    if getattr(e, "drift", None):
+        error["drift"] = e.drift  # a command sent to another host: compat.drift's items
     print(json.dumps(error), file=sys.stderr)
     return code
 

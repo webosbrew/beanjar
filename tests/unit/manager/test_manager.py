@@ -3913,19 +3913,28 @@ class CliParseTest(unittest.TestCase):
 
         from beanjar import commands
 
-        for argv, check in (
-            (["--version"], lambda t: self.assertRegex(t, r"^beanjar \S+.*\n$")),
-            (["--library", "x", "--version"], lambda t: self.assertTrue(t.startswith("beanjar "))),
+        keys = {"name", "version", "commit", "source", "dirty", "guest"}
+        for argv, check, lines in (
             (
-                ["--version", "--json"],
-                lambda t: self.assertEqual(json.loads(t).keys(), {"name", "version"}),
+                ["--version"],
+                lambda t: self.assertRegex(t, r"^beanjar \S+.*\nbeanjar-guest \S+\n$"),
+                2,
             ),
+            (
+                ["--library", "x", "--version"],
+                lambda t: self.assertTrue(t.startswith("beanjar ")),
+                2,
+            ),
+            (["--version", "--json"], lambda t: self.assertEqual(json.loads(t).keys(), keys), 1),
         ):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 self.assertEqual(commands.main(argv), 0)
             check(out.getvalue())
-            self.assertEqual(out.getvalue().count("\n"), 1)
+            self.assertEqual(out.getvalue().count("\n"), lines)
+        info = json.loads(out.getvalue())
+        self.assertEqual(info["source"], "checkout")
+        self.assertEqual(info["guest"].keys(), {"version", "commit"})
 
     def test_old_names_refused(self):
         import contextlib

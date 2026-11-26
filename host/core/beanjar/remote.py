@@ -15,6 +15,7 @@ import shlex
 import subprocess
 import tempfile
 import threading
+import time
 from typing import NamedTuple
 
 from . import core, hostconfig
@@ -332,6 +333,34 @@ def call_json(name, uri, argv, timeout=LIST_TIMEOUT):
         raise HostError(
             name, "its beanjar printed no JSON (is it an older beanjar? update it on the host)"
         ) from None
+
+
+def identity(name, uri):
+    """Host name's `beanjar --version --json` object (commands.common.version_info; an older beanjar
+    gives {"name", "version"} only), or None when it cannot be asked or answers with no object.
+    Kept for PERSIST seconds in control_dir(), so that a run of commands asks once."""
+    path = os.path.join(control_dir(), f"version-{name}.json")
+    try:
+        if time.time() - os.stat(path).st_mtime < PERSIST:
+            with open(path) as f:
+                cached = json.load(f)
+            if isinstance(cached, dict) and cached.get("uri") == uri:
+                return cached.get("info")
+    except (OSError, ValueError):
+        pass
+    try:
+        info = call_json(name, uri, ["--version"], timeout=LIST_TIMEOUT)
+    except Error:
+        return None
+    if not isinstance(info, dict):
+        return None
+    try:
+        with open(path + ".tmp", "w") as f:
+            json.dump({"uri": uri, "info": info}, f)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass  # a cache only
+    return info
 
 
 def list_rows(name, uri, show_all=False):

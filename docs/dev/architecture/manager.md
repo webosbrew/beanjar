@@ -170,6 +170,16 @@ interface, and a remote too old for a command fails with an "update beanjar ther
 of a version negotiation. `beanjar/remote.py` holds the hosts, the ssh command line and the name
 resolution; `transport` is the one function that touches the network, replaced in the tests.
 
+A host's packages drift from this machine's checkout between updates, and a forwarded command runs
+the host's code. So the forwarding asks the host's `beanjar --version --json` (the version and
+commit of its `beanjar` and of its guest payload, cached for the connection's minute) and compares
+it with its own (`compat.drift`): a difference is a warning on stderr and a `drift` field in the
+`--json` object, naming both versions and the fix, but never a refusal, since a host and a guest
+of different commits are a supported pairing (the Pi keeps a PC-built guest; a release pairs a host
+with the newest guest of its contract). What actually breaks stays checked by content, and the
+module parameter refusal says when skew explains it. `beanjar host show NAME` shows the comparison
+on demand.
+
 `list` merges the machines' rows (a failing host is a warning, not a failure). A VM is `NAME`
 or `HOST/NAME`; a bare name is looked up everywhere so that no duplicate is hidden, because VM names
 are unique per library only. A host is always asked about its own VMs (`list --local`,

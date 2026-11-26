@@ -89,20 +89,35 @@ def table(rows, columns):
 
 
 def version_info():
-    """{"name", "version"} of this beanjar: the installed package's version, or the checkout's
-    packaging/VERSION marked "(checkout)"."""
+    """`beanjar --version --json`: {"name", "version", "commit", "source", "dirty", "guest"} of this
+    beanjar. source is "package" (the installed package's installation.toml) or "checkout" (the
+    commit the checkout holds); guest is the guest payload's {"version", "commit"}. A commit that
+    cannot be known is null, a version "unknown"."""
     from .. import compat, paths
 
-    version = compat.host_version()
-    if not paths.TREE.installed and version != "unknown":
-        version += " (checkout)"
-    return {"name": "beanjar", "version": version}
+    host = compat.host_identity()
+    return {
+        "name": "beanjar",
+        "version": host["version"],
+        "commit": host["commit"],
+        "source": "package" if paths.TREE.installed else "checkout",
+        "dirty": host["dirty"],
+        "guest": compat.guest_identity(paths.TREE),
+    }
 
 
 def print_version(as_json):
-    """--version: "beanjar VERSION" on stdout, or with --json the {"name", "version"} object."""
+    """--version: "beanjar VERSION" and "beanjar-guest VERSION" on stdout (a checkout's marked so),
+    or with --json the version_info object."""
     info = version_info()
-    print(json.dumps(info) if as_json else f"{info['name']} {info['version']}")
+    if as_json:
+        print(json.dumps(info))
+        return
+    mark = ""
+    if info["source"] == "checkout":
+        mark = " (checkout, uncommitted changes)" if info["dirty"] else " (checkout)"
+    print(f"{info['name']} {info['version']}{mark}")
+    print(f"beanjar-guest {info['guest']['version']}")
 
 
 def late_options(a, args, prog, add=None):

@@ -76,4 +76,7 @@ verb-first rule); its ARGS follow the tool after `--`.
 - One workload per device/VM at a time — serialize installs, launches and
   measurements; never run two against the same target at once.
 - Prefer `HOST/NAME` to address a VM on another host rather than connecting to
-  that host yourself.
+  that host yourself. A `warning: host H runs beanjar ...` (with `--json`, a
+  `drift` field) means that host runs another commit's code than yours: a
+  failure there may be that, and the warning names the fix.
+  `beanjar host show HOST` shows a host's beanjar and guest versions.

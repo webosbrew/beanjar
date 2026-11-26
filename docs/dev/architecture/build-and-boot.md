@@ -264,6 +264,14 @@ The versions are information. Each build lane stamps what it publishes (the host
 missing or unreadable) for logs and messages; its `version` key stays the webOS release. The
 packages' dependency on a guest of the same `0.Y` is a hint for apt, not a runtime check.
 
+The stamps' commits say where skew explains a failure, without refusing anything by them.
+`beanjar --version --json` reports the host's and the guest's version and commit (`compat.host_identity`,
+`compat.guest_identity`: the installation.toml files, or for a checkout the commit it holds); a
+module parameter refusal whose `beanjar` and guest payload come from different commits names both
+and the command that installs or builds the matching guest; and a command forwarded to another
+machine warns when that machine's `beanjar` or guest is another commit's (the manager's "Several
+machines").
+
 VM directories carry no format or version marker. A VM made by an older Beanjar starts as it is;
 if a layout ever changes, the code recognises the old layout by its files at that time. Each start
 makes only the disposable boot files afresh (the run's shares, `boot.conf`); EEPROM, keys and disks

@@ -465,7 +465,7 @@ commands follow is in [AGENTS.md](../../AGENTS.md#follow-the-command-line-guidel
 | `key list NAME` | The item names in `identity/sestore.toml`, and its `missing` policy; never a value. |
 | `library config show` / `library config set KEY=VALUE...` / `library config unset KEY...` | The library's `config.toml`: shown (with `mac_prefix`'s default), or set: `repo auto_reconnect epk2extract mac_prefix lan_parent addresses` (`mac_prefix` three hex octets, unicast; `lan_parent` an existing wired interface of this host, `unset lan_parent` removes it; `addresses` three octets inside 127.0.0.0/8 but not 127.0.0, the prefix of the VMs' addresses, its development libraries' too, changed only while all of them are off: two libraries with different prefixes run their VMs side by side, and each VM's `known_hosts` pins follow at its next start). The GUI has no page for these; only auto_reconnect is in its main menu. |
 | `host config show` / `host config set KEY=VALUE...` / `host config unset KEY...` | This machine's `config.toml` (above): shown, or set: `max_running=N`, how many VMs may run at once on this host, counting every beanjar VM up in `beanjar.slice` (every library's, the development VMs', the regress harness's); `unset max_running` removes the limit. `start` (and the GUI's Start, `vm-launcher start`) beyond it is refused before anything is launched. `firmware_dirs=DIR[:DIR...]`, the host's firmware collections; `unset firmware_dirs` goes back to `/srv/beanjar/firmware`. It reads and makes no library. |
-| `host add NAME URI` / `host remove NAME` / `host list` | The remote hosts of this machine's `config.toml` (see Several machines): add one (`ssh://[USER@]HOST[:PORT]`), remove it, or list the names and URIs (an array with `--json`). They need no library. |
+| `host add NAME URI` / `host remove NAME` / `host list` / `host show NAME` | The remote hosts of this machine's `config.toml` (see Several machines): add one (`ssh://[USER@]HOST[:PORT]`), remove it, list the names and URIs (an array with `--json`), or show one: its `beanjar --version --json` (asked now) and its `drift` from this beanjar (see Versions across machines). They need no library. |
 | `ares-TOOL [--root] -d NAME [ARGS...]` | Runs the webOS SDK tool `ares-TOOL` (`ares-install`, `ares-shell`, `ares-launch`, `ares-novacom`, ...) against the running VM alone, as the developer-mode user `prisoner`, or with `--root` as root over the VM's root SSH, the other arguments passed on as they are, and exits with its status (see ares tools). |
 | `shell [-t \| -T] NAME [[--] CMD [ARG...]]` | A root shell inside webOS on the running VM, or one command, over the VM's own `webos.shell` port: no SSH, developer mode, network or layer (see Shell). Exits with the command's status. |
 | `mitm show NAME [--password]` | The traffic inspector of a running `mode = "mitm"` VM: its mode, status (`Running`, `Inspector is not ready`, `Inspector off: REASON`, `Not running`, ...), whether it is ready, its URL (with `link = "lan"` the LAN one, and `local_url`, the host's way in), its password file, and `mitmweb`: the `version` and `path` the start found and the `problem` that kept the inspector off (no mitmweb, older than 12.0.1, or it failed; the guest then goes out directly); the password itself only with `--password`. |
@@ -1426,9 +1426,13 @@ every verb runs on the VM's host, where its snapshots are. Design and measuremen
   the command's arguments and options; `--json`, `--library` and `--repo` go anywhere (but in
   `shell`'s command); a duration carries its unit (`250ms`, `2s`); a secret is never an argument
   (`vnc password set` and `key model set` read a file or stdin).
-- **Version.** `beanjar --version` prints `beanjar VERSION` and exits 0 (an installed package: its
-  version, such as `0.6.0+git109.geba1f197817a`; a checkout: `packaging/VERSION` followed by
-  `(checkout)`). With `--json` it prints `{"name": "beanjar", "version": "..."}`.
+- **Version.** `beanjar --version` prints `beanjar VERSION` and `beanjar-guest VERSION` and exits 0
+  (an installed package: its version, such as `0.6.0+git109.geba1f197817a`; a checkout: the commit
+  it holds, from git or the `source-identity.toml` a regression run writes, followed by
+  `(checkout)`, or `(checkout, uncommitted changes)`). With `--json` it prints one object:
+  `name` (`beanjar`), `version`, `commit` (the full commit it was built from, `null` when unknown),
+  `source` (`package` or `checkout`), `dirty`, and `guest`, the guest payload's `{"version",
+  "commit"}` (`beanjar-guest`'s, or a checkout's `build/guest-installation.toml`).
 
 ### Native screensaver
 
@@ -1466,6 +1470,21 @@ Requirements: key-based (non-interactive) ssh login to each host, and `beanjar` 
 and on the `PATH` of a non-interactive login. A host's `beanjar` that is too old for what is asked
 (`screenshot NAME -`, added with this feature) fails with a message saying to update it; there is
 no version negotiation.
+
+**Versions across machines.** A command sent to a host runs that host's code, which may be another
+commit's than this machine's. Before it, `beanjar` asks the host's `beanjar --version --json` (kept
+for 60 seconds in the shared connection's directory) and compares it with its own: the host's
+`beanjar` with this one, and the host's guest payload with the host's `beanjar`. Each difference is
+one `beanjar: warning: ...` on stderr, naming both versions and the command that fixes it, and with
+`--json` an item of a `drift` array added to the command's object (its result on stdout, or its
+error on stderr): `host`, `package` (`beanjar` or `beanjar-guest`), `found` and `expected` (each
+`{"version", "commit"}`) and `fix`. A difference never stops the command: the Pi keeps a guest
+built elsewhere, and a package release pairs a host with the newest guest of its `0.Y`. A host
+whose `beanjar` predates this says only its version, whose `g<hex>` is compared. `vnc pipe`,
+`remote pipe` and `mitm` do not ask. `beanjar host show NAME` asks now and shows the same.
+Where a refusal comes from such a difference, its message says so: `start`'s module parameter
+check names the host's `beanjar` and its guest payload when they come from different commits, and
+the command that installs or builds the matching guest.
 
 **Hosts.** Each is a table of this machine's `config.toml` (`$XDG_CONFIG_HOME/beanjar/config.toml`,
 next to `max_running`), made by `beanjar host add`:
