@@ -1598,9 +1598,10 @@ def no_signal_blank(fw, pak_order):
     dirs = sorted({os.path.dirname(p) for p in photos})
     return dict(
         source=f"no signal: {loc[0]}:/{loc[1]} names {len(photos)} photos for the screensaver "
-        f"(etc/palm/defaultSettings.json: general noSignalScreenSaver on), in {', '.join(dirs)}, "
-        "none of them in any pak (factory and store content); the popup hides while it runs "
-        "(Screensaver.qml), so nothing is drawn"
+        f"(etc/palm/defaultSettings.json: general noSignalScreenSaver on), in {', '.join(dirs)}: "
+        "the apps partition's factory gallery, which no pak carries (a real set's comes from the "
+        "factory, a VM has none), and its fallback, the samples of an app no pak of this build "
+        "has; the popup hides while it runs (Screensaver.qml), so the VM draws nothing"
     )
 
 
