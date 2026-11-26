@@ -284,6 +284,23 @@ class CommandsTest(Base):
             self.fake.reply = (status, b"", '{"error": "nope"}\n')
             self.assertEqual(self.beanjar("wipe", "pi/tv")[0], status)
 
+    def test_snapshot(self):
+        """snapshot VERB HOST/NAME [SNAP] runs on the VM's host, where its snapshots are."""
+        self.add(pi={"vms": ["tv"]})
+        for words, remote_line in (
+            (("snapshot", "create", "pi/tv", "base"), "beanjar snapshot create local/tv base"),
+            (("snapshot", "list", "pi/tv", "--json"), "beanjar snapshot list local/tv --json"),
+            (
+                ("--json", "snapshot", "show", "pi/tv", "base"),
+                "beanjar snapshot show local/tv base --json",
+            ),
+            (("snapshot", "reset", "pi/tv", "base"), "beanjar snapshot reset local/tv base"),
+            (("snapshot", "delete", "pi/tv", "base"), "beanjar snapshot delete local/tv base"),
+        ):
+            with self.subTest(words):
+                self.assertEqual(self.beanjar(*words)[0], 0)
+                self.assertEqual(self.fake.calls[-1][:2], ("pi", remote_line))
+
     def test_reason(self):
         """start --reason, status set and unset, config set tags= and stop --force on HOST/NAME
         run on that host, the text as it is (the remote shell gets it quoted), --json at the end

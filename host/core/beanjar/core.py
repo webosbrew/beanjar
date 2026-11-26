@@ -16,6 +16,7 @@ are beanjar_ui's (host/ui). Layout:
                                  VM's firmware (its paks, manifest.toml and cache/, the partition map:
                                  firmware.py), or, with fw an external directory, firmware-cache/ (its map);
                                  start.lock, {"pid": the starting process}: the VM is started once
+                                 snapshots/, its saved states (snapshot.py)
   <library>/vms/.new-*           scratch of a New VM being made (newvm.py)
   <library>/vms/.clone-*         a clone being assembled here, or staged here for a host (clone.py)
 
@@ -1268,6 +1269,9 @@ class Library:
             rc = hostprocs.run_streamed(
                 [*self.launcher(), "start", "--dir", vm.dir, *args], out, cwd=self.repo
             )
+            from . import snapshot
+
+            snapshot.finish_reset(vm.dir, out)  # never a start of a half-restored VM
         except BaseException:
             if not vm.pid():
                 vm.release()
@@ -1397,7 +1401,9 @@ class Library:
         if vm.alive():
             raise Error(f"VM {name} is not off; stop it before wiping")
         parts = list(parts or [])
-        from . import qemu
+        from . import qemu, snapshot
+
+        snapshot.finish_reset(vm.dir, out)  # a reset to a snapshot killed halfway, first
 
         known = targets.state_parts(vm.target())
         bad = [p for p in parts if p not in known]

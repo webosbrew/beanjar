@@ -18,6 +18,7 @@ from . import (
     sensors,
     settings,
     shell,
+    snapshot,
     vms,
 )
 from .common import Parser, Usage, parser_class
@@ -245,6 +246,7 @@ REGISTER = (
     display.register,
     remote_control.register,
     identity.register,
+    snapshot.register,
     settings.register_config,
     register_ares,
     shell.register,

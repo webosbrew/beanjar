@@ -11,6 +11,7 @@ the command here or, for HOST/NAME, on that host (forward.py); ares_main runs an
   display.py         screenshot, elements, viewer, vnc, screensaver
   remote_control.py  remote: pipe, press, pointer and touch, layout
   identity.py        identity reset and authorized-keys, clone, key
+  snapshot.py        snapshot: create, list, show, delete, reset
   sensors.py         sensor show|set: light, presence, temperature, rotate
   devices.py         io: tuner, usb
   mitm.py            mitm

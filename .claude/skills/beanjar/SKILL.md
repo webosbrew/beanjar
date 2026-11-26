@@ -47,6 +47,8 @@ beanjar elements NAME                           # on-screen text/controls (OCR)
 beanjar stop NAME                              # graceful power-off (--force if needed)
 beanjar config show NAME                       # a VM's kept settings
 beanjar config set NAME KEY=VALUE              # change one
+beanjar snapshot create NAME SNAP              # save a set-up VM that is off
+beanjar snapshot reset NAME SNAP               # put it back before a test run
 beanjar delete NAME                            # remove a VM that is off
 ```
 

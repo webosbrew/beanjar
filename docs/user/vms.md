@@ -96,6 +96,10 @@ beanjar stop tv1
 
 Every command takes `--json` for scripts.
 
+- `snapshot create NAME SNAP` saves a set-up VM's state (it must be off), and
+  `snapshot reset NAME SNAP` puts it back before a test run, with every later change gone and the
+  VM's identity kept; `snapshot list NAME`, `snapshot show NAME SNAP` and `snapshot delete NAME
+  SNAP` manage them ([manager README](../../host/core/README.md#snapshots)).
 ## Settings
 
 `beanjar config show NAME` shows a VM's settings and tags, and `config set NAME KEY=VALUE` or
