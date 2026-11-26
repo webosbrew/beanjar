@@ -110,3 +110,18 @@ def test_seeded_disk_sparse(tmp_path):
     assert data[:4] == b"head" and data[64 << 20 : (64 << 20) + 4] == b"tail"
     assert data.count(0) == len(data) - 8
     assert os.stat(img).st_blocks * 512 < 8 << 20
+
+
+@pytest.mark.skipif(not TOOLS, reason="needs squashfs-tools, e2fsprogs and unshare")
+def test_apps_image_sbin_off_path(tmp_path, monkeypatch):
+    """A non-login ssh shell's PATH has no /usr/sbin, where mke2fs is: the image is made anyway."""
+    if not any(os.access(os.path.join(d, "mke2fs"), os.X_OK) for d in ("/usr/sbin", "/sbin")):
+        pytest.skip("mke2fs is not in /usr/sbin or /sbin")
+    root = rootfs(
+        tmp_path, ["thf_config_v1.05_all.json", "trigger_lge_en-US_v1.2_hi_lg_f54306d5.snsr"]
+    )
+    monkeypatch.setattr(factory, "firmware_root", lambda *a: root)
+    monkeypatch.setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
+    out = str(tmp_path / "appstore.img")
+    assert factory.apps_image("FW", ("o22", "queue"), None, out)
+    assert os.path.getsize(out) == 2 << 30

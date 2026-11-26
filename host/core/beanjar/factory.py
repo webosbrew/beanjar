@@ -93,6 +93,11 @@ def apps_image(fw, target, tree, out):
                 f.write(data)
             os.chmod(os.path.join(snsr, n), 0o644)
         env = dict(os.environ)
+        # mke2fs is in /usr/sbin, which a non-login ssh shell (a VM host driven over ssh) leaves
+        # out of PATH; unshare looks it up in the PATH it is given
+        path = env.get("PATH", os.defpath)
+        if "/usr/sbin" not in path.split(os.pathsep):
+            env["PATH"] = os.pathsep.join((path, "/usr/sbin", "/sbin"))
         if conf is not None:
             with open(os.path.join(tmp, "mke2fs.conf"), "wb") as f:
                 f.write(conf)
