@@ -367,6 +367,16 @@ has it.
 `0029` exports `timekeeping_inject_sleeptime64`: lgemu.ko adds the time the host held the VM
 stopped in standby to `CLOCK_REALTIME` and `CLOCK_BOOTTIME` at the resume, as `rtc_resume` does on a
 set, which skips it under suspend-to-idle without a cpuidle driver (docs/dev/architecture/suspend.md).
+`0030` adds LG's `webos-verity` device-mapper target (`CONFIG_DM_WEBOS_VERITY`, built in with
+`DM_VERITY` and its FEC, as LG's kernel has it): apinstaller mounts the adaptive partition
+(`appackage.pak`) only through it. The image carries its own table, AOSP-style (data, hash tree,
+metadata, FEC); the target reads the FEC header and LG's metadata, checks the table's PKCS#7
+signature against the keyring `.webos_verity` and hands the table, with the options LG's kernel
+adds, to the stock verity target, whose operations it shares. The keyring holds the firmware
+kernel's own built-in certificates (`host/core/beanjar/kernelcerts.py`, prepared board data's
+`webos-verity-certs`), which the initramfs writes to `/proc/webos_verity_certs` and seals before
+webOS starts; nothing is compiled in. A bad signature refuses the table, where LG's kernel restarts
+the set (docs/research/w22o-queue-no-signal-black.md).
 
 **How it was derived** (2026-09-28): `allnoconfig` with the options below forced
 (`make allnoconfig KCONFIG_ALLCONFIG=<list>`), booted and compared with the arm64 `defconfig`

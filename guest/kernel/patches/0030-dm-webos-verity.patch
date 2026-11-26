@@ -1,0 +1,467 @@
+dm: LG's webos-verity target
+
+LG's webOS TV kernels have a device-mapper target, webos-verity, that mounts a verity image which
+carries its own table: an AOSP-style image (data, hash tree, metadata, FEC) whose metadata holds
+the verity table and a PKCS#7 signature over it. apinstaller loop-mounts the adaptive partition
+(appackage.pak) through it, and it cannot do without: it checks the target is registered.
+
+This one reads the FEC header and the metadata as LG's does, checks the signature against the
+certificates loaded through /proc/webos_verity_certs (the firmware kernel's own; sealed by an
+empty write or the first table), and hands the table, with the options LG's kernel adds, to the
+verity target, whose operations it shares. A bad signature refuses the table, where LG's kernel
+restarts the set.
+--- a/drivers/md/Kconfig
++++ b/drivers/md/Kconfig
+@@ -605,6 +605,20 @@
+ 
+ 	  If unsure, say N.
+ 
++config DM_WEBOS_VERITY
++	bool "LG webOS verity target"
++	depends on DM_VERITY=y && DM_VERITY_FEC
++	select SYSTEM_DATA_VERIFICATION
++	help
++	  The webos-verity target of LG's webOS TV kernels: a verity device
++	  whose table, hash tree and forward error correction come from the
++	  image itself, its table signed with PKCS#7. The table is verified
++	  against the certificates loaded through /proc/webos_verity_certs
++	  (the firmware kernel's own built-in ones) and handed to the verity
++	  target.
++
++	  If unsure, say N.
++
+ config DM_SWITCH
+ 	tristate "Switch target support (EXPERIMENTAL)"
+ 	depends on BLK_DEV_DM
+--- a/drivers/md/Makefile
++++ b/drivers/md/Makefile
+@@ -105,6 +105,10 @@
+ dm-verity-objs			+= dm-verity-fec.o
+ endif
+ 
++ifeq ($(CONFIG_DM_WEBOS_VERITY),y)
++dm-verity-objs			+= dm-webos-verity.o
++endif
++
+ ifeq ($(CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG),y)
+ dm-verity-objs			+= dm-verity-verify-sig.o
+ endif
+--- a/drivers/md/dm-verity.h
++++ b/drivers/md/dm-verity.h
+@@ -128,4 +128,14 @@
+ extern int dm_verity_get_root_digest(struct dm_target *ti, u8 **root_digest,
+ 				     unsigned int *digest_size);
+ 
++/* dm-webos-verity.c: LG's webos-verity, which reads its verity table from the device */
++extern const struct target_type *dm_verity_target(void);
++#ifdef CONFIG_DM_WEBOS_VERITY
++extern int dm_webos_verity_init(void);
++extern void dm_webos_verity_exit(void);
++#else
++static inline int dm_webos_verity_init(void) { return 0; }
++static inline void dm_webos_verity_exit(void) {}
++#endif
++
+ #endif /* DM_VERITY_H */
+--- a/drivers/md/dm-verity-target.c
++++ b/drivers/md/dm-verity-target.c
+@@ -1710,7 +1710,32 @@
+ 	.preresume	= verity_preresume,
+ #endif /* CONFIG_SECURITY */
+ };
+-module_dm(verity);
++
++/* The verity target, whose operations webos-verity shares (dm-webos-verity.c) */
++const struct target_type *dm_verity_target(void)
++{
++	return &verity_target;
++}
++
++static int __init dm_verity_init(void)
++{
++	int r = dm_register_target(&verity_target);
++
++	if (r)
++		return r;
++	r = dm_webos_verity_init();
++	if (r)
++		dm_unregister_target(&verity_target);
++	return r;
++}
++module_init(dm_verity_init);
++
++static void __exit dm_verity_exit(void)
++{
++	dm_webos_verity_exit();
++	dm_unregister_target(&verity_target);
++}
++module_exit(dm_verity_exit);
+ 
+ /*
+  * Check whether a DM target is a verity target.
+--- /dev/null
++++ b/drivers/md/dm-webos-verity.c
+@@ -0,0 +1,363 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * webos-verity: the device-mapper target of LG's webOS TV kernels that mounts a verity image
++ * which carries its own table, as apinstaller's adaptive partition (appackage.pak, loop-mounted as
++ * /mnt/lg/appstore/ap/main/ap.squashfs) and the images of a super.pak are. Its only argument is
++ * the device ("<dev>" or "<dev> rw", the table "0 1 webos-verity <dev> rw" apinstaller loads); the
++ * rest comes from the image, laid out as AOSP's verity images are:
++ *
++ *   data blocks | hash tree | metadata (32 KiB) | FEC parity | FEC header (last 60 bytes)
++ *
++ * The FEC header (magic 0xfecfecfe, version 0, size 60, roots, fec_size, inp_size) gives the
++ * metadata's offset, inp_size. The metadata is LG's: magic 0xb001b001, version 0, table_length,
++ * signature_length, then the verity table text and a detached PKCS#7 signature over it (AOSP puts
++ * the signature first). The table is the verity target's own, "1 NOT_USED NOT_USED 4096 4096
++ * <data blocks> <hash start> sha256 <root digest> <salt>", with an optional eleventh word, the
++ * mode (0 to 2).
++ *
++ * The signature is checked with verify_pkcs7_signature against the certificates written to
++ * /proc/webos_verity_certs (one DER X.509 list per open; opening and closing it without writing
++ * seals it, as does the first table this target loads). The host writes the firmware kernel's own
++ * built-in certificates there (LG builds its keys into .builtin_trusted_keys, one key per
++ * platform), so no key is compiled in here. A table whose signature does not verify is refused;
++ * LG's kernel restarts the set instead ("webos-verity: triggering restart").
++ *
++ * The verity target then gets the table with the device for both data and hash, its length set
++ * to the data blocks (the 1 sector of the loaded table is a placeholder), and the options LG's
++ * kernel adds: check_at_most_once (but in mode 2), the FEC from the same device at the
++ * metadata's end (fec_start, in 4 KiB blocks) over data, hashes and metadata (fec_blocks: inp_size
++ * rounded up), and ignore_zero_blocks. Everything else is the verity target's: its operations are
++ * this target's, the data is verified block by block against the root digest, FEC corrects what
++ * it can, and a corrupted block reads as an I/O error.
++ */
++
++#include <linux/device-mapper.h>
++#include <linux/fs.h>
++#include <linux/key.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/proc_fs.h>
++#include <linux/slab.h>
++#include <linux/uaccess.h>
++#include <linux/verification.h>
++#include <keys/asymmetric-type.h>
++
++#include "dm-verity.h"
++
++#define DM_MSG_PREFIX "webos-verity"
++
++#define FEC_MAGIC 0xfecfecfe
++#define FEC_HEADER_SIZE 60
++#define FEC_BLOCK_SIZE 4096
++#define METADATA_MAGIC 0xb001b001
++#define METADATA_SIZE (32 * 1024)
++#define METADATA_HEADER 16
++#define TABLE_WORDS 10
++#define MAX_MODE 2
++#define CERTS_MAX (64 * 1024)
++
++struct fec_header {
++	__le32 magic;
++	__le32 version;
++	__le32 size;
++	__le32 roots;
++	__le32 fec_size;
++	__le64 inp_size;
++	u8 hash[32];
++} __packed;
++
++struct metadata_header {
++	__le32 magic;
++	__le32 version;
++	__le32 table_length;
++	__le32 signature_length;
++} __packed;
++
++static struct key *webos_verity_keys;
++/* no key is linked in from userspace (keyctl): only the certificate list loads, bypassing it */
++static struct key_restriction reject_links = { .check = restrict_link_reject };
++static DEFINE_MUTEX(certs_lock);
++static bool certs_sealed;
++static struct target_type webos_verity_target;
++
++static void seal_certs(void)
++{
++	mutex_lock(&certs_lock);
++	if (!certs_sealed)
++		DMINFO("certificates sealed");
++	certs_sealed = true;
++	mutex_unlock(&certs_lock);
++}
++
++struct certs_upload {
++	u8 *buf;
++	size_t len;
++};
++
++static int certs_open(struct inode *inode, struct file *file)
++{
++	struct certs_upload *u;
++
++	if (!capable(CAP_SYS_ADMIN))
++		return -EPERM;
++	if ((file->f_mode & FMODE_WRITE) == 0)
++		return -EINVAL;
++	mutex_lock(&certs_lock);
++	if (certs_sealed) {
++		mutex_unlock(&certs_lock);
++		return -EPERM;
++	}
++	mutex_unlock(&certs_lock);
++	u = kzalloc(sizeof(*u), GFP_KERNEL);
++	if (!u)
++		return -ENOMEM;
++	file->private_data = u;
++	return 0;
++}
++
++static ssize_t certs_write(struct file *file, const char __user *ubuf, size_t count, loff_t *ppos)
++{
++	struct certs_upload *u = file->private_data;
++	u8 *buf;
++
++	if (count > CERTS_MAX - u->len)
++		return -EFBIG;
++	buf = krealloc(u->buf, u->len + count, GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++	u->buf = buf;
++	if (copy_from_user(u->buf + u->len, ubuf, count))
++		return -EFAULT;
++	u->len += count;
++	*ppos += count;
++	return count;
++}
++
++/* the certificates written, or with none the seal, take effect at the close */
++static int certs_release(struct inode *inode, struct file *file)
++{
++	struct certs_upload *u = file->private_data;
++
++	mutex_lock(&certs_lock);
++	if (!certs_sealed && u->len)
++		x509_load_certificate_list(u->buf, u->len, webos_verity_keys);
++	mutex_unlock(&certs_lock);
++	if (!u->len)
++		seal_certs();
++	kfree(u->buf);
++	kfree(u);
++	return 0;
++}
++
++static const struct proc_ops certs_ops = {
++	.proc_open = certs_open,
++	.proc_write = certs_write,
++	.proc_release = certs_release,
++	.proc_lseek = noop_llseek,
++};
++
++static int read_at(struct dm_dev *dev, void *buf, size_t len, loff_t pos)
++{
++	ssize_t n = kernel_read(dev->bdev_file, buf, len, &pos);
++
++	if (n < 0)
++		return n;
++	return n == len ? 0 : -EIO;
++}
++
++static int webos_verity_ctr(struct dm_target *ti, unsigned int argc, char **argv)
++{
++	const struct target_type *verity = dm_verity_target();
++	struct fec_header fec;
++	struct metadata_header *meta = NULL;
++	char *table = NULL, *words[TABLE_WORDS + 1], *cur, *w;
++	char *args[TABLE_WORDS + 11];
++	char fec_start[24], fec_blocks[24], fec_roots[12], nopt[4];
++	unsigned long long data_blocks, inp_size, data_sectors;
++	unsigned int data_block_size, mode = 1, n = 0, i;
++	struct dm_dev *dev;
++	loff_t size;
++	u32 table_length, signature_length, roots;
++	char dummy;
++	int r;
++
++	if (argc < 1 || argc > 2 || (argc == 2 && strcmp(argv[1], "rw"))) {
++		ti->error = "Incorrect number of arguments";
++		return -EINVAL;
++	}
++	seal_certs();
++
++	r = dm_get_device(ti, argv[0], BLK_OPEN_READ, &dev);
++	if (r) {
++		ti->error = "Device lookup failed";
++		return r;
++	}
++	size = bdev_nr_bytes(dev->bdev);
++
++	/* the FEC header, the last 60 bytes of the image */
++	r = size < FEC_BLOCK_SIZE ? -EINVAL : read_at(dev, &fec, sizeof(fec), size - FEC_HEADER_SIZE);
++	if (r || le32_to_cpu(fec.magic) != FEC_MAGIC || le32_to_cpu(fec.version) != 0 ||
++	    le32_to_cpu(fec.size) != FEC_HEADER_SIZE) {
++		ti->error = "Error while extracting fec header";
++		r = r ?: -EINVAL;
++		goto out;
++	}
++	roots = le32_to_cpu(fec.roots);
++	inp_size = le64_to_cpu(fec.inp_size);
++	if (roots < 1 || roots > 254 || inp_size > size - METADATA_SIZE) {
++		ti->error = "Error while extracting fec header";
++		r = -EINVAL;
++		goto out;
++	}
++
++	/* the metadata at inp_size: the table and its signature */
++	meta = kmalloc(METADATA_SIZE + 1, GFP_KERNEL);
++	if (!meta) {
++		r = -ENOMEM;
++		goto out;
++	}
++	r = read_at(dev, meta, METADATA_SIZE, inp_size);
++	if (r) {
++		ti->error = "Error while reading verity metadata";
++		goto out;
++	}
++	if (le32_to_cpu(meta->magic) != METADATA_MAGIC || le32_to_cpu(meta->version) != 0) {
++		ti->error = "Incorrect magic number";
++		r = -EINVAL;
++		goto out;
++	}
++	table_length = le32_to_cpu(meta->table_length);
++	signature_length = le32_to_cpu(meta->signature_length);
++	if (table_length > METADATA_SIZE - METADATA_HEADER ||
++	    signature_length > METADATA_SIZE - METADATA_HEADER - table_length) {
++		ti->error = "table_length too long";
++		r = -EINVAL;
++		goto out;
++	}
++	r = verify_pkcs7_signature((u8 *)meta + METADATA_HEADER, table_length,
++				   (u8 *)meta + METADATA_HEADER + table_length, signature_length,
++				   webos_verity_keys, VERIFYING_UNSPECIFIED_SIGNATURE, NULL, NULL);
++	if (r) {
++		DMERR("Signature verification failed (%d)", r);
++		ti->error = "Signature verification failed";
++		goto out;
++	}
++	DMINFO("Signature verification success");
++
++	table = kmemdup_nul((char *)meta + METADATA_HEADER, table_length, GFP_KERNEL);
++	if (!table) {
++		r = -ENOMEM;
++		goto out;
++	}
++	cur = table;
++	while ((w = strsep(&cur, " \n")) != NULL) {
++		if (!*w)
++			continue;
++		if (n == ARRAY_SIZE(words)) {
++			n++;
++			break;
++		}
++		words[n++] = w;
++	}
++	if (n < TABLE_WORDS || n > TABLE_WORDS + 1 ||
++	    (n == TABLE_WORDS + 1 && (sscanf(words[TABLE_WORDS], "%u%c", &mode, &dummy) != 1 ||
++				      mode > MAX_MODE)) ||
++	    sscanf(words[3], "%u%c", &data_block_size, &dummy) != 1 ||
++	    sscanf(words[5], "%llu%c", &data_blocks, &dummy) != 1 ||
++	    data_block_size < SECTOR_SIZE || data_block_size % SECTOR_SIZE) {
++		ti->error = "Verity table not in the expected format";
++		r = -EINVAL;
++		goto out;
++	}
++	if (check_mul_overflow(data_blocks, (unsigned long long)(data_block_size >> SECTOR_SHIFT),
++			       &data_sectors) || data_sectors > (size >> SECTOR_SHIFT)) {
++		ti->error = "data_sectors too large";
++		r = -EINVAL;
++		goto out;
++	}
++
++	/* the verity target's table: the device for data and hashes, and LG's options */
++	for (i = 0; i < TABLE_WORDS; i++)
++		args[i] = words[i];
++	args[1] = argv[0];
++	args[2] = argv[0];
++	i = TABLE_WORDS + 1;
++	if (mode != 2)
++		args[i++] = "check_at_most_once";
++	args[i++] = "use_fec_from_device";
++	args[i++] = argv[0];
++	args[i++] = "fec_start";
++	snprintf(fec_start, sizeof(fec_start), "%llu", (inp_size + METADATA_SIZE) / FEC_BLOCK_SIZE);
++	args[i++] = fec_start;
++	args[i++] = "fec_blocks";
++	snprintf(fec_blocks, sizeof(fec_blocks), "%llu", DIV_ROUND_UP(inp_size, FEC_BLOCK_SIZE));
++	args[i++] = fec_blocks;
++	args[i++] = "fec_roots";
++	snprintf(fec_roots, sizeof(fec_roots), "%u", roots);
++	args[i++] = fec_roots;
++	args[i++] = "ignore_zero_blocks";
++	snprintf(nopt, sizeof(nopt), "%u", i - TABLE_WORDS - 1);
++	args[TABLE_WORDS] = nopt;
++
++	DMINFO("dev:%s mode:%u data sectors %llu", argv[0], mode, data_sectors);
++	dm_put_device(ti, dev);
++	dev = NULL;
++	ti->len = data_sectors;
++	r = verity->ctr(ti, i, args);
++	if (r)
++		DMERR("webos-verity failed to create a verity target: %s", ti->error);
++	else
++		DMINFO("webos-verity created as verity target");
++out:
++	if (dev)
++		dm_put_device(ti, dev);
++	kfree(table);
++	kfree(meta);
++	return r;
++}
++
++int __init dm_webos_verity_init(void)
++{
++	const struct target_type *verity = dm_verity_target();
++	int r;
++
++	webos_verity_keys = keyring_alloc(".webos_verity", GLOBAL_ROOT_UID, GLOBAL_ROOT_GID,
++					  current_cred(),
++					  (KEY_POS_ALL & ~KEY_POS_SETATTR) | KEY_USR_VIEW |
++					  KEY_USR_READ | KEY_USR_SEARCH,
++					  KEY_ALLOC_NOT_IN_QUOTA, &reject_links, NULL);
++	if (IS_ERR(webos_verity_keys))
++		return PTR_ERR(webos_verity_keys);
++	if (!proc_create("webos_verity_certs", 0200, NULL, &certs_ops)) {
++		key_put(webos_verity_keys);
++		return -ENOMEM;
++	}
++	webos_verity_target = (struct target_type) {
++		.name = "webos-verity",
++		.features = verity->features,
++		.version = {1, 0, 0},
++		.module = verity->module,
++		.ctr = webos_verity_ctr,
++		.dtr = verity->dtr,
++		.map = verity->map,
++		.postsuspend = verity->postsuspend,
++		.status = verity->status,
++		.prepare_ioctl = verity->prepare_ioctl,
++		.iterate_devices = verity->iterate_devices,
++		.io_hints = verity->io_hints,
++		.preresume = verity->preresume,
++	};
++	r = dm_register_target(&webos_verity_target);
++	if (r) {
++		remove_proc_entry("webos_verity_certs", NULL);
++		key_put(webos_verity_keys);
++	}
++	return r;
++}
++
++void dm_webos_verity_exit(void)
++{
++	dm_unregister_target(&webos_verity_target);
++	remove_proc_entry("webos_verity_certs", NULL);
++	key_put(webos_verity_keys);
++}

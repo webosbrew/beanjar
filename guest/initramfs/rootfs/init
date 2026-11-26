@@ -187,6 +187,19 @@ if [ -n "${PERIPHERAL_MODULES:-}" ]; then
 	fi
 fi
 
+# --- the webos-verity target's trusted certificates (guest/kernel/patches/0030-dm-webos-verity.patch):
+# the firmware kernel's own built-in ones, which the launcher put at /host/webos-verity-certs
+# (targets.verity_certs), as LG's kernel has them in its .builtin_trusted_keys; then the empty
+# write that seals the list, before anything of webOS runs, also when the firmware has none. ---
+if [ -e /proc/webos_verity_certs ]; then
+	if [ -f /host/webos-verity-certs ]; then
+		cat /host/webos-verity-certs > /proc/webos_verity_certs &&
+			log "webos-verity: the firmware kernel's certificates loaded" ||
+			log "webos-verity: the certificates could not be loaded"
+	fi
+	: > /proc/webos_verity_certs
+fi
+
 # --- the per-VM layer: the read-only share "vm", RUN_DIR/share/vm, which the launcher assembles
 # from the VM's identity directory at each start (host/core/beanjar/qemu.py guest_layer). boot.conf's LAYERS has it as "vm", on top of every other layer.
 mkdir -p /run/vm
