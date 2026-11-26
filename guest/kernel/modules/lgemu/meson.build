@@ -6,7 +6,7 @@
 # the Image it is loaded into. guest/initramfs/rootfs/init loads it from the initramfs; it is published as
 # build/lgemu.ko too, for a manual rmmod/insmod from /host.
 lgemu_dir = kernel_root / 'lgemu'
-lgemu_inputs = kbuild + [files('Kbuild', 'core.c', 'lgemu.h', 'partinfo.c', 'emmc.c', 'low_mem_notify.c', 'i2c.c', 'accel.c', 'light.c', 'tof.c', 'ledmicom.c', 'thermal.c', 'fb.c', 'micom-rtc.c', 'micom-rtc.h', 'lgib.c', 'lgemu-i2c.h',
+lgemu_inputs = kbuild + [files('Kbuild', 'core.c', 'lgemu.h', 'partinfo.c', 'emmc.c', 'low_mem_notify.c', 'i2c.c', 'accel.c', 'light.c', 'tof.c', 'ledmicom.c', 'dlpc.c', 'thermal.c', 'fb.c', 'micom-rtc.c', 'micom-rtc.h', 'lgib.c', 'lgemu-i2c.h',
                              'i2c_adapters.c', 'drv.c', 'lgemu-drv.h', 'snd.c', 'mic.c', 'video.c', 'v4l2-vsc.c', 'v4l2-hdmi.c', 'earc.c', 'capture.c', 'capture-histogram.c', 'v4l2-capture.c', 'cec.c', 'sestore.c', 'tee.c', 'lgemu-tee.h',
                              '../../../../include/webos-sestore.h',
                              '../../../../include/webos-capture.h', '../../../../include/webos-media.h', '../../../../include/webos-ir.h', '../../../../include/webos-video.h')]

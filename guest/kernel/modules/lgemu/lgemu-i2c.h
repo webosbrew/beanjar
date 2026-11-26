@@ -24,6 +24,7 @@ enum lgemu_i2c_device {
     LGEMU_I2C_TOF,      /* the ToF motion sensor, a TMF8821: TMF882X_SENSOR_N (tof.c) */
     LGEMU_I2C_TUNER,    /* a Silicon Labs Si21xx tuner's command interface: idle, always ready */
     LGEMU_I2C_LEDMICOM, /* the OLED Flex's gaming LED micom: GAMING_LED_MICOM (ledmicom.c) */
+    LGEMU_I2C_DLPC,     /* a projector's DLP controller, a TI DLPC6540: DPP6540 (dlpc.c) */
 };
 
 /* One transfer to dev: num messages (msgs[i].addr is not read: the caller chose dev by it), each
@@ -41,7 +42,7 @@ int lgemu_i2c_user_xfer(enum lgemu_i2c_device dev, u16 addr, const u8 *sub, u16 
                         void __user *data, u32 size, bool read);
 
 /* A bus module's parameter "device:n1[:n2...]" (device: micom, nvm, amp, accel, light1, light2,
- * tof, tuner or ledmicom):
+ * tof, tuner, ledmicom or dlpc):
  * the device and the count numbers after it (kstrtouint, base 0), or -EINVAL. */
 int lgemu_i2c_parse(const char *spec, enum lgemu_i2c_device *dev, unsigned int *nums, int count);
 
@@ -53,5 +54,7 @@ int lgemu_light_xfer(int type, struct i2c_msg *msgs, int num);
 int lgemu_tof_xfer(struct i2c_msg *msgs, int num);
 /* ledmicom.c: one transfer to the gaming LED micom, as lgemu_i2c_xfer's; 0. */
 int lgemu_ledmicom_xfer(struct i2c_msg *msgs, int num);
+/* dlpc.c: one transfer to the DLP controller, as lgemu_i2c_xfer's; 0. */
+int lgemu_dlpc_xfer(struct i2c_msg *msgs, int num);
 
 #endif

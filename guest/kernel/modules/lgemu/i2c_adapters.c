@@ -37,8 +37,8 @@ static int i2c_dev_count;
 module_param_array(i2c_dev, charp, &i2c_dev_count, 0444);
 MODULE_PARM_DESC(i2c_dev,
                  "i2c_adapters: the board's I2C devices on them, device:bus:addr "
-                 "(micom, nvm, amp, accel, light1, light2, tof, ledmicom; bus one of i2c_buses; "
-                 "the 7-bit address)");
+                 "(micom, nvm, amp, accel, light1, light2, tof, ledmicom, dlpc; bus one of "
+                 "i2c_buses; the 7-bit address)");
 
 struct lgemu_adapter {
     struct i2c_adapter adap;
