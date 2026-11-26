@@ -1,8 +1,10 @@
 # MStar's drivers under KADP: M2's
-# two 512 MiB MIUs, MIU1 at MStar's MIU_INTERVAL, their ARM bus addresses; LG's mmapger has
-# 89 records (KADP's MAdp_SYS_GetMMAP takes ids 0-88), LX_MEM is id 1 and LX_MEM2 id 67
-# (MAdp_MPool_Init), each record gets 8 MiB (the emulator's layout, not a firmware's); W16R's
-# MAdp_MPool_Init adds 0x40000000 to SYS_INFO's LX_MEM2_ADDR before it compares (lx_mem2_bias).
+# two 512 MiB MIUs, MIU1 at MStar's MIU_INTERVAL, their ARM bus addresses; LG's mmapger records
+# are the board's own (derived "mstar-mboot": host/helpers/mstar/mboot-mmap.py reads them out of
+# boot.pak's MBoot, the one of its three tables bsppart's TEE mmap.ini agrees with: 89 records in
+# W16R 05.70.50, which KADP's MAdp_SYS_GetMMAP takes as ids 0-88; docs/research/device-coverage.md);
+# LX_MEM is id 1 and LX_MEM2 id 67 (MAdp_MPool_Init); W16R's MAdp_MPool_Init adds 0x40000000 to
+# SYS_INFO's LX_MEM2_ADDR before it compares (lx_mem2_bias).
 # Registers read back what was written, 0 before; beyond that (MStar's register interface,
 # RIU: PM at 0x1f000000, non-PM at 0x1f200000): reg_init, the CPU clock non-PM 0x10cc0-2
 # (HAL_CPU_QueryClock divides 0xa2000008 by it; this is 1 GHz), and the CI slot empty: PCMCIA's
@@ -41,8 +43,6 @@ params = [
     "miu_len=0x20000000",
     "miu0_bus=0x20000000",
     "miu1_bus=0xa0000000",
-    "mmap_ids=89",
-    "mmap_slot=0x800000",
     "lx_mem_id=1",
     "lx_mem2_id=67",
     "lx_mem2_bias=0x40000000",
@@ -54,3 +54,4 @@ params = [
     "xc_window=19,52,50,245,247,193",
     "xc_riu=0x1f000000:0x130000",
 ]
+derived = "mstar-mboot"

@@ -127,11 +127,11 @@ def test_mstar_name_tables():
 
 
 def test_effective_override_actionable():
-    target = ("m2", "dreadlocks")
-    with pytest.raises(targets.Error, match=r"m2-dreadlocks: mstar-utopia.ko.*mmap_slot"):
+    target = ("m3", "goldilocks")
+    with pytest.raises(targets.Error, match=r"m3-goldilocks: mstar-utopia.ko.*mmap_slot"):
         targets.boot_conf(target, [], vm={"mstar-utopia": ("mmap_slot=1",)})
     m = module(target)
-    memory.validate(m.name, m.params + ("mmap_slot=1", "mmap_slot=0x800000"))
+    memory.validate(m.name, m.params + ("mmap_slot=1", "mmap_slot=0x400000"))
 
 
 def test_realtek():

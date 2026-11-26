@@ -209,15 +209,17 @@ def test_target_wiring():
 
     m = targets.SocModule("mstar-utopia", ("miu_interval=0x80000000", "miu_len=0x20000000"))
     m = m._replace(derived="mstar-mboot")
-    soc = targets.soc(("m2", "dreadlocks"))._replace(modules=(m,))
+    soc = targets.soc(("m3", "goldilocks"))._replace(modules=(m,))
     with mock.patch.object(targets, "soc", return_value=soc):
         # the import keeps the MBoot the records are read from
-        assert "boot" in targets.pak_files(("m2", "dreadlocks"))
+        assert "boot" in targets.pak_files(("m3", "goldilocks"))
         result = mock.Mock(returncode=0, stdout="/cache/mmap.bin\nmmap_ids=89\n", stderr="")
         with mock.patch.object(targets.subprocess, "run", return_value=result) as run:
-            assert targets.derived_params(("m2", "dreadlocks"), "fw", "name") == {
+            assert targets.derived_params(("m3", "goldilocks"), "fw", "name") == {
                 "mstar-utopia": ("mmap_ids=89", "mmap_file=/host/mstar-mmap.bin")
             }
         argv = run.call_args[0][0]
         assert argv[1] == targets.MBOOT_MMAP and "--cache" not in argv
-    assert "boot" not in targets.pak_files(("m2", "dreadlocks"))
+    # W16R's (M2) records are its MBoot's; M3's stay configured
+    assert "boot" in targets.pak_files(("m2", "dreadlocks"))
+    assert "boot" not in targets.pak_files(("m3", "goldilocks"))

@@ -34,6 +34,9 @@ MSTAR_DERIVED = (
     "gop_fb=60",
     "mmap_file=/host/mstar-mmap.bin",
 )
+# made-up parameters of an "mstar-mboot" module (targets._mstar_mmap: W16R 05.70.50's count)
+MBOOT_DERIVED = ("mmap_ids=89", "mmap_file=/host/mstar-mmap.bin")
+MMAP_DERIVED = {"mstar-mmap": MSTAR_DERIVED, "mstar-mboot": MBOOT_DERIVED}
 
 
 SYSTEMD_ROW = targets.RELEASES["dreadlocks"]._replace(
@@ -220,7 +223,13 @@ class BootConfTest(unittest.TestCase):
     def test_w16r(self):
         """bsppart is attached but mounted nowhere: its bsp/ is a lower layer; license is a pak."""
         with tempfile.NamedTemporaryFile("w", suffix=".conf") as f:
-            f.write(targets.boot_conf(("m2", "dreadlocks"), ["headless", "webos", "soc", "common"]))
+            f.write(
+                targets.boot_conf(
+                    ("m2", "dreadlocks"),
+                    ["headless", "webos", "soc", "common"],
+                    {"mstar-utopia": MBOOT_DERIVED},
+                )
+            )
             f.flush()
             conf = boot_conf(f.name)
         self.assertEqual(
@@ -455,13 +464,19 @@ class BootConfTest(unittest.TestCase):
         self.assertIn("lx_mem2_bias=0", conf["MODULE_PARAMS_mstar_utopia"].split())
         # the TEE (mmap.ini, the mailbox) on M3 only
         self.assertIn("secure_shm_id=7", conf["MODULE_PARAMS_mstar_utopia"].split())
-        self.assertNotIn("secure_shm_id", targets.boot_conf(("m2", "dreadlocks"), ["webos"]))
+        self.assertNotIn(
+            "secure_shm_id",
+            targets.boot_conf(("m2", "dreadlocks"), ["webos"], {"mstar-utopia": MBOOT_DERIVED}),
+        )
         self.assertEqual(
             conf["MODULE_PARAMS_lgemu"],
             "i2c_buses=0,1,2,3,4,5,6 i2c_dev=micom:4:0x29,nvm:6:0x50,amp:0:0x2a,amp:0:0x2b",
         )
         # a target without lgemu parameters has no such line (init's default stays empty)
-        self.assertNotIn("MODULE_PARAMS_lgemu", targets.boot_conf(("m2", "dreadlocks"), ["webos"]))
+        self.assertNotIn(
+            "MODULE_PARAMS_lgemu",
+            targets.boot_conf(("m2", "dreadlocks"), ["webos"], {"mstar-utopia": MBOOT_DERIVED}),
+        )
 
     def test_part_nodes(self):
         """The eMMC partitions' nodes go to init as N:serial (qemu.part_nodes makes them)."""
@@ -489,7 +504,7 @@ class BootConfTest(unittest.TestCase):
                         target,
                         ["webos"],
                         {
-                            m.name: (MSTAR_DERIVED if m.derived == "mstar-mmap" else ())
+                            m.name: MMAP_DERIVED.get(m.derived, ())
                             for m in targets.soc(target).modules
                             if m.derived
                         },
@@ -520,7 +535,11 @@ class BootConfTest(unittest.TestCase):
         row = SYSTEMD_ROW
         with mock.patch.dict(targets.RELEASES, {"systemdtest": row}):
             with tempfile.NamedTemporaryFile("w", suffix=".conf") as f:
-                f.write(targets.boot_conf(("m2", "systemdtest"), ["webos"]))
+                f.write(
+                    targets.boot_conf(
+                        ("m2", "systemdtest"), ["webos"], {"mstar-utopia": MBOOT_DERIVED}
+                    )
+                )
                 f.flush()
                 conf = boot_conf(f.name)
             self.assertEqual(
@@ -534,7 +553,9 @@ class BootConfTest(unittest.TestCase):
         ):
             with mock.patch.dict(targets.RELEASES, {"systemdtest": bad}):
                 with self.assertRaises(ValueError, msg=bad.init_system + " " + bad.pmlog_mode):
-                    targets.boot_conf(("m2", "systemdtest"), ["webos"])
+                    targets.boot_conf(
+                        ("m2", "systemdtest"), ["webos"], {"mstar-utopia": MBOOT_DERIVED}
+                    )
 
     def test_userland(self):
         """USERLAND="qemu-user" only when asked; init registers /host/qemu-arm for it."""
@@ -692,10 +713,8 @@ class BootConfTest(unittest.TestCase):
         derived parameters where the chip has some): a change to the tables' output is a change there."""
         for target in targets.all_targets():
             derived = {
-                m.name: (
-                    MSTAR_DERIVED
-                    if m.derived == "mstar-mmap"
-                    else ("rpc_reply=100:108:68", "rpc_create=100:10,201:1")
+                m.name: MMAP_DERIVED.get(
+                    m.derived, ("rpc_reply=100:108:68", "rpc_create=100:10,201:1")
                 )
                 for m in targets.soc(target).modules
                 if m.derived
@@ -828,14 +847,22 @@ class BootConfTest(unittest.TestCase):
                         targets.boot_conf(
                             target,
                             [],
-                            {m.name: () for m in targets.soc(target).modules if m.derived},
+                            {
+                                m.name: MMAP_DERIVED.get(m.derived, ())
+                                for m in targets.soc(target).modules
+                                if m.derived
+                            },
                             fw=d,
                             broadcast=targets.board_broadcast(target, d),
                         ),
                         targets.boot_conf(
                             target,
                             [],
-                            {m.name: () for m in targets.soc(target).modules if m.derived},
+                            {
+                                m.name: MMAP_DERIVED.get(m.derived, ())
+                                for m in targets.soc(target).modules
+                                if m.derived
+                            },
                         ),
                         targets.name(target),
                     )
@@ -1640,9 +1667,9 @@ class BootConfTest(unittest.TestCase):
         self.assertEqual(targets.root_pak(("m2", "simplesmart")), "root")
         self.assertEqual(targets.always_layers(("m2", "simplesmart")), ("simplesmart",))
         self.assertEqual(targets.always_layers(H13_AFRO), ("webos", "soc", "common"))
-        # SS1A's own M2 row; W16R's stays the chip's
+        # SS1A's own M2 row; W16R's stays the chip's, with its MBoot's records
         self.assertIn("mmap_ids=90", targets.soc(("m2", "simplesmart")).modules[0].params)
-        self.assertIn("mmap_ids=89", targets.soc(("m2", "dreadlocks")).modules[0].params)
+        self.assertEqual(targets.soc(("m2", "dreadlocks")).modules[0].derived, "mstar-mboot")
 
     def test_pci_budget(self):
         """Devices that fit the root bus stay as they are; past its 31 slots every disk goes
@@ -1713,7 +1740,7 @@ class InitBootConfTest(unittest.TestCase):
                 target,
                 ["webos"],
                 {
-                    m.name: (MSTAR_DERIVED if m.derived == "mstar-mmap" else ())
+                    m.name: MMAP_DERIVED.get(m.derived, ())
                     for m in targets.soc(target).modules
                     if m.derived
                 },
