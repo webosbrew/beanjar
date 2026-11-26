@@ -1582,6 +1582,17 @@ def tee_module(target):
 TEE_CLIENT = "usr/bin/tee-supplicant"
 
 
+# The adaptive partition's pak (an optional Pak of the release: queue's), which the guest puts on
+# the apps partition and apinstaller mounts through LG's webos-verity target
+ADAPTIVE_PARTITION = "appackage"
+
+
+def adaptive_partition(target, fw):
+    """Whether the firmware directory fw has the adaptive partition (ADAPTIVE_PARTITION) among
+    the paks its target attaches."""
+    return any(p.file == ADAPTIVE_PARTITION for p in release(target, fw).paks)
+
+
 def tee_device(target, fw):
     """lgemu.ko's parameters for a firmware fw (a directory with the paks) with OP-TEE's client
     (TEE_CLIENT) on a chip none of whose modules stands in for its TAs (tee_module): ("tee=1",),

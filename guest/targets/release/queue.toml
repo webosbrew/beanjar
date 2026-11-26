@@ -7,6 +7,21 @@
 base = "ponytail"
 version = "26"
 cap_last_cap = 40
+# ponytail's paks, and the adaptive partition, appackage.pak: apps that W22O 43.21.89 and W22H
+# 43.22.73 moved out of the rootfs (profile.json's adaptivePartition.appList, mediadiscovery with
+# Live TV's no-signal photos among them). Only these qilian builds ship it (optional). On a set it
+# lives on the apps partition as /mnt/lg/appstore/ap/main/ap.squashfs, which apinstaller mounts
+# through LG's webos-verity target; the webos layer's adaptive-partition.sh puts it there from
+# this disk at the first boot, as the factory or the update service leaves it.
+paks = [
+    { file = "rootfs", serial = "rootfs", mount = "/" },
+    { file = "bsppart", serial = "bsppart" },
+    { file = "otncabi-global", serial = "otncabi", mount = "/mnt/otncabi" },
+    { file = "otycabi-global", serial = "otycabi", mount = "/mnt/otycabi" },
+    { file = "fonts-global", serial = "fonts", mount = "/mnt/fonts" },
+    { file = "license", serial = "license", mount = "/mnt/license" },
+    { file = "appackage", serial = "appackage", optional = true },
+]
 peripherals = [
     "sit",
     "usbhid", "uhid", "joydev", "input-leds", "hid-axff", "hid-dr", "hid-logitech",

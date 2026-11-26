@@ -884,8 +884,10 @@ class BootConfTest(unittest.TestCase):
             self.assertEqual(targets.firmware_broadcast(jp), "arib")
             self.assertEqual(
                 [p.file for p in targets.paks(o22q, jp)],
-                ["rootfs", "bsppart", "otncabi-arib", "otycabi-arib", "fonts-arib", "license"],
-            )
+                # and the adaptive partition, which W22O 43.21.89 ships (an optional pak)
+                ["rootfs", "bsppart", "otncabi-arib", "otycabi-arib", "fonts-arib", "license",
+                 "appackage"],
+            )  # fmt: skip
             self.assertEqual(
                 targets.pak_files(o22q, jp),
                 tuple(f.replace("-global", "-arib") for f in targets.pak_files(o22q)),

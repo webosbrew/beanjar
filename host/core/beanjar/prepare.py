@@ -23,6 +23,9 @@ development VMs and the regress instances have one too):
   macadr.img      the macadr partition as the factory leaves it (macadr.py: the MAC and the
                   identity's LGUDID), where the release's LG code reads the LGUDID (Release.lgudid);
                   the launcher attaches it with its writes discarded at power-off
+  webos-verity-certs  the firmware kernel's built-in X.509 certificates (kernelcerts.py), where
+                  the firmware has an adaptive partition: the share's /host/webos-verity-certs,
+                  which the guest's webos-verity checks the partition's table against
 
 What it depends on, and how a start tells it is stale without reading the firmware: the inputs
 (this module's VERSION and lls.VERSION, the firmware's directory, the target, the effective
@@ -48,10 +51,10 @@ import shutil
 import subprocess
 import sys
 
-from . import fwcache, lls, macadr, nvm, partmap, paths, targets, vmidentity
+from . import fwcache, kernelcerts, lls, macadr, nvm, partmap, paths, targets, vmidentity
 from .base import identity_dir
 
-VERSION = 7
+VERSION = 8
 DIR = "prepared"
 # the panel's refresh where the firmware's own decode of the board is not run (before webOS 5)
 DEFAULT_PANEL_HZ = 60
@@ -60,6 +63,8 @@ PARTINFO = "partinfo.img"
 EEPROM = "eeprom.img"
 RECORDS = "records.txt"
 MACADR = "macadr.img"
+# the firmware kernel's built-in certificates (kernelcerts.py), /host/webos-verity-certs in the guest
+VERITY_CERTS = "webos-verity-certs"
 
 
 class Error(Exception):
@@ -205,6 +210,7 @@ def stale(job):
         )
         return "made from other files (" + ", ".join(os.path.basename(p) for p in diff[:3]) + ")"
     own = [PARTINFO] if targets.board_data(job.target) else []
+    own += [VERITY_CERTS] if VERITY_CERTS in (record.get("derived_files") or {}) else []
     for name in own + [n for n in (EEPROM, RECORDS, MACADR) if record.get(n)]:
         if not os.path.isfile(os.path.join(job.dir, name)):
             return f"missing its {name}"
@@ -223,7 +229,10 @@ class Prepared:
         self.local_key = record.get("local_key")
         self.panel_hz = record.get("panel_hz") or DEFAULT_PANEL_HZ
         self.derived_params = {k: tuple(v) for k, v in (record.get("derived_params") or {}).items()}
-        self.derived_files = dict(record.get("derived_files") or {})
+        # a relative path is one in the prepared directory (VERITY_CERTS), which a rename moves
+        self.derived_files = {
+            k: os.path.join(job.dir, v) for k, v in (record.get("derived_files") or {}).items()
+        }
         image = records = None
         if record.get(EEPROM):
             with open(os.path.join(job.dir, EEPROM), "rb") as f:
@@ -331,7 +340,15 @@ def _make(job, new, say):
         files = targets.derived_files(job.target, job.fw, job.fw_name)
     except targets.Error as e:
         raise Error(str(e)) from None
-    record["derived_files"] = files
+    record["derived_files"] = dict(files)
+    # the firmware kernel's built-in certificates, which its webos-verity checks the adaptive
+    # partition's table against (kernelcerts.py), where the firmware has the partition
+    if targets.adaptive_partition(job.target, job.fw):
+        try:
+            kernelcerts.write(job.fw, os.path.join(new, VERITY_CERTS))
+        except (kernelcerts.Error, OSError) as e:
+            raise Error(f"the kernel's certificates: {e}") from None
+        record["derived_files"][VERITY_CERTS] = VERITY_CERTS  # in the VM's directory
     # /dev/tee0 with no TA where the firmware has OP-TEE's client and no chip module has its TAs
     try:
         tee = targets.tee_device(job.target, job.fw)
