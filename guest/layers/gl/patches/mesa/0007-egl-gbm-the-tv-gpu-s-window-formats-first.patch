@@ -7,9 +7,11 @@ config's EGL_NATIVE_VISUAL_ID. On the set that matches: the Mali r46p0 GBM winsy
 gbm_get_configs) makes window configs of XBGR8888 and ABGR8888 only. Mesa lists the BGRA/BGRX
 configs first, so the plugin got ARGB8888 and eglCreateWindowSurface failed with EGL_BAD_MATCH.
 
-The gl layer writes the TV driver's formats to /usr/share/beanjar/gbm-window-formats (its first line
-that is not a # comment: DRM fourccs, "XB24 AB24"); their configs are added first, so they get the
-lower config IDs and come first among equal configs. The other formats keep their configs after
+The gl layer writes the TV driver's formats, in its order, to /usr/share/beanjar/gbm-window-formats
+(its first line that is not a # comment: DRM fourccs, "XB24 AB24", read from the firmware's own
+libmali); their configs are added first, one format after the other in that order, so they get the
+lower config IDs and come first among equal configs as on the set (r51's XR24 AB24 RG16 ...: the
+alpha-8 one is ABGR8888). The other formats keep their configs after
 them, for the compositors that ask by visual. Without the file nothing changes.
 --- a/src/egl/drivers/dri2/platform_drm.c
 +++ b/src/egl/drivers/dri2/platform_drm.c
@@ -19,10 +21,10 @@ them, for the compositors that ask by visual. Without the file nothing changes.
  
 +/* The GBM formats the emulated TV's own GPU driver makes window configs of
 + * (Beanjar's gl layer): the first line of the file that is not a '#' comment,
-+ * DRM fourccs separated by spaces ("XB24 AB24"). Their configs are added first,
-+ * so they get the lower config IDs and eglChooseConfig returns them before the
-+ * other formats' equal configs, as the TV's driver lists only those. Without
-+ * the file the order is Mesa's own. */
++ * DRM fourccs separated by spaces ("XB24 AB24"), in the driver's order. Their
++ * configs are added first, in that order, so they get the lower config IDs and
++ * eglChooseConfig returns them before the other formats' equal configs, as the
++ * TV's driver does. Without the file the order is Mesa's own. */
 +#define GBM_WINDOW_FORMATS_FILE "/usr/share/beanjar/gbm-window-formats"
 +
 +static unsigned
@@ -67,7 +69,7 @@ them, for the compositors that ask by visual. Without the file nothing changes.
  static void
  drm_add_configs_for_visuals(_EGLDisplay *disp)
  {
-@@ -534,9 +581,13 @@
+@@ -534,9 +581,14 @@
     const struct gbm_dri_visual *visuals = dri2_dpy->gbm_dri->visual_table;
     int num_visuals = dri2_dpy->gbm_dri->num_visuals;
     unsigned int format_count[num_visuals];
@@ -76,23 +78,25 @@ them, for the compositors that ask by visual. Without the file nothing changes.
  
     memset(format_count, 0, num_visuals * sizeof(unsigned int));
  
-+   /* The TV driver's formats first (pass 0), then the others (pass 1) */
-+   for (unsigned pass = 0; pass < 2; pass++)
++   /* The TV driver's formats first, a pass each in its order, then the others
++    * (the last pass) */
++   for (unsigned pass = 0; pass <= num_tv_formats; pass++)
     for (unsigned i = 0; dri2_dpy->driver_configs[i]; i++) {
        const struct dri_config *config = dri2_dpy->driver_configs[i];
        struct gl_config *gl_config = (struct gl_config *) config;
-@@ -544,10 +595,16 @@
+@@ -544,10 +596,17 @@
        for (unsigned j = 0; j < num_visuals; j++) {
           struct dri2_egl_config *dri2_conf;
           EGLint config_group = 0;
-+         bool tv_format = false;
++         unsigned tv_index = num_tv_formats;
  
           if (visuals[j].pipe_format != gl_config->color_format)
              continue;
  
-+         for (unsigned k = 0; k < num_tv_formats; k++)
-+            tv_format |= tv_formats[k] == visuals[j].gbm_format;
-+         if (tv_format != (pass == 0))
++         for (unsigned k = num_tv_formats; k-- > 0;)
++            if (tv_formats[k] == visuals[j].gbm_format)
++               tv_index = k;
++         if (tv_index != pass)
 +            continue;
 +
           /* Put the 16 bpc rgb[a] unorm formats into a lower priority EGL config

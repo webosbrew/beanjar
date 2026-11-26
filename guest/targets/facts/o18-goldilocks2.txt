@@ -1,5 +1,7 @@
 # o18-goldilocks2: what the guest build asks of its firmware (beanjar/fwfacts.py).
 # Generated: host/scripts/vm-launcher firmware-facts o18-goldilocks2 (from 05.50.00.01-HE_DTV_W19O_AFABATAA)
+gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
+gbmformats rootfs:usr/lib/libmali.so.0 none
 lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
 lib usr/lib/libluna-service2.so.3 libluna-service2.so.3
 path usr/lib/libdile_gal.so.1.0.2 yes

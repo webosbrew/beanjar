@@ -10,6 +10,8 @@
 #                defines a symbol (a rule's question about what a stock library reaches)
 #   fw_exports   {PATH:NAME=VALUE: bool}: whether a shell file of the rootfs image exports NAME as
 #                VALUE (a rule's question about what the firmware's environment selects)
+#   fw_gbmformats {IMAGE:PATH: [fourcc]}: the formats the GPU driver library PATH of the rootfs or
+#                bsppart image makes GBM window configs of, in its order ([] for none)
 #   fw_stubs     {rootfs path: custom target}: a firmware library's link-time stub, with its SONAME
 #                and the symbols the guest code uses of it, so a link against it records what a
 #                link against the firmware's own file did
@@ -27,6 +29,7 @@ fw_version = {}
 fw_lib = {}
 fw_defines = {}
 fw_exports = {}
+fw_gbmformats = {}
 fw_questions = []
 if fs.is_file(fw_facts)
   foreach line : fs.read(fw_facts).split('\n')
@@ -41,6 +44,8 @@ if fs.is_file(fw_facts)
       fw_defines += {w[1]: w[2] == 'yes'}
     elif w[0] == 'exports'
       fw_exports += {w[1]: w[2] == 'yes'}
+    elif w[0] == 'gbmformats'
+      fw_gbmformats += {w[1]: w[2] == 'none' ? [] : w[2].split(',')}
     endif
   endforeach
 endif

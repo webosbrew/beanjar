@@ -1,5 +1,7 @@
 # k2lp-dreadlocks: what the guest build asks of its firmware (beanjar/fwfacts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k2lp-dreadlocks (from 05.70.50.01-HE_DTV_W16P_AFADATAA)
+gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
+gbmformats rootfs:usr/lib/libmali.so.0 none
 lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
 lib usr/lib/libluna-service2.so.3 libluna-service2.so.3
 path usr/lib/libdile_crypto.so.0.1.1 yes

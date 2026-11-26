@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# The GBM formats this TV's own GPU driver makes window configs of (the gl layer: gl_vendor_gbm_formats
-# of the chip's soc table), DRM fourccs. The guest's Mesa adds their configs first, so they come first
-# among equal configs (guest/layers/gl/patches/mesa/0007-*).
+# The GBM formats this TV's own GPU driver makes window configs of, in its order (the gl layer: the
+# firmware's libmali, the facts' gbmformats), DRM fourccs. The guest's Mesa adds their configs first,
+# in this order, so they come first among equal configs (guest/layers/gl/patches/mesa/0007-*).
 @FORMATS@

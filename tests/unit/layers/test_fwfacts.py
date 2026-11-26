@@ -23,6 +23,8 @@ from beanjar import fwfacts, paths  # noqa: E402
 FACTS = """# demo
 defines bsppart:bsp/usr/lib/libdemo.so:demo_f yes
 exports etc/demo.env:DEMO_PLATFORM=demo yes
+gbmformats bsppart:bsp/usr/lib/libmali.so.0 XR24,AB24,RG16
+gbmformats rootfs:usr/lib/libmali.so.0 none
 lib usr/lib/libdemo.so.1 libdemo.so.1
 path usr/lib/nyx/modules/nyxDrm.module no
 path usr/lib/libsestore.so.0.1.0 yes
@@ -68,6 +70,13 @@ class Format(unittest.TestCase):
         self.assertEqual(f["defines"], {"bsppart:bsp/usr/lib/libdemo.so:demo_f": True})
         self.assertEqual(f["exports"], {"etc/demo.env:DEMO_PLATFORM=demo": True})
         self.assertEqual(
+            f["gbmformats"],
+            {
+                "bsppart:bsp/usr/lib/libmali.so.0": ["XR24", "AB24", "RG16"],
+                "rootfs:usr/lib/libmali.so.0": [],
+            },
+        )
+        self.assertEqual(
             f["sym"]["usr/lib/libdemo.so.1"],
             {"demo_f": ("DEMO_2", "func", None), "demo_var": (None, "object", 8)},
         )
@@ -87,6 +96,9 @@ class Format(unittest.TestCase):
             "defines bsppart:bsp/usr/lib/libdemo.so:demo_f maybe",
             "exports etc/demo.env yes",  # no name
             "exports etc/demo.env:1X=a yes",  # not a shell name
+            "gbmformats usr/lib/libmali.so.0 XB24",  # no image
+            "gbmformats bsppart:bsp/usr/lib/libmali.so.0 xb24",  # not a fourcc
+            "gbmformats bsppart:bsp/usr/lib/libmali.so.0 XB24,",
             "whatever",
         ):
             with self.assertRaisesRegex(fwfacts.Error, "facts:1: not a fact"):
@@ -98,6 +110,7 @@ class Format(unittest.TestCase):
         q = fwfacts.parse_questions(
             "lib usr/lib/libdemo.so.1\npath a/b\npath a/b\nversion usr/lib/w.so.0\n"
             "defines rootfs:usr/lib/x.so:f\nexports etc/x.env:X=\n"
+            "gbmformats bsppart:bsp/usr/lib/libmali.so.0\ngbmformats rootfs:usr/lib/libmali.so\n"
         )
         self.assertEqual(
             q,
@@ -107,6 +120,7 @@ class Format(unittest.TestCase):
                 "lib": ["usr/lib/libdemo.so.1"],
                 "defines": ["rootfs:usr/lib/x.so:f"],
                 "exports": ["etc/x.env:X="],
+                "gbmformats": ["bsppart:bsp/usr/lib/libmali.so.0", "rootfs:usr/lib/libmali.so"],
             },
         )
         f = fwfacts.parse(FACTS)
@@ -117,6 +131,7 @@ class Format(unittest.TestCase):
                 "version usr/lib/w.so.0",
                 "defines rootfs:usr/lib/x.so:f",
                 "exports etc/x.env:X=",
+                "gbmformats rootfs:usr/lib/libmali.so",
             ],
         )
         with self.assertRaises(fwfacts.Error):
@@ -125,6 +140,26 @@ class Format(unittest.TestCase):
             fwfacts.parse_questions("defines usr/lib/x.so\n")
         with self.assertRaises(fwfacts.Error):
             fwfacts.parse_questions("exports etc/x.env\n")
+        with self.assertRaises(fwfacts.Error):
+            fwfacts.parse_questions("gbmformats usr/lib/libmali.so.0\n")
+
+    def test_gbm_formats(self):
+        """Mali's GBM window formats: the fourcc table right after gbm_get_configs' name, at the
+        next 4-byte boundary or past its own alignment's padding, as r46p0's, r51's and W23A
+        33.31.66's builds have it; none without the name or a table after it (r28's builds set
+        the formats in code)."""
+        pad = b"\x7fELF" + b"x" * 13  # the name then starts off a 4-byte boundary
+        r46 = pad + b"gbm_get_configs\0" + b"\0" * 3 + b"XB24AB24EGL_KHR_partial_update\0"
+        self.assertEqual(fwfacts.gbm_formats(r46), ["XB24", "AB24"])
+        r51 = b"SurfaceLG\0\0\0gbm_get_configs\0XR24AB24RG16AR15AR12AYUVYUYV\0\0\0\0EGL_"
+        self.assertEqual(
+            fwfacts.gbm_formats(r51), ["XR24", "AB24", "RG16", "AR15", "AR12", "AYUV", "YUYV"]
+        )
+        padded = b"Width\0\0\0gbm_get_configs\0\0\0\0\0XR24AR24RG16\0\0\0\0"
+        self.assertEqual(fwfacts.gbm_formats(padded), ["XR24", "AR24", "RG16"])
+        r28 = b"buffer\0\0gbm_get_configs\0\0\0\0\0EGL_KHR_partial_update\0"
+        self.assertEqual(fwfacts.gbm_formats(r28), [])
+        self.assertEqual(fwfacts.gbm_formats(b"\x7fELF no winsys"), [])
 
 
 class Reading(unittest.TestCase):
@@ -441,6 +476,22 @@ class Firmware(unittest.TestCase):
         }
         q = {"path": [], "version": [], "lib": [], "exports": list(want)}
         self.assertEqual(fwfacts.answer(str(self.t / "fw"), q, {})["exports"], want)
+
+    def test_gbmformats(self):
+        """A gbmformats question is answered from the image's library itself, through its
+        symlinks; a library the image has not is none."""
+        bsp = self.t / "bsp-tree/bsp/usr/lib"
+        bsp.mkdir(parents=True)
+        (bsp / "libmali.so.0.51.0").write_bytes(b"\x7fELF....gbm_get_configs\0XR24AB24RG16\0\0\0\0")
+        os.symlink("libmali.so.0.51.0", bsp / "libmali.so.0")
+        self.squash(self.t / "bsp-tree", self.t / "fw/bsppart.pak")
+        want = {
+            "bsppart:bsp/usr/lib/libmali.so.0": ["XR24", "AB24", "RG16"],
+            "bsppart:bsp/usr/lib/libnone.so.0": [],
+            "rootfs:usr/lib/libdemo.so.1": [],
+        }
+        q = {"path": [], "version": [], "lib": [], "gbmformats": list(want)}
+        self.assertEqual(fwfacts.answer(str(self.t / "fw"), q, {})["gbmformats"], want)
 
     def test_mount_cleaned_up(self):
         """The rootfs image is mounted for the answers only: no mount or mount point is left, also

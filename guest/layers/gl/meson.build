@@ -35,8 +35,9 @@
 #   /usr/share/beanjar/gles-version             the TV's OpenGL ES version (gl_es_version), at most
 #                                               which Mesa gives a context (patches/mesa/0005-*)
 #   /usr/share/beanjar/gbm-window-formats       the GBM formats the TV's driver makes window configs
-#                                               of (gl_vendor_gbm_formats), listed first by Mesa
-#                                               (patches/mesa/0007-*)
+#                                               of, in its order (the firmware's libmali, the facts'
+#                                               gbmformats), whose configs Mesa adds first in that
+#                                               order (patches/mesa/0007-*)
 #   libjail-gpu.so                              the render node in native app jails, in sam's
 #                                               LD_PRELOAD by etc/init/sam.override or
 #                                               sam.service.d/zz-beanjar-jail.conf: the common
@@ -283,9 +284,20 @@ if gl_es_version != ''
     configuration: {'GLES': gl_es_version}), 'usr/share/beanjar/gles-version', '644']
 endif
 # usr/share/beanjar/gbm-window-formats: the GBM formats the TV's own GPU driver makes window
-# configs of, the chip's gl_vendor_gbm_formats (soc table, DRM fourccs), whose configs the guest's
-# Mesa lists first (patches/mesa/0007-*); none where the chip states none
-gl_gbm_formats = get_variable('gl_vendor_gbm_formats', [])
+# configs of, in its order, whose configs the guest's Mesa adds first in that order
+# (patches/mesa/0007-*), so eglChooseConfig gives a client what the set's driver gives first among
+# equal configs (LG's Qt EGLFS Starfish plugin takes the first alpha-8 one and makes its surface in
+# the output's format). Read from the firmware's own Mali driver, libmali.so.0 in bsppart or else
+# the rootfs (the facts' gbmformats: its gbm_get_configs table; O22's r46p0 XB24 AB24, W25H's r51
+# XR24 AB24 RG16 ...); none where the firmware has no libmali or its libmali no GBM winsys, as the
+# older and fbdev builds and the other vendors' GPUs.
+gl_gbm_formats = []
+foreach q : ['bsppart:bsp/usr/lib/libmali.so.0', 'rootfs:usr/lib/libmali.so.0']
+  fw_questions += 'gbmformats ' + q
+  if gl_gbm_formats.length() == 0
+    gl_gbm_formats = fw_gbmformats.get(q, [])
+  endif
+endforeach
 if gl_gbm_formats.length() > 0
   gl_layer_args += ['--file', configure_file(input: 'gbm-window-formats.in',
     output: 'gbm-window-formats', configuration: {'FORMATS': ' '.join(gl_gbm_formats)}),

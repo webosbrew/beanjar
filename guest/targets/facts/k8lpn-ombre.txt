@@ -1,5 +1,7 @@
 # k8lpn-ombre: what the guest build asks of its firmware (beanjar/fwfacts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k8lpn-ombre (from 23.25.55.01-HE_DTV_W23P_AFADATAA)
+gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
+gbmformats rootfs:usr/lib/libmali.so.0 none
 lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
 lib usr/lib/libgobject-2.0.so.0 libgobject-2.0.so.0
 lib usr/lib/libgstaudio-1.0.so.0 libgstaudio-1.0.so.0

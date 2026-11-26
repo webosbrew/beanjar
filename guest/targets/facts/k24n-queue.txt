@@ -1,6 +1,8 @@
 # k24n-queue: what the guest build asks of its firmware (beanjar/fwfacts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k24n-queue (from 43.22.66.01-HE_DTV_W25H_AFADJAAA)
 defines bsppart:bsp/usr/lib/libkadaptor.so:RHAL_SE_Init yes
+gbmformats bsppart:bsp/usr/lib/libmali.so.0 XR24,AB24,RG16,AR15,AR12,AYUV,YUYV,NV12,NV21,NV16,YU24
+gbmformats rootfs:usr/lib/libmali.so.0 none
 lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0
 lib usr/lib/libgobject-2.0.so.0 libgobject-2.0.so.0
 lib usr/lib/libgstaudio-1.0.so.0 libgstaudio-1.0.so.0

@@ -26,6 +26,11 @@ One fact per line, the lines sorted; '#' starts a comment line:
                             (a line "export NAME=VALUE", the value quoted or not); no where it has
                             no such file (a rule's question about what the firmware's environment
                             selects, e.g. the compositor's QT_QPA_EGLFS_INTEGRATION)
+  gbmformats IMAGE:PATH FOURCC[,FOURCC...]|none
+                            the formats the GPU driver library PATH of the firmware's IMAGE makes
+                            GBM window configs of, in its order: the DRM fourccs of Mali's
+                            gbm_get_configs table (gbm_formats); none where it has no such file or
+                            no such table (a rule's question about what the TV's EGL offers first)
 
 Nothing else of the firmware: the build links against stub libraries generated from the lib and sym
 lines (stub_source; `python3 -m beanjar.fwfacts stub`, build_main), with the library's SONAME and only those symbols, so the
@@ -52,7 +57,7 @@ import tempfile
 
 FACTS_DIR = ("guest", "targets", "facts")
 QUESTIONS = "firmware-questions.txt"
-KINDS = ("defines", "exports", "lib", "path", "sym", "version")
+KINDS = ("defines", "exports", "gbmformats", "lib", "path", "sym", "version")
 IMAGES = ("rootfs", "bsppart")
 TYPES = {"FUNC": "func", "OBJECT": "object", "TLS": "tls", "NOTYPE": "notype"}
 SIZED = ("object", "tls")
@@ -69,9 +74,10 @@ class Error(Exception):
 def parse(text, where="facts"):
     """{'path': {PATH: bool}, 'version': {PATH: str}, 'lib': {PATH: SONAME},
     'sym': {PATH: {NAME: (version or None, type, size or None)}}, 'defines': {IMAGE:PATH:NAME: bool},
-    'exports': {PATH:NAME=VALUE: bool}} of a facts file's text. Error naming the line for anything
+    'exports': {PATH:NAME=VALUE: bool}, 'gbmformats': {IMAGE:PATH: [FOURCC...]}} of a facts file's
+    text (an empty list for none). Error naming the line for anything
     else."""
-    facts = {"path": {}, "version": {}, "lib": {}, "sym": {}, "defines": {}, "exports": {}}
+    facts = {k: {} for k in ("path", "version", "lib", "sym", "defines", "exports", "gbmformats")}
     for n, line in enumerate(text.splitlines(), 1):
         if not line.strip() or line.startswith("#"):
             continue
@@ -83,6 +89,8 @@ def parse(text, where="facts"):
             facts["defines"][w[1]] = w[2] == "yes"
         elif w[0] == "exports" and len(w) == 3 and w[2] in ("yes", "no") and _exports_q(w[1]):
             facts["exports"][w[1]] = w[2] == "yes"
+        elif w[0] == "gbmformats" and len(w) == 3 and _image_q(w[1]) and _formats(w[2]) is not None:
+            facts["gbmformats"][w[1]] = _formats(w[2])
         elif w[0] == "version" and len(w) == 3:
             facts["version"][w[1]] = w[2]
         elif w[0] == "lib" and len(w) == 3:
@@ -110,6 +118,7 @@ def lines(facts):
     out = [f"path {p} {'yes' if v else 'no'}" for p, v in facts["path"].items()]
     out += [f"defines {q} {'yes' if v else 'no'}" for q, v in facts["defines"].items()]
     out += [f"exports {q} {'yes' if v else 'no'}" for q, v in facts["exports"].items()]
+    out += [f"gbmformats {q} {','.join(v) or 'none'}" for q, v in facts["gbmformats"].items()]
     out += [f"version {p} {v}" for p, v in facts["version"].items()]
     out += [f"lib {p} {s}" for p, s in facts["lib"].items()]
     for lib, syms in facts["sym"].items():
@@ -138,6 +147,24 @@ def _defines_q(q):
     return len(w) == 3 and w[0] in IMAGES and all(w[1:])
 
 
+def _image_q(q):
+    """Whether q is a gbmformats question's IMAGE:PATH."""
+    image, _, path = q.partition(":")
+    return image in IMAGES and bool(path) and ":" not in path
+
+
+# A DRM fourcc as the tables have them (no padded ones, such as "R8  ")
+FOURCC = re.compile(rb"[A-Z0-9]{4}")
+
+
+def _formats(text):
+    """The fourccs of a gbmformats answer (FOURCC,... or none: []); None if it is not one."""
+    if text == "none":
+        return []
+    v = text.split(",")
+    return v if all(FOURCC.fullmatch(f.encode()) for f in v) else None
+
+
 def _exports_q(q):
     """Whether q is an exports question's PATH:NAME=VALUE."""
     path, _, assign = q.partition(":")
@@ -145,13 +172,13 @@ def _exports_q(q):
     return bool(path) and bool(eq) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is not None
 
 
-QUESTION_KINDS = ("path", "version", "lib", "defines", "exports")
+QUESTION_KINDS = ("path", "version", "lib", "defines", "exports", "gbmformats")
 
 
 def parse_questions(text):
     """{'path': [...], 'version': [...], 'lib': [...], 'defines': [...], 'exports': [...]} of a
     build's firmware-questions.txt (one "KIND PATH" per line; a defines question's PATH is
-    IMAGE:PATH:NAME, an exports question's PATH:NAME=VALUE)."""
+    IMAGE:PATH:NAME, an exports question's PATH:NAME=VALUE, a gbmformats question's IMAGE:PATH)."""
     q = {k: set() for k in QUESTION_KINDS}
     for line in text.splitlines():
         w = line.split()
@@ -162,6 +189,7 @@ def parse_questions(text):
             or w[0] not in q
             or (w[0] == "defines" and not _defines_q(w[1]))
             or (w[0] == "exports" and not _exports_q(w[1]))
+            or (w[0] == "gbmformats" and not _image_q(w[1]))
         ):
             raise Error(f"{QUESTIONS}: not a question: {line!r}")
         q[w[0]].add(w[1])
@@ -515,15 +543,55 @@ def answer_exports(fw_dir, q):
     return any(re.fullmatch(line, s) for s in data.decode("utf-8", "replace").splitlines())
 
 
+GBM_CONFIGS = b"gbm_get_configs\0"
+
+
+def gbm_formats(data):
+    """The formats Mali's GBM winsys makes window configs of, in its order, from the driver
+    library's bytes: the table of DRM fourccs gbm_get_configs walks, which the compiler puts right
+    after that function's name (its __func__, for the error message) in .rodata, at the next 4-byte
+    boundary or after padding to its own alignment, ended by a word that is not a fourcc. Read from r46p0 (libmali.so.0.46.0: XB24 AB24)
+    and r51 (libmali.so.0.51.0: XR24 AB24 RG16 AR15 ..., 11 entries, the count of its loop) and
+    checked against both disassemblies. [] without the name or the table (Mali's fbdev and wayland
+    builds, the older ones)."""
+    i = data.find(GBM_CONFIGS)
+    if i < 0:
+        return []
+    j = (i + len(GBM_CONFIGS) + 3) & ~3
+    # The table's own alignment may pad it further (W23A 33.31.66's r-unknown build: 8 bytes)
+    for _ in range(3):
+        if data[j : j + 4] != b"\0\0\0\0":
+            break
+        j += 4
+    out = []
+    while FOURCC.fullmatch(data[j : j + 4]):
+        out.append(data[j : j + 4].decode())
+        j += 4
+    return out
+
+
+def answer_gbmformats(fw_dir, q):
+    """A gbmformats question's answer: the GBM window formats of the library of q (IMAGE:PATH); none
+    where the firmware has no such image (no bsppart before webOS 3) or file."""
+    image, _, path = q.partition(":")
+    try:
+        data = image_file(fw_dir, image, path)
+    except Error:
+        return []
+    return gbm_formats(data) if data else []
+
+
 def answer(fw_dir, questions, symbols, entries=None):
     """The facts (parse's form) of the firmware in fw_dir for questions (parse_questions' form) and
     symbols ({lib: names}). entries: the rootfs image's entries in the questions' directories
     (default: paths.rootfs_entries, read from the image as the build always did)."""
-    facts = {"path": {}, "version": {}, "lib": {}, "sym": {}, "defines": {}, "exports": {}}
+    facts = {k: {} for k in ("path", "version", "lib", "sym", "defines", "exports", "gbmformats")}
     for q in questions.get("defines", ()):
         facts["defines"][q] = answer_defines(fw_dir, q)
     for q in questions.get("exports", ()):
         facts["exports"][q] = answer_exports(fw_dir, q)
+    for q in questions.get("gbmformats", ()):
+        facts["gbmformats"][q] = answer_gbmformats(fw_dir, q)
     if questions["path"]:
         if entries is None:
             from . import paths
