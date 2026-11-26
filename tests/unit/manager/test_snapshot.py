@@ -19,7 +19,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import core, sestore, snapshot, vmconfig
+from beanjar import clone, core, sestore, snapshot, vmconfig
 
 FW = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
 SERIAL = "123ABCD45678"
@@ -428,6 +428,21 @@ class SnapshotTest(unittest.TestCase):
             "the wipe is of the restored state",
         )
         self.assertEqual(self.dvr(), dvr)
+
+    def test_interrupted_after_commit_finished_by_clone(self):
+        before, dvr = self.killed_after_commit()
+        lines = []
+        with mock.patch.object(core, "prepare_board_data"):  # the fixture's firmware is not real
+            clone.clone(self.lib, "tv1", "tv2", out=lines.append, warn=lines.append, pinned=True)
+        self.assertIn("tv1: snapshot reset finished", lines)
+        self.check_finished(before, dvr)
+        copy = os.path.join(self.lib_dir, "vms", "tv2", "state")
+        self.assertEqual(
+            {k: v for k, v in tree(copy).items() if k != "eeprom.img"},
+            {k: v for k, v in before.items() if k != "eeprom.img"},
+            "the clone has the snapshot's state",
+        )
+        self.assertFalse(os.path.exists(os.path.join(self.vm_dir, "snapshots", ".reset")))
 
     def test_finish_reset_is_idempotent(self):
         """Killed again while it finishes, the next finish_reset completes it."""

@@ -167,6 +167,15 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
         return d
 
     src_dir = check_off()
+    if not src.host:
+        # a reset to a snapshot killed after its commit, finished first: a copy of the half-restored
+        # state would be of neither (under the start lock, as start, wipe and snapshot take it)
+        from . import snapshot
+
+        vm = lib.vm(src_name)
+        with snapshot.held(vm):
+            snapshot.check_still_off(vm, "a clone")
+            snapshot.finish_reset(vm.dir, out)
     text = src.sh(f"cat -- {q(src_dir)}/vm.toml")[1].decode()
     try:
         cfg = vmconfig.decode(tomllib.loads(text))
