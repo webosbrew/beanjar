@@ -41,6 +41,7 @@ struct media_port {
     gint64 bytes_per_second; /* raw audio's, from its caps; 0 otherwise */
     gint64 untimed_next;     /* sync off: where the next audio buffer starts, or NONE */
     media_clock_fn clock;
+    gint64 ts_offset; /* the sink's ts-offset property, the lead apart (media_lead_set) */
 };
 
 MEDIAPORT_API void media_port_init(struct media_port *p);
@@ -97,6 +98,18 @@ typedef void (*media_picture_fn)(gpointer data, const struct webos_media_picture
  * went away, or the port is flushing); then a later call drops the late ones. */
 MEDIAPORT_API gboolean media_port_answers(struct media_port *p, guint32 input, gint timeout_ms,
                                           media_picture_fn fn, gpointer data);
+/* The sinks' lead (WEBOS_MEDIA_LEAD_NS) is their own, not the pipeline's. A sink class installs its
+ * own ts-offset property in place of GstBaseSink's (media_lead_install), whose value its port keeps
+ * (0 at first: GstBaseSink's default): what the pipeline sets (playsink's av-offset, an app's A/V
+ * offset) shifts the sink, and the times the host presents at, by exactly that, on top of the
+ * lead. The instance's init calls media_lead_init after media_port_init, the class's set and get
+ * media_lead_set and media_lead_get; an EOS, which waits for its own time, turns the lead off
+ * while it waits (media_lead_suspend). */
+MEDIAPORT_API void media_lead_install(GObjectClass *klass, guint prop_id);
+MEDIAPORT_API void media_lead_init(struct media_port *p, GstBaseSink *sink);
+MEDIAPORT_API void media_lead_set(struct media_port *p, GstBaseSink *sink, const GValue *value);
+MEDIAPORT_API void media_lead_get(struct media_port *p, GValue *value);
+MEDIAPORT_API void media_lead_suspend(struct media_port *p, GstBaseSink *sink, gboolean off);
 /* Signed running time of ts in segment (TIME format), WEBOS_MEDIA_NONE if not computable. */
 MEDIAPORT_API gint64 media_running_time(const GstSegment *segment, GstClockTime ts);
 #endif

@@ -391,9 +391,9 @@ static GstFlowReturn vdec_stub_wait_event(GstBaseSink *base, GstEvent *event)
     if (GST_EVENT_TYPE(event) != GST_EVENT_EOS)
         return GST_BASE_SINK_CLASS(vdec_stub_parent_class)->wait_event(base, event);
     es_starve_reset(sink->starve, TRUE);
-    gst_base_sink_set_ts_offset(base, 0);
+    media_lead_suspend(&sink->port, base, TRUE);
     ret = GST_BASE_SINK_CLASS(vdec_stub_parent_class)->wait_event(base, event);
-    gst_base_sink_set_ts_offset(base, -WEBOS_MEDIA_LEAD_NS);
+    media_lead_suspend(&sink->port, base, FALSE);
     if (ret == GST_FLOW_OK)
         media_port_event(&sink->port, GST_ELEMENT(base), WEBOS_MEDIA_EOS);
     return ret;
@@ -419,10 +419,32 @@ static void vdec_stub_finalize(GObject *obj)
     G_OBJECT_CLASS(vdec_stub_parent_class)->finalize(obj);
 }
 
+/* ts-offset: the pipeline's, the lead apart (mediaport.h) */
+enum { STUB_PROP_TS_OFFSET = 1 };
+
+static void vdec_stub_set_property(GObject *obj, guint id, const GValue *value, GParamSpec *spec)
+{
+    if (id == STUB_PROP_TS_OFFSET)
+        media_lead_set(&((VdecStub *)obj)->port, GST_BASE_SINK(obj), value);
+    else
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, id, spec);
+}
+
+static void vdec_stub_get_property(GObject *obj, guint id, GValue *value, GParamSpec *spec)
+{
+    if (id == STUB_PROP_TS_OFFSET)
+        media_lead_get(&((VdecStub *)obj)->port, value);
+    else
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, id, spec);
+}
+
 static void vdec_stub_class_init(VdecStubClass *klass)
 {
     GstBaseSinkClass *base = GST_BASE_SINK_CLASS(klass);
     G_OBJECT_CLASS(klass)->finalize = vdec_stub_finalize;
+    G_OBJECT_CLASS(klass)->set_property = vdec_stub_set_property;
+    G_OBJECT_CLASS(klass)->get_property = vdec_stub_get_property;
+    media_lead_install(G_OBJECT_CLASS(klass), STUB_PROP_TS_OFFSET);
     GST_ELEMENT_CLASS(klass)->change_state = vdec_stub_change_state;
     gst_element_class_add_pad_template(GST_ELEMENT_CLASS(klass),
                                        gst_pad_template_new("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
@@ -456,7 +478,7 @@ static void vdec_stub_init(VdecStub *sink)
     sink->starve = es_starve_new(GST_ELEMENT(sink), vdec_stub_starved);
     media_port_init(&sink->port);
     gst_base_sink_set_sync(GST_BASE_SINK(sink), TRUE);
-    gst_base_sink_set_ts_offset(GST_BASE_SINK(sink), -WEBOS_MEDIA_LEAD_NS);
+    media_lead_init(&sink->port, GST_BASE_SINK(sink));
     /* A display drops late frames; with no QoS upstream this only keeps render cheap. */
     gst_base_sink_set_qos_enabled(GST_BASE_SINK(sink), FALSE);
 }

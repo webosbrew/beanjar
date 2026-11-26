@@ -46,6 +46,18 @@ check_media_relayout = executable('check-media-relayout',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-relayout', check_media_relayout, suite: ['unit', 'media'], timeout: 20,
   protocol: 'tap')
+# the guest sinks' lead (guest/layers/soc/src/video/src/mediaport.c, media_lead_*) on this machine's
+# GStreamer: renders WEBOS_MEDIA_LEAD_NS early on top of whatever ts-offset the pipeline sets
+gst_check_dep = dependency('gstreamer-check-1.0', required: false)
+gst_app_dep = dependency('gstreamer-app-1.0', required: false)
+if gst_check_dep.found() and gst_app_dep.found()
+  check_sink_lead = executable('check-sink-lead',
+    ['media/check-sink-lead.c', '../../guest/layers/soc/src/video/src/mediaport.c'],
+    dependencies: [gst_check_dep, gst_app_dep, dependency('gstreamer-base-1.0')],
+    override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'],
+    c_args: ['-Wno-unused-parameter'])
+  test('check-sink-lead', check_sink_lead, suite: ['unit', 'media'], timeout: 10, protocol: 'tap')
+endif
 check_media_unavailable = executable('check-media-unavailable', 'media/check-unavailable.c',
   '../../host/media/ipc.c',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])

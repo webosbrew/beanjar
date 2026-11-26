@@ -28,8 +28,9 @@
  * signed (a buffer decoded only for reference can be before the segment). A frame or sample with
  * running time R is presented at pipeline clock time base_time + R, exactly as the stock sinks
  * would present it; STATE carries base_time and whether the pipeline is PLAYING, and a paused
- * pipeline stays on running time pause_rt. The sinks render WEBOS_MEDIA_LEAD_NS early (a
- * negative ts-offset) so the host has the data before it is due, while the pipeline's position,
+ * pipeline stays on running time pause_rt. The sinks render WEBOS_MEDIA_LEAD_NS early (their own
+ * lead, beside the ts-offset the pipeline sets, which shifts R here as it shifts a stock sink) so
+ * the host has the data before it is due, while the pipeline's position,
  * which is clock based, stays what the host shows. Every header carries the guest's
  * CLOCK_MONOTONIC and the pipeline clock at the time it was written: the host maps pipeline clock
  * to its own monotonic clock with them (the minimum of receive time - send time over a window).

@@ -409,9 +409,9 @@ static GstFlowReturn es_sink_wait_event(GstBaseSink *base, GstEvent *event)
     self->eos = TRUE;
     GST_OBJECT_UNLOCK(self);
     es_starve_reset(self->starve, TRUE);
-    gst_base_sink_set_ts_offset(base, 0);
+    media_lead_suspend(&self->port, base, TRUE);
     ret = parent_class->wait_event(base, event);
-    gst_base_sink_set_ts_offset(base, -WEBOS_MEDIA_LEAD_NS);
+    media_lead_suspend(&self->port, base, FALSE);
     if (ret == GST_FLOW_OK)
         media_port_event(&self->port, GST_ELEMENT(base), WEBOS_MEDIA_EOS);
     return ret;
@@ -439,6 +439,25 @@ static void es_sink_finalize(GObject *obj)
     G_OBJECT_CLASS(parent_class)->finalize(obj);
 }
 
+/* ts-offset: the pipeline's, the lead apart (mediaport.h) */
+enum { ES_PROP_TS_OFFSET = 1 };
+
+static void es_sink_set_property(GObject *obj, guint id, const GValue *value, GParamSpec *spec)
+{
+    if (id == ES_PROP_TS_OFFSET)
+        media_lead_set(&ES_SINK(obj)->port, GST_BASE_SINK(obj), value);
+    else
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, id, spec);
+}
+
+static void es_sink_get_property(GObject *obj, guint id, GValue *value, GParamSpec *spec)
+{
+    if (id == ES_PROP_TS_OFFSET)
+        media_lead_get(&ES_SINK(obj)->port, value);
+    else
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, id, spec);
+}
+
 static void es_sink_class_init(gpointer g_class, gpointer data)
 {
     GObjectClass *gobject = G_OBJECT_CLASS(g_class);
@@ -446,6 +465,9 @@ static void es_sink_class_init(gpointer g_class, gpointer data)
     GstBaseSinkClass *base = GST_BASE_SINK_CLASS(g_class);
     parent_class = g_type_class_peek_parent(g_class);
     gobject->finalize = es_sink_finalize;
+    gobject->set_property = es_sink_set_property;
+    gobject->get_property = es_sink_get_property;
+    media_lead_install(gobject, ES_PROP_TS_OFFSET);
     element->provide_clock = es_sink_provide;
     element->change_state = es_sink_change_state;
     base->set_caps = es_sink_set_caps;
@@ -466,7 +488,7 @@ static void es_sink_init(GTypeInstance *instance, gpointer g_class)
     self->channel = -1;
     media_port_init(&self->port);
     gst_base_sink_set_sync(GST_BASE_SINK(self), TRUE);
-    gst_base_sink_set_ts_offset(GST_BASE_SINK(self), -WEBOS_MEDIA_LEAD_NS);
+    media_lead_init(&self->port, GST_BASE_SINK(self));
     if (((EsSinkClass *)g_class)->kind == WEBOS_MEDIA_VIDEO) {
         gst_base_sink_set_qos_enabled(GST_BASE_SINK(self), FALSE);
         gst_pad_add_probe(GST_BASE_SINK_PAD(self), GST_PAD_PROBE_TYPE_BUFFER, before_segment, self,

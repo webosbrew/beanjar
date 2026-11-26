@@ -70,7 +70,8 @@ enum {
     P_AUDIO_ONLY,
     P_SEAMLESS,
     P_VERSION,
-    N_PROPS = P_VERSION
+    N_PROPS = P_VERSION,
+    P_TS_OFFSET /* GstBaseSink's, the lead apart (mediaport.h) */
 };
 static const struct prop_def props[N_PROPS] = {
     {"num-of-channel", "ADEC Number of Channel", G_TYPE_UINT, 0},
@@ -129,6 +130,10 @@ static void gst_adec_sink_set_property(GObject *obj, guint id, const GValue *val
                                        GParamSpec *spec)
 {
     GstAdecSink *self = (GstAdecSink *)obj;
+    if (id == P_TS_OFFSET) {
+        media_lead_set(&self->port, GST_BASE_SINK(obj), value);
+        return;
+    }
     if (id < 1 || id > N_PROPS) {
         G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, id, spec);
         return;
@@ -142,6 +147,10 @@ static void gst_adec_sink_set_property(GObject *obj, guint id, const GValue *val
 static void gst_adec_sink_get_property(GObject *obj, guint id, GValue *value, GParamSpec *spec)
 {
     GstAdecSink *self = (GstAdecSink *)obj;
+    if (id == P_TS_OFFSET) {
+        media_lead_get(&self->port, value);
+        return;
+    }
     if (id < 1 || id > N_PROPS) {
         G_OBJECT_WARN_INVALID_PROPERTY_ID(obj, id, spec);
         return;
@@ -248,9 +257,9 @@ static GstFlowReturn gst_adec_sink_wait_event(GstBaseSink *base, GstEvent *event
     if (GST_EVENT_TYPE(event) != GST_EVENT_EOS)
         return GST_BASE_SINK_CLASS(gst_adec_sink_parent_class)->wait_event(base, event);
     es_starve_reset(((GstAdecSink *)base)->starve, TRUE);
-    gst_base_sink_set_ts_offset(base, 0);
+    media_lead_suspend(&((GstAdecSink *)base)->port, base, TRUE);
     ret = GST_BASE_SINK_CLASS(gst_adec_sink_parent_class)->wait_event(base, event);
-    gst_base_sink_set_ts_offset(base, -WEBOS_MEDIA_LEAD_NS);
+    media_lead_suspend(&((GstAdecSink *)base)->port, base, FALSE);
     if (ret == GST_FLOW_OK)
         media_port_event(&((GstAdecSink *)base)->port, GST_ELEMENT(base), WEBOS_MEDIA_EOS);
     return ret;
@@ -287,6 +296,7 @@ static void gst_adec_sink_class_init(GstAdecSinkClass *klass)
     gobject->get_property = gst_adec_sink_get_property;
     gobject->finalize = gst_adec_sink_finalize;
     props_install(gobject, props, N_PROPS);
+    media_lead_install(gobject, P_TS_OFFSET);
     underrun_signal = g_signal_new("audio-underrun", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_FIRST,
                                    G_STRUCT_OFFSET(GstAdecSinkClass, audio_underrun), NULL, NULL,
                                    g_cclosure_marshal_VOID__VOID, G_TYPE_NONE, 0);
@@ -321,7 +331,7 @@ static void gst_adec_sink_init(GstAdecSink *self)
     props_init(self->values, props, N_PROPS);
     media_port_init(&self->port);
     gst_base_sink_set_sync(GST_BASE_SINK(self), TRUE);
-    gst_base_sink_set_ts_offset(GST_BASE_SINK(self), -WEBOS_MEDIA_LEAD_NS);
+    media_lead_init(&self->port, GST_BASE_SINK(self));
     /* The pipeline clock, as LG's sink provides one: a monotonic system clock of our own (not
      * the shared default one, whose type a pipeline may have changed). */
     self->clock = g_object_new(GST_TYPE_SYSTEM_CLOCK, "name", "adecsink-clock", "clock-type",

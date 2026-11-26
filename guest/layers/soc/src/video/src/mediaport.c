@@ -485,6 +485,59 @@ void media_port_caps(struct media_port *p, GstElement *element, GstCaps *caps)
     g_free(s);
 }
 
+/* The lead used to be the sink's ts-offset itself (-WEBOS_MEDIA_LEAD_NS), which is also the
+ * pipeline's to set: playbin's playsink sets it on its audio and video sinks (to its av-offset, 0
+ * by default) whenever it links them, which took the whole lead away from <video> file playback
+ * (W16R: 0 ms ahead instead of 300). Here the property keeps the pipeline's value and GstBaseSink
+ * syncs on that less the lead. The class's pspec stands in for GstBaseSink's (a property lookup
+ * finds the most derived one), as g_object_class_override_property would, which not every
+ * firmware's GObject has been asked for; GValue's int64 is read as g_value_get_int64 does, for
+ * the same reason. */
+void media_lead_install(GObjectClass *klass, guint prop_id)
+{
+    g_object_class_install_property(
+        klass, prop_id,
+        g_param_spec_int64("ts-offset", "TS Offset", "Timestamp offset in nanoseconds", G_MININT64,
+                           G_MAXINT64, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+}
+
+void media_lead_init(struct media_port *p, GstBaseSink *sink)
+{
+    p->ts_offset = 0;
+    gst_base_sink_set_ts_offset(sink, -WEBOS_MEDIA_LEAD_NS);
+}
+
+static gint64 lead_offset(struct media_port *p)
+{
+    gint64 v;
+    g_mutex_lock(&p->lock);
+    v = p->ts_offset;
+    g_mutex_unlock(&p->lock);
+    return v;
+}
+
+void media_lead_set(struct media_port *p, GstBaseSink *sink, const GValue *value)
+{
+    gint64 v = value->data[0].v_int64;
+    g_mutex_lock(&p->lock);
+    p->ts_offset = v;
+    g_mutex_unlock(&p->lock);
+    gst_base_sink_set_ts_offset(sink, v - WEBOS_MEDIA_LEAD_NS);
+    GST_DEBUG_OBJECT(sink, "ts-offset %" G_GINT64_FORMAT " ns, with the lead %" G_GINT64_FORMAT, v,
+                     (gint64)(v - WEBOS_MEDIA_LEAD_NS));
+}
+
+void media_lead_get(struct media_port *p, GValue *value)
+{
+    g_value_set_int64(value, lead_offset(p));
+}
+
+void media_lead_suspend(struct media_port *p, GstBaseSink *sink, gboolean off)
+{
+    gint64 v = lead_offset(p);
+    gst_base_sink_set_ts_offset(sink, off ? v : v - WEBOS_MEDIA_LEAD_NS);
+}
+
 gint64 media_running_time(const GstSegment *segment, GstClockTime ts)
 {
     if (!GST_CLOCK_TIME_IS_VALID(ts) || segment->format != GST_FORMAT_TIME)
@@ -560,10 +613,16 @@ void media_port_buffer(struct media_port *p, GstBaseSink *sink, GstBuffer *buf, 
     sync = sink->sync;
     GST_OBJECT_UNLOCK(sink);
     g_mutex_lock(&p->lock);
-    if (!sync && !(flags & WEBOS_MEDIA_DECODE_ONLY))
+    if (!sync && !(flags & WEBOS_MEDIA_DECODE_ONLY)) {
         untimed_locked(p, sink, buf, &b);
-    else
+    } else {
         p->untimed_next = WEBOS_MEDIA_NONE;
+        /* a stock sink renders at its buffer's time + ts-offset: the host presents there */
+        if (b.pts != WEBOS_MEDIA_NONE)
+            b.pts += p->ts_offset;
+        if (b.dts != WEBOS_MEDIA_NONE)
+            b.dts += p->ts_offset;
+    }
     g_mutex_unlock(&p->lock);
     if (gst_buffer_map(buf, &map, GST_MAP_READ)) {
         media_port_send(p, sink, &b, map.data, map.size);
