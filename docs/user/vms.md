@@ -77,6 +77,9 @@ beanjar stop tv1
   and digital mode chosen in its settings, the outputs the emulated hardware has open, the mode
   (PCM, auto, passthrough) and the codec and channel count each output sends, and the streams the
   TV's player plays ([manager README](../../host/core/README.md#what-the-tv-sends-out-as-audio)).
+  On an OLED Flex board (`config set NAME model=42LX3QPUA`) it also says what the set's back
+  cover lighting shows: the TV's lighting settings and what its LED micom was sent ([manager
+  README](../../host/core/README.md#what-the-oled-flexs-lighting-shows)).
 - `log show NAME FILE` prints one of the VM's host-side logs, also of a VM on another host
   (`HOST/NAME`): `logs/console.log`, `logs/webos.log`, or while it runs a helper's, such as
   `run/media/media-helper.log`.

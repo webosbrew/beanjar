@@ -1290,6 +1290,25 @@ PCM, auto and passthrough write the same values until a compressed stream plays,
 `null` until then; `selected` still shows the setting. The channel count is `null` where the
 firmware writes none.
 
+### What the OLED Flex's lighting shows
+
+On a VM whose board has the OLED Flex's gaming LED micom (lgemu's `ledmicom`: a board of tool
+type LX3Q, `model=42LX3QPUA`), `status show NAME` also reports its lighting, as `lighting` in
+`--json` (`null` when the VM is off or its board has no micom). It is read when asked, over the
+VM's shell port: the guest's `/proc/lgemu/led_micom`, what the stock lightingcontroller wrote to the
+micom per command byte, and the TV's own lighting settings. `beanjar/lighting.py` decodes it
+([docs/research/led-lighting.md](../../docs/research/led-lighting.md) has the commands).
+
+| Key | Value |
+|---|---|
+| `selected` | the TV's settings: `{"enable": "on", "mode": "staticMode1", "brightness": 8}`, or `null` |
+| `on` | whether the micom was last told to light up (command 0x21), `null` before it was told |
+| `brightness` | the last brightness sent (0x2a, 1 to 10), else `null` |
+| `mode` | the mode command sent last: `videoSyncMode`, `soundSyncMode`, `dynamic`, `peaceful`, `staticMode1` to `staticMode4`, `welcomeCeremony` or `factory`, else `null` |
+| `color` | a static mode's colour, `RRGGBB`, else `null` |
+| `writes`, `commands` | the micom's write count and, per command byte, `{"command", "count", "order", "data", "truncated"}`: the last payload in hex |
+| `error` | why the guest did not answer, else `null` |
+
 ### Tags
 
 Tags are short labels on a VM, kept with its settings in `vm.toml` (`metadata.tags`) so they last

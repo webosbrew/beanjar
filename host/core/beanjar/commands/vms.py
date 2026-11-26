@@ -326,6 +326,11 @@ def cmd_status(lib, a):
 
         data["audio"] = soundout.read(vm) if vm.pid() else None
         text += soundout.lines(data["audio"])
+        # on a board with the OLED Flex's LED micom, what its lighting shows (lighting.py)
+        from .. import lighting
+
+        data["lighting"] = lighting.read(vm) if vm.pid() else None
+        text += lighting.lines(data["lighting"])
     return emit(a, data, "\n".join(text))
 
 
@@ -649,14 +654,17 @@ def register_vm(cli):
         "status",
         "a running VM's status, which lasts as long as its systemd unit (gone when the VM stops, "
         "crashes or the host reboots): reason, why it runs, which stop refuses without --force; "
-        "show adds what the TV sends out as audio",
+        "show adds what the TV sends out as audio and, on a board with the OLED Flex's LED micom, "
+        "what its lighting shows",
         dest="verb",
     )
     s = command(
         g,
         "show",
         "the VM's status: its reason and, while it runs, its audio: the sound output the TV "
-        "selected, the outputs open, the digital mode, and the codec and channels sent",
+        "selected, the outputs open, the digital mode, and the codec and channels sent; and, on a "
+        "board with the OLED Flex's LED micom, its lighting: the TV's settings and what the micom "
+        "was sent",
         cmd_status,
     )
     vm_name(s)
