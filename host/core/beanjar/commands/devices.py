@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The set's inputs and ports: io tuner, io usb and io soundbar."""
+"""The set's inputs and ports: io tuner, io usb, io soundbar and io mic."""
 
 import argparse
 import json
@@ -433,12 +433,20 @@ def cmd_soundbar(lib, a):
     return emit(a, data, soundbar_text(a.name, data))
 
 
+def cmd_mic(lib, a):
+    from .. import mic
+
+    vm = lib.vm(a.name)
+    data = mic.play(vm, a.file)
+    return emit(a, data, f"{a.name}: sent {data['seconds']:g} s of {a.file} to the microphone")
+
+
 def register(cli):
     command, group, vm_name = cli.command, cli.group, cli.vm_name
     io = group(
         "io",
-        "the hardware a set talks to, from outside: USB devices, the tuner's antenna and a sound "
-        "bar",
+        "the hardware a set talks to, from outside: USB devices, the tuner's antenna, a sound bar "
+        "and the sound the built-in microphone hears",
         dest="area",
         metavar="DEVICE",
     )
@@ -733,3 +741,21 @@ def register(cli):
         cmd_soundbar,
     )
     vm_name(s)
+    g = group(
+        "mic",
+        'the sound around a set with LG\'s built-in far-field microphone (the one "Hey LG" '
+        "wakes), which such a model always has: it hears silence but for the sound files played "
+        "to it, at real time, as its capture card records them",
+        under=io,
+        dest="verb",
+    )
+    s = command(
+        g,
+        "play",
+        "play the sound file FILE (any format ffmpeg reads; - for stdin) once to the microphone; "
+        "returns when it has been sent, with up to about 4 s of it still to be heard",
+        cmd_mic,
+        usage="beanjar io mic play NAME FILE [--json]",
+    )
+    vm_name(s, "mic-play")
+    s.add_argument("file", metavar="FILE", help="the sound file on this machine, or - for stdin")

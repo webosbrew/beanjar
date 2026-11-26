@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# The initramfs's pointer bridge, touch bridge, IR pump, tuner pump, video window pump, sound pump, guest memory pump, shell agent, SimpleSmart's GOP presenter and the boot
+# The initramfs's pointer bridge, touch bridge, IR pump, tuner pump, video window pump, sound pump, microphone pump, guest memory pump, shell agent, SimpleSmart's GOP presenter and the boot
 # splash
 # (README.md): static arm64 programs. The arm64 side of
 # the guest is not Meson's cross machine (that is the 32-bit ARM userland), so each single-file
@@ -8,7 +8,7 @@
 arm64_cc = find_program(get_option('arm64_cross_compile') + 'gcc', native: true)
 arm64_cflags = ['-static', '-Os', '-Wall', '-Wextra'] + (get_option('werror') ? ['-Werror'] : [])
 virtio_bins = {}
-foreach name : ['virtio-pointer', 'virtio-touch', 'virtio-ir', 'virtio-tuner', 'virtio-video', 'virtio-sound', 'virtio-meminfo', 'virtio-capture', 'virtio-shell', 'gop-present', 'splash', 'sestore-load', 'dm-linear']
+foreach name : ['virtio-pointer', 'virtio-touch', 'virtio-ir', 'virtio-tuner', 'virtio-video', 'virtio-sound', 'virtio-mic', 'virtio-meminfo', 'virtio-capture', 'virtio-shell', 'gop-present', 'splash', 'sestore-load', 'dm-linear']
   virtio_bins += {name: custom_target(name,
     input: name + '.c',
     output: name,

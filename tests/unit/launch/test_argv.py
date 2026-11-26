@@ -696,6 +696,31 @@ class ArgvTest(unittest.TestCase):
                 self.assertEqual(targets.viewer_capture(target), port)
                 self.assertEqual("name=webos.capture" in " ".join(p.argv), port)
 
+    def test_mic_port(self):
+        """webos.mic, what the built-in far-field microphone hears (beanjar io mic play), is on the
+        targets whose model has the microphone (targets.Soc.mic: the O22 C2 boards), always, and on
+        no other."""
+        for target in (("o22", "queue"), ("o22", "ombre"), ("k8hp", "ombre"), ("m14", "beehive")):
+            with (
+                self.subTest(target=target),
+                mock.patch.object(paths, "firmware_target", return_value=target),
+                mock.patch.object(nvm, "board_ram", return_value=2048),
+                mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
+                mock.patch.object(share, "resolve_layers", return_value=([], [])),
+            ):
+                p = qemu.plan(
+                    dict(FW=self.fw, STATE="none", **net("direct"), SLOT="1", LAYERS="normal"),
+                    accel="tcg",
+                    tree=paths.Tree(self.top),
+                    say=lambda _: None,
+                    dry=True,
+                )
+                want = targets.soc(target).mic
+                self.assertEqual(want, target[0] == "o22")
+                argv = " ".join(p.argv)
+                self.assertEqual("chardev=mic,name=webos.mic" in argv, want)
+                self.assertEqual("/mic.sock,server=on,wait=off" in argv, want)
+
     def test_layer_kernel_words(self):
         """The kernel words a guest layer carries (share.kernel_args: the soc layer's Qt EGLFS
         Starfish setup) go on the kernel's command line, lowest layer first, before KERNEL_ARGS."""

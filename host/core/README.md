@@ -463,6 +463,7 @@ commands follow is in [AGENTS.md](../../AGENTS.md#follow-the-command-line-guidel
 | `io usb attach NAME [--id ID] [--image FILE [--readonly] \| --device VENDOR:PRODUCT\|BUS-DEVICE [--sudo] \| --camera [--pattern NAME]]` / `io usb detach NAME ID` / `io usb list NAME` | USB devices plugged into a running VM over usbredir: `attach` without a source adds a `usb-redir` device with a unix socket in the run directory and prints the socket; with `--image` a disk image as a USB stick; with `--device` or `--camera` it does the lot for a device of this machine, or for the virtual camera, until Ctrl-C. `detach` unplugs one, `list` shows each with whether a client is on its socket and whether the guest has the device (see [USB devices](#usb-devices)). |
 | `io usb gamepad attach NAME [--id ID]` / `io usb gamepad press NAME CONTROL... [--hold DURATION] [--id ID]` / `io usb gamepad detach NAME [--id ID]` | A virtual gamepad, a wired Xbox 360 controller (045e:028e), in a running VM: `attach` plugs it in and returns, the pad stays until `detach` or the VM stops; `press` presses and releases each control in turn (`a b x y lb rb lt rt back start guide ls rs up down left right`, each held `--hold`, default `100ms`). See [USB devices](#usb-devices). |
 | `io soundbar attach NAME [--formats FORMAT,...]` / `io soundbar detach NAME` / `io soundbar show NAME` | A sound bar on the running VM's HDMI ARC input, on its CEC bus: `attach` plugs one in with the audio formats it reports (default `lpcm,ac3,eac3,dts`), `detach` switches it off and unplugs it, `show` shows it, what it agreed with the TV (ARC, System Audio Mode, volume) and the TV's `getCECState` (see [Sound bar](#sound-bar)). Not kept across a restart. |
+| `io mic play NAME FILE` | Plays a sound file (`-`: stdin) once to the running VM's built-in far-field microphone, on a model that has one; returns when it has been sent (see [Built-in microphone](#built-in-microphone)). |
 | `mitm connect NAME` | Makes the inspector reachable from this machine and keeps it so until stdin ends, across the VM's restarts (`stop` and `start`, a guest reboot): prints one JSON line, `{"url", "password"}`, and another whenever they change (a restarted VM's inspector has a new password and no flows); stderr says when the inspector is gone and when it is back. Every 5 s it asks mitmweb with the session cookie of its first login, and when that fails asks for the VM's state again (at most every 10 s). For `HOST/NAME` it asks the host's `mitm show --password` and adds a forward from `127.0.0.1:PORT` here to the inspector there to the host's shared ssh connection; those requests keep that connection open (`ControlPersist` ends an idle one after 60 s, and the forward with it), and should it end anyway the same forward is added to a new one. It is cancelled at the end (also on SIGTERM, SIGHUP, Ctrl-C; one left by a killed run is cancelled by the next remote run, as `ares-TOOL`'s). Refused for a VM without mitm, not running, or whose inspector is not ready. beanjar-web serves the inspector through it ([web viewer](../../docs/dev/architecture/web-viewer.md#the-traffic-inspector)). |
 | `mitm clear NAME` | Empties the inspector's flow list, as its page's Clear does (`POST /clear` with the password and tornado's XSRF pair: the `_mitmproxy_xsrf` cookie and an equal `X-XSRFToken` header). For `HOST/NAME` through a forward as `mitm connect`'s, for the one request. |
 
@@ -987,6 +988,26 @@ and Quick Start+ standby, but not across a stop and start: it is QEMU's, not one
 settings. An `attach --device` killed outright (SIGKILL) leaves its `usb-redir` device with no
 client, which the guest does not see; `io usb detach` removes it. The guest kernel's USB class drivers are per
 release ([build and boot](../../docs/dev/architecture/build-and-boot.md), "Peripheral modules").
+
+### Built-in microphone
+
+A TV model with LG's far-field microphone (`targets.Soc.mic`: the OLED C2 boards of the O22
+family) always has it: `lgemu`'s capture card `LGSIC` (`mic.c`) with the five PCMs LG's echo
+canceller front end opens, `hw:1,0` the microphone pair and `hw:1,1` to `hw:1,4` its silent
+references, and a `webos.mic` virtio-serial port whose host side is `run/mic.sock`.
+`beanjar io mic play NAME FILE` decodes a sound file (`-` for stdin) with ffmpeg to 48 kHz stereo
+S16_LE, a mono file on both channels at its own level, and sends it to that socket; the guest's
+pump (`guest/initramfs/src/virtio-mic.c`) writes it to `/dev/lgemu-mic`, and `lgemu` plays it at
+real time into every capture of `hw:1,0`, at the capture's rate. A sound that follows silence is
+heard 20 ms after it arrives; the writer is held back while it is half a second ahead, so the port's
+flow control paces the sender, and `play` returns when the whole file has been sent, with up to
+about 4 s of it still in the socket's and the virtio queue's buffers. With nothing sent the
+microphone hears silence; no microphone of the host is ever captured. A model without the
+microphone has no port, and `play` says so.
+
+```sh
+beanjar io mic play tv hey-lg.wav --json
+```
 
 ### Sound bar
 

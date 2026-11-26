@@ -746,6 +746,9 @@ fi
 # the master volume and speaker mute the firmware sets, lgemu.ko to the webos.sound port, which the
 # viewer applies to the media audio (guest/initramfs/src/virtio-sound.c)
 virtio-sound > /run/virtio-sound.log 2>&1 || log "sound pump failed: see /run/virtio-sound.log"
+# what the built-in microphone hears, the webos.mic port to lgemu.ko where the model has it
+# (guest/initramfs/src/virtio-mic.c)
+virtio-mic > /run/virtio-mic.log 2>&1 || log "microphone pump failed: see /run/virtio-mic.log"
 # the guest's swap to the webos.memory port every 2 s, the viewer's memory meter (guest/initramfs/src/virtio-meminfo.c)
 virtio-meminfo > /run/virtio-meminfo.log 2>&1 || log "memory pump failed: see /run/virtio-meminfo.log"
 # `beanjar shell`: webos-enter for each session the host opens on the webos.shell port (guest/initramfs/src/virtio-shell.c)

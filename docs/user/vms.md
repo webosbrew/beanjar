@@ -93,6 +93,13 @@ beanjar stop tv1
 - `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
   synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
 - `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the
+- `io mic play NAME FILE` plays a sound file (any format ffmpeg reads; `-` for stdin) once to
+  the built-in far-field microphone of a TV model that has one (the one "Hey LG" wakes; the O22
+  family's OLED C2 boards), at real time, as its capture card records it; it returns when the
+  file has been sent, with up to about 4 s still to be heard. With nothing played the microphone
+  hears silence; no microphone of the host is ever captured. A model without the microphone gives
+  an error. Only on this machine's VMs (run it on the VM's host)
+  ([manager README](../../host/core/README.md#built-in-microphone)).
 - `io usb gamepad attach NAME` plugs a virtual gamepad, a wired Xbox 360 controller, into the
   running TV; it stays plugged in until `io usb gamepad detach NAME`. `io usb gamepad press NAME a
   b down` presses and releases its buttons, triggers and d-pad in turn (`--hold 500ms` for longer

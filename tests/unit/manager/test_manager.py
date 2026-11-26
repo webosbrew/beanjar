@@ -3722,6 +3722,8 @@ class CliParseTest(unittest.TestCase):
             ),
             (["io", "soundbar", "detach", "tv1"], devices.cmd_soundbar, {"verb": "detach"}),
             (["io", "soundbar", "show", "tv1"], devices.cmd_soundbar, {"verb": "show"}),
+            (["io", "mic", "play", "tv1", "F"], devices.cmd_mic, {"verb": "play", "file": "F"}),
+            (["io", "mic", "play", "tv1", "-"], devices.cmd_mic, {"file": "-"}),
             (
                 ["screenshot", "tv1", "-", "--frame", "384x216"],
                 display.cmd_screenshot,

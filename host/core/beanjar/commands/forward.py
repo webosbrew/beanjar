@@ -156,6 +156,10 @@ def remote_command(a, words, host, name):
             f"add --mine adds this machine's ~/.ssh/*.pub: run it on {host} for {name}, or add "
             f"the keys to {name}'s identity/authorized_keys there"
         )
+    if kind == "mic-play":
+        raise Error(
+            f"io mic play plays a file on this machine, and {name} runs on {host}: run it on {host}"
+        )
     if kind == "keymodel-set":
         raise Error(f"key model set reads a file on this machine: run it on {host} for {name}")
     if kind == "show":

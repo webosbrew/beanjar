@@ -29,6 +29,7 @@ file /bin/virtio-ir ${VIRTIO_IR} 0755 0 0
 file /bin/virtio-tuner ${VIRTIO_TUNER} 0755 0 0
 file /bin/virtio-video ${VIRTIO_VIDEO} 0755 0 0
 file /bin/virtio-sound ${VIRTIO_SOUND} 0755 0 0
+file /bin/virtio-mic ${VIRTIO_MIC} 0755 0 0
 file /bin/virtio-meminfo ${VIRTIO_MEMINFO} 0755 0 0
 file /bin/virtio-capture ${VIRTIO_CAPTURE} 0755 0 0
 file /bin/virtio-shell ${VIRTIO_SHELL} 0755 0 0

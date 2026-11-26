@@ -205,6 +205,7 @@ from . import (
     keys,
     layerimage,
     layermeta,
+    mic,
     nvm,
     targets,
     partmap,
@@ -1186,6 +1187,15 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             "virtserialport,chardev=capture,name=webos.capture",
         ]
         p.capture_relay = (socks["CAPTURE_SOCK"], qemu_capture, None)
+    # a model with LG's far-field microphone (targets.Soc.mic), always: what it hears, from `beanjar io
+    # mic play` (mic.py) on RUN_DIR's mic.sock to the guest's pump (virtio-mic.c) and lgemu's card
+    if targets.soc(p.target).mic:
+        devices += [
+            "-chardev",
+            f"socket,id=mic,path={mic.sock_path(p.run_dir)},server=on,wait=off",
+            "-device",
+            "virtserialport,chardev=mic,name=webos.mic",
+        ]
     # the micom's standby (Quick Start+): the guest's IR pump holds webos.standby open while it
     # lasts, the host reads it as the chardev's frontend-open in QMP query-chardev
     devices += [
