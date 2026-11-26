@@ -10,7 +10,7 @@
 #   scripts/build-packages.sh guest [OUT]
 #
 # host: beanjar, beanjar-ui, beanjar-vnc, beanjar-web and beanjar-qemu for this machine's
-# architecture, amd64 or arm64. The prebuilt QEMU, FFmpeg and neatvnc of packaging/vendor.toml
+# architecture, amd64 or arm64. The prebuilt QEMU, FFmpeg (both builds) and neatvnc of vendor.toml
 # downloaded and checked (meson/vendor.py, into build/vendor); role host's build dependencies
 # (packaging/debian/build-deps.sh) installed; the host build in OUT/host, published to
 # OUT/publish with the prebuilt trees; packaging/debian/build.py --host-only into OUT/debs.
@@ -50,7 +50,7 @@ git config --global --get-all safe.directory | grep -qxF "$TOP" || git config --
 
 host() {
 	step "prebuilt programs ($arch)"
-	python3 -I "$TOP/meson/vendor.py" tree "$arch" qemu ffmpeg neatvnc
+	python3 -I "$TOP/meson/vendor.py" tree "$arch" qemu ffmpeg ffmpeg-helper neatvnc
 	t1=$(date +%s)
 
 	step "build dependencies (role host)"

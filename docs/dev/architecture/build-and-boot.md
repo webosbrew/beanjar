@@ -180,8 +180,8 @@ QEMU, FFmpeg and neatvnc (with aml) are not built here: they are beanjar-vendor'
 tarballs, pinned by release tag and SHA-256 in `packaging/vendor.toml`. The host build's
 `meson/vendor.py` downloads the tarballs for its architecture into `build/vendor/download`,
 refuses one whose hash differs, unpacks each into `build/vendor` and publishes the trees as
-`build/qemu`, `build/ffmpeg` and `build/neatvnc` (packaging/debian/README.md, "The prebuilt
-programs"). The published executable is `build/qemu/bin/qemu-system-aarch64`; the launcher runs it
+`build/qemu`, `build/ffmpeg`, `build/ffmpeg-helper` (the media helper's own FFmpeg) and
+`build/neatvnc` (packaging/debian/README.md, "The prebuilt programs"). The published executable is `build/qemu/bin/qemu-system-aarch64`; the launcher runs it
 whenever it is published, and the system QEMU otherwise (`paths.Tree.qemu`).
 
 Every source tarball is a `[wrap-file]` in `subprojects/` with its `source_hash` (sha256), and

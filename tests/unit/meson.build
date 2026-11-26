@@ -19,14 +19,14 @@ endforeach
 check_media_leases = executable('check-media-leases',
   ['media/check-leases.c', '../../host/media/ipc.c'] + lease_engine_sources,
   dependencies: ffmpeg_deps + [dependency('threads')],
-  build_rpath: vendor['ffmpeg'] / 'lib',       # the private FFmpeg, unpacked in build/vendor
+  build_rpath: vendor['ffmpeg-helper'] / 'lib',  # the helper's FFmpeg, unpacked in build/vendor
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-leases', check_media_leases, suite: ['unit', 'media'], timeout: 10)
 # a hardware decoder's fallback to software keeps the stream (host/media/decode/frame.c)
 check_media_fallback = executable('check-media-fallback',
   ['media/check-fallback.c', '../../host/media/ipc.c'] + lease_engine_sources,
   dependencies: ffmpeg_deps + [dependency('threads')],
-  build_rpath: vendor['ffmpeg'] / 'lib',
+  build_rpath: vendor['ffmpeg-helper'] / 'lib',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-fallback', check_media_fallback, suite: ['unit', 'media'], timeout: 10,
   protocol: 'tap')
@@ -34,7 +34,7 @@ test('check-media-fallback', check_media_fallback, suite: ['unit', 'media'], tim
 check_media_software_only = executable('check-media-software-only',
   ['media/check-software-only.c', '../../host/media/ipc.c'] + lease_engine_sources,
   dependencies: ffmpeg_deps + [dependency('threads')],
-  build_rpath: vendor['ffmpeg'] / 'lib',
+  build_rpath: vendor['ffmpeg-helper'] / 'lib',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-software-only', check_media_software_only, suite: ['unit', 'media'],
   timeout: 10, protocol: 'tap')
@@ -42,7 +42,7 @@ test('check-media-software-only', check_media_software_only, suite: ['unit', 'me
 check_media_relayout = executable('check-media-relayout',
   ['media/check-relayout.c', '../../host/media/ipc.c'] + lease_engine_sources,
   dependencies: ffmpeg_deps + [dependency('threads')],
-  build_rpath: vendor['ffmpeg'] / 'lib',
+  build_rpath: vendor['ffmpeg-helper'] / 'lib',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-relayout', check_media_relayout, suite: ['unit', 'media'], timeout: 20,
   protocol: 'tap')

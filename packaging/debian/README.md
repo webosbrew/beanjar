@@ -4,8 +4,8 @@ The Python code is three packages, each with its own `pyproject.toml` and Debian
 `beanjar` (`host/core`: the core, the CLI and the host runtime, no GTK), `beanjar_ui`
 (`host/ui`: the VM manager's and the viewer's GTK windows) and `beanjar_web` (`host/web`).
 The native `beanjar` package contains the core, the viewer's native core (`libbeanjar-viewer-core.so`,
-`viewer-headless`), the host helpers and the private FFmpeg they decode with
-(`/usr/lib/beanjar/ffmpeg`, below), and recommends `beanjar-ui`.
+`viewer-headless`), the host helpers and the media helper's own FFmpeg, which it decodes with
+(`/usr/lib/beanjar/ffmpeg-helper`, below), and recommends `beanjar-ui`.
 `beanjar-ui` (architecture all, `/usr/bin/beanjar-ui`) is the windows: `beanjar_ui`, its layouts
 (both GResource bundles), the desktop entry and the icon, over GTK 4 and libadwaita for Python.
 `beanjar-guest` contains the same ARM guest payload for arm64 and amd64 hosts, and the board
@@ -13,8 +13,8 @@ definitions the host reads (`guest/targets`, in `/usr/share/beanjar/guest/target
 [firmware targets](../../docs/dev/architecture/firmware-targets.md)).
 `beanjar-vnc` (`/usr/bin/beanjar-vnc`, `beanjar vnc start NAME`) serves a VM's TV picture
 over VNC with the viewer core of the same `beanjar` and neatvnc 1.0 with aml 1.0, which it carries
-in `/usr/lib/beanjar/neatvnc` (Debian trixie has only neatvnc 0.9.1), and its sound as Opus
-(`libopus0`) or PCM.
+in `/usr/lib/beanjar/neatvnc` (Debian trixie has only neatvnc 0.9.1), with the full FFmpeg in
+`/usr/lib/beanjar/ffmpeg`, and its sound as Opus (`libopus0`) or PCM.
 `beanjar-web` (architecture all, `/usr/bin/beanjar-web`) shows VMs in a browser: Debian's
 `novnc`, Debian's `bootstrap-icons` for its buttons, and a popup remote, served by `python3-aiohttp`
 ([web viewer](../../docs/dev/architecture/web-viewer.md)).
@@ -36,26 +36,32 @@ on an x86-64 build machine (meson option `x86_64_kernel`); the Guest workflow re
 
 ### The prebuilt programs
 
-QEMU, FFmpeg and neatvnc with aml are not built here: they are the prebuilt tarballs that
+QEMU, FFmpeg (twice: the full build and the media helper's) and neatvnc with aml are not built
+here: they are the prebuilt tarballs that
 [beanjar-vendor](https://github.com/mariotaku/beanjar-vendor) releases for Debian 13 on amd64 and
 arm64, with their patches and build scripts. `packaging/vendor.toml` pins each one's release tag
 and the SHA-256 of each architecture's tarball. The host build (`meson/vendor.py`) downloads them
 into `build/vendor/download`, checks them against the pin and unpacks them into `build/vendor`,
-links the libraries through their own pkg-config files and publishes the three trees as they are
-(`build/qemu`, `build/ffmpeg`, `build/neatvnc`); `build.py` packages them from the host publish
+links the libraries through their own pkg-config files and publishes the trees as they are
+(`build/qemu`, `build/ffmpeg`, `build/ffmpeg-helper`, `build/neatvnc`); `build.py` packages them from the host publish
 directory. There is no other source: no system package or local build stands in for them. A new
 version is a new beanjar-vendor release and a new pin: its tag and the two hashes from the
 release's `SHA256SUMS`, checked against a download; the host build reconfigures by itself. If the
 release's `BUILDINFO` names different runtime libraries (a codec library's new soname), update
 roles `host` and `host-arm64` (`packaging/debian/build-deps`) to match.
 
-- `beanjar` ships FFmpeg's shared libraries in `/usr/lib/beanjar/ffmpeg/lib`. The copy keeps
-  FFmpeg's symbol versions, the same as Debian's, so no process may load both: the media helper
-  and `beanjar-vnc` link the private copy, through RUNPATH `/usr/lib/beanjar/ffmpeg/lib`, and
-  `beanjar-vnc` also links each FFmpeg library `libneatvnc` needs, whose own RUNPATH is only its
-  directory.
-- `beanjar-vnc` ships `libneatvnc` and `libaml` in `/usr/lib/beanjar/neatvnc/lib`, beside Debian's
-  `libneatvnc0` and `libaml0t64` (Weston's), and takes FFmpeg from the `beanjar` it depends on.
+- `beanjar` ships the media helper's FFmpeg (beanjar-vendor's `ffmpeg-helper`: libavcodec,
+  libavutil and libswresample with only the decoders the helper can open, LGPL) in
+  `/usr/lib/beanjar/ffmpeg-helper/lib`; the media helper links it through that RUNPATH. Its
+  decoder list is the helper's own (`scripts/media-helper-decoders`;
+  `tests/unit/media/test_helper_decoders.py` checks the pinned build against the code).
+- `beanjar-vnc` ships the full FFmpeg in `/usr/lib/beanjar/ffmpeg/lib` and `libneatvnc` and
+  `libaml` in `/usr/lib/beanjar/neatvnc/lib`, beside Debian's `libneatvnc0` and `libaml0t64`
+  (Weston's). It links the full FFmpeg through RUNPATH `/usr/lib/beanjar/ffmpeg/lib`, and each
+  FFmpeg library `libneatvnc` needs too, whose own RUNPATH is only its directory. It replaces an
+  older `beanjar`, which had the full FFmpeg.
+- Each FFmpeg copy keeps FFmpeg's sonames and symbol versions, the same as Debian's, so no process
+  may load two of them: the media helper only ever loads its own, `beanjar-vnc` only the full one.
 - `beanjar-qemu` is the QEMU tree, already stripped, and the qemu-user trees' `qemu-arm`, with
   their licence texts and `BUILDINFO` in `/usr/share/doc/beanjar-qemu/qemu-user/<guest arch>`.
 
@@ -66,7 +72,7 @@ replace (dpkg-shlibdeps names those too where the build machine has them install
 library that belongs to a package); `beanjar-qemu`'s Depends is its `BUILDINFO`'s. Each tree's
 licence texts, `NOTICE` and `BUILDINFO` go to the package's `/usr/share/doc/<package>/<program>`
 (`beanjar-qemu`'s to `/usr/share/doc/beanjar-qemu`), with a stanza in its `copyright` naming the
-release, whose assets carry the corresponding source of the GPL programs.
+release, whose assets carry the corresponding source of the GPL and LGPL programs.
 
 Application code is in `/usr/lib/beanjar` (the Python packages in `core/`, `ui/` and `web/`, as
 source), native launchers and helpers in

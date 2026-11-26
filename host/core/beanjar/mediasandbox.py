@@ -7,7 +7,7 @@ The helper (host/helpers/media-helper) decodes what the guest sends with FFmpeg.
 its own user, mount, pid, network, IPC, UTS and cgroup namespaces, a new session and no
 capabilities. It sees:
 - read-only: /usr, /etc, the root's library links, its own binary and the FFmpeg beside it (a
-  checkout's build/ffmpeg), and what LD_LIBRARY_PATH, LIBVA_DRIVERS_PATH and the Vulkan loader's
+  checkout's build/ffmpeg-helper, the helper's own build), and what LD_LIBRARY_PATH, LIBVA_DRIVERS_PATH and the Vulkan loader's
   variables name outside /usr;
 - read-write: its own directories only (launch.start_media_helper: RUN_DIR/media and the pool's
   RUNTIME_DIRECTORY/media), never RUN_DIR itself, which holds QMP sockets;
@@ -130,9 +130,9 @@ def command(bwrap, helper, dirs, env, hwdec):
             cmd += ["--ro-bind", path, path]
     cmd += ["--ro-bind", "/etc", "/etc"]
     cmd += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/dev/shm", "--tmpfs", "/tmp"]
-    # the binary and the FFmpeg its RUNPATH names ($ORIGIN/../ffmpeg/lib in a checkout)
+    # the binary and the FFmpeg its RUNPATH names ($ORIGIN/../ffmpeg-helper/lib in a checkout)
     cmd += _ro(helper)
-    cmd += _ro(os.path.join(os.path.dirname(os.path.abspath(helper)), "..", "ffmpeg"))
+    cmd += _ro(os.path.join(os.path.dirname(os.path.abspath(helper)), "..", "ffmpeg-helper"))
     for key in LIBRARY_DIRS:
         for path in (env.get(key) or "").split(":"):
             cmd += _ro(path)

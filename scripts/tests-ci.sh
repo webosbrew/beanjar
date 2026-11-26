@@ -11,8 +11,8 @@
 # lint: Debian's clang-format and reuse; ruff and pre-commit at the versions pyproject.toml and
 # .pre-commit-config.yaml ask for, with pipx (Debian 13 has no ruff and an older pre-commit).
 #
-# unit: the prebuilt QEMU, FFmpeg and neatvnc of packaging/vendor.toml (meson/vendor.py, into
-# build/vendor) and role host's build dependencies (packaging/debian/build-deps.sh), as the
+# unit: the prebuilt QEMU, FFmpeg (both builds) and neatvnc of packaging/vendor.toml
+# (meson/vendor.py, into build/vendor) and role host's build dependencies (packaging/debian/build-deps.sh), as the
 # Packages workflow's build has them; the pinned Homebrew Channel IPKs in Meson's package cache;
 # the host build in build/host, then `meson test --suite unit`, the failures' logs printed. Its
 # exit status is the tests'.
@@ -60,7 +60,7 @@ unit() {
 	apt-get install -y --no-install-recommends curl xz-utils equivs dpkg-dev
 	arch=$(dpkg --print-architecture)
 	step "prebuilt programs ($arch)"
-	python3 -I "$TOP/meson/vendor.py" tree "$arch" qemu ffmpeg neatvnc
+	python3 -I "$TOP/meson/vendor.py" tree "$arch" qemu ffmpeg ffmpeg-helper neatvnc
 
 	step "build dependencies (role host)"
 	"$TOP/packaging/debian/build-deps.sh" host

@@ -26,12 +26,19 @@ guest = ["arm64", "amd64"]
 arm64 = "9f32da5e5bccb378dbec4f4c1c26c5e6a764c9c093e36287860c63a857816594"
 amd64 = "be75b81892da27bde0d280527715e4c6dfef026ec9d59faa58d61435d0162d14"
 
-# FFmpeg with the V4L2 Request API hwaccels, /usr/lib/beanjar/ffmpeg: the media helper's
-# decoding and beanjar-vnc's video (beanjar)
+# FFmpeg with the V4L2 Request API hwaccels, /usr/lib/beanjar/ffmpeg: beanjar-vnc's video
 [ffmpeg]
 tag = "ffmpeg-7.1.5+beanjar2"
 amd64 = "5e093492b313aeb01f6d34864ed1c8f8b8c6800cef27aa82222be360cd2787e9"
 arm64 = "d088d6b4a2ce45d4516dfe89bde8aa3f7524cc0b045b6021d34c7d25e44ff045"
+
+# The media helper's own FFmpeg, /usr/lib/beanjar/ffmpeg-helper: the same source with only the
+# decoders the helper can open (scripts/media-helper-decoders), their parsers and VA-API, Vulkan,
+# NVDEC and V4L2 request decoding; no encoder, no libavformat (beanjar)
+[ffmpeg-helper]
+tag = "ffmpeg-helper-7.1.5+beanjar1"
+amd64 = "f8b31a2447a26a5343cc0a3974872b49707739d5e137eec66aee83bc365110f9"
+arm64 = "ff546a21d1780ac94a03a09467a6ae081d6b4870bf60fe8b115be5bb7eb241a2"
 
 # neatvnc 1.0 and aml 1.0, /usr/lib/beanjar/neatvnc: beanjar-vnc
 [neatvnc]

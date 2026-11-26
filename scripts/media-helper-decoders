@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""The decoders the media helper can open, from its own code: the list beanjar-vendor's
+ffmpeg-helper build compiles (its ffmpeg-helper/decoders, which this prints).
+
+    scripts/media-helper-decoders [LIBDIR]
+
+The guest chooses a decoder through the caps of an OPEN or CAPS message: caps_codec()
+(host/media/decode/caps.c) maps the media type to an AVCodecID, and open_context()
+(host/media/decode/codec.c) takes avcodec_find_decoder() of that id, or a decoder it names with
+avcodec_find_decoder_by_name(). So the reachable decoders are each AV_CODEC_ID_* that
+caps_codec() can return, resolved as avcodec_find_decoder() resolves it in the full FFmpeg build
+(packaging/vendor.toml's ffmpeg, the libraries in LIBDIR, by default the pinned tree that
+meson/vendor.py unpacks), and each name host/media passes to avcodec_find_decoder_by_name().
+
+Each line is "<codec> <decoder>": the codec's FFmpeg name and the decoder's. The parsers and the
+hardware decoders follow from the codecs and decoders; beanjar-vendor's ffmpeg-helper/build.sh
+derives them from FFmpeg's source. tests/unit/media/test_helper_decoders.py checks that the list
+the pinned ffmpeg-helper build was made from is this one.
+"""
+
+import ctypes
+from pathlib import Path
+import platform
+import re
+import sys
+
+TOP = Path(__file__).resolve().parents[1]
+MEDIA = TOP / "host/media"
+CAPS = MEDIA / "decode/caps.c"
+
+
+class Error(Exception):
+    pass
+
+
+def caps_codec_ids(source=None):
+    """The AV_CODEC_ID_* names (without the prefix, lower case) caps_codec() can return."""
+    text = source if source is not None else CAPS.read_text()
+    m = re.search(r"^void caps_codec\(.*?^\}$", text, re.DOTALL | re.MULTILINE)
+    if not m:
+        raise Error(f"{CAPS}: no caps_codec()")
+    ids = {i.lower() for i in re.findall(r"\bAV_CODEC_ID_([A-Z0-9_]+)", m.group(0))}
+    ids.discard("none")
+    return sorted(ids)
+
+
+def named_decoders(root=MEDIA):
+    """The decoder names host/media asks for with avcodec_find_decoder_by_name()."""
+    names = set()
+    for f in sorted(root.rglob("*.c")):
+        names.update(re.findall(r'avcodec_find_decoder_by_name\(\s*"([^"]+)"', f.read_text()))
+    return sorted(names)
+
+
+def host_arch():
+    arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
+    if not arch:
+        raise Error(f"no beanjar-vendor FFmpeg for {platform.machine()}")
+    return arch
+
+
+def vendor_tree(program):
+    """The unpacked tree of a prebuilt program of packaging/vendor.toml (meson/vendor.py)."""
+    sys.path.insert(0, str(TOP / "meson"))
+    import vendor
+
+    try:
+        return vendor.tree(program, host_arch())
+    except vendor.Error as e:
+        raise Error(str(e)) from None
+
+
+class FFmpeg:
+    """The few libavcodec calls needed, through ctypes: the first fields of AVCodecDescriptor
+    (enum AVCodecID id) and AVCodec (const char *name) are stable public ABI."""
+
+    def __init__(self, libdir):
+        libdir = Path(libdir)
+        sonames = sorted(libdir.glob("libavcodec.so.[0-9]*"), key=lambda p: len(p.name))
+        if not sonames:
+            raise Error(f"{libdir}: no libavcodec")
+        # its NEEDED libavutil and libswresample are found through its RUNPATH $ORIGIN
+        self.lib = ctypes.CDLL(str(sonames[0]))
+        self.lib.avcodec_descriptor_get_by_name.restype = ctypes.POINTER(ctypes.c_int)
+        self.lib.avcodec_descriptor_get_by_name.argtypes = [ctypes.c_char_p]
+        for f in ("avcodec_find_decoder", "avcodec_find_decoder_by_name"):
+            getattr(self.lib, f).restype = ctypes.POINTER(ctypes.c_char_p)
+        self.lib.avcodec_find_decoder.argtypes = [ctypes.c_int]
+        self.lib.avcodec_find_decoder_by_name.argtypes = [ctypes.c_char_p]
+        self.lib.avcodec_get_name.restype = ctypes.c_char_p
+        self.lib.avcodec_get_name.argtypes = [ctypes.c_int]
+
+    def codec_id(self, name):
+        d = self.lib.avcodec_descriptor_get_by_name(name.encode())
+        if not d:
+            raise Error(f"FFmpeg has no codec {name}")
+        return d[0]
+
+    def decoder(self, codec):
+        c = self.lib.avcodec_find_decoder(self.codec_id(codec))
+        if not c:
+            raise Error(f"the full FFmpeg build has no decoder for {codec}")
+        return c[0].decode()
+
+    def decoder_codec(self, decoder):
+        """The codec name of a decoder named in host/media."""
+        c = self.lib.avcodec_find_decoder_by_name(decoder.encode())
+        if not c:
+            raise Error(f"the full FFmpeg build has no decoder {decoder}")
+        # AVCodec: name, long_name, then enum AVMediaType type and enum AVCodecID id
+        p = ctypes.cast(c, ctypes.c_void_p).value + 2 * ctypes.sizeof(ctypes.c_void_p)
+        return self.lib.avcodec_get_name(ctypes.c_int.from_address(p + 4).value).decode()
+
+
+def decoders(libdir=None):
+    """[(codec, decoder)], sorted: what the media helper can open."""
+    ff = FFmpeg(libdir or vendor_tree("ffmpeg") / "lib")
+    pairs = {(c, ff.decoder(c)) for c in caps_codec_ids()}
+    pairs.update((ff.decoder_codec(d), d) for d in named_decoders())
+    return sorted(pairs)
+
+
+def render(pairs):
+    lines = [
+        "# The decoders of Beanjar's media helper, one per line: the codec's FFmpeg name and the",
+        "# decoder's. Generated by Beanjar's scripts/media-helper-decoders from the helper's code:",
+        "# each codec caps_codec() maps a guest's caps to (host/media/decode/caps.c), with the decoder",
+        "# avcodec_find_decoder() picks for it in the full FFmpeg build, and each decoder the helper",
+        "# names (avcodec_find_decoder_by_name). Regenerate it there; do not edit it by hand.",
+    ]
+    w = max(len(c) for c, _ in pairs) + 1
+    lines += [f"{c:<{w}}{d}" for c, d in pairs]
+    return "\n".join(lines) + "\n"
+
+
+def main(argv):
+    if len(argv) > 2 or (len(argv) == 2 and argv[1] in ("-h", "--help")):
+        print(__doc__.strip())
+        return 0 if len(argv) == 2 else 2
+    try:
+        sys.stdout.write(render(decoders(argv[1] if len(argv) == 2 else None)))
+    except (Error, OSError) as e:
+        print(f"media-helper-decoders: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -264,15 +264,19 @@ class SandboxTest(unittest.TestCase):
         self.assertNotIn("/usr/lib/x", self.binds(cmd, "--ro-bind-try"))
 
     def test_checkout_ffmpeg(self):
-        """A checkout's helper: the binary and build/ffmpeg beside it (its RUNPATH)."""
+        """A checkout's helper: the binary and build/ffmpeg-helper beside it (its RUNPATH), not
+        the full build/ffmpeg."""
         tmp = tempfile.mkdtemp(prefix="beanjar-sandbox-")
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         helper = os.path.join(tmp, "build/media-helper/media-helper")
         os.makedirs(os.path.dirname(helper))
+        os.makedirs(os.path.join(tmp, "build/ffmpeg-helper/lib"))
         os.makedirs(os.path.join(tmp, "build/ffmpeg/lib"))
         cmd = mediasandbox.command("/bwrap", helper, [], {}, "none")
-        self.assertIn(helper, self.binds(cmd, "--ro-bind-try"))
-        self.assertIn(os.path.join(tmp, "build/ffmpeg"), self.binds(cmd, "--ro-bind-try"))
+        binds = self.binds(cmd, "--ro-bind-try")
+        self.assertIn(helper, binds)
+        self.assertIn(os.path.join(tmp, "build/ffmpeg-helper"), binds)
+        self.assertNotIn(os.path.join(tmp, "build/ffmpeg"), binds)
 
     def test_environment(self):
         env = mediasandbox.environment(launch.media_helper_environment(SESSION))

@@ -322,7 +322,8 @@ else
     subdir(module)
   endforeach
   # The prebuilt programs (meson/meson.build), as they are: the launcher runs build/qemu, and
-  # build/ffmpeg and build/neatvnc are the libraries the programs above find through their RUNPATH
+  # build/ffmpeg, build/ffmpeg-helper and build/neatvnc are the libraries the programs above find
+  # through their RUNPATH
   foreach program : vendor.keys()
     published += [['tree', vendor[program], program]]
   endforeach

@@ -38,7 +38,7 @@ BUILD_ARCH = None  # this machine's Debian architecture (main)
 QEMU_DEPENDS = "beanjar-qemu | qemu-system-arm, beanjar-qemu | qemu-system-modules-opengl"
 
 # The prebuilt programs of beanjar-vendor (packaging/vendor.toml), which the host build publishes
-# as they are: build/qemu, build/ffmpeg and build/neatvnc (meson/vendor.py). Their packages
+# as they are: build/qemu, build/ffmpeg, build/ffmpeg-helper and build/neatvnc (meson/vendor.py). Their packages
 # depend on what each tree's BUILDINFO says its binaries need (dpkg-shlibdeps where they were
 # built), less the libraries the private copies replace: Debian's FFmpeg, which neatvnc was built
 # against and which no Beanjar process may load beside the private one, and neatvnc and aml.
@@ -65,17 +65,17 @@ Comment: This product uses usbipdcpp (https://github.com/yunsmall/usbipdcpp), li
  LGPLv3. Built unmodified from that source (subprojects/usbipdcpp.wrap names the revision) and
  linked dynamically. On Debian systems the licence is in /usr/share/common-licenses/LGPL-3.
 
-Files: usr/lib/beanjar/ffmpeg/*
+Files: usr/lib/beanjar/ffmpeg-helper/*
 Copyright: the FFmpeg developers
-License: GPL-2.0-or-later
-Comment: FFmpeg {version} with the V4L2 Request API hwaccels, as beanjar-vendor builds it
- ({repository}, release {tag}, whose ffmpeg-{version}-source.tar.xz is the corresponding source).
- Most of FFmpeg is LGPL-2.1-or-later; built with --enable-gpl and linking GPL libraries, the
- libraries as built are GPL-2.0-or-later. FFmpeg's licence texts and NOTICE are in
- /usr/share/doc/beanjar/ffmpeg, with the build's BUILDINFO. On Debian systems the GPL is in
- /usr/share/common-licenses/GPL-2.
+License: LGPL-2.1-or-later
+Comment: FFmpeg {version} with only the media helper's decoders and the V4L2 Request API
+ hwaccels, as beanjar-vendor builds it ({repository}, release {tag}, whose
+ ffmpeg-helper-{version}-source.tar.xz is the corresponding source). FFmpeg's licence texts and
+ NOTICE are in /usr/share/doc/beanjar/ffmpeg-helper, with the build's BUILDINFO. On Debian
+ systems the LGPL is in /usr/share/common-licenses/LGPL-2.1.
 """
-# beanjar-vnc's: neatvnc and aml, ISC (not among Debian's common licences: the texts are shipped).
+# beanjar-vnc's: neatvnc and aml, ISC (not among Debian's common licences: the texts are shipped),
+# and the full FFmpeg build (VNC_FFMPEG_COPYRIGHT).
 VNC_COPYRIGHT = """\
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: beanjar
@@ -87,6 +87,18 @@ Comment: neatvnc {version} and aml, with Beanjar's V4L2 H.264 patches (ISC), as 
  builds them ({repository}, release {tag}). Their licence texts, and NOTICE for the code they
  include from elsewhere under BSD licences, are in /usr/share/doc/beanjar-vnc/neatvnc and
  /usr/share/doc/beanjar-vnc/aml, with the build's BUILDINFO.
+"""
+VNC_FFMPEG_COPYRIGHT = """\
+
+Files: usr/lib/beanjar/ffmpeg/*
+Copyright: the FFmpeg developers
+License: GPL-2.0-or-later
+Comment: FFmpeg {version} with the V4L2 Request API hwaccels, as beanjar-vendor builds it
+ ({repository}, release {tag}, whose ffmpeg-{version}-source.tar.xz is the corresponding source).
+ Most of FFmpeg is LGPL-2.1-or-later; built with --enable-gpl and linking GPL libraries, the
+ libraries as built are GPL-2.0-or-later. FFmpeg's licence texts and NOTICE are in
+ /usr/share/doc/beanjar-vnc/ffmpeg, with the build's BUILDINFO. On Debian systems the GPL is in
+ /usr/share/common-licenses/GPL-2.
 """
 # beanjar-qemu's: QEMU, GPL-2.0-only with parts under compatible licences, and its firmware images.
 QEMU_COPYRIGHT = """\
@@ -199,7 +211,9 @@ def write(path, text, mode=0o644):
     path.chmod(mode)
 
 
-def control(root, name, version, arch, depends, description, recommends=None, suggests=None):
+def control(
+    root, name, version, arch, depends, description, recommends=None, suggests=None, replaces=None
+):
     size = sum(p.stat().st_size for p in root.rglob("*") if p.is_file()) // 1024
     write(
         root / "DEBIAN/control",
@@ -209,6 +223,7 @@ def control(root, name, version, arch, depends, description, recommends=None, su
         + (f"Depends: {depends}\n" if depends else "")
         + (f"Recommends: {recommends}\n" if recommends else "")
         + (f"Suggests: {suggests}\n" if suggests else "")
+        + (f"Breaks: {replaces}\nReplaces: {replaces}\n" if replaces else "")
         + f"Homepage: https://github.com/webosbrew/beanjar\n"
         f"Description: {description}\n",
     )
@@ -616,10 +631,10 @@ def stage_host(work, hp, arch, ident):
         ),
         0o755,
     )
-    # the private FFmpeg (media-helper; beanjar-vnc's too, which depends on this beanjar) and
-    # neatvnc with aml (beanjar-vnc), each found through its programs' RUNPATH
-    # /usr/lib/beanjar/<program>/lib, with its licence texts and BUILDINFO in the package's doc
-    for root, program in ((host, "ffmpeg"), (vnc, "neatvnc")):
+    # the media helper's FFmpeg (beanjar), and the full FFmpeg and neatvnc with aml (beanjar-vnc),
+    # each found through its programs' RUNPATH /usr/lib/beanjar/<program>/lib, with its licence
+    # texts and BUILDINFO in the package's doc
+    for root, program in ((host, "ffmpeg-helper"), (vnc, "ffmpeg"), (vnc, "neatvnc")):
         tree, info = vendor_tree(hp, program, arch)
         stage_libraries(tree, root / PREFIX / program / "lib")
         for doc in sorted((tree / "share/doc").iterdir()):
@@ -629,11 +644,12 @@ def stage_host(work, hp, arch, ident):
         copy(TOP / "packaging/debian/README.md", root / "usr/share/doc" / root.name / "README.md")
     write(
         host / "usr/share/doc/beanjar/copyright",
-        vendor_licence(HOST_COPYRIGHT, vendor_tree(hp, "ffmpeg", arch)[1]),
+        vendor_licence(HOST_COPYRIGHT, vendor_tree(hp, "ffmpeg-helper", arch)[1]),
     )
     write(
         vnc / "usr/share/doc/beanjar-vnc/copyright",
-        vendor_licence(VNC_COPYRIGHT, vendor_tree(hp, "neatvnc", arch)[1]),
+        vendor_licence(VNC_COPYRIGHT, vendor_tree(hp, "neatvnc", arch)[1])
+        + vendor_licence(VNC_FFMPEG_COPYRIGHT, vendor_tree(hp, "ffmpeg", arch)[1]),
     )
     # link = "lan"'s helper (host/helpers/network/lan-helper.c): CAP_NET_ADMIN only, as a file
     # capability, which dpkg cannot carry; without it link=lan fails at start and says so
@@ -958,14 +974,14 @@ def main():
         work = Path(work)
         host, vnc = stage_host(work, hp, arch, host_ident)
         audit_private(host, vnc)
-        ffmpeg = host / PREFIX / "ffmpeg/lib"
+        helper_ffmpeg = host / PREFIX / "ffmpeg-helper/lib"
         libs = merge_depends(
             (
                 shlibs_depends(a.shlibs_file.read_text(), a.shlibs_file)
                 if a.shlibs_file
-                else native_dependencies(host, arch, private=[ffmpeg])
+                else native_dependencies(host, arch, private=[helper_ffmpeg])
             ),
-            vendor_tree(hp, "ffmpeg", arch)[1]["Depends"],
+            vendor_tree(hp, "ffmpeg-helper", arch)[1]["Depends"],
         )
         control(
             host,
@@ -985,10 +1001,11 @@ def main():
                 else native_dependencies(
                     vnc,
                     arch,
-                    [host / PREFIX / "viewer", ffmpeg],
-                    private=[vnc / PREFIX / "neatvnc/lib"],
+                    [host / PREFIX / "viewer"],
+                    private=[vnc / PREFIX / "ffmpeg/lib", vnc / PREFIX / "neatvnc/lib"],
                 )
             ),
+            vendor_tree(hp, "ffmpeg", arch)[1]["Depends"],
             vendor_tree(hp, "neatvnc", arch)[1]["Depends"],
         )
         control(
@@ -998,6 +1015,9 @@ def main():
             arch,
             vnc_dependencies(version, vnc_libs),
             "Beanjar VMs' TV picture as a VNC server (neatvnc), without a desktop",
+            # the full FFmpeg, /usr/lib/beanjar/ffmpeg, was beanjar's before the media helper
+            # had its own
+            replaces=f"beanjar (<< {version})",
         )
         if not a.host_only:
             package_guest(a, identity, work)

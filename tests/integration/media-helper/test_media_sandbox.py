@@ -164,7 +164,7 @@ def test_bwrap(tmp_path):
         if os.path.exists(f"{root}{home}"):
             bound = {
                 os.path.relpath(os.path.realpath(p), home).split("/")[0]
-                for p in (hub, os.path.join(os.path.dirname(hub), "..", "ffmpeg"), media)
+                for p in (hub, os.path.join(os.path.dirname(hub), "..", "ffmpeg-helper"), media)
             }
             assert set(os.listdir(f"{root}{home}")) <= bound
         assert not os.path.exists(f"{root}/dev/dri") and not os.path.exists(f"{root}/dev/dxg")

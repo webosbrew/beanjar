@@ -411,6 +411,19 @@ def test_host_suggests_but_never_recommends_the_x86_64_package(tmp_path):
     assert "Recommends" not in text
 
 
+def test_vnc_takes_the_full_ffmpeg_over_from_an_older_beanjar(tmp_path):
+    """/usr/lib/beanjar/ffmpeg moved from beanjar to beanjar-vnc when the media helper got its
+    own FFmpeg: beanjar-vnc replaces (and breaks) an older beanjar, so either unpacks first."""
+    build = _build_module()
+    root = tmp_path / "pkg"
+    root.mkdir()
+    build.control(root, "beanjar-vnc", "0.8.0", "amd64", "x", "d", replaces="beanjar (<< 0.8.0)")
+    text = (root / "DEBIAN/control").read_text()
+    assert "Breaks: beanjar (<< 0.8.0)\nReplaces: beanjar (<< 0.8.0)\n" in text
+    build.control(root, "beanjar", "0.8.0", "amd64", "x", "d")
+    assert "Replaces" not in (root / "DEBIAN/control").read_text()
+
+
 def test_x86_64_kernel_refused_when_installed_without_its_package(tmp_path):
     from beanjar import vmsettings
 
@@ -445,7 +458,7 @@ def test_board_definitions_ship_with_the_guest(tmp_path):
     # the host package, staged from a stand-in publish directory (its native artifacts and prebuilt
     # trees are not there, so only the source tree's files are copied): no board definitions
     hp, arch = tmp_path / "publish", "amd64"
-    for program in ("ffmpeg", "neatvnc"):
+    for program in ("ffmpeg", "ffmpeg-helper", "neatvnc"):
         (hp / program / "share/doc").mkdir(parents=True)
     copy, sources = build.copy, []
 

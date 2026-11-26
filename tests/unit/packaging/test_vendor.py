@@ -29,7 +29,7 @@ def load_build():
 
 def test_pins():
     pins = vendor.pins()
-    assert set(pins) == {"qemu", "qemu-user", "ffmpeg", "neatvnc", "testguest"}
+    assert set(pins) == {"qemu", "qemu-user", "ffmpeg", "ffmpeg-helper", "neatvnc", "testguest"}
     for program, pin in pins.items():
         assert pin["tag"] == f"{program}-{pin['version']}"
         assert pin["repository"] == "mariotaku/beanjar-vendor"

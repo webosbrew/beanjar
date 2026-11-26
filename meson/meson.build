@@ -77,10 +77,11 @@ if not guest_lane
   blueprint = find_program('blueprint-compiler', version: '>= 0.16', required: have_gtk)
   gnome = import('gnome')
 
-  # The prebuilt third-party programs (meson/vendor.py): QEMU, FFmpeg and neatvnc with aml, as
-  # beanjar-vendor releases them for this architecture, pinned in packaging/vendor.toml (reading it
-  # here reconfigures when the pin changes). Each is unpacked once into build/vendor and
-  # published as it is to publish_dir (build/qemu, build/ffmpeg, build/neatvnc), where the
+  # The prebuilt third-party programs (meson/vendor.py): QEMU, FFmpeg, the media helper's FFmpeg
+  # and neatvnc with aml, as beanjar-vendor releases them for this architecture, pinned in
+  # packaging/vendor.toml (reading it here reconfigures when the pin changes). Each is unpacked
+  # once into build/vendor and published as it is to publish_dir (build/qemu, build/ffmpeg,
+  # build/ffmpeg-helper, build/neatvnc), where the
   # launcher runs QEMU from and the programs linking the libraries find them; the packages ship
   # the same trees (packaging/debian/build.py).
   vendor_arch = {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(host_machine.cpu_family(), '')
@@ -89,7 +90,7 @@ if not guest_lane
           ' (amd64 and arm64 only)')
   endif
   fs.read(top / 'packaging/vendor.toml')
-  vendor_programs = ['qemu', 'ffmpeg', 'neatvnc']
+  vendor_programs = ['qemu', 'ffmpeg', 'ffmpeg-helper', 'neatvnc']
   # qemu-user's qemu-arm (the compat bridge, docs/dev/architecture/qemu-user-bridge.md) runs in the
   # guest: its arm64 tarball, once vendor.toml pins it (or BEANJAR_VENDOR_QEMU_USER names one), is
   # published as build/qemu-user; on an amd64 host also its amd64 one, qemu-user:amd64, for the
@@ -105,42 +106,60 @@ if not guest_lane
   endforeach
   # The libraries through their own pkg-config files, which find their tree from where they are
   # (prefix=${pcfiledir}/../..), with this machine's pkg-config (the cross file's in the arm64
-  # build) and the two trees first on its path. neatvnc's Requires.private names the FFmpeg
+  # build) and the set's trees first on its path. neatvnc's Requires.private names the FFmpeg
   # libraries, which resolve to the private copy, and Debian's -dev packages of its other
   # libraries (role host, packaging/debian/build-deps). The trees' own -I come first, and a
   # system directory such as /usr/include/<triplet>, where Debian's libavcodec-dev would have its
   # headers, is dropped: it must never come before the private copy's. Programs linking these need RUNPATH /usr/lib/beanjar/<program>/lib
   # (installed) and $ORIGIN/../<program>/lib (published beside build/<program>): vendor_rpath.
   vendor_pkg_config = find_program('pkg-config')
-  vendor_env = environment({'PKG_CONFIG_PATH': vendor['ffmpeg'] / 'lib/pkgconfig' + ':' +
-                                               vendor['neatvnc'] / 'lib/pkgconfig'})
+  # The media helper links its own FFmpeg (ffmpeg-helper: its decoders only, no encoder and no
+  # libavformat), looked up the same way from its tree alone: vendor_deps['ffmpeg-helper/<name>'].
+  # beanjar-vnc and the rest take the full build's, vendor_deps['<name>'].
   vendor_deps = {}
-  foreach name : ['libavcodec', 'libavfilter', 'libavutil', 'libswresample', 'libswscale',
-                  'neatvnc', 'aml1']
-    args = {}
-    foreach what : ['cflags', 'libs']
-      own = []
-      other = []
-      foreach f : run_command(vendor_pkg_config, '--' + what, name, env: vendor_env,
-                              check: true).stdout().strip().split()
-        if f.startswith('-I' + vendor['ffmpeg']) or f.startswith('-I' + vendor['neatvnc'])
-          own += f
-        # not the compiler's own system directories, which it searches anyway, after every -I
-        elif (f not in other and f != '-I/usr/include' and
-              not (f.startswith('-I/usr/include/') and f.endswith('-linux-gnu')))
-          other += f
-        endif
-      endforeach
-      args += {what: own + other}
+  foreach set : [['', ['ffmpeg', 'neatvnc'], ['libavcodec', 'libavfilter', 'libavutil',
+                   'libswresample', 'libswscale', 'neatvnc', 'aml1']],
+                 ['ffmpeg-helper/', ['ffmpeg-helper'], ['libavcodec', 'libavutil',
+                   'libswresample']]]
+    trees = []
+    pc_path = []
+    foreach program : set[1]
+      trees += vendor[program]
+      pc_path += vendor[program] / 'lib/pkgconfig'
     endforeach
-    vendor_deps += {name: declare_dependency(compile_args: args['cflags'], link_args: args['libs'],
-      version: run_command(vendor_pkg_config, '--modversion', name, env: vendor_env,
-                           check: true).stdout().strip())}
+    env = environment({'PKG_CONFIG_PATH': ':'.join(pc_path)})
+    foreach name : set[2]
+      args = {}
+      foreach what : ['cflags', 'libs']
+        own = []
+        other = []
+        foreach f : run_command(vendor_pkg_config, '--' + what, name, env: env,
+                                check: true).stdout().strip().split()
+          is_own = false
+          foreach tree : trees
+            is_own = is_own or f.startswith('-I' + tree)
+          endforeach
+          if is_own
+            own += f
+          # not the compiler's own system directories, which it searches anyway, after every -I
+          elif (f not in other and f != '-I/usr/include' and
+                not (f.startswith('-I/usr/include/') and f.endswith('-linux-gnu')))
+            other += f
+          endif
+        endforeach
+        args += {what: own + other}
+      endforeach
+      vendor_deps += {set[0] + name: declare_dependency(compile_args: args['cflags'],
+        link_args: args['libs'],
+        version: run_command(vendor_pkg_config, '--modversion', name, env: env,
+                             check: true).stdout().strip())}
+    endforeach
   endforeach
   vendor_rpath = {}
-  foreach program : ['ffmpeg', 'neatvnc']
+  foreach program : ['ffmpeg', 'ffmpeg-helper', 'neatvnc']
     vendor_rpath += {program: '$ORIGIN/../' + program + '/lib:/usr/lib/beanjar/' + program + '/lib'}
   endforeach
-  summary({'QEMU': vendor['qemu'], 'FFmpeg': vendor['ffmpeg'], 'neatvnc': vendor['neatvnc']},
+  summary({'QEMU': vendor['qemu'], 'FFmpeg': vendor['ffmpeg'],
+           'FFmpeg (media helper)': vendor['ffmpeg-helper'], 'neatvnc': vendor['neatvnc']},
           section: 'Prebuilt (packaging/vendor.toml)')
 endif
