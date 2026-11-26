@@ -45,7 +45,18 @@ chmod +x /run/webos-init
 	130) echo "webos-start: webOS powered the set off (SIGINT); powering off" >/dev/console
 	     sync; poweroff -f ;;
 	129) echo "webos-start: webOS rebooted the set (SIGHUP); resetting" >/dev/console
-	     sync; reboot -f ;;
+	     # Not reboot -f: the kernel's restart shuts the devices down first, and the virtio bus
+	     # breaks and resets each one while user space still runs, so a page swapped in meanwhile
+	     # fails ("Read-error on swap-device"; init's own so panics the kernel) and so do the
+	     # filesystems' reads. Instead the filesystems go read-only (sysrq u, done when the
+	     # kernel logs it, 0.1 s under load), which leaves them clean, and then the emergency
+	     # restart (sysrq b), which shuts nothing down. Swap stays on: it may be full.
+	     sync; echo u > /proc/sysrq-trigger
+	     n=0
+	     until dmesg | grep -q 'Emergency Remount complete' || [ $n -ge 100 ]; do
+	     	sleep 0.05; n=$((n + 1))
+	     done
+	     echo b > /proc/sysrq-trigger ;;
 	*)   echo "webos-start: webOS ended with status $rc; the VM stays up" >/dev/console ;;
 	esac
 ) </dev/null >/dev/null 2>&1 &
