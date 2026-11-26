@@ -49,7 +49,7 @@ import sys
 
 from . import factory, fwcache, lls, nvm, partmap, paths, targets
 
-VERSION = 5
+VERSION = 6
 DIR = "prepared"
 # the panel's refresh where the firmware's own decode of the board is not run (before webOS 5)
 DEFAULT_PANEL_HZ = 60

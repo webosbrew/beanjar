@@ -18,9 +18,11 @@ partition has been seen):
   not name, so none is written). So a model with the microphone (targets.Soc.mic) gets the
   firmware's own pair there.
 
-The image is a small ext4 filesystem made with the firmware's own mke2fs.conf (its e2fsprogs is
-1.47, as the host's), owned by root as on a set; the guest's mount-readwrite-pre.sh grows it to the
-partition with resize2fs at the first boot, the path the factory's image takes."""
+The image is an ext4 filesystem the size of the VM's appstore disk (sparse: a few MB on the host's
+disk), made with the firmware's own mke2fs.conf (its e2fsprogs is 1.47, as the host's) and owned by
+root as on a set. Not a smaller one for mount-readwrite-pre.sh to grow: that script reads df's size
+as whole gigabytes and grows a filesystem under 1 GB only when the preload has a version.txt, whose
+value the firmware does not name."""
 
 import os
 import subprocess
@@ -31,7 +33,6 @@ from . import lls, targets
 SNSR = "usr/share/voiceinput/triggerThinq/models/snsr"
 PRELOAD_SNSR = "preload/voiceinput/thinq/snsr"
 DISK = "appstore"  # the state disk of the apps partition (/mnt/lg/appstore)
-SIZE = 16 << 20  # the image; the guest grows it to the partition
 MKE2FS_CONF = "/etc/mke2fs.conf"
 
 
@@ -96,8 +97,9 @@ def apps_image(fw, target, tree, out):
                 f.write(conf)
             env["MKE2FS_CONFIG"] = os.path.join(tmp, "mke2fs.conf")
         img = out + ".tmp"
+        size = targets.size_bytes(dict(targets.state_disks(target))[DISK])
         with open(img, "wb") as f:
-            f.truncate(SIZE)
+            f.truncate(size)
         # in a user namespace whose root is this user: the files are root's in the image, as on a set
         r = subprocess.run(
             ["unshare", "--map-root-user", "mke2fs", "-q", "-F", "-t", "ext4", "-b", "4096"]

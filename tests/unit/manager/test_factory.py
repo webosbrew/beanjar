@@ -54,7 +54,8 @@ def test_apps_image(tmp_path, monkeypatch):
     out = str(tmp_path / "appstore.img")
     files = factory.apps_image("FW", ("o22", "queue"), None, out)
     assert files == [f"{factory.PRELOAD_SNSR}/{n}" for n in names]
-    assert os.path.getsize(out) == factory.SIZE
+    assert os.path.getsize(out) == 2 << 30  # the o22 queue appstore disk's
+    assert os.stat(out).st_blocks * 512 < 16 << 20  # sparse
     listing = subprocess.run(
         ["debugfs", "-R", f"ls -l /{factory.PRELOAD_SNSR}", out],
         capture_output=True,
@@ -85,3 +86,25 @@ def test_no_model(tmp_path, monkeypatch):
     monkeypatch.setattr(factory, "firmware_root", lambda *a: root)
     with pytest.raises(factory.Error, match="no wake-word model"):
         factory.apps_image("FW", ("o22", "queue"), None, str(tmp_path / "a.img"))
+
+
+def test_seeded_disk_sparse(tmp_path):
+    """qemu.make_disks: a new disk starts with its seed's bytes, its blocks of zeros left holes."""
+    import types
+
+    from beanjar import qemu
+
+    seed = tmp_path / "seed.img"
+    with open(seed, "wb") as f:
+        f.write(b"head")
+        f.seek(64 << 20)
+        f.write(b"tail")
+    img = tmp_path / "state" / "appstore.img"
+    p = types.SimpleNamespace(state_dir=str(tmp_path / "state"), remove=[])
+    p.disks = [(str(img), 128 << 20, str(seed))]
+    qemu.make_disks(p)
+    data = img.read_bytes()
+    assert len(data) == 128 << 20
+    assert data[:4] == b"head" and data[64 << 20 : (64 << 20) + 4] == b"tail"
+    assert data.count(0) == len(data) - 8
+    assert os.stat(img).st_blocks * 512 < 8 << 20

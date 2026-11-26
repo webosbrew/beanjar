@@ -1938,8 +1938,12 @@ def make_disks(p):
         tmp = img + ".tmp"
         with open(tmp, "wb") as f:
             if seed:
-                with open(seed, "rb") as src:
-                    shutil.copyfileobj(src, f)
+                with open(seed, "rb") as src:  # sparse: a block of zeros is skipped
+                    while block := src.read(1 << 20):
+                        if block.count(0) == len(block):
+                            f.seek(len(block), os.SEEK_CUR)
+                        else:
+                            f.write(block)
             if f.tell() > size:
                 raise Error(f"{seed}: larger than the {size} bytes of {img}")
             f.truncate(size)
