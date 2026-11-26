@@ -30,16 +30,32 @@
  *    (lsm-ready.path) and a READY=1 for surface-manager, as the Upstart stand-in emits it.
  * Then it stays up, as the compositor does.
  *
+ * The compositor's Wayland socket, where the stock launcher names one (queue's weston-based
+ * surface-manager.sh passes --socket=wayland-0): the stand-in holds it as weston does, the lock
+ * file locked and the socket listening in $XDG_RUNTIME_DIR, and never answers. Otherwise the next
+ * compositor to start takes the name: queue's tinycompositor (the video plane's compositor, which
+ * on a set and in a graphics lane finds wayland-0 locked and makes wayland-1) got wayland-0, and
+ * Home, a Flutter app on queue that connects to wayland-0, drew into it with nothing to pace its
+ * frames: the two used 45-65 % of a core each, with 15,000 to 50,000 wake-ups a second. Against a
+ * socket nobody answers, a client waits in its first round trip, as with a compositor that has not
+ * started yet.
+ *
+ * Earlier releases' launchers pass no --socket (their Qt compositor takes the name from its
+ * environment); there the stand-in holds nothing, as before.
+ *
  * libluna-service2 and GLib are the firmware's, opened with dlopen: nothing of the firmware is
  * linked. The signatures are those of luna-service2 3.6 to 3.21 (tests/regress/tcg/ls2-compat.h).
  */
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -199,6 +215,54 @@ static void notify_ready(void)
     close(fd);
 }
 
+/* The NAME of the stock launcher's --socket=NAME, or NULL */
+static const char *socket_arg(int argc, char **argv)
+{
+    for (int i = 1; i < argc; i++)
+        if (!strncmp(argv[i], "--socket=", 9) && argv[i][9])
+            return argv[i] + 9;
+    return NULL;
+}
+
+/* Hold the Wayland socket $XDG_RUNTIME_DIR/NAME as libwayland's wl_display_add_socket does:
+ * NAME.lock open and flock'ed (which another compositor's wl_display_add_socket_auto tries first,
+ * and so moves on to the next name), then the socket bound and listening; root:<the directory's
+ * group> 0660, as LG's compositor leaves it. The descriptors stay open for the process's life. */
+static void hold_wayland_socket(const char *name)
+{
+    const char *dir = getenv("XDG_RUNTIME_DIR");
+    struct sockaddr_un sa = {.sun_family = AF_UNIX};
+    char lock[sizeof sa.sun_path + 8];
+    struct stat st;
+    int lfd, fd;
+
+    if (!name || !dir || !*dir || strchr(name, '/'))
+        return;
+    if ((size_t)snprintf(sa.sun_path, sizeof sa.sun_path, "%s/%s", dir, name) >= sizeof sa.sun_path)
+        return;
+    snprintf(lock, sizeof lock, "%s.lock", sa.sun_path);
+    lfd = open(lock, O_CREAT | O_CLOEXEC | O_RDWR, 0660);
+    if (lfd < 0 || flock(lfd, LOCK_EX | LOCK_NB) < 0) {
+        fprintf(stderr, "surface-manager (emulator, headless): %s: in use\n", lock);
+        if (lfd >= 0)
+            close(lfd);
+        return;
+    }
+    unlink(sa.sun_path); /* a stale one: the lock was free */
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0 || bind(fd, (struct sockaddr *)&sa, sizeof sa) < 0 || listen(fd, 128) < 0) {
+        perror("surface-manager (emulator, headless): wayland socket");
+        if (fd >= 0)
+            close(fd);
+        return;
+    }
+    if (!stat(dir, &st) && chown(sa.sun_path, (uid_t)-1, st.st_gid) < 0)
+        perror("surface-manager (emulator, headless): wayland socket group");
+    chmod(sa.sun_path, 0660);
+    fprintf(stderr, "surface-manager (emulator, headless): holding %s, never answered\n",
+            sa.sun_path);
+}
+
 static void emit_lsm_ready(void)
 {
     pid_t pid = fork();
@@ -215,9 +279,8 @@ int main(int argc, char **argv)
     void *ls2, *glib, *loop;
     LSHandle *sh;
     LSError e;
-    (void)argc;
-    (void)argv;
 
+    hold_wayland_socket(socket_arg(argc, argv));
     if (!(ls2 = dlopen("libluna-service2.so.3", RTLD_NOW)) ||
         !(glib = dlopen("libglib-2.0.so.0", RTLD_NOW)))
         die(dlerror());

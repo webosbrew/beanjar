@@ -56,6 +56,11 @@ check_media_log = executable('check-media-log', 'media/check-log.c', '../../host
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-log', check_media_log, suite: ['unit', 'media'], timeout: 10, protocol: 'tap')
 
+# the headless compositor stand-in's Wayland socket (guest/layers/headless/src/surface-manager.c)
+check_headless_wayland = executable('check-headless-wayland', 'layers/check-headless-wayland.c',
+  link_args: ['-ldl'], override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
+test('check-headless-wayland', check_headless_wayland, suite: ['unit', 'layers'], timeout: 10)
+
 # beanjar-vnc's keysym map (host/vnc/keysym.c), where beanjar-vnc is built
 if have_vnc
   check_keysym = executable('check-vnc-keysym', 'vnc/check-keysym.c', '../../host/vnc/keysym.c',
