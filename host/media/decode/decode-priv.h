@@ -172,6 +172,7 @@ struct stream {
 struct decoder {
     unsigned ports;
     char hwdec[32];
+    int software_only; /* decoder_create: locked to software, the short codec list */
     volatile int quit;
     struct stream streams[WEBOS_MEDIA_PORTS];
     AVBufferRef *hw_device[HW_TYPES];
@@ -191,6 +192,8 @@ int64_t mono_ns(void);
 int64_t due_mono(struct stream *s, int64_t rt);
 /* caps.c: GstCaps strings to codec parameters. */
 void caps_codec(const char *string, struct codec_params *p);
+/* caps.c: whether a software-only decoder (decoder_create's software_only) takes the codec. */
+int caps_software_only(enum AVCodecID id);
 /* session.c: ingress queue, lifecycle handling, kind names and reports. */
 void free_items(struct stream *s, int keep_caps);
 const char *kind_name(const struct stream *s);

@@ -25,7 +25,7 @@ static AVFrame *reference(void)
 }
 int main(void)
 {
-    struct decoder *d = decoder_create(1, "none");
+    struct decoder *d = decoder_create(1, "none", 0);
     assert(d);
     int pair[2];
     assert(!socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, pair));

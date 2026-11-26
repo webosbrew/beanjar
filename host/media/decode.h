@@ -4,7 +4,10 @@
 #define HOST_MEDIA_DECODE_H
 #include "ipc.h"
 struct decoder;
-struct decoder *decoder_create(unsigned ports, const char *hwdec);
+/* hwdec: the streams' first preference (auto, none or a device type); software_only (hwdec none
+ * only): locked to software, refusing a viewer's other preference (HM_PREFERENCE_LOCKED), and
+ * decoding only the codecs caps_software_only allows. */
+struct decoder *decoder_create(unsigned ports, const char *hwdec, int software_only);
 /* Nonblocking ingress. -1 means overload: caller must reconnect guest and start
  * a new session, not continue after dropping a compressed reference packet. */
 int decoder_submit(struct decoder *, unsigned port, const struct webos_media_header *, const void *,

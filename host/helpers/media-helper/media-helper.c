@@ -618,7 +618,7 @@ static int start_pool(const char *path, int listen_fd, uint32_t size)
 int main(int argc, char **argv)
 {
     pid_t pid = 0;
-    int pid_fd = -1, sandbox = 1, viewer_fds[MAX_PORTS + 1], nviewer_fds = 0;
+    int pid_fd = -1, sandbox = 1, software_only = 0, viewer_fds[MAX_PORTS + 1], nviewer_fds = 0;
     int ports = WEBOS_MEDIA_PORTS;
     char vq[108] = "", vv[108] = "", mq[108] = "", mv[108] = "";
     const char *logpath = NULL, *decode_log = NULL, *pool_path = NULL;
@@ -628,6 +628,13 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i += 2) {
         if (!strcmp(argv[i], "--no-sandbox")) {
             sandbox = 0;
+            i--;
+            continue;
+        }
+        if (!strcmp(argv[i], "--software-only")) {
+            /* a VM's hwdec=none: software decoding, locked against the viewers' preferences,
+             * the short codec list (decode.h); needs --hwdec none and the sandbox */
+            software_only = 1;
             i--;
             continue;
         }
@@ -668,7 +675,8 @@ int main(int argc, char **argv)
             fprintf(stderr,
                     "usage: media-helper --pid PID|--pid-fd FD [--log FILE] [--decode-log FILE] "
                     "[--streams FILE] --video Q:V --media QPREFIX:VPREFIX [--ports N] "
-                    "[--viewer-fds FD,...] [--pool FILE --pool-fd FD] [--no-sandbox]\n");
+                    "[--viewer-fds FD,...] [--pool FILE --pool-fd FD] [--hwdec auto|none|TYPE] "
+                    "[--software-only] [--no-sandbox]\n");
             return 2;
         }
     }
@@ -676,6 +684,11 @@ int main(int argc, char **argv)
         ports > MAX_PORTS || (nviewer_fds && nviewer_fds != ports + 1)) {
         fprintf(stderr, "media-helper: --pid or --pid-fd, --video and --media are needed "
                         "(--viewer-fds: one per port and the video's)\n");
+        return 2;
+    }
+    if (software_only && (!sandbox || !hwdec || strcmp(hwdec, "none"))) {
+        fprintf(stderr, "media-helper: --software-only needs --hwdec none and the sandbox "
+                        "(no --no-sandbox)\n");
         return 2;
     }
     /* Two malloc arenas for all threads (a poll loop and a decoder per port, FFmpeg's frame threads
@@ -773,10 +786,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "media-helper: sandbox: %s\n", what);
             return 1;
         }
-        say(-1, "sandbox: %s", what);
+        say(-1, "sandbox: %s%s", what, software_only ? "; software decoding only" : "");
     } else
         say(-1, "sandbox: off (--no-sandbox)");
-    decode = decoder_create(ports, hwdec);
+    decode = decoder_create(ports, hwdec, software_only);
     if (!decode) {
         fprintf(stderr, "media-helper: cannot create decoder service\n");
         return 1;

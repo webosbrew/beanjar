@@ -42,7 +42,7 @@ int64_t due_mono(struct stream *s, int64_t rt)
         return NONE;
     return rt + s->state.base_time + s->clock_delta + off;
 }
-struct decoder *decoder_create(unsigned ports, const char *hwdec)
+struct decoder *decoder_create(unsigned ports, const char *hwdec, int software_only)
 {
     if (ports > WEBOS_MEDIA_PORTS)
         return NULL;
@@ -57,6 +57,12 @@ struct decoder *decoder_create(unsigned ports, const char *hwdec)
         free(m);
         return NULL;
     }
+    if (software_only && strcmp(m->hwdec, "none")) {
+        elog(-1, "decode: software only with hwdec %s", m->hwdec);
+        free(m);
+        return NULL;
+    }
+    m->software_only = !!software_only;
     pthread_mutex_init(&m->hw_lock, NULL);
     for (unsigned i = 0; i < ports; i++) {
         struct stream *s = &m->streams[i];
@@ -199,11 +205,19 @@ int decoder_tick(struct decoder *m, unsigned port)
                 int valid = !*msg.preference || !strcmp(msg.preference, "auto") ||
                             !strcmp(msg.preference, "none") ||
                             av_hwdevice_find_type_by_name(msg.preference) != AV_HWDEVICE_TYPE_NONE;
+                /* software only: no preference but none, so that no device is ever opened
+                 * (nor its user-space driver loaded) in this process */
+                int locked =
+                    s->m->software_only && *msg.preference && strcmp(msg.preference, "none");
                 struct host_media_message ack = snapshot(s, HM_ACK);
-                ack.status = !valid    ? HM_PREFERENCE_INVALID
+                ack.status = locked    ? HM_PREFERENCE_LOCKED
+                             : !valid  ? HM_PREFERENCE_INVALID
                              : s->open ? HM_PREFERENCE_DEFERRED
                                        : HM_PREFERENCE_APPLIED;
-                if (valid && *msg.preference)
+                if (locked)
+                    elog(s->index, "media %d: viewer's hwdec %.31s refused: software only",
+                         s->index, msg.preference);
+                else if (valid && *msg.preference)
                     snprintf(s->preference, sizeof s->preference, "%s", msg.preference);
                 snprintf(ack.preference, sizeof ack.preference, "%s", s->preference);
                 if (hm_send(s->viewer, &ack, NULL, 0) != 1) {

@@ -20,9 +20,10 @@ struct decoder {
         struct host_media_message message;
     } stream[WEBOS_MEDIA_PORTS];
 };
-struct decoder *decoder_create(unsigned ports, const char *hwdec)
+struct decoder *decoder_create(unsigned ports, const char *hwdec, int software_only)
 {
     (void)hwdec;
+    (void)software_only;
     if (ports > WEBOS_MEDIA_PORTS)
         return NULL;
     struct decoder *d = calloc(1, sizeof *d);

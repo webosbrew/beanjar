@@ -304,3 +304,45 @@ void caps_codec(const char *string, struct codec_params *p)
         p->extradata = caps_buffer(&c, "codec_data", &p->extradata_size);
     caps_clear(&c);
 }
+
+/* The codecs a software-only decoder takes (a VM's hwdec=none; docs/research/
+ * media-helper-isolation.md, "The current build and a minimal one"): what broadcast, streaming
+ * and common files use, and nothing else of caps_codec's table, so that a guest reaches fewer of
+ * FFmpeg's decoders. Refused: WMV and VC-1, RealVideo, MSMPEG4, FLV, H.263, MJPEG, DTS, AMR, WMA,
+ * A-law and mu-law. */
+int caps_software_only(enum AVCodecID id)
+{
+    switch (id) {
+    case AV_CODEC_ID_H264:
+    case AV_CODEC_ID_HEVC:
+    case AV_CODEC_ID_VP8:
+    case AV_CODEC_ID_VP9:
+    case AV_CODEC_ID_AV1: /* through libdav1d only */
+    case AV_CODEC_ID_MPEG1VIDEO:
+    case AV_CODEC_ID_MPEG2VIDEO:
+    case AV_CODEC_ID_MPEG4:
+    case AV_CODEC_ID_AAC:
+    case AV_CODEC_ID_AC3:
+    case AV_CODEC_ID_EAC3:
+    case AV_CODEC_ID_MP1:
+    case AV_CODEC_ID_MP2:
+    case AV_CODEC_ID_MP3:
+    case AV_CODEC_ID_OPUS:
+    case AV_CODEC_ID_VORBIS:
+    case AV_CODEC_ID_FLAC:
+    case AV_CODEC_ID_PCM_S16LE:
+    case AV_CODEC_ID_PCM_S16BE:
+    case AV_CODEC_ID_PCM_U8:
+    case AV_CODEC_ID_PCM_S8:
+    case AV_CODEC_ID_PCM_S24LE:
+    case AV_CODEC_ID_PCM_S24BE:
+    case AV_CODEC_ID_PCM_S32LE:
+    case AV_CODEC_ID_PCM_S32BE:
+    case AV_CODEC_ID_PCM_F32LE:
+    case AV_CODEC_ID_PCM_F32BE:
+    case AV_CODEC_ID_PCM_F64LE:
+        return 1;
+    default:
+        return 0;
+    }
+}

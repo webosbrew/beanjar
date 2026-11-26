@@ -73,7 +73,19 @@ static int open_context(struct stream *s, const char *caps, int allow_hw)
 {
     struct codec_params p;
     caps_codec(caps, &p);
-    const AVCodec *codec = p.id != AV_CODEC_ID_NONE ? avcodec_find_decoder(p.id) : NULL;
+    const AVCodec *codec = NULL;
+    if (s->m->software_only) {
+        /* the short list only, and AV1 through libdav1d (never FFmpeg's own av1, which decodes
+         * through a hardware device only) */
+        if (p.id != AV_CODEC_ID_NONE && !caps_software_only(p.id))
+            elog(s->index, "media %d: %s refused: hwdec=none decodes a short list of codecs",
+                 s->index, avcodec_get_name(p.id));
+        else if (p.id == AV_CODEC_ID_AV1)
+            codec = avcodec_find_decoder_by_name("libdav1d");
+        else if (p.id != AV_CODEC_ID_NONE)
+            codec = avcodec_find_decoder(p.id);
+    } else if (p.id != AV_CODEC_ID_NONE)
+        codec = avcodec_find_decoder(p.id);
     if (!codec) {
         elog(s->index, "media %d: no decoder for %.120s", s->index, caps);
         av_free(p.extradata);
@@ -104,7 +116,7 @@ static int open_context(struct stream *s, const char *caps, int allow_hw)
     pthread_mutex_lock(&s->lock);
     memcpy(preference, s->preference, sizeof preference);
     pthread_mutex_unlock(&s->lock);
-    int hw_none = !strcmp(preference, "none");
+    int hw_none = s->m->software_only || !strcmp(preference, "none");
     enum AVHWDeviceType hw_only = !strcmp(preference, "auto")
                                       ? AV_HWDEVICE_TYPE_NONE
                                       : av_hwdevice_find_type_by_name(preference);

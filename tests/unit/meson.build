@@ -30,6 +30,14 @@ check_media_fallback = executable('check-media-fallback',
   override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
 test('check-media-fallback', check_media_fallback, suite: ['unit', 'media'], timeout: 10,
   protocol: 'tap')
+# a software-only decoder (a VM's hwdec=none): its short codec list, its lock against the viewer
+check_media_software_only = executable('check-media-software-only',
+  ['media/check-software-only.c', '../../host/media/ipc.c'] + lease_engine_sources,
+  dependencies: ffmpeg_deps + [dependency('threads')],
+  build_rpath: vendor['ffmpeg'] / 'lib',
+  override_options: ['c_std=gnu11', 'warning_level=2', 'werror=true'])
+test('check-media-software-only', check_media_software_only, suite: ['unit', 'media'],
+  timeout: 10, protocol: 'tap')
 # a stream that grows while the guest holds a picture lays its slots out again at once
 check_media_relayout = executable('check-media-relayout',
   ['media/check-relayout.c', '../../host/media/ipc.c'] + lease_engine_sources,

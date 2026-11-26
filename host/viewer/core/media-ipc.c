@@ -127,7 +127,8 @@ void *reader(void *arg)
                 msg.preference[sizeof msg.preference - 1] = 0;
                 fprintf(stderr, "media %d: helper hwdec %s preference %s%s\n", s->index,
                         msg.preference,
-                        msg.status == HM_PREFERENCE_INVALID    ? "rejected"
+                        msg.status == HM_PREFERENCE_INVALID  ? "rejected"
+                        : msg.status == HM_PREFERENCE_LOCKED ? "refused: software only (hwdec=none)"
                         : msg.status == HM_PREFERENCE_DEFERRED ? "acknowledged for next codec open"
                                                                : "acknowledged",
                         msg.status == HM_PREFERENCE_DEFERRED ? "; active decoder unchanged" : "");

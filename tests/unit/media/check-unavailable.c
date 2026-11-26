@@ -23,7 +23,7 @@ static void on_reply(void *ctx, unsigned port, unsigned char *msg, size_t len)
 
 int main(void)
 {
-    struct decoder *d = decoder_create(1, "none");
+    struct decoder *d = decoder_create(1, "none", 0);
     assert(d);
     struct webos_media_open open = {.kind = WEBOS_MEDIA_VIDEO};
     struct webos_media_header h = {

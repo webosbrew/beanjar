@@ -307,6 +307,7 @@ def build_clip(directory, name, video_args, audio_args, src="testsrc2=size=64x48
 
 class ExtraHarness:
     PORTS = (0, 1)
+    HELPER_ARGS = ()  # more of the helper's options (SoftwareOnlyTest: --software-only)
 
     def setUp(self):
         if not os.access(HUB, os.X_OK):
@@ -341,6 +342,7 @@ class ExtraHarness:
                 f"{d}/qemu-media:{d}/media",
                 "--ports",
                 str(max(self.PORTS) + 1),
+                *self.HELPER_ARGS,
             ],
             stdout=self.logfile,
             stderr=self.logfile,
@@ -358,11 +360,11 @@ class ExtraHarness:
             self.logfile.seek(0)
             print(self.logfile.read())
 
-    def viewer(self, port=0):
+    def viewer(self, port=0, preference=b"none"):
         v = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
         self.addCleanup(v.close)
         v.connect(os.path.join(self.dir.name, f"media-{port}.sock"))
-        v.send(bytes(Descriptor(magic=HM_MAGIC, version=1, type=HELLO, preference=b"none")))
+        v.send(bytes(Descriptor(magic=HM_MAGIC, version=1, type=HELLO, preference=preference)))
         ack, _ = receive(v)
         self.assertEqual(ack.type, ACK)
         return v, ack
@@ -693,6 +695,114 @@ class DualWindowTest(ExtraHarness, unittest.TestCase):
         v.close()
         _, got = self.feed_video(*started[1])
         self.assertGreater(len(got), 1, "port 2 exported too few pictures after port 0 close")
+
+
+class SoftwareOnlyTest(ExtraHarness, unittest.TestCase):
+    """--software-only (a VM's hwdec=none): software decoding locked against the viewers'
+    preferences, and the short codec list (host/media/decode/caps.c, caps_software_only)."""
+
+    HELPER_ARGS = ("--software-only",)
+    LOCKED = 4  # HM_PREFERENCE_LOCKED (include/host-media.h)
+
+    def log(self):
+        self.logfile.seek(0)
+        return self.logfile.read()
+
+    def wait_log(self, text, timeout=5):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if text in self.log():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_viewer_preference_locked(self):
+        """A viewer asking for hardware (or auto) gets the locked status and none kept; none
+        is acknowledged as before."""
+        for preference in (b"cuda", b"vaapi", b"auto"):
+            v, ack = self.viewer(0, preference)
+            if ack.flags & 16:
+                self.skipTest("helper explicitly reports decoder unavailable")
+            self.assertEqual(ack.status, self.LOCKED, preference)
+            self.assertEqual(ack.preference, b"none", preference)
+            v.close()
+            time.sleep(0.05)
+        _, ack = self.viewer(0)
+        self.assertEqual(ack.status, 1)
+        self.assertEqual(ack.preference, b"none")
+        self.assertIn("media 0: viewer's hwdec cuda refused: software only", self.log())
+        self.assertIn("software decoding only", self.log())
+
+    def test_hardware_viewer_still_gets_software_pictures(self):
+        """H.264 decodes in software, pixel for pixel, for a viewer whose hardware preference
+        was refused; no device is opened."""
+        _, streams, packets, data, video_ref, _ = self.clip(
+            "h264.mp4",
+            ["-c:v", "libx264", "-threads", "1", "-bf", "0", "-g", "25", "-pix_fmt", "yuv420p"],
+            ["-c:a", "aac", "-ac", "2"],
+        )
+        caps = next(c for k, c in streams.values() if k == "video")
+        video = [p for p in packets if p[0] == "video"]
+        v, ack = self.viewer(0, b"cuda")
+        if ack.flags & 16:
+            self.skipTest("helper explicitly reports decoder unavailable")
+        self.assertEqual(ack.status, self.LOCKED)
+        v.close()
+        time.sleep(0.05)  # the helper sees the close before the next viewer connects
+        self.start_stream(0, 1, caps, time.monotonic_ns() - 3_000_000_000)
+        _, got = self.feed_video(0, video, data, video_ref)
+        self.assertGreater(len(got), 1)
+        log = self.log()
+        self.assertIn("media 0: decoder h264 (software)", log)
+        self.assertNotIn("hw device", log)
+
+    def test_refused_codecs(self):
+        """WMV, VC-1, MJPEG, H.263, DTS and WMA caps open no decoder."""
+        for caps, name in (
+            ("video/x-wmv, wmvversion=(int)3, width=(int)64, height=(int)48", "wmv3"),
+            ("video/x-wmv, wmvversion=(int)3, format=(string)WVC1", "vc1"),
+            ("image/jpeg, width=(int)64, height=(int)48", "mjpeg"),
+            ("video/x-h263", "h263"),
+            ("audio/x-dts, rate=(int)48000, channels=(int)2", "dts"),
+            ("audio/x-wma, wmaversion=(int)2, rate=(int)48000, channels=(int)2", "wmav2"),
+        ):
+            with self.subTest(name):
+                kind = 2 if caps.startswith("audio/") else 1
+                self.start_stream(0, kind, caps, time.monotonic_ns())
+                self.assertTrue(
+                    self.wait_log(f"media 0: {name} refused: hwdec=none decodes a short list"),
+                    self.log()[-2000:],
+                )
+                self.send(0, CLOSE)
+        self.assertNotIn("decoder wmv3", self.log())
+
+    def test_av1_through_dav1d(self):
+        """AV1 still decodes, through libdav1d."""
+        ExtraTest.test_av1_exact_pixels(self)
+        self.assertIn("media 0: decoder libdav1d (software)", self.log())
+
+    def test_opus(self):
+        ExtraTest.test_opus_exact_pcm(self)
+
+
+class SoftwareOnlyArgsTest(unittest.TestCase):
+    """--software-only needs --hwdec none and the sandbox: refused at the start otherwise."""
+
+    def test_refused_combinations(self):
+        if not os.access(HUB, os.X_OK):
+            self.skipTest(f"no {HUB}")
+        with tempfile.TemporaryDirectory(prefix="media-extra-") as d:
+            base = [HUB, "--pid", str(os.getpid()), "--video", f"{d}/q.sock:{d}/v.sock"]
+            base += ["--media", f"{d}/qm:{d}/m", "--software-only"]
+            for extra in (
+                ["--hwdec", "auto"],
+                ["--hwdec", "cuda"],
+                ["--hwdec", "none", "--no-sandbox"],
+            ):
+                with self.subTest(extra):
+                    r = subprocess.run(base + extra, capture_output=True, text=True, timeout=10)
+                    self.assertEqual(r.returncode, 2, r.stderr)
+                    self.assertIn("--software-only needs --hwdec none", r.stderr)
 
 
 if __name__ == "__main__":

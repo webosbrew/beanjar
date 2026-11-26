@@ -30,7 +30,15 @@ enum host_media_type {
 };
 enum host_media_format { HM_YUV420 = 1, HM_YUV422, HM_YUV444, HM_NV12, HM_DRM, HM_FLOAT_STEREO };
 enum { HM_OPEN = 1, HM_PLAY_STATE = 2, HM_CLOCK = 4, HM_EOS = 8, HM_DECODER_UNAVAILABLE = 16 };
-enum { HM_PREFERENCE_APPLIED = 1, HM_PREFERENCE_DEFERRED = 2, HM_PREFERENCE_INVALID = 3 };
+/* An ACK's status for the HELLO's preference. LOCKED: the helper decodes in software only
+ * (--software-only, a VM's hwdec=none) and refused a preference other than none; the ACK's
+ * preference is the one kept, none. */
+enum {
+    HM_PREFERENCE_APPLIED = 1,
+    HM_PREFERENCE_DEFERRED = 2,
+    HM_PREFERENCE_INVALID = 3,
+    HM_PREFERENCE_LOCKED = 4
+};
 struct host_media_object {
     uint64_t size, modifier;
 };
@@ -54,7 +62,7 @@ struct host_media_message {
     int64_t pts;
     struct host_media_object object[HOST_MEDIA_OBJECTS];
     struct host_media_layer layer[HOST_MEDIA_LAYERS];
-    char preference[32]; /* HELLO preference; ACK states applied/deferred/invalid */
+    char preference[32]; /* HELLO preference; ACK states applied/deferred/invalid/locked */
 };
 _Static_assert(sizeof(struct host_media_message) == 560, "host media descriptor size");
 #endif
