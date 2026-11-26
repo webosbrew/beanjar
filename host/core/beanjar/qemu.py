@@ -165,6 +165,7 @@ Environment (both):
             parameter: guest/initramfs/rootfs/init)
 tcg only:
   the kernel cmdline gets webos.time_scale=TIME_SCALE["tcg"]: bootd's fallback timers stretched
+            (also under KVM when the userland resolves to qemu-user: time_scale)
   TCG_CPU (default max,pauth=off), TCG_THREADS (single, multi), TCG_TB_SIZE
   DISPLAY_BACKEND  none (default: no GPU), or a virgl GPU rendered by the host's GL on RENDERNODE
             (default tcg_rendernode(): the first /dev/dri/renderD*, else surfaceless, which only
@@ -322,7 +323,14 @@ def tcg_tb_mib(env):
 TIME_SCALE = {"kvm": 1, "tcg": 4}
 
 
-def time_scale(accel=None):
+def time_scale(accel=None, userland="native"):
+    """The factor for a guest under accel whose userland (native or qemu-user) runs as given. The
+    ARM programs are what is slow: under qemu-user (the x86-64 guest kernel, or an arm64 host
+    without AArch32 at EL0) they are translated as under TCG although the kernel runs under KVM,
+    so they take TCG's factor. Without it a W22O guest on the x86-64 kernel took longer than the
+    micom's 8 s backstop to shut down for a restart, and the restart became a power-off."""
+    if userland == "qemu-user":
+        return TIME_SCALE["tcg"]
     return TIME_SCALE[accel or default_accel()]
 
 
@@ -1322,8 +1330,8 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         f"console={'ttyS0' if guest_kernel == 'x86-64' else 'ttyAMA0'} rdinit=/init loglevel=3 mem_sleep_default=s2idle virtio_snd.pcm_device_base=6 "
         f"virtio_snd.pcm_alias_device=0{append_net}"
     )
-    if time_scale(accel) != 1:
-        append += f" webos.time_scale={time_scale(accel)}"
+    if time_scale(accel, p.userland) != 1:
+        append += f" webos.time_scale={time_scale(accel, p.userland)}"
     if env.get("PMLOG"):
         append += f" webos.pmlog={env['PMLOG']}"
     if env.get("PMLOG_DEBUG"):

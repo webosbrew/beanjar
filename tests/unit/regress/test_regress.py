@@ -440,6 +440,9 @@ class ArgsTest(unittest.TestCase):
         # this machine's (TCG on x86), the Pi KVM, ACCEL as given
         scale = regress.qemu.TIME_SCALE
         self.assertEqual(scale, {"kvm": 1, "tcg": 4})
+        # a userland under qemu-user is translated as under TCG, whatever runs the kernel
+        self.assertEqual(regress.qemu.time_scale("kvm", "qemu-user"), 4)
+        self.assertEqual(regress.qemu.time_scale("kvm", "native"), 1)
         for argv, env, accel, timeout in (
             (["--local"], {}, regress.qemu.default_accel(), 300),
             (["--local"], {"ACCEL": "tcg"}, "tcg", 300),
@@ -454,7 +457,8 @@ class ArgsTest(unittest.TestCase):
     def test_guest_kernel(self):
         """GUEST_KERNEL passes through to the launcher, given empty when not set (a development VM
         never keeps an earlier run's), and a --local run's deadlines take the accelerator the
-        launcher picks for it: KVM for the x86-64 kernel on an x86-64 host that can open /dev/kvm."""
+        launcher picks for it: KVM for the x86-64 kernel on an x86-64 host that can open /dev/kvm,
+        with TCG's factor, as its userland runs under qemu-user."""
         a, _ = regress.parse(["--local", "--headless"], found=FOUND, env={"GUEST_KERNEL": "x86-64"})
         self.assertEqual(regress.start_env(a, WT1H)["GUEST_KERNEL"], "x86-64")
         a, _ = regress.parse(["--local", "--headless"], found=FOUND, env={})
@@ -464,7 +468,7 @@ class ArgsTest(unittest.TestCase):
             mock.patch.object(regress.qemu.os, "access", return_value=True),
         ):
             a, _ = regress.parse(["--local"], found=FOUND, env={"GUEST_KERNEL": "x86-64"})
-            self.assertEqual((a.accel, a.scale), ("kvm", 1))
+            self.assertEqual((a.accel, a.scale), ("kvm", 4))
             a, _ = regress.parse(["--local"], found=FOUND, env={})
             self.assertEqual((a.accel, a.scale), ("tcg", 4))
             a, _ = regress.parse(

@@ -563,7 +563,8 @@ before it counts; a failure that stays in the solo run counts.
 when the wait ends: under TCG tvservice's `tv-ready`
 came after the 30 s or 60 s wait only because the guest is slow. The launcher's
 `qemu.TIME_SCALE` (`kvm` 1, `tcg` 4) is the one factor for that. With `tcg`, the kernel cmdline
-gets `webos.time_scale=4`. /init then writes a `bootd.override` whose script exports
+gets `webos.time_scale=4`; so does a KVM guest whose ARM userland runs under qemu-user (the
+x86-64 guest kernel), which is translated as under TCG (`qemu.time_scale`). /init then writes a `bootd.override` whose script exports
 `LD_PRELOAD=/usr/lib/libbootd-scale.so` before `exec /usr/sbin/bootd`; it is not an `env` stanza,
 which would load the library into the job's shell, which drops it before the exec. The library
 (`guest/layers/webos/src/bootd-scale`, in every webos layer) multiplies the waits of 5 s and more that

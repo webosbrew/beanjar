@@ -1109,7 +1109,8 @@ class ArgvTest(unittest.TestCase):
         self.assertEqual(argv[argv.index("-initrd") + 1], tree.build("x86_64", "initramfs.cpio.gz"))
         append = argv[argv.index("-append") + 1].split()
         self.assertEqual(append[0], "console=ttyS0")
-        self.assertNotIn("webos.time_scale=4", append)
+        # KVM, but the ARM userland under qemu-user is translated as under TCG: TCG's factor
+        self.assertIn("webos.time_scale=4", append)
         self.assertEqual((p.guest_kernel, p.userland, p.qemu_arm), ("x86-64", "qemu-user", arm))
         # no qemu-aarch64 yet: said, not refused
         self.assertIsNone(p.qemu_aarch64)

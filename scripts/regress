@@ -221,7 +221,8 @@ that should have one and has none after the build (or with --no-build) fails the
 A guest restart ends the step that waits on it and fails the target, except the one restart of a
 target whose firmware restarts the set on the first boot of a fresh state (its file's
 first_boot_restart): follow_restart waits for the unit's new QEMU and runs the steps again from the boot.
-Each step has TIMEOUT seconds (default 300). Under TCG (--local on x86, or ACCEL=tcg) every deadline
+Each step has TIMEOUT seconds (default 300). Under TCG (--local on x86, or ACCEL=tcg) or with the
+userland under qemu-user (--local with GUEST_KERNEL=x86-64) every deadline
 of the run's own (TIMEOUT, check-m1's boot-done wait, the standby's waits) is stretched by the
 launcher's TCG factor, qemu.TIME_SCALE, as the guest's bootd timers are; under KVM it is 1. Results, on the VM host and copied back here:
   build/regress/<run>/<target>.png      the home screen (opaque RGB, as a TV shows it)
@@ -897,9 +898,11 @@ def parse(argv, found=None, env=None):
     a.vm_env.update(INSTANCE_DEFAULTS)
     a.vm_env.update({k: env[k] for k in PASSTHROUGH if env.get(k)})
     # the deadlines are for hangs, not for the guest's speed: TCG's factor, as the launcher's for bootd
-    # (here the launcher's own choice, which GUEST_KERNEL=x86-64 makes KVM on an x86-64 host)
+    # (here the launcher's own choice, which GUEST_KERNEL=x86-64 makes KVM on an x86-64 host, with
+    # its userland under qemu-user, which takes TCG's factor: qemu.time_scale)
     a.accel = qemu.vm_accel(a.vm_env) if a.local else (a.vm_env.get("ACCEL") or "kvm")
-    a.scale = qemu.time_scale(a.accel)
+    userland = (qemu.vm_userland(a.vm_env) if a.local else a.vm_env.get("USERLAND")) or "native"
+    a.scale = qemu.time_scale(a.accel, userland)
     a.timeout *= a.scale
     return a, select(a.target, a.fw, find_firmwares(firmware_dirs()) if found is None else found)
 
