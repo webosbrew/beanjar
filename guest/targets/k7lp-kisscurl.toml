@@ -1,12 +1,10 @@
-# W21Z is LG's CineBeam projector on the same K7LP/kisscurl platform (HU710P family): its fstabs match W21P's byte for byte. It boots on
-# W21P's target with the chip's board line (W21P retail identity, shared: the tree keeps
-# one validated board line per target, so W21Z carries no VALIDATE entry of its own), but
-# stalls after webos-dis.target: legacy-broadcast-dvb runs but emits no tv-ready
-# in the window. Found initiator: tvpowerd orders a micom shutdown (write 25 00 ad)
-# ~72 s guest uptime, gated on FirstUse-incomplete ("FirstUseApp is Not yet completed.
-# Reboot TV"; identical logic ships in W21A's tvpowerd). The 8 s micom timer is never
-# armed. Why emulator-firstuse stalls (empty log, callees answering) is still open.
-# Stays in BRING_UP.
+# W21Z is LG's CineBeam projector on the same K7LP/kisscurl platform (HU710P family): its fstabs
+# match W21P's byte for byte. It boots on W21P's target with the chip's board line (W21P retail
+# identity, shared: W21Z carries no VALIDATE entry of its own). Its projector-only self power-offs
+# (fan tachometers, the DMD power-good input) are answered by k7lp's GPIO chip (soc/k7lp.toml), so
+# it reaches core-boot-done; tv-ready waits on legacy-broadcast's setPJTRProperties call to
+# panelcontroller, which stalls after mw_getDppPjtMode (the DLP controller is not emulated;
+# docs/research/non-dtv-devices.md). Stays in BRING_UP.
 models = ["W21P", "W21Z"]
 bring_up = ["W21Z"]
 v4l2_capture = true
