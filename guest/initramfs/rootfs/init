@@ -637,7 +637,9 @@ fi
 # set. N > 1 LD_PRELOADs the webos layer's libluna-scale.so (guest/layers/webos/src/luna-scale). sdx
 # is a dynamic service that ls-hubd starts from its service file (g_shell_parse_argv, then exec, with
 # ls-hubd's environment), so the file's Exec line gets a shell that adds the library to the
-# LD_PRELOAD it inherits; the library takes itself out again. An sdx without the symbol (webOS 1
+# LD_PRELOAD it inherits; the library takes itself out again. The library also stretches sdx's curl
+# timeouts (10 s, 5 s to connect) by the same factor: a request to LG's servers that times out at
+# boot is sent again only at sdx's next power or network event. An sdx without the symbol (webOS 1
 # and 2) is left alone.
 if [ "$scale" != 1 ] && [ -f /webos/usr/sbin/sdx ] &&
 	grep -q _ZN3sdx7handler11Luna_Handle25_TVSERICE_REQUEST_TIMEOUTE /webos/usr/sbin/sdx; then
@@ -647,7 +649,7 @@ if [ "$scale" != 1 ] && [ -f /webos/usr/sbin/sdx ] &&
 		[ -f "$f" ] && grep -q '^Exec=/usr/sbin/sdx$' "$f" || continue
 		sed -i "s|^Exec=/usr/sbin/sdx\$|Exec=/bin/sh -c 'LD_PRELOAD=\"\${LD_PRELOAD:+\$LD_PRELOAD:}/usr/lib/libluna-scale.so\" LUNA_TIMEOUT_SCALE=$scale exec /usr/sbin/sdx'|" "$f"
 	done
-	log "sdx: Luna reply timeout x$scale"
+	log "sdx: Luna reply and curl timeouts x$scale"
 fi
 
 # --- systemd (INIT_SYSTEM=systemd): /run and the BSP marker ---

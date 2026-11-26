@@ -1864,7 +1864,7 @@ class InitBootConfTest(unittest.TestCase):
             for path in paths:
                 self.assertEqual(files[path].splitlines()[2], exec_line)
                 self.assertEqual(files[path].replace(exec_line, "Exec=/usr/sbin/sdx"), service)
-            self.assertIn("sdx: Luna reply timeout x4", out)
+            self.assertIn("sdx: Luna reply and curl timeouts x4", out)
         # the line as ls-hubd splits it (g_shell_parse_argv: POSIX shell quoting)
         self.assertEqual(
             shlex.split(exec_line[len("Exec=") :]),

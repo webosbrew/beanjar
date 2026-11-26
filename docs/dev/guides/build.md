@@ -577,7 +577,10 @@ m3's 60 s wait and 45 s into h13's 30 s, 1.6 times the wait at most.
 The same factor reaches two other fixed timeouts, each through its own library in every webos layer
 and its own lines in /init: memchute's libfm heartbeat (`memchute-scale`, a drop-in on
 `memchute.service`) and sdx's Luna reply timeout (`luna-scale`, 20 s, which sdx's executable
-exports from webOS 3 on: /init puts the library on the Exec line of sdx's ls-hubd service files).
+exports from webOS 3 on: /init puts the library on the Exec line of sdx's ls-hubd service files),
+and with it sdx's curl timeouts (10 s, 5 s to connect): the library interposes `curl_easy_setopt`,
+scales `CURLOPT_TIMEOUT`, `CURLOPT_CONNECTTIMEOUT` and their `_MS` forms, and logs each new value
+once in the kernel log (`libluna-scale: curl option 13: 10 -> 40 (x4)`).
 The three share `guest/layers/webos/src/scale-preload.h`.
 
 `scripts/regress` takes the same factor for the VM host's accelerator (`--local`: the one the launcher
