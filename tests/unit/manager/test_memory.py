@@ -34,6 +34,10 @@ LM14_DERIVED = (
 )
 
 
+# the derived words of an MBoot table (targets._mstar_mmap): its count
+MBOOT_DERIVED = ("mmap_ids=89", "mmap_file=/host/mstar-mmap.bin")
+
+
 def module(target, name="mstar-utopia"):
     return next(m for m in targets.soc(target).modules if m.name == name)
 
@@ -41,7 +45,7 @@ def module(target, name="mstar-utopia"):
 def test_current_targets():
     for target in targets.all_targets():
         derived = {
-            m.name: (LM14_DERIVED if m.derived == "mstar-mmap" else ())
+            m.name: {"mstar-mmap": LM14_DERIVED, "mstar-mboot": MBOOT_DERIVED}.get(m.derived, ())
             for m in targets.soc(target).modules
             if m.derived
         }

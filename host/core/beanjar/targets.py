@@ -86,6 +86,12 @@ PakLower = namedtuple("PakLower", "serial subdir")
 # libdvbfrontend, tvservice's tuner) is LG's WDVB tuner driver with no signal, its *_cmd the
 # build's property commands of HAL_DVBV5_GetLIBVersion, CheckLockState and TunePostJob.
 SocModule = namedtuple("SocModule", "name params derived", defaults=(None,))
+# SocModule.derived: "rpc-table" (above); "mstar-mmap", mstar-utopia.ko's mmapger records and record
+# IDs out of a NetCast vendor pak's libmadp (host/helpers/mstar/mmap-table.py); "mstar-mboot", its
+# mmapger records out of a webOS board's MBoot, the table its TEE memory map agrees with
+# (host/helpers/mstar/mboot-mmap.py), which needs the firmware's boot.pak (DERIVED_PAKS).
+DERIVED = ("rpc-table", "mstar-mmap", "mstar-mboot")
+DERIVED_PAKS = {"mstar-mboot": ("boot",)}
 # continent: the model's area as its factory programs it into a new EEPROM's ContinentOptionDB (on
 # a release with one, Nvm.continent_offset): (continent index, language-country group, HW setting
 # group), the enums' values; None elsewhere. inputs: the model's input ports as its factory programs
@@ -422,7 +428,7 @@ def _module(where, v):
     t = _table(
         where,
         v,
-        {"name": _str, "params": _strs, "derived": _one_of(("rpc-table", "mstar-mmap"))},
+        {"name": _str, "params": _strs, "derived": _one_of(DERIVED)},
         ("name",),
     )
     return SocModule(t["name"], t.get("params", ()), t.get("derived"))
@@ -1343,7 +1349,8 @@ def paks(target, fw=None):
 def pak_files(target, fw=None):
     """The pak files a VM of the target needs from its firmware (fw: that firmware directory's names,
     release): those it attaches (paks()), then those its partition map is made of (Release.partmap:
-    its program's pak, an assembled table's paks, whose sizes it takes)."""
+    its program's pak, an assembled table's paks, whose sizes it takes), then those its modules'
+    derived parameters are read from (DERIVED_PAKS)."""
     r = release(target, fw)
     src = r.partmap
     more = (
@@ -1355,6 +1362,7 @@ def pak_files(target, fw=None):
         + [p.size[1] for p in src.parts if not isinstance(p.size, int) and p.size[0] == "pak"]
     )
     out = [p.file for p in r.paks]
+    more += [p for m in soc(target).modules for p in DERIVED_PAKS.get(m.derived, ())]
     for f in more:
         if f not in out:
             out.append(f)
@@ -1427,7 +1435,9 @@ if os.path.isfile(os.path.join(_installed, "installation.toml")):
 
 # host/helpers/mstar/mmap-table.py, which reads an MStar firmware's mmapger records out of its libmadp
 MMAP_TABLE = os.path.join(os.path.dirname(RPC_TABLE), "..", "mstar", "mmap-table.py")
-# where the host share has the records a "mstar-mmap" module loads (its mmap_file=)
+# host/helpers/mstar/mboot-mmap.py, which reads a webOS MStar board's mmapger records out of its MBoot
+MBOOT_MMAP = os.path.join(os.path.dirname(MMAP_TABLE), "mboot-mmap.py")
+# where the host share has the records a "mstar-mmap" or "mstar-mboot" module loads (its mmap_file=)
 MMAP_SHARE_NAME = "mstar-mmap.bin"
 
 
@@ -1435,17 +1445,22 @@ def _param(m, key):
     return next((w.split("=", 1)[1] for w in m.params if w.startswith(key + "=")), None)
 
 
+MSTAR_DERIVED = ("mstar-mmap", "mstar-mboot")
+
+
 def _mstar_mmap(m, fw, fw_name):
-    """(path, words) of the module m's "mstar-mmap" records of the firmware directory fw:
-    mmap-table.py --cache's build/mstar/<fw_name>/mmap.bin (reused while the vendor pak's libmadp
-    is the same) and the module parameters it reads out of libmadp with them (mmap_ids, lx_mem_id,
-    lx_mem2_id, gop_fb), then mmap_file=. Error if it cannot say."""
+    """(path, words) of the module m's mmapger records of the firmware directory fw, then
+    mmap_file=. "mstar-mmap": mmap-table.py --cache's build/mstar/<fw_name>/mmap.bin (reused while
+    the vendor pak's libmadp is the same) and the module parameters it reads out of libmadp with
+    them (mmap_ids, lx_mem_id, lx_mem2_id, gop_fb). "mstar-mboot": mboot-mmap.py's (reused while
+    boot.pak and the TEE's mmap.ini are the same) and their count (mmap_ids). Error if it cannot
+    say."""
     r = subprocess.run(
         [
             sys.executable,
-            MMAP_TABLE,
+            MMAP_TABLE if m.derived == "mstar-mmap" else MBOOT_MMAP,
             fw,
-            "--cache",
+            *(["--cache"] if m.derived == "mstar-mmap" else []),
             "--name",
             fw_name,
             "--miu-interval",
@@ -1465,12 +1480,13 @@ def _mstar_mmap(m, fw, fw_name):
 
 def derived_files(target, fw, fw_name, vm=None):
     """{name: path}: the files of the firmware the chip's modules read from the host share
-    (/host/<name>), made from fw rather than kept in the tree. "mstar-mmap": _mstar_mmap's
-    mmap.bin, checked with the record IDs it derives along. Error if it cannot make one."""
+    (/host/<name>), made from fw rather than kept in the tree. "mstar-mmap", "mstar-mboot":
+    _mstar_mmap's mmap.bin, checked with the record IDs it derives along. Error if it cannot make
+    one."""
     out = {}
     vm = vm or {}
     for m in soc(target).modules:
-        if m.derived != "mstar-mmap":
+        if m.derived not in MSTAR_DERIVED:
             continue
         path, derived = _mstar_mmap(m, fw, fw_name)
         try:
@@ -1491,13 +1507,13 @@ def derived_params(target, fw, fw_name):
     """{module: (words...)}: the parameters of the chip's modules that come from the firmware fw
     (a directory with the paks; fw_name its name, the cache's key) rather than the table
     (SocModule.derived). "rpc-table": rpc-table.py --cache (build/rtk/<fw_name>/, reused while
-    the library is the same). "mstar-mmap": _mstar_mmap's record IDs and mmap_file=, the records
-    derived_files puts into the host share. Error if it cannot say."""
+    the library is the same). "mstar-mmap", "mstar-mboot": _mstar_mmap's record IDs and
+    mmap_file=, the records derived_files puts into the host share. Error if it cannot say."""
     out = {}
     for m in soc(target).modules:
         if m.derived is None:
             continue
-        if m.derived == "mstar-mmap":
+        if m.derived in MSTAR_DERIVED:
             out[m.name] = _mstar_mmap(m, fw, fw_name)[1]
             continue
         if m.derived != "rpc-table":
@@ -1571,7 +1587,7 @@ def validate_memory(target, derived=None, vm=None):
         try:
             words = m.params + derived.get(m.name, ()) + vm.get(m.name, ())
             if (
-                m.derived == "mstar-mmap"
+                m.derived in MSTAR_DERIVED
                 and memory.parameters(words).get("mmap_file") != f"/host/{MMAP_SHARE_NAME}"
             ):
                 raise ValueError(

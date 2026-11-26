@@ -27,7 +27,7 @@ broadcast standard, the VM's serial and debug mode, and a digest of the target's
 cheap to work out; and the size and mtime of every file it came from: each pak of the firmware,
 the board's board.cmdline and the helpers whose code ran (lls.py's probe and, where the firmware's
 LLS is a nyx module, the guest kernel, initramfs and lgemu.ko, which lls.cache_dir keys its run
-on; rpc-table.py, mmap-table.py and the files they made). A
+on; rpc-table.py, mmap-table.py, mboot-mmap.py and the files they made). A
 stat of each, no reads. Paths in the VM's directory are kept relative to it, so a renamed VM's
 record holds.
 
@@ -229,6 +229,8 @@ def _helpers(job, nyx):
         out.append(targets.RPC_TABLE)
     if "mstar-mmap" in derived:
         out.append(targets.MMAP_TABLE)
+    if "mstar-mboot" in derived:
+        out.append(targets.MBOOT_MMAP)
     return out
 
 
