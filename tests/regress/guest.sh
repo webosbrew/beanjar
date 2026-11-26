@@ -114,6 +114,9 @@ boot() { # with the normal layer (LAYERS=normal,...) bootd ends at boot-done, it
 # is stock readiness too (docs/research/spacebuns-fresh-state-restarts.md), once no instance has sent
 # tv-ready for LB_CLOSE_GRACE s (scaled) after the first close.
 LB_CLOSE_GRACE=20
+# In FirstUse stock bootd waits only 15 s for tv-ready (lb-exit.sh's late_tv_ready), so tvservice's
+# tv-ready may follow core-boot-done by its own timeout: ready waits this long (scaled) for it.
+LATE_TV_READY_GRACE=30
 in_webos() { wt $((10 * scale)) sh -c "$1" </dev/null 2>/dev/null; }
 # every tvservice (RELEASE, webOS 5's legacy-broadcast) process as one token, sorted and
 # comma-joined, so the sets compare (sorted in webOS: the initramfs's busybox has no sort)
@@ -183,7 +186,12 @@ ready() {
 				echo "READY-ON no-tv-service"
 				echo "READY $t ${core:-?} none"; mem; return 0
 			fi
-			echo "core-boot-done at ${core:-?} s (bootd's clock) without tvservice's tv-ready in /var/log/bootd.log: bootd's timeout"
+			if tv=$(late_tv_ready "$end" $LATE_TV_READY_GRACE); then
+				echo "tv-ready at $tv s (bootd's clock), after core-boot-done at ${core:-?} s by bootd's own timeout"
+				echo "READY-ON tv-ready-late"
+				echo "READY $(up) ${core:-?} $(release_pids)"; mem; return 0
+			fi
+			echo "core-boot-done at ${core:-?} s (bootd's clock) without tvservice's tv-ready in /var/log/bootd.log: bootd's timeout, and none $LATE_TV_READY_GRACE s (x$scale) later"
 			echo "tvservice (RELEASE): $(release_pids | grep . || echo not running)"
 			echo "$s"
 			return 1 ;;

@@ -123,5 +123,72 @@ class LbExit(unittest.TestCase):
         )
 
 
+# bootd's log on m3-goldilocks (W18R) in FirstUse: it waits 15 s for tv-ready, so core-boot-done
+# came at 33.0 s by that timeout, and tvservice's tv-ready followed at 38.96 s
+FIRSTUSE_BOOTD = """\
+DEBUG( 18.056937883) : Event) EventCore waits event(tv-ready)/timeout(15)
+PERFORMANCE( 33.004480432) : Boot) SIGNAL_core-boot-done
+DEBUG( 38.957258518) : Service) Start Handle-generateSignal/Request({"name":"tv-ready"})
+"""
+
+
+@unittest.skipUnless(shutil.which("sh"), "no sh")
+class LateTvReady(unittest.TestCase):
+    """late_tv_ready: bootd's log polled each second of a fake clock (one more second per `up`)."""
+
+    def run_late(self, log_text, start, end, grace, scale=1):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "bootd.log").write_text(log_text)
+            (Path(d) / "clock").write_text(str(start))
+            script = f"""
+. "$0"
+scale={scale}
+up() {{ n=$(cat {d}/clock); echo $((n + 1)) > {d}/clock; echo "$n.0"; }}
+in_webos() {{ sh -c "$(echo "$1" | sed 's|/var/log/bootd.log|{d}/bootd.log|')"; }}
+sleep() {{ :; }}
+late_tv_ready {end} {grace}
+echo "rc=$?"
+"""
+            r = subprocess.run(
+                ["sh", "-c", script, str(LIB)], capture_output=True, text=True, check=False
+            )
+            return r.stdout.split()
+
+    def test_arrives_after_timeout(self):
+        # the tv-ready line is in the log by the time it is looked for
+        self.assertEqual(self.run_late(FIRSTUSE_BOOTD, 33, 300, 30), ["38.957258518", "rc=0"])
+
+    def test_never_comes(self):
+        # no tv-ready line: gives up after the grace
+        no_line = "\n".join(FIRSTUSE_BOOTD.splitlines()[:2]) + "\n"
+        self.assertEqual(self.run_late(no_line, 33, 300, 30), ["rc=1"])
+
+    def test_bounded_by_end_and_scaled(self):
+        # the window closes at END even if the grace is longer
+        self.assertEqual(self.run_late("", 33, 36, 30), ["rc=1"])
+        # the time scale stretches the grace: the fake clock ticks once per call of up, so the
+        # final clock counts the polls (one call for the start, one per poll)
+        for scale, polls in ((1, 30), (4, 120)):
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as d:
+                (Path(d) / "clock").write_text("0")
+                script = f"""
+. "$0"
+scale={scale}
+up() {{ n=$(cat {d}/clock); echo $((n + 1)) > {d}/clock; echo "$n.0"; }}
+in_webos() {{ echo; }}
+sleep() {{ :; }}
+late_tv_ready 100000 30
+cat {d}/clock
+"""
+                r = subprocess.run(
+                    ["sh", "-c", script, str(LIB)], capture_output=True, text=True, check=False
+                )
+                self.assertEqual(int(r.stdout.split()[-1]), polls + 1, (scale, r.stdout))
+
+
 if __name__ == "__main__":
     unittest.main()

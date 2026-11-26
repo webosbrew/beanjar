@@ -69,3 +69,23 @@ lb_policy_closed() {
 	}
 	END { exit !found }'
 }
+
+# late_tv_ready END GRACE: bootd reached core-boot-done by its own tv-ready timeout, which stock
+# bootd does in FirstUse (goldilocks: "EventCore waits event(tv-ready)/timeout(15)", a normal boot
+# waits 60 s), so tvservice's tv-ready may still come after it. Wait for the tv-ready line in
+# bootd's log until GRACE s (times the time scale) from now or the uptime END, whichever is first:
+# prints bootd's time of the line and returns 0, or returns 1 if it never came. Needs up, scale
+# and in_webos from guest.sh.
+late_tv_ready() {
+	stop=$(($(up | cut -d. -f1) + $2 * scale))
+	[ "$stop" -gt "$1" ] && stop=$1
+	while :; do
+		log=$(in_webos "grep -E 'generateSignal.*\"name\":\"tv-ready\"' /var/log/bootd.log")
+		case $log in *tv-ready*)
+			printf '%s\n' "$log" | sed -n 's/^[A-Z]*( *\([0-9.]*\)).*/\1/p' | head -n 1
+			return 0 ;;
+		esac
+		[ "$(up | cut -d. -f1)" -ge "$stop" ] && return 1
+		sleep 1
+	done
+}
