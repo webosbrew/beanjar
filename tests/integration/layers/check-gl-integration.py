@@ -29,8 +29,8 @@ NATIVE_CURSOR = (
 )
 CURSOR_LIBRARY = "usr/lib/libkms-cursor-compat.so"
 NATIVE_BOOTSTRAP = (
-    "usr/libexec/beanjar/native-weston-format",
-    "etc/systemd/system/surface-manager-daemon.service.d/emulator-native-format.conf",
+    "usr/libexec/beanjar/native-weston-launcher",
+    "etc/systemd/system/surface-manager-daemon.service.d/emulator-native-launcher.conf",
 )
 # The jail hooks' preload for sam: the stock libsystrim first, then the two hooks.
 JAIL_DROPIN = "etc/systemd/system/sam.service.d/zz-beanjar-jail.conf"
@@ -105,16 +105,16 @@ def check(layer, integration, build=None, target=None):
             if (layer / name).exists():
                 raise ValueError(f"native compositor acquired adapter: {name}")
         dropins = layer / "etc/systemd/system/surface-manager-daemon.service.d"
-        expected_dropins = ["emulator-native-format.conf"]
+        expected_dropins = ["emulator-native-launcher.conf"]
         if cursor_bridge:
             expected_dropins.append("emulator-native-cursor.conf")
         if sorted(path.name for path in dropins.iterdir()) != sorted(expected_dropins):
             raise ValueError("native compositor acquired unrelated service dropins")
         for relative in NATIVE_BOOTSTRAP:
             if (layer / relative).read_bytes() != (NATIVE_ROOTFS / relative).read_bytes():
-                raise ValueError(f"changed native format bootstrap: {relative}")
+                raise ValueError(f"changed native launcher bootstrap: {relative}")
         if not (layer / NATIVE_BOOTSTRAP[0]).stat().st_mode & 0o111:
-            raise ValueError("native format bootstrap is not executable")
+            raise ValueError("native launcher bootstrap is not executable")
         if list(layer.rglob("weston.ini")):
             raise ValueError("native GL layer ships a firmware configuration")
         for path in list((layer / "etc").rglob("*")) + list((layer / "usr/libexec").rglob("*")):

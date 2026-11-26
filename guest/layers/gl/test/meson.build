@@ -11,6 +11,9 @@ guest_programs += {
   # the ES version contexts get, at most the TV's (gles-version)
   'tests/gl/gles-version': executable('gles-version', 'gles-version.c',
     dependencies: mesa_dep, link_args: ['-lEGL', '-lGLESv2']),
+  # a window config and surface for each 8888 GBM format (Mesa patch 0006)
+  'tests/gl/gbm-configs': executable('gbm-configs', 'gbm-configs.c',
+    dependencies: mesa_dep, link_args: ['-lEGL', '-lgbm']),
   'tests/gl/egl-pbuffer-shim.so': shared_module('egl-pbuffer-shim', 'egl-pbuffer-shim.c',
     dependencies: mesa_dep, name_prefix: '', link_args: ['-lEGL', '-lGLESv2', '-ldl']),
 }

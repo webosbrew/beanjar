@@ -1,0 +1,50 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The stock compositor launcher with LG's gl-renderer "punch-through hole clear" on; the firmware's
+# weston.ini stays as it is (its gbm-format, abgr8888 on spacebuns, has a Mesa GBM config since the
+# gl layer's Mesa patch 0006, and the virtio primary plane scans it out since guest kernel patch
+# 0027). Spacebuns' outputs are LG's own: its frontend writes TV-1 and TV-2 from the environment
+# (override-output-from-env), and the guest kernel names the one connector TV with an overlay plane
+# for TV-2, as on a set (the gl layer's kernel words).
+#
+# Weston 13's weston_surface_attach_solid empties a solid surface's opaque region, so once LSMW calls
+# WebOSOutput::setBackgroundOpaque(false) (a video window is inserted, or an app goes away) the
+# shell background no longer overwrites the scanout with alpha 0, and nothing in the stock repaint
+# clears what no opaque view covers: the old frame's alpha 255 stays under an app's video hole.
+# LG's gl-renderer clears exactly that (the damage minus the opaque views, to 0,0,0,0) when
+# WESTON_FORCE_RENDERER is non-empty (gl-renderer.so 0x8744); the stock launcher exports it empty,
+# "# For PVR GPU". The drm-backend only asks whether it is set (drm-backend.so 0xcd4a), so it stays
+# renderer-only either way. On the set's Mali (bsppart libmali.so.0.46.0: EGL_KHR_partial_update,
+# no EGL_EXT_buffer_age) Weston declares the damage region and the driver does not load it, so the
+# damage reads as transparent black: inferred from the extension list, not measured on a set.
+# virgl keeps the old contents, as the GPUs the clear is for do (docs/research/graphics/compositors.md).
+# An optional root prefix allows isolated configuration tests without mounts.
+set -eu
+root=${1-}
+launcher=$root/usr/bin/surface-manager.sh
+runtime=$root/run/beanjar/native-weston
+trap 'rm -f "$runtime/surface-manager.sh.tmp"' 0
+trap 'exit 1' HUP INT TERM
+
+# The stock launcher with only its empty WESTON_FORCE_RENDERER set. A restart in the same boot
+# reuses this helper's binding; any other mount or launcher is refused.
+if mountpoint -q "$launcher"; then
+	if ! [ -f "$runtime/surface-manager.sh" ] || ! cmp -s "$launcher" "$runtime/surface-manager.sh"; then
+		echo "native-weston-launcher: launcher already mounted by another owner" >&2
+		exit 1
+	fi
+	exit 0
+fi
+mkdir -p "$runtime"
+awk '
+    $0 == "export WESTON_FORCE_RENDERER=" { count++; $0 = "export WESTON_FORCE_RENDERER=1" }
+    { print }
+    END { if (count != 1) exit 1 }
+' "$launcher" > "$runtime/surface-manager.sh.tmp" || {
+	echo "native-weston-launcher: unexpected compositor launcher" >&2
+	exit 1
+}
+chmod 755 "$runtime/surface-manager.sh.tmp"
+mv "$runtime/surface-manager.sh.tmp" "$runtime/surface-manager.sh"
+mount --bind "$runtime/surface-manager.sh" "$launcher"

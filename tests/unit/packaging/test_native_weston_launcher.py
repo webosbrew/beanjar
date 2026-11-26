@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Exercise the shipped native bootstrap without touching a real mount or ini."""
+"""Exercise the shipped native launcher bootstrap without touching a real mount."""
 
 import importlib.util
 import os
@@ -12,15 +12,7 @@ import subprocess
 import pytest
 
 TOP = Path(__file__).resolve().parents[3]
-HELPER = TOP / "guest/layers/gl/native-rootfs/usr/libexec/beanjar/native-weston-format"
-STOCK = (
-    b"# stock configuration\n[core]\ngbm-format=abgr8888\n"
-    b"override-output-from-env=true\n[shell]\nmodules=stock.so\n"
-    b"[output]\nname=TV-1\nmode=1920x1080\n"
-    b"[other]\ngbm-format=abgr8888\n"
-)
-# The core format as the helper binds it: alpha kept, in the GBM EGL format that has a config.
-ARGB = STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=argb8888", 1)
+HELPER = TOP / "guest/layers/gl/native-rootfs/usr/libexec/beanjar/native-weston-launcher"
 # The measured end of the stock launcher (W24G 02.68.80 usr/bin/surface-manager.sh).
 LAUNCHER = (
     b'#!/bin/sh\nexport WEBOS_COMPOSITOR_OPTIONS="--tty=1"\n\n'
@@ -36,13 +28,10 @@ integration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(integration)
 
 
-class TestNativeWestonFormatTest:
+class TestNativeWestonLauncherTest:
     @pytest.fixture(autouse=True)
     def setup(self, tmp_path):
         self.root = tmp_path
-        self.ini = self.root / "usr/share/weston/weston.ini"
-        self.ini.parent.mkdir(parents=True)
-        self.ini.write_bytes(STOCK)
         self.launcher = self.root / "usr/bin/surface-manager.sh"
         self.launcher.parent.mkdir(parents=True)
         self.launcher.write_bytes(LAUNCHER)
@@ -65,11 +54,6 @@ class TestNativeWestonFormatTest:
             MOUNT_LOG=str(self.root / "mount.log"),
         )
 
-    def set_profile(self, target):
-        profile = self.root / "usr/share/beanjar/native-weston-target"
-        profile.parent.mkdir(parents=True, exist_ok=True)
-        profile.write_text(target + "\n")
-
     def run_helper(self, check=True):
         return subprocess.run(
             ["/bin/sh", str(HELPER), str(self.root)],
@@ -78,109 +62,6 @@ class TestNativeWestonFormatTest:
             text=True,
             check=check,
         )
-
-    def test_changes_only_core_format_and_restarts_idempotently(self):
-        self.run_helper()
-        expected = ARGB
-        assert (self.runtime / "stock.ini").read_bytes() == STOCK
-        assert (self.runtime / "virtio.ini").read_bytes() == expected
-        assert self.ini.read_bytes() == expected
-        mount_log = (self.root / "mount.log").read_bytes()
-        self.run_helper()
-        assert (self.root / "mount.log").read_bytes() == mount_log
-        assert (self.runtime / "stock.ini").read_bytes() == STOCK
-        assert self.ini.read_bytes() == expected
-
-    def test_spacebuns_keeps_lg_outputs_and_restarts_idempotently(self):
-        # LG's frontend writes TV-1 and TV-2 itself; the helper adds no output section
-        self.set_profile("o22n2-spacebuns")
-        self.run_helper()
-        expected = ARGB
-        assert self.ini.read_bytes() == expected
-        assert (self.runtime / "stock.ini").read_bytes() == STOCK
-        mount_log = (self.root / "mount.log").read_bytes()
-        self.run_helper()
-        assert self.ini.read_bytes() == expected
-        assert (self.root / "mount.log").read_bytes() == mount_log
-        assert not (self.runtime / "virtio.ini.tmp").exists()
-
-    def test_spacebuns_accepts_already_adjusted_format(self):
-        self.set_profile("o22n2-spacebuns")
-        adjusted = STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=xrgb8888", 1)
-        self.ini.write_bytes(adjusted)
-        self.run_helper()
-        assert self.ini.read_bytes() == adjusted
-        assert (self.runtime / "stock.ini").read_bytes() == adjusted
-
-    @pytest.mark.parametrize(
-        "target",
-        ("k8hp-queue", "o22n2-ombre", "k8hp-spacebuns"),
-        ids=["k8hp-queue", "o22n2-ombre", "k8hp-spacebuns"],
-    )
-    def test_other_targets_keep_format_only_behavior(self, target):
-        self.set_profile(target)
-        self.ini.write_bytes(STOCK)
-        Path(str(self.ini) + ".bound").unlink(missing_ok=True)
-        self.run_helper()
-        assert self.ini.read_bytes() == ARGB
-
-    @pytest.mark.parametrize(
-        "data",
-        (
-            STOCK.replace(b"override-output-from-env=true", b"override-output-from-env=false"),
-            STOCK.replace(b"override-output-from-env=true\n", b""),
-            STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=rgb565", 1),
-            STOCK.replace(
-                b"gbm-format=abgr8888\n", b"gbm-format=abgr8888\ngbm-format=xrgb8888\n", 1
-            ),
-        ),
-        ids=[
-            "env-override-false",
-            "env-override-missing",
-            "format-rgb565",
-            "format-twice",
-        ],
-    )
-    def test_spacebuns_rejects_unsupported_defaults_without_binding(self, data):
-        self.set_profile("o22n2-spacebuns")
-        self.ini.write_bytes(data)
-        result = self.run_helper(check=False)
-        assert result.returncode != 0
-        assert self.ini.read_bytes() == data
-        assert "weston.ini" not in (self.root / "mount.log").read_text()
-        assert not (self.runtime / "virtio.ini").exists()
-        assert not (self.runtime / "virtio.ini.tmp").exists()
-
-    def test_mount_failure_can_retry_from_original(self):
-        self.set_profile("o22n2-spacebuns")
-        mount = self.commands / "mount"
-        original = mount.read_text()
-        mount.write_text("#!/bin/sh\nexit 1\n")
-        assert self.run_helper(check=False).returncode != 0
-        assert self.ini.read_bytes() == STOCK
-        mount.write_text(original)
-        self.run_helper()
-        assert self.ini.read_bytes() == ARGB
-
-    def test_user_configuration_takes_precedence_without_mutation(self):
-        self.set_profile("o22n2-spacebuns")
-        user = self.root / "var/luna/preferences/weston.ini"
-        user.parent.mkdir(parents=True)
-        custom = b"[core]\ngbm-format=argb8888\n# user output policy\n"
-        user.write_bytes(custom)
-        self.run_helper()
-        assert user.read_bytes() == custom
-        assert self.ini.read_bytes() == STOCK
-        assert not (self.runtime / "stock.ini").exists()
-        # The hole clear is the renderer's, not an output policy: a user ini keeps it.
-        assert self.launcher.read_bytes() == HOLE_CLEAR
-        assert "weston.ini" not in (self.root / "mount.log").read_text()
-
-    def test_unexpected_default_does_not_mount(self):
-        self.ini.write_bytes(STOCK.replace(b"gbm-format=abgr8888", b"gbm-format=rgb565"))
-        result = self.run_helper(check=False)
-        assert result.returncode != 0
-        assert "weston.ini" not in (self.root / "mount.log").read_text()
 
     def test_launcher_gets_only_the_hole_clear_and_restarts_idempotently(self):
         self.run_helper()
@@ -191,6 +72,26 @@ class TestNativeWestonFormatTest:
         self.run_helper()
         assert (self.root / "mount.log").read_bytes() == mount_log
         assert not (self.runtime / "surface-manager.sh.tmp").exists()
+
+    def test_firmware_weston_ini_is_left_alone(self):
+        # The stock gbm-format (abgr8888 on spacebuns) has a Mesa GBM config (Mesa patch 0006)
+        ini = self.root / "usr/share/weston/weston.ini"
+        ini.parent.mkdir(parents=True)
+        stock = b"[core]\ngbm-format=abgr8888\noverride-output-from-env=true\n"
+        ini.write_bytes(stock)
+        self.run_helper()
+        assert ini.read_bytes() == stock
+        assert "weston.ini" not in (self.root / "mount.log").read_text()
+
+    def test_mount_failure_can_retry_from_original(self):
+        mount = self.commands / "mount"
+        original = mount.read_text()
+        mount.write_text("#!/bin/sh\nexit 1\n")
+        assert self.run_helper(check=False).returncode != 0
+        assert self.launcher.read_bytes() == LAUNCHER
+        mount.write_text(original)
+        self.run_helper()
+        assert self.launcher.read_bytes() == HOLE_CLEAR
 
     @pytest.mark.parametrize(
         "data",
@@ -207,7 +108,6 @@ class TestNativeWestonFormatTest:
         assert result.returncode != 0
         assert "unexpected compositor launcher" in result.stderr
         assert self.launcher.read_bytes() == data
-        assert self.ini.read_bytes() == STOCK
         assert not (self.root / "mount.log").exists()
         assert not (self.runtime / "surface-manager.sh").exists()
         assert not (self.runtime / "surface-manager.sh.tmp").exists()
@@ -218,17 +118,7 @@ class TestNativeWestonFormatTest:
         assert result.returncode != 0
         assert "launcher already mounted by another owner" in result.stderr
         assert self.launcher.read_bytes() == LAUNCHER
-        assert self.ini.read_bytes() == STOCK
         assert not (self.root / "mount.log").exists()
-
-    def test_existing_foreign_mount_is_preserved(self):
-        self.set_profile("o22n2-spacebuns")
-        Path(str(self.ini) + ".bound").touch()
-        result = self.run_helper(check=False)
-        assert result.returncode != 0
-        assert "default ini already mounted by another owner" in result.stderr
-        assert self.ini.read_bytes() == STOCK
-        assert not (self.runtime / "stock.ini").exists()
 
 
 class TestGlIntegrationBoundaryTest:
@@ -275,8 +165,8 @@ class TestGlIntegrationBoundaryTest:
     def test_native_helper_mutation_is_rejected(self):
         self.native("o22n2-spacebuns")
         helper = self.layer / integration.NATIVE_BOOTSTRAP[0]
-        helper.write_text(helper.read_text().replace('"=argb8888"', '"=xrgb8888"'))
-        with pytest.raises(ValueError, match="changed native format bootstrap"):
+        helper.write_text(helper.read_text().replace("RENDERER=1", "RENDERER=2"))
+        with pytest.raises(ValueError, match="changed native launcher bootstrap"):
             integration.check(self.layer, "native", target="o22n2-spacebuns")
 
     def test_native_tv_head_words_are_spacebuns_only(self):

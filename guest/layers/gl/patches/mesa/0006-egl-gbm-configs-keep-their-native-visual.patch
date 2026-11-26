@@ -1,0 +1,30 @@
+egl/gbm: configs keep their native visual.
+
+On the GBM platform each window config is one GBM format, EGL_NATIVE_VISUAL_ID, and
+eglCreateWindowSurface fails with EGL_BAD_MATCH when the gbm_surface's format is not the config's.
+dri2_add_config merges a DRI config into an existing EGL config whose attributes compare equal,
+and EGL_NATIVE_VISUAL_ID is no match criterion, so the R8G8B8A8 and R8G8B8X8 DRI configs (GBM
+ABGR8888 and XBGR8888) are folded into the B8G8R8A8 and B8G8R8X8 ones (ARGB8888, XRGB8888) added
+before them: no config reports ABGR8888. LG's Weston 13 (gbm-format=abgr8888) then finds no
+config ("No EGLConfig matches { win; ABGR8888 }"), and LG's Qt eglfs_starfish of the ponytail
+releases creates an ABGR8888 gbm_surface and fails with EGL_BAD_MATCH.
+
+X11 already keeps configs with alpha apart by visual. Do the same on GBM, for every config: each
+GBM format gets its own configs. The BGRA ones keep the lower config IDs (the DRI screen lists
+them first), so a client that takes the first 8888 config without asking for a visual gets
+ARGB8888 as before.
+--- a/src/egl/drivers/dri2/egl_dri2.c
++++ b/src/egl/drivers/dri2/egl_dri2.c
+@@ -252,6 +252,12 @@
+       return EGL_FALSE;
+ #endif
+ 
++   /* GBM: each window config is one GBM format (EGL_NATIVE_VISUAL_ID), and a
++    * window surface must have its config's format: keep the formats apart. */
++   if (conf->Display->Platform == _EGL_PLATFORM_DRM &&
++       conf->NativeVisualID != criteria->NativeVisualID)
++      return EGL_FALSE;
++
+    if (_eglCompareConfigs(conf, criteria, NULL, EGL_FALSE) != 0)
+       return EGL_FALSE;
+ 

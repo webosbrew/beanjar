@@ -241,7 +241,8 @@ if gl_adapt_compositor
 else
   # No scanout/input preload, window adapter or weston-setup: the latter's presence
   # enables the initramfs compatibility rewrite of atomic/output settings.
-  # The native helper selects the measured virtio format. Custom user ini files take precedence.
+  # The native helper (native-weston-launcher) turns on LG's gl-renderer hole clear only; the
+  # firmware's weston.ini, its GBM format included, stays as it is.
   gl_layer_args += ['--tree', meson.current_source_dir() / 'native-rootfs', '.']
   native_profile_data = configuration_data()
   native_profile_data.set('TARGET', guest_target)
