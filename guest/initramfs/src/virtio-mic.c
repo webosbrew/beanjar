@@ -7,7 +7,9 @@
  * has no read_iter), so this pump copies the port's stream to /dev/lgemu-mic
  * (guest/kernel/modules/lgemu/mic.c), in whole frames; that write blocks while the sound is far
  * enough ahead of real time, which holds the host back through the port. A hang-up of the port
- * means no host program is connected; the port is looked at again a little later.
+ * means no host program is connected: the port then polls readable and reads 0 bytes at once, so
+ * the pump sleeps and looks again a little later rather than spin. While nothing is fed lgemu
+ * plays silence on its own; the pump has nothing to do.
  *
  * Without the port or the device (a model without the microphone: lgemu's mic=0), it does
  * nothing. Errors go to stderr (guest/initramfs/rootfs/init: /run/virtio-mic.log). */
@@ -66,6 +68,37 @@ static int write_all(int fd, const unsigned char *buf, size_t n)
     return 0;
 }
 
+/* ---- one step of the pump: what tests/unit/initramfs/test_virtio_mic.py compiles ---- */
+enum step { MOVED, HUNG_UP, FAILED };
+
+/* Waits for the port and copies what it has to out in whole frames, keeping a split frame's start
+ * in buf (*have bytes) for the next step. HUNG_UP: no host program on the port (the read is
+ * empty; a virtio port then polls readable at once). FAILED: errno says why. */
+static enum step pump_step(int in, int out, unsigned char *buf, size_t size, size_t *have)
+{
+    struct pollfd p = {in, POLLIN, 0};
+    if (poll(&p, 1, -1) < 0)
+        return errno == EINTR ? MOVED : FAILED;
+    if (!(p.revents & POLLIN)) {
+        *have = 0;
+        return HUNG_UP;
+    }
+    ssize_t n = read(in, buf + *have, size - FRAME - *have);
+    if (n == 0) {
+        *have = 0;
+        return HUNG_UP;
+    }
+    if (n < 0)
+        return errno == EAGAIN || errno == EINTR ? MOVED : FAILED;
+    size_t total = *have + (size_t)n, whole = total - total % FRAME;
+    if (whole && write_all(out, buf, whole) < 0)
+        return FAILED;
+    *have = total - whole;
+    memmove(buf, buf + whole, *have);
+    return MOVED;
+}
+/* ---- end of the step ---- */
+
 int main(void)
 {
     char dev[96];
@@ -97,31 +130,16 @@ int main(void)
     setsid();
     fprintf(stderr, "virtio-mic: %s -> /dev/lgemu-mic\n", dev);
     for (;;) {
-        struct pollfd p = {in, POLLIN, 0};
-        if (poll(&p, 1, -1) < 0) {
-            if (errno != EINTR)
-                sleep_ms(1000);
-            continue;
-        }
-        if (!(p.revents & POLLIN)) { /* a hang-up: no host program on the port */
-            have = 0;
+        switch (pump_step(in, out, buf, sizeof buf, &have)) {
+        case MOVED:
+            break;
+        case HUNG_UP:
             sleep_ms(200);
-            continue;
-        }
-        ssize_t n = read(in, buf + have, sizeof buf - FRAME);
-        if (n <= 0) {
-            if (n < 0 && errno != EAGAIN && errno != EINTR) {
-                fprintf(stderr, "virtio-mic: %s: %s\n", dev, strerror(errno));
-                sleep_ms(1000);
-            }
-            continue;
-        }
-        size_t total = have + (size_t)n, whole = total - total % FRAME;
-        if (whole && write_all(out, buf, whole) < 0) {
-            fprintf(stderr, "virtio-mic: /dev/lgemu-mic: %s\n", strerror(errno));
+            break;
+        case FAILED:
+            fprintf(stderr, "virtio-mic: %s\n", strerror(errno));
             sleep_ms(1000);
+            break;
         }
-        have = total - whole;
-        memmove(buf, buf + whole, have);
     }
 }
