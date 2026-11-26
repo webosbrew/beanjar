@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t stopped;
@@ -63,6 +64,18 @@ static void cursor_on(void)
     emit(EV_KEY, MRCU_CURSOR_ON, 0);
     emit(EV_SYN, SYN_REPORT, 0);
 }
+/* libim (23.21.20 K8HP, IM_INPUT_SEND_InputEventProcess) passes a motion on only once 16 ms (its
+ * 60 fps limit) have gathered since the event before; a motion held back is sent later only after
+ * one has gone through. Until then a press reports libim's last sent position, (0,0) after boot, so
+ * a click right after cursor-on landed at (0,0) on the first use after boot. A gap of more than
+ * the limit after cursor-on, and before a press, lets the position through. */
+#define WAKE_GAP_US 20000
+static void wake_gap(void)
+{
+    struct timespec t = {.tv_nsec = WAKE_GAP_US * 1000L};
+    while (nanosleep(&t, &t) < 0 && errno == EINTR && !stopped)
+        ;
+}
 /* Our M-RCU's /dev/input/eventN, opened once (wakeup mode): its EVIOCSABS lets position() re-send
  * an unchanged value. Events are masked off for this reader, which never reads. */
 static void open_self(void)
@@ -104,6 +117,9 @@ static void position(void)
         emit(EV_ABS, a, pos[a]);
     }
 }
+/* A tablet value as an output pixel. QEMU maps display pixel p to p * range / size (the display's
+ * width or height onto the whole axis), so p comes back as that times size / range, rounded; with
+ * size - 1 instead, pixels far from the origin came out one short (750 of 1080 as 749). */
 static int scale(int axis, int value)
 {
     int min = axes[axis].minimum, max = axes[axis].maximum;
@@ -113,7 +129,8 @@ static int scale(int axis, int value)
         value = max;
     int size = axis ? height : width;
     int64_t range = (int64_t)max - min;
-    return (int)((((int64_t)value - min) * (size - 1) + range / 2) / range);
+    int p = (int)((((int64_t)value - min) * size + range / 2) / range);
+    return p < size ? p : size - 1;
 }
 static int tablet(void)
 {
@@ -263,7 +280,13 @@ int main(int argc, char **argv)
          * reset position: (0,0) to a native app. */
         if (mrcu_wakeup && (moved || press) && !woke) {
             cursor_on();
+            wake_gap();
             position();
+            /* the position in a frame of its own, and the press a gap later: libim drops the ABS
+             * of a frame that has a key (any EV_KEY clears its queued motion) */
+            emit(EV_SYN, SYN_REPORT, 0);
+            if (press)
+                wake_gap();
             woke = 1;
         } else if (moved) {
             emit(EV_ABS, ABS_X, pos[ABS_X]);
