@@ -12,7 +12,7 @@
 # 0b 13 02, SYS_ATSC, SYS_ATSC3, SYS_DVBC_ANNEX_B), and the analog tuner's /dev/video2, which
 # FE_ATV_Initialize opens before the digital ones. dtv_soc brings the signal, the demuxes and the
 # video decoder (/dev/video20, which legacy-broadcast-atsc opens on ombre and ponytail and
-# nyxVdec.module on queue). W23P number1's consumer wants 1.2 (targets/k8lpn-number1.toml).
+# nyxVdec.module on queue). W23P number1 has the same tuner through K8HPP's values (targets/k8lpn-number1.toml).
 base = "k8hpp"
 # earc=1 as K8LP's
 lgemu = [

@@ -45,13 +45,41 @@ params = [
 ]
 derived = "rpc-table"
 
+# The tuners: W23H ombre (23.25.55), ponytail (33.31.61) and queue (43.22.73) ship webos_tv.ko,
+# atsc_dtv_soc.ko, si2178b.ko, libdil_tu_plugin and legacy-broadcast-atsc byte for byte as W23P's in
+# the same release (soc/k8lpn.toml, which says what each value is), so K8LPN's tuner. The parts
+# are chosen at run time, not by a file: the plugin's DIL_TU_Probe writes webos_tv's frontend_type
+# from tv.hw, which hw-option-gen makes from the board's hwopt; for the US board's
+# (500200000004002000: no dual or triple tuner, internal DTV demod, tuner level 0) both firmwares
+# give tuner NTSC_SI2178B, demodulator ATSC_DTV_SOC, one frontend, and their libdile_i2c tuner rows
+# are the same. The number1 builds (W23H
+# 13.41.12, and W23P 13.41.13 on this boundary, targets/k8lpn-number1.toml) are their own builds of
+# the same shape as W22P's (soc/k8lp.toml): legacy-broadcast-atsc checks the frontend version
+# itself (compare_dvbfrontend_version, 2.1: token 0 is 2, token 1 is 1), names the lock's
+# properties and opens /dev/video2 and /dev/video20; their stock webos_tv.ko reports 2.1.0.
 [[modules]]
 name = "webos_tv"
 params = [
     "platform=wfm",
     "frontends=2",
     "delsys=3+16+1+2+5+6+18,3+16+1+2+5+6+18",
-    "version=1.2.0",
+    "version=2.1.0",
     "version_cmd=0x68",
+    "answers=0x80:6401",
+    "freq_cmd=0x5d",
+    "status_cmd=0x81",
+    "monitor_cmd=0x71",
+    "specstore_cmd=0x56",
+    "speccheck_cmd=0x55",
+    "strength_cmd=0x60",
+    "quality_cmd=0x61",
     "atv=2",
 ]
+
+# the frontends' signal, the demuxes and the video decoder, fed from the host's tuner (beanjar io
+# tuner, host/core/beanjar/tuner.py)
+[[modules]]
+name = "dtv_soc"
+
+[broadcast_params.atsc]
+webos_tv = ["frontends=1", "delsys=11+19+2"]

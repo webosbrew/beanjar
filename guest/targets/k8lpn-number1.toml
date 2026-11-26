@@ -7,8 +7,9 @@ v4l2_capture = true
 base = "number1"
 partmap = "kisscurl"
 
-# W23P number1 keeps K8HPP's tuner boundary, its frontend consumer wanting 1.2.x
-# (docs/research/soc-successors.md); its US board's tuner values and the scan are not derived yet.
+# W23P number1 takes K8HPP's tuner (soc/k8hpp.toml): its legacy-broadcast-atsc checks frontend 2.1
+# (token 0 is 2, token 1 is 1; its stock webos_tv.ko reports 2.1.0) and, with the US board's
+# hwopt, picks NTSC_SI2178B and ATSC_DTV_SOC, one frontend, as W23H number1's.
 [soc]
 base = "k8hpp"
 lgemu = [
