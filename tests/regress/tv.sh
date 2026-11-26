@@ -149,9 +149,12 @@ luna_info() {
 	pq mrcu.getSensorState luna://com.webos.service.mrcu/sensor2/getSensorState '{}'
 	pq camera.getList luna://com.webos.service.camera/getList '{}'
 	pq blegatt.getState luna://com.webos.service.blegatt/getState '{}'
-	# nyx: every key its help lists, each queried on its own
+	# nyx: every key its help lists, each queried on its own; a nyx-cmd whose help lists none
+	# (webOS 11's, options only: -f, --query, --item) names its keys in its query of them all
 	for d in OSInfo DeviceInfo; do
 		keys=$(nyx-cmd -h $d 2>&1 | sed -n '/^QUERY *$/,$p' | sed -n 's/^  \([a-z_0-9]*\)  .*/\1/p')
+		[ -n "$keys" ] || keys=$($T $((10 * scale)) nyx-cmd $d --query -f json </dev/null 2>/dev/null |
+			sed -n 's/^ *"\([a-z_0-9]*\)": .*/\1/p')
 		echo "nyx.$d.keys=$(echo $keys)"
 		for k in $keys; do
 			# stdout (the value: its first line; .more the rest) and stderr (.err) apart

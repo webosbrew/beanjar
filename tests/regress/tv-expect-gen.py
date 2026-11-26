@@ -1535,6 +1535,75 @@ def process_of(fw, pak, app_dir, main):
     return dict(name=names[0], source=f"{pak}:/{app_dir}/{main}: exec .../{names[0]}")
 
 
+# The input apps' (Live TV's, HDMI's) no-signal screen of webOS 11: with the general setting
+# noSignalScreenSaver "on" (defaultSettings.json), inputcommon's NoSignalPhotoModel shows photos and
+# hides the "No Signal" popup (Screensaver.qml: the popup only while !isPhotoRunning), the photos
+# those ScreensaverPhotoList.js names: the OLED list in the apps partition's factory gallery
+# (preload/igallery/files/data) or the UHD list in com.webos.app.mediadiscovery's samples. Where the
+# firmware has none of them (factory or store content), every photo fails to load (PmLog: "PHOTO
+# setSource error N / 3") and the input app draws nothing over the black of no signal.
+NO_SIGNAL_PHOTOS = (
+    "usr/palm/applications/com.webos.app.inputcommon/qml/Interfaces/ScreensaverInterfaces/"
+    "ScreensaverPhotoList.js"
+)
+NO_SIGNAL_LISTS = ("oledList", "uhdList")  # NoSignalPhotoModel.getImgList: oled or uhd, never bno
+
+
+def settings_value(fw, category, key):
+    """The value of key in category's records of etc/palm/defaultSettings.json, else None."""
+    loc = fw.find("etc/palm/defaultSettings.json")
+    if not loc:
+        return None
+    text = fw.read(*loc).decode(errors="replace")
+    dec, i = json.JSONDecoder(), 0
+    while True:
+        while i < len(text) and text[i] not in "{[":
+            i += 1
+        if i >= len(text):
+            return None
+        try:
+            obj, i = dec.raw_decode(text, i)
+        except ValueError:
+            i += 1
+            continue
+        for rec in obj if isinstance(obj, list) else [obj]:
+            if (
+                isinstance(rec, dict)
+                and rec.get("category", "") == category
+                and isinstance(rec.get("value"), dict)
+                and key in rec["value"]
+            ):
+                return rec["value"][key]
+
+
+def no_signal_blank(fw, pak_order):
+    """{source} when an input app's no-signal screen is the photo screensaver with none of its
+    photos in the firmware (NO_SIGNAL_PHOTOS), so it shows nothing; else None."""
+    loc = fw.find(NO_SIGNAL_PHOTOS, pak_order)
+    if not loc or settings_value(fw, "general", "noSignalScreenSaver") != "on":
+        return None
+    text = fw.read(*loc).decode(errors="replace")
+    photos = []
+    for name in NO_SIGNAL_LISTS:
+        m = re.search(rf"var {name}\s*=\s*\{{(.*?)\}};", text, re.S)
+        if not m:
+            return None
+        parent = re.search(r'"parentPath"\s*:\s*"([^"]*)"', m.group(1))
+        names = re.findall(r'"([^"]+)"', m.group(1).split('"list"', 1)[-1])
+        if not parent or not names:
+            return None
+        photos += [parent.group(1).rstrip("/") + "/" + n.lstrip("/") for n in names]
+    if any(fw.find(p) for p in photos):
+        return None
+    dirs = sorted({os.path.dirname(p) for p in photos})
+    return dict(
+        source=f"no signal: {loc[0]}:/{loc[1]} names {len(photos)} photos for the screensaver "
+        f"(etc/palm/defaultSettings.json: general noSignalScreenSaver on), in {', '.join(dirs)}, "
+        "none of them in any pak (factory and store content); the popup hides while it runs "
+        "(Screensaver.qml), so nothing is drawn"
+    )
+
+
 def apps_of(fw, pak_order):
     """{role: row} of the apps step (tvsuite.APP_ROLES): the first of the role's app ids with a
     usr/palm/applications/<id>/appinfo.json in the target's paks (its title, type and main), webOS 1
@@ -1565,6 +1634,10 @@ def apps_of(fw, pak_order):
             if proc:
                 row["process"] = proc
             row["headless"] = tvsuite.headless_of(row)
+            if role in tvsuite.NO_SIGNAL_ROLES:
+                blank = no_signal_blank(fw, pak_order)
+                if blank:
+                    row["blank"] = blank
             if info.get("requiredEULA"):
                 # sam's prelaunch stage: an app that needs terms the set's user has not agreed
                 # to opens LG's terms screen instead, which returns to the app once agreed

@@ -116,6 +116,7 @@ type = "web"
 what = "Home Dashboard"
 
 [apps.hdmi1]
+blank = { source = "no signal: rootfs.pak:/usr/palm/applications/com.webos.app.inputcommon/qml/Interfaces/ScreensaverInterfaces/ScreensaverPhotoList.js names 20 photos for the screensaver (etc/palm/defaultSettings.json: general noSignalScreenSaver on), in /mnt/lg/appstore/preload/igallery/files/data/modernart, /usr/palm/applications/com.webos.app.mediadiscovery/assets/samples, none of them in any pak (factory and store content); the popup hides while it runs (Screensaver.qml), so nothing is drawn" }
 headless = { runs = false, source = "the headless layer's stand-in for its binary sends bootd's banner-ready and ends (guest/layers/headless/rootfs/usr/bin/com.webos.app.inputcommon)" }
 id = "com.webos.app.hdmi1"
 main = "file:///usr/bin/com.webos.app.inputcommon"
@@ -142,6 +143,7 @@ source = "no usr/palm/applications/com.webos.app.inputpicker/appinfo.json or usr
 what = "the input picker (Input Hub)"
 
 [apps.livetv]
+blank = { source = "no signal: rootfs.pak:/usr/palm/applications/com.webos.app.inputcommon/qml/Interfaces/ScreensaverInterfaces/ScreensaverPhotoList.js names 20 photos for the screensaver (etc/palm/defaultSettings.json: general noSignalScreenSaver on), in /mnt/lg/appstore/preload/igallery/files/data/modernart, /usr/palm/applications/com.webos.app.mediadiscovery/assets/samples, none of them in any pak (factory and store content); the popup hides while it runs (Screensaver.qml), so nothing is drawn" }
 headless = { runs = false, source = "the headless layer's stand-in for its binary sends bootd's banner-ready and ends (guest/layers/headless/rootfs/usr/bin/com.webos.app.inputcommon)" }
 id = "com.webos.app.livetv"
 main = "file:///usr/bin/com.webos.app.inputcommon"

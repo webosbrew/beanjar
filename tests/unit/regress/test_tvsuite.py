@@ -371,6 +371,49 @@ class LunaTest(unittest.TestCase):
         )
         self.assertEqual(r["nyx.DeviceInfo.wifi_addr"][0], "FAIL")
 
+    def test_webos11_nyx_cmd(self):
+        """webOS 11's nyx-cmd: its keys from its query of them all (tv.sh), Wi-Fi and BT not among
+        them; a key it does not know answers "Unknown item" with status 0."""
+        design = {
+            k: dict(present=False, design=True, source=tvsuite.DESIGN_REASON)
+            for k in tvsuite.DESIGN_ABSENT
+        }
+        text = facts(
+            "nyx.OSInfo.keys=webos_release webos_target_distro",
+            "nyx.OSInfo.webos_release=rc=0 6.6.0",
+            "nyx.OSInfo.webos_target_distro=rc=0 Unknown item: webos_target_distro",
+            "nyx.DeviceInfo.keys=product_id wired_addr",
+            "nyx.DeviceInfo.product_id=rc=0 43UP77009LB",
+            "nyx.DeviceInfo.wired_addr=rc=0 A8:23:FE:12:34:56",
+        )
+        c = ctx(dict(design, **{"nyx.OSInfo.webos_release": dict(present=True, source="x")}))
+        r = items_of(tvsuite.judge_luna(text, c))
+        self.assertEqual(r["nyx.OSInfo.webos_release"][0], "PASS")
+        for k in tvsuite.DESIGN_ABSENT:
+            self.assertEqual(r[k][0], "PASS", r[k])
+            self.assertIn("not among the 2 keys", r[k][1])
+        self.assertEqual(
+            tvsuite._check_nyx("OSInfo", "webos_name", "rc=0 Unknown item: webos_name", "", c),
+            (False, "Unknown item: webos_name"),
+        )
+        # no key list at all (the facts lost): still a FAIL, not "not among"
+        r = items_of(tvsuite.judge_luna(facts("nyx.DeviceInfo.keys="), ctx(design)))
+        self.assertEqual(r["nyx.DeviceInfo.wifi_addr"][0], "FAIL")
+
+
+class BlankShotTest(unittest.TestCase):
+    def test_no_signal_blank(self):
+        """An input app whose no-signal screen the firmware leaves empty (the row's "blank"):
+        black is what it shows; anything drawn is not."""
+        row = dict(blank=dict(source="no signal: photos absent"))
+        black = dict(size=[1920, 1080], nonblack=0.0)
+        drawn = dict(size=[1920, 1080], nonblack=0.3)
+        self.assertEqual(tvsuite.shot_ok(black, row)[0], True)
+        self.assertIn("as expected: no signal", tvsuite.shot_ok(black, row)[1])
+        self.assertEqual(tvsuite.shot_ok(drawn, row)[0], False)
+        self.assertEqual(tvsuite.shot_ok(black, {})[0], False)
+        self.assertEqual(tvsuite.shot_ok(drawn)[0], True)
+
 
 class NetworkTest(unittest.TestCase):
     STATUS = (
@@ -2320,6 +2363,44 @@ class SmpTest(unittest.TestCase):
         present, src = rows["nyx.DeviceInfo.storage_free"]
         self.assertFalse(present)
         self.assertIn("rootfs.pak:/usr/bin/nyx-cmd has no query storage_free", src)
+
+    def test_no_signal_blank(self):
+        """The input apps' no-signal screen is empty where the screensaver is on by default and
+        none of the photos it names is in the firmware; one photo there, or the setting off: not."""
+        photos = (
+            'var oledList = {\n    "parentPath": "/mnt/lg/appstore/preload/igallery/files/data",\n'
+            '    "list": [\n        /* modernart */\n        "/modernart/modernart_0.jpg"\n    ]\n};\n'
+            'var uhdList = {\n    "parentPath": "/usr/palm/applications/com.webos.app.mediadiscovery/'
+            'assets/samples/",\n    "list": [\n        "Slovenia Bled.jpg"\n    ]\n};\n'
+        ).encode()
+
+        def fw(setting, extra=()):
+            class Fw:
+                files = {
+                    gen.NO_SIGNAL_PHOTOS: photos,
+                    "etc/palm/defaultSettings.json": json.dumps(
+                        [{"category": "general", "value": {"noSignalScreenSaver": setting}}]
+                    ).encode(),
+                    **{p: b"" for p in extra},
+                }
+
+                def find(self, path, paks=None):
+                    path = path.lstrip("/")
+                    return ("rootfs.pak", path) if path in self.files else None
+
+                def read(self, pak, path):
+                    return self.files[path]
+
+            return Fw()
+
+        blank = gen.no_signal_blank(fw("on"), ["rootfs.pak"])
+        self.assertIn("names 2 photos", blank["source"])
+        self.assertIn("noSignalScreenSaver on", blank["source"])
+        sample = (
+            "usr/palm/applications/com.webos.app.mediadiscovery/assets/samples/Slovenia Bled.jpg"
+        )
+        self.assertIsNone(gen.no_signal_blank(fw("on", [sample]), ["rootfs.pak"]))
+        self.assertIsNone(gen.no_signal_blank(fw("off"), ["rootfs.pak"]))
 
 
 if __name__ == "__main__":

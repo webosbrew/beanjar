@@ -589,6 +589,8 @@ def _check_nyx(module, key, value, err, ctx):
         return False, "no answer"
     if rc != 0:
         return False, v.strip() or f"exit {rc}"
+    if v.startswith("Unknown item:"):
+        return False, v  # webOS 11's nyx-cmd: no such key, exit 0 all the same
     want = None
     if module == "OSInfo":
         version = rel.get("version", "")
@@ -653,11 +655,17 @@ def judge_luna(text, ctx):
             rc, v = nyx(facts.get(cid))
             v = " ".join(x for x in (v, facts.get(cid + ".err", "")) if x)
             ok = rc not in (None, 0) and "not available" in v
+            # webOS 11's nyx-cmd, whose help lists no keys: the key is not among those its query
+            # of them all answers (the tv.sh facts' nyx.MODULE.keys), which is how it says so
+            module, _, key = cid[len("nyx.") :].partition(".")
+            listed = (facts.get(f"nyx.{module}.keys") or "").split()
+            if cid.startswith("nyx.") and rc is None and listed and key not in listed:
+                ok, v = True, f"not among the {len(listed)} keys its query of them all answers"
             out.append(
                 (
                     cid,
                     "PASS" if ok else "FAIL",
-                    f"not available, as expected ({exp['source']})"
+                    f"{'not available' if rc else v}, as expected ({exp['source']})"
                     if ok
                     else f"{exp['source']}, but it answered: rc={rc} {v!r}",
                 )
@@ -879,6 +887,10 @@ APP_ROLES = (
     ("userguide", ("com.webos.app.tvuserguide",), "User Guide"),
 )
 LAUNCHER_QML = "usr/lib/qt5/qml/StarfishLauncher/LauncherView.qml"
+# the input apps, which show their no-signal screen in the suite (no broadcast, no HDMI source):
+# where that screen is webOS 11's photo screensaver without its photos, the expected table's
+# "blank" (tv-expect-gen.py, no_signal_blank) says the screenshot is black
+NO_SIGNAL_ROLES = ("livetv", "hdmi1")
 # LG's terms screen: sam opens it in place of an app whose appinfo.json has requiredEULA when the
 # set's user has not agreed to those terms (K8HP's W22H: the browser's generalTerms; emulator-firstuse
 # agrees to none, as FirstUse without Internet shows no EULA). It returns to the app once agreed.
@@ -1108,10 +1120,21 @@ def known_note(known):
     return "".join(f"; expected crash report {c}: {e['why']}" for c, e in sorted(known.items()))
 
 
-def shot_ok(img):
-    """(ok, why) of a screenshot's image_facts: not black."""
+def shot_ok(img, row=None):
+    """(ok, why) of a screenshot's image_facts: not black; black where the app's row says the
+    firmware draws nothing there (its "blank")."""
     if not img or "error" in img:
         return False, f"no screenshot ({(img or {}).get('error', 'none')})"
+    blank = (row or {}).get("blank")
+    if blank:
+        black = img["nonblack"] < NONBLACK_MIN
+        return (
+            black,
+            f"the screenshot is {'' if black else 'not '}black "
+            f"({img['nonblack'] * 100:.1f} % of pixels over {NONBLACK_LEVEL})"
+            + (", as expected" if black else ", where the firmware draws nothing")
+            + f": {blank['source']}",
+        )
     if img["nonblack"] < NONBLACK_MIN:
         return (
             False,
@@ -1243,7 +1266,7 @@ def judge_app(role, row, launch, after, close, img=None, lane="graphics", before
                 bad.append(f"WebAppMgr restarted ({L.get('pid.wam')} -> {A.get('pid.wam')})")
         if L.get("pid.lsm") != A.get("pid.lsm"):
             bad.append(f"the compositor restarted ({L.get('pid.lsm')} -> {A.get('pid.lsm')})")
-        ok, why = shot_ok(img)
+        ok, why = shot_ok(img, row)
         if not ok:
             bad.append(why)
     if kind == "key":
@@ -1289,12 +1312,12 @@ def judge_app(role, row, launch, after, close, img=None, lane="graphics", before
             f"{row['eula'].get('app', name)}: the terms first, {name} ({row['eula']['source']}, "
             "not agreed on this set): "
             f"in front after {L.get('front_wait')} s, still after the keys, same process; "
-            f"{shot_ok(img)[1]}; closed in {C.get('gone_wait')} s",
+            f"{shot_ok(img, row)[1]}; closed in {C.get('gone_wait')} s",
         )
     back = running_entry(C.get("running"), app_id) if kind == "app" else None
     how = (
         f"in front after {L.get('front_wait')} s, still after the keys, same process; "
-        f"{shot_ok(img)[1]}; "
+        f"{shot_ok(img, row)[1]}; "
         if lane == "graphics"
         else f"running after {L.get('front_wait')} s, still after the pause, same pid; "
     )
