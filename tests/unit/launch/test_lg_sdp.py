@@ -304,7 +304,18 @@ def test_routes_table_shape():
         ("GET", "US.lgtvsdp.com", "/rest/sdp/v14.0/acrconfig", "acrconfig refused"),
         # W21A 6.5.0, W24P 9.0.0 (nextlgsdp.com), queue 11.0.0 (wiselg)
         ("POST", "US.nextlgsdp.com", "/auth/6.5.0/authentication", "authentication"),
-        ("POST", "US.nextlgsdp.com", "/auth/9.0.0/authentication/refresh", "authentication"),
+        (
+            "POST",
+            "US.nextlgsdp.com",
+            "/auth/9.0.0/authentication/refresh",
+            "authentication refresh",
+        ),
+        (
+            "POST",
+            "US.tv.wiselg.com",
+            "/auth/12.0.0/authentication/refresh",
+            "authentication refresh",
+        ),
         ("POST", "US.nextlgsdp.com", "/init/9.0.0/initservices", "initservices"),
         ("GET", "US.nextlgsdp.com", "/logging/9.0.0/loggingstatus", "loggingstatus"),
         ("GET", "US.nextlgsdp.com", "/home/9.0.0/eulamapping?voice=N", "eulamapping"),
@@ -352,6 +363,24 @@ def test_initservices_authenticates_with_every_switch_off(path):
     assert s["country"] == {"code": "US", "threecode": "USA", "ricCode": "AIC"}
     assert s["eulaList"]["eulas"] == [] and s["noticeList"]["notice"] == []
     assert s["blockedAppList"] == {"appCount": 0, "appList": []}
+
+
+@pytest.mark.parametrize(
+    "path", ["/auth/11.0.0/authentication", "/auth/12.0.0/authentication/refresh"]
+)
+def test_token_lasts_past_sdx_refresh_margin(path):
+    """sdx reads accessTokenDuration in ms and refreshes a token with 600 s or less left at once;
+    the refresh answer carries accessToken at its root (AuthState::getRefreshTokenData)."""
+    answer, _ = lg_sdp.lookup("POST", "US.tv.wiselg.com", path)
+    status, headers, body = lg_sdp.render(answer, {}, "US.tv.wiselg.com")
+    body = json.loads(body)
+    assert status == 200 and any(k == "X-Server-Time" for k, _ in headers)
+    token = body if path.endswith("/refresh") else body["authentication"]
+    assert isinstance(token["accessToken"], str) and token["accessToken"]
+    assert token["accessTokenDuration"] > 600 * 1000 * 2
+    if not path.endswith("/refresh"):
+        for key in ("deviceSecret", "refreshToken", "deviceUniqueID"):
+            assert token[key]
 
 
 def test_v51_answers():

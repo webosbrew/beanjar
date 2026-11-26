@@ -107,16 +107,19 @@ SERVICES = {
 }
 
 # One authentication object for every layout: sessionID (v9.2 to v14.0, sent back as
-# X-Authentication) and accessToken, refreshToken and accessTokenDuration (6.5.0, 9.0.0, 11.0.0:
-# AuthState::getCreateTokenData). blockStolenTV must be "N" (AuthDataManager::set_stolen). No
-# session exists anywhere: the values are fixed strings.
+# X-Authentication) and accessToken, refreshToken and accessTokenDuration (6.5.0 on:
+# AuthState::getCreateTokenData needs deviceSecret, accessToken, refreshToken and deviceUniqueID).
+# accessTokenDuration is milliseconds (sdx divides it by 1000), and a token with 600 s or less left
+# is "expiring soon": refreshed at once, and initservices is not sent with it. blockStolenTV must be
+# "N" (AuthDataManager::set_stolen). No session exists anywhere: the values are fixed strings.
+TOKEN_DURATION_MS = 86400000
 AUTHENTICATION = {
     "deviceSecret": "emulator-device-secret",
     "sessionID": "emulator-session",
     "deviceUniqueID": "emulator-device",
     "accessToken": "emulator-access-token",
     "refreshToken": "emulator-refresh-token",
-    "accessTokenDuration": 86400,
+    "accessTokenDuration": TOKEN_DURATION_MS,
     "blockStolenTV": "N",
 }
 COOKIES = (
@@ -209,11 +212,23 @@ ROUTES = (
             },
         },
     },
-    # 6.5.0 on: AuthState::createToken (POST) and refreshToken, both a 200 with x-server-time;
-    # W22O deletes its session with DELETE before authenticating again after the terms change
+    # 6.5.0 on: AuthState::refreshToken (POST, body refreshToken=...): a 200 whose root has
+    # accessToken (getRefreshTokenData reads no wrapper; without it "Parsing error" and sdx waits
+    # 600 s in ERROR_BY_SERVER) and accessTokenDuration
+    {
+        "name": "authentication refresh",
+        "path": SDP + r"authentication/refresh$",
+        "methods": ("POST",),
+        "body": {
+            "accessToken": AUTHENTICATION["accessToken"],
+            "accessTokenDuration": TOKEN_DURATION_MS,
+        },
+    },
+    # AuthState::createToken (POST), a 200 with x-server-time; W22O deletes its session with
+    # DELETE before authenticating again after the terms change
     {
         "name": "authentication",
-        "path": SDP + r"authentication(/refresh)?$",
+        "path": SDP + r"authentication$",
         "methods": ("GET", "POST", "DELETE"),
         "headers": COOKIES,
         "body": {"authentication": AUTHENTICATION},

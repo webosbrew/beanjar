@@ -200,7 +200,8 @@ Enforcement is below mitmweb, in the inner namespace, beside the loopback and LA
   | v5.1: `notice`, `rest/appstore/v5.1/device/hardwarefeature`, `app/update` | empty notice lists, `fck` 0, no updates |
   | v5.1: `services`, `loggingstatus` | notice, country, `account.termsList` empty, `loggingStatus` with every unit off |
   | v7.0 to v14.0 (`rest/sdp/vN/`), 6.5.0, 9.0.0, 11.0.0 (`init/x.y.z/`): `initservices` | `initServices` with `authentication` (`sessionID` and the token layout's `accessToken`, `refreshToken`, `accessTokenDuration`; `blockStolenTV` `N`), `activationDate`, `deviceFeatureResult`, `services`; `blockStolenTV` at the root too; `WMONID` and `JSESSIONID` cookies |
-  | `authentication`, `authentication/refresh` (any method) | the same `authentication` object |
+  | `authentication` (any method) | the same `authentication` object; `accessTokenDuration` in milliseconds, one day (sdx refreshes a token with 600 s or less left at once and sends no `initservices` with it) |
+  | `authentication/refresh` (POST, 6.5.0 on) | `accessToken` and `accessTokenDuration` at the root, no `authentication` wrapper (sdx's `getRefreshTokenData`) |
   | `services`, `loggingstatus` | `services` (below), `loggingStatus` |
   | `notice`, `eula` (GET), `eulamapping` | empty `noticeList`, `eulaList` (no `eulas`), `eulaMappingList` |
   | `eula` (POST), `deviceinfo` (terms withdrawal), `serverstatus/status` | 200 `{}` (the last for its `X-Server-Time`) |
