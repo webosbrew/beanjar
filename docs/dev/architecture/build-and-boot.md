@@ -339,7 +339,9 @@ the guest layers (`share.kernel_args`); every other target sees no modifiers, as
 scanout's connector is a TV connector (TV-1) instead of a Virtual one. Queue's stock Weston names its
 primary output and fb0 after it, and copies every connector into a second head named with index 2,
 so the copies need names of their own. The launcher sets it for queue's two outputs, and spacebuns'
-gl layer for its one (below).
+gl layer for its one (below). QEMU enables the second output only when a UI gives it a size: the
+dbus display's setup does (768x2160), egl-headless does not, so there the launcher also forces the
+second connector on in the guest, `video=Virtual-1:768x2160e`.
 `0021` starts gpiolib's dynamic bases at 1024 instead of 512 (below, `GPIOLIB`): the vendor
 module's chip at base 0 serves the firmware's own line numbers, K24's up to 733, and the PL061,
 the one chip with a dynamic base, must sit above them.

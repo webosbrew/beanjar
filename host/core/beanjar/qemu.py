@@ -1472,7 +1472,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # queue's Weston (the gl layer's weston-setup: TV-1 and TV-2 on two virtual heads, K8HP and O22
     # alike) needs a second output. Spacebuns' native one has one, as a set: its TV-2 output takes
     # the overlay plane of the one CRTC (the gl layer's kernel words, guest kernel patch 0028).
-    two_outputs = p.target[1] == "queue" and "gl" in p.layers and display_backend == "dbus"
+    two_outputs = p.target[1] == "queue" and "gl" in p.layers and display_backend != "none"
     if gpu and gpu_process(env, node, qemu, tree, say):
         # virgl in QEMU's vhost-user-gpu backend, its own process (docs/dev/architecture/gpu-process.md):
         # the same device to the guest, at the same resolution and id. The backend maps the guest's
@@ -1488,11 +1488,16 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         gpu[-1] += ",max_outputs=2"
         # queue's Weston: the primary is the set's TV connector, TV-1, and its heads' copies get names of
         # their own (kernel patch 0020, weston-setup)
-        if p.target[1] == "queue":
-            append += " virtio_gpu.tv_connector=1"
-        p.display_setup = (dbus_addr, socks["QMP_SOCK"])
-        if "-S" in env.get("QEMU_EXTRA", "").split():
-            p.display_setup += ("--keep-paused",)
+        append += " virtio_gpu.tv_connector=1"
+        if display_backend == "dbus":
+            p.display_setup = (dbus_addr, socks["QMP_SOCK"])
+            if "-S" in env.get("QEMU_EXTRA", "").split():
+                p.display_setup += ("--keep-paused",)
+        else:
+            # QEMU enables a head past the first only when a UI gives it a size (the dbus display
+            # setup's 768x2160, dbus.set_ui_info); egl-headless gives none, so the second head's
+            # connector (Virtual-1 beside TV-1) is forced on in the guest with that mode.
+            append += " video=Virtual-1:768x2160e"
     audio_default = "dbus" if display_backend == "dbus" else "none"
 
     # Audio. The mixing engine with fixed settings gives the D-Bus

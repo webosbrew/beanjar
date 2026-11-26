@@ -795,7 +795,9 @@ class ArgvTest(unittest.TestCase):
             (("k8hp", "queue"), "normal,gl", "dbus", True),
             (("k8hp", "queue"), "headless", "dbus", False),
             (("k8hp", "queue"), "normal,gl", "none", False),
-            (("k8hp", "queue"), "normal,gl", "egl-headless", False),
+            # queue's two outputs whatever the display: egl-headless forces the second on in the guest
+            (("k8hp", "queue"), "normal,gl", "egl-headless", True),
+            (("o22", "queue"), "normal,gl", "egl-headless", True),
             (("k8hp", "ponytail"), "normal,gl", "dbus", False),
             (("o22", "queue"), "normal,gl", "dbus", True),
             (("o22", "ponytail"), "normal,gl", "dbus", False),
@@ -841,10 +843,17 @@ class ArgvTest(unittest.TestCase):
                     "virtio_gpu.tv_connector=1" in p.argv[p.argv.index("-append") + 1].split(),
                     enabled and target[1] == "queue",
                 )
-                self.assertEqual(bool(p.display_setup), enabled)
-                self.assertEqual("-S" in p.argv, enabled)
+                # the dbus display sizes the second head (display_setup, QEMU paused until then);
+                # egl-headless cannot, so the guest kernel forces its connector on in that size
+                setup = enabled and backend == "dbus"
+                self.assertEqual(bool(p.display_setup), setup)
+                self.assertEqual("-S" in p.argv, setup)
+                self.assertEqual(
+                    "video=Virtual-1:768x2160e" in p.argv[p.argv.index("-append") + 1].split(),
+                    enabled and backend == "egl-headless",
+                )
                 self.assertEqual("max_outputs=2" in " ".join(p.argv), enabled)
-                if enabled:
+                if setup:
                     self.assertEqual(
                         p.display_setup,
                         (f"unix:path={p.run_dir}/dbus.sock", f"{p.run_dir}/qmp.sock"),
