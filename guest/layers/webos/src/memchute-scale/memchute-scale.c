@@ -19,50 +19,16 @@
  * constructor takes the library and the variable out of the environment again, so what memchute
  * starts (systemctl, the swap scripts) runs with the stock environment.
  */
-#define _GNU_SOURCE
+#include "../scale-preload.h"
+
 #include <dlfcn.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
 #define SELF        "/usr/lib/libmemchute-scale.so"
 #define MAX_SECONDS 359 /* libfm's startHeartBeat: timeout_sec - 11 > 348 unsigned is refused */
 
-static unsigned long scale = 1;
-
-/* Out of LD_PRELOAD, in place (as guest/layers/webos/src/bootd-scale's library does). */
-static void leave_preload(void)
-{
-    char *v = getenv("LD_PRELOAD"), *p;
-    size_t n = strlen(SELF);
-    if (!v)
-        return;
-    for (p = v; (p = strstr(p, SELF)); p++) {
-        if ((p == v || p[-1] == ' ' || p[-1] == ':') && (!p[n] || p[n] == ' ' || p[n] == ':')) {
-            char *from = p + n;
-            if (p > v && !*from)
-                p--;
-            else if (*from)
-                from++;
-            memmove(p, from, strlen(from) + 1);
-            break;
-        }
-    }
-    if (!v[strspn(v, " :")])
-        unsetenv("LD_PRELOAD");
-}
-
 __attribute__((constructor)) static void init(void)
 {
-    const char *v = getenv("MEMCHUTE_HEARTBEAT_SCALE");
-    char *end;
-    unsigned long n = v ? strtoul(v, &end, 10) : 0;
-    if (v && *v && !*end && n > 1 && n <= 100)
-        scale = n;
-    unsetenv("MEMCHUTE_HEARTBEAT_SCALE");
-    leave_preload();
+    scale_init("MEMCHUTE_HEARTBEAT_SCALE", SELF);
 }
 
 /* int startHeartBeat(GMainContext *context, int timeout_sec, int action, bool flag), the C API
@@ -79,18 +45,8 @@ __attribute__((visibility("default"))) int startHeartBeat(void *context, int tim
         abort();
     if (scale > 1 && t > 0 && t < MAX_SECONDS) {
         t = (unsigned long)t * scale > MAX_SECONDS ? MAX_SECONDS : t * (int)scale;
-        /* One write(): /dev/kmsg takes a record per write, and dprintf fails on it (EINVAL, from
-         * the seek glibc does when it attaches a stream to the descriptor). */
-        char line[96];
-        int n = snprintf(line, sizeof line,
-                         "<6>libmemchute-scale: startHeartBeat timeout %d s -> %d s (x%lu)\n",
-                         timeout_sec, t, scale);
-        int fd = open("/dev/kmsg", O_WRONLY | O_CLOEXEC);
-        if (fd >= 0) {
-            if (n > 0 && (size_t)n < sizeof line)
-                (void)!write(fd, line, (size_t)n);
-            close(fd);
-        }
+        scale_log("<6>libmemchute-scale: startHeartBeat timeout %d s -> %d s (x%lu)\n", timeout_sec,
+                  t, scale);
     }
     return real(context, t, action, flag);
 }

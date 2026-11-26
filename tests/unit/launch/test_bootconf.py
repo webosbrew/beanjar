@@ -1763,8 +1763,9 @@ class InitBootConfTest(unittest.TestCase):
         for d, _, names in os.walk(root):
             for n in names:
                 files[os.path.relpath(os.path.join(d, n), root)] = text(os.path.join(d, n))
-        for rel in stock or ():
-            del files[rel]
+        for rel, body in (stock or {}).items():  # kept where init changed it
+            if files[rel] == body:
+                del files[rel]
         mounts = (
             text(os.path.join(tmp, "mounts")) if os.path.exists(os.path.join(tmp, "mounts")) else ""
         )
@@ -1841,6 +1842,47 @@ class InitBootConfTest(unittest.TestCase):
         self.assertNotIn(dropin, files)
         files, _, _ = self.run_init(H13_AFRO, cmdline="webos.time_scale=4")
         self.assertNotIn(dropin, files)
+
+    def test_time_scale_sdx(self):
+        # webos.time_scale=4 with an sdx that exports its Luna reply timeout: each of its service files
+        # (ls-hubd's Exec line) runs it through a shell that adds libluna-scale.so to the inherited
+        # LD_PRELOAD; time_scale=1 (KVM), an sdx without the symbol, or none, changes nothing
+        sdx = "usr/sbin/sdx"
+        symbol = "_ZN3sdx7handler11Luna_Handle25_TVSERICE_REQUEST_TIMEOUTE"
+        service = "[D-BUS Service]\nName=com.webos.service.sdx\nExec=/usr/sbin/sdx\nType=dynamic\n"
+        paths = (
+            "usr/share/dbus-1/services/com.webos.service.sdx.service",
+            "usr/share/dbus-1/system-services/com.webos.service.sdx.service",
+        )
+        stock = {sdx: f"ELF ... {symbol} ...", **dict.fromkeys(paths, service)}
+        exec_line = (
+            'Exec=/bin/sh -c \'LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}/usr/lib/libluna-scale.so" '
+            "LUNA_TIMEOUT_SCALE=4 exec /usr/sbin/sdx'"
+        )
+        for target, release in ((("m2", "systemdtest"), SYSTEMD_ROW), (H13_AFRO, None)):
+            files, _, out = self.run_init(target, release, "webos.time_scale=4", stock)
+            for path in paths:
+                self.assertEqual(files[path].splitlines()[2], exec_line)
+                self.assertEqual(files[path].replace(exec_line, "Exec=/usr/sbin/sdx"), service)
+            self.assertIn("sdx: Luna reply timeout x4", out)
+        # the line as ls-hubd splits it (g_shell_parse_argv: POSIX shell quoting)
+        self.assertEqual(
+            shlex.split(exec_line[len("Exec=") :]),
+            [
+                "/bin/sh",
+                "-c",
+                'LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}/usr/lib/libluna-scale.so" '
+                "LUNA_TIMEOUT_SCALE=4 exec /usr/sbin/sdx",
+            ],
+        )
+        for cmdline, files_ in (
+            ("webos.time_scale=1", stock),
+            ("webos.time_scale=4", {**stock, sdx: "ELF without the symbol"}),
+            ("webos.time_scale=4", dict.fromkeys(paths, service)),
+        ):
+            files, _, out = self.run_init(H13_AFRO, cmdline=cmdline, stock=files_)
+            self.assertFalse([p for p in paths if p in files], files)
+            self.assertNotIn("sdx:", out)
 
     def test_systemd_pmlog_stock(self):
         # webos.pmlog=stock: the unit stays stock; the marker is made all the same

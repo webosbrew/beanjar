@@ -631,6 +631,24 @@ if [ "$scale" != 1 ] && [ "$INIT_SYSTEM" = systemd ] && { [ -f /webos/lib/system
 		> /webos/etc/systemd/system/memchute.service.d/beanjar-scale.conf
 	log "memchute: heartbeat x$scale"
 fi
+# The same factor for sdx's Luna reply timeout (Luna_Handle::_TVSERICE_REQUEST_TIMEOUT, 20 s, which
+# its executable exports from webOS 3 on): its start-up calls to configd outlast it when the guest is
+# slow, and sdx then takes configd's first continent answer for a change of country and reboots the
+# set. N > 1 LD_PRELOADs the webos layer's libluna-scale.so (guest/layers/webos/src/luna-scale). sdx
+# is a dynamic service that ls-hubd starts from its service file (g_shell_parse_argv, then exec, with
+# ls-hubd's environment), so the file's Exec line gets a shell that adds the library to the
+# LD_PRELOAD it inherits; the library takes itself out again. An sdx without the symbol (webOS 1
+# and 2) is left alone.
+if [ "$scale" != 1 ] && [ -f /webos/usr/sbin/sdx ] &&
+	grep -q _ZN3sdx7handler11Luna_Handle25_TVSERICE_REQUEST_TIMEOUTE /webos/usr/sbin/sdx; then
+	for f in /webos/usr/share/dbus-1/services /webos/usr/share/dbus-1/system-services \
+		/webos/usr/share/luna-service2/services.d; do
+		f=$f/com.webos.service.sdx.service
+		[ -f "$f" ] && grep -q '^Exec=/usr/sbin/sdx$' "$f" || continue
+		sed -i "s|^Exec=/usr/sbin/sdx\$|Exec=/bin/sh -c 'LD_PRELOAD=\"\${LD_PRELOAD:+\$LD_PRELOAD:}/usr/lib/libluna-scale.so\" LUNA_TIMEOUT_SCALE=$scale exec /usr/sbin/sdx'|" "$f"
+	done
+	log "sdx: Luna reply timeout x$scale"
+fi
 
 # --- systemd (INIT_SYSTEM=systemd): /run and the BSP marker ---
 # systemd mounts a tmpfs on /run only where none is mounted yet (as when an initrd hands it over), so

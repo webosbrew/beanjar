@@ -574,6 +574,12 @@ and the factor from the environment, so resourcemon's CPU windows and what else 
 timing. Under KVM nothing is loaded. 4 is from the 4-VM TCG runs: tv-ready came up to 94 s into
 m3's 60 s wait and 45 s into h13's 30 s, 1.6 times the wait at most.
 
+The same factor reaches two other fixed timeouts, each through its own library in every webos layer
+and its own lines in /init: memchute's libfm heartbeat (`memchute-scale`, a drop-in on
+`memchute.service`) and sdx's Luna reply timeout (`luna-scale`, 20 s, which sdx's executable
+exports from webOS 3 on: /init puts the library on the Exec line of sdx's ls-hubd service files).
+The three share `guest/layers/webos/src/scale-preload.h`.
+
 `scripts/regress` takes the same factor for the VM host's accelerator (`--local`: the one the launcher
 picks here, TCG on x86 for the arm64 kernel, KVM with `GUEST_KERNEL=x86-64`; the Pi: KVM; `ACCEL` as given). Its own deadlines exist to catch hangs, so it stretches
 them all by that factor: `--timeout` (each step, start, stop and the ready/boot wait) and the 20 s

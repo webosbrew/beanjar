@@ -207,6 +207,7 @@ if guest_lane
       ['guest/layers/webos/src/pmlogd'] +  # libpmlog-keep-all, which the preload releases' webos layers take
       ['guest/layers/webos/src/bootd-scale'] +  # libbootd-scale, in every webos layer
       ['guest/layers/webos/src/memchute-scale'] +  # libmemchute-scale, in every webos layer
+      ['guest/layers/webos/src/luna-scale'] +  # libluna-scale, in every webos layer
       webos_dirs + [               # the release's jobs and fstabs, and its table (nvm_*, ...)
       'guest/layers/webos',              # the webos layer of webos_layer_args
       'guest/layers/common',             # what every firmware gets; hal_common, which the soc layer links

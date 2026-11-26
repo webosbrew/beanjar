@@ -20,10 +20,9 @@
  * environment again, so what bootd starts (resourcemon, initctl, luna-send) runs with LG's timing
  * and the stock environment.
  */
-#define _GNU_SOURCE
+#include "../scale-preload.h"
+
 #include <dlfcn.h>
-#include <stdlib.h>
-#include <string.h>
 
 #define SELF        "/usr/lib/libbootd-scale.so"
 #define MIN_SECONDS 5
@@ -34,39 +33,9 @@ typedef void *gpointer;
 typedef gboolean (*GSourceFunc)(gpointer);
 typedef guint add_fn(guint, GSourceFunc, gpointer);
 
-static unsigned long scale = 1;
-
-/* Out of LD_PRELOAD, in place (as guest/layers/webos/src/pmlogd's libpmlog-keep-all.so does). */
-static void leave_preload(void)
-{
-    char *v = getenv("LD_PRELOAD"), *p;
-    size_t n = strlen(SELF);
-    if (!v)
-        return;
-    for (p = v; (p = strstr(p, SELF)); p++) {
-        if ((p == v || p[-1] == ' ' || p[-1] == ':') && (!p[n] || p[n] == ' ' || p[n] == ':')) {
-            char *from = p + n;
-            if (p > v && !*from)
-                p--;
-            else if (*from)
-                from++;
-            memmove(p, from, strlen(from) + 1);
-            break;
-        }
-    }
-    if (!v[strspn(v, " :")])
-        unsetenv("LD_PRELOAD");
-}
-
 __attribute__((constructor)) static void init(void)
 {
-    const char *v = getenv("BOOTD_TIMEOUT_SCALE");
-    char *end;
-    unsigned long n = v ? strtoul(v, &end, 10) : 0;
-    if (v && *v && !*end && n > 1 && n <= 100)
-        scale = n;
-    unsetenv("BOOTD_TIMEOUT_SCALE");
-    leave_preload();
+    scale_init("BOOTD_TIMEOUT_SCALE", SELF);
 }
 
 static guint scaled(guint value, guint unit)

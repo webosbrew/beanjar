@@ -11,6 +11,9 @@ webos_layer_args += ['--file', bootd_scale, 'usr/lib/libbootd-scale.so', '755']
 # Every release: memchute's heartbeat scaling for TCG (guest/layers/webos/src/memchute-scale), loaded
 # only when guest/initramfs/rootfs/init's drop-in asks for it.
 webos_layer_args += ['--file', memchute_scale, 'usr/lib/libmemchute-scale.so', '755']
+# Every release: the Luna reply timeouts of sdx (guest/layers/webos/src/luna-scale), loaded only when
+# guest/initramfs/rootfs/init asks for it.
+webos_layer_args += ['--file', luna_scale, 'usr/lib/libluna-scale.so', '755']
 layers += {'webos': custom_target('webos-layer',
   output: 'webos-layer.stamp',
   depfile: 'webos-layer.d',
