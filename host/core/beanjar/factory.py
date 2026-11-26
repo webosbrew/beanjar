@@ -54,6 +54,7 @@ def _names(root, directory):
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
+            check=False,
         )
         if r.returncode:
             continue
@@ -105,6 +106,7 @@ def apps_image(fw, target, tree, out):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            check=False,
         )
         if r.returncode:
             os.unlink(img)

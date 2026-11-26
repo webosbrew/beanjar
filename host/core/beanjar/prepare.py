@@ -47,7 +47,7 @@ import shutil
 import subprocess
 import sys
 
-from . import factory, fwcache, lls, nvm, targets, partmap, paths
+from . import factory, fwcache, lls, nvm, partmap, paths, targets
 
 VERSION = 5
 DIR = "prepared"

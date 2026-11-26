@@ -10,7 +10,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from beanjar import factory, lls
 
 TOOLS = all(shutil.which(t) for t in ("mksquashfs", "unsquashfs", "mke2fs", "debugfs", "unshare"))
@@ -64,7 +63,7 @@ def test_apps_image(tmp_path, monkeypatch):
     ).stdout
     for n in names:
         line = next(x for x in listing.splitlines() if x.split()[-1:] == [n])
-        inode, mode, _, uid, gid, size = line.split()[:6]
+        _, mode, _, uid, gid, size = line.split()[:6]
         assert (mode, uid, gid, int(size)) == ("100644", "0", "0", len(n) * 100)
     got = subprocess.run(
         ["debugfs", "-R", f"cat /{factory.PRELOAD_SNSR}/{names[1]}", out],
@@ -73,7 +72,9 @@ def test_apps_image(tmp_path, monkeypatch):
     ).stdout
     assert got == names[1].encode() * 100
     # the firmware's own mke2fs.conf: its features, not the host's defaults
-    header = subprocess.run(["dumpe2fs", "-h", out], capture_output=True, text=True).stdout
+    header = subprocess.run(
+        ["dumpe2fs", "-h", out], capture_output=True, text=True, check=True
+    ).stdout
     features = next(x for x in header.splitlines() if x.startswith("Filesystem features"))
     assert "metadata_csum" not in features and "64bit" in features
 
