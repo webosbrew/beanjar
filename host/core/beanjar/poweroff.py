@@ -9,11 +9,9 @@ import re
 import socket
 
 
-def qmp_status(path, timeout=1.0):
-    """QMP query-status on path: the run state ("running", "paused", "shutdown", ...), or None if
-    QMP does not answer (no socket, or another client holds it: QEMU serves one at a time). A running
-    guest whose micom is in standby (Quick Start+, or suspended; the guest holds its webos.standby
-    port open, qemu.py) is "standby"."""
+def qmp_returns(path, cmds, timeout=1.0):
+    """The returns of the QMP commands cmds (names) on path, one connection; None if QMP does not
+    answer (no socket, or another client holds it: QEMU serves one at a time)."""
     if not os.path.exists(path):
         return None
     s = socket.socket(socket.AF_UNIX)
@@ -22,26 +20,58 @@ def qmp_status(path, timeout=1.0):
         s.connect(path)
         f = s.makefile("rw")
         json.loads(f.readline())  # greeting
-        replies = {}
-        for cmd in ("qmp_capabilities", "query-status", "query-chardev"):
+        out = []
+        for cmd in ("qmp_capabilities", *cmds):
             f.write(json.dumps({"execute": cmd}) + "\n")
             f.flush()
             while True:
                 reply = json.loads(f.readline())
                 if "return" in reply or "error" in reply:
                     break
-            replies[cmd] = reply.get("return")
-        status = (replies["query-status"] or {}).get("status")
-        if status == "running" and any(
-            c.get("label") == "standby" and c.get("frontend-open")
-            for c in replies["query-chardev"] or []
-        ):
-            return "standby"
-        return status
+            out.append(reply.get("return"))
+        return out[1:]
     except (OSError, ValueError):
         return None
     finally:
         s.close()
+
+
+def qmp_state(path, timeout=1.0):
+    """QMP on path: (run state, standby, suspended), or None if QMP does not answer. The run state
+    is query-status's ("running", "paused", "shutdown", ...); standby whether the guest's micom is
+    in standby (the IR pump holds webos.standby open, from the suspend's entry to its exit:
+    qemu.py); suspended whether the SoC is down (lgemu.ko holds webos.suspended open from its last
+    suspend step to its first resume step), when the IR relay stops the VM (ir_relay.py)."""
+    r = qmp_returns(path, ("query-status", "query-chardev"), timeout)
+    if r is None:
+        return None
+    status = (r[0] or {}).get("status")
+    opened = {c.get("label") for c in r[1] or [] if c.get("frontend-open")}
+    return status, "standby" in opened, "suspended" in opened
+
+
+def qmp_chardevs(path, timeout=1.0):
+    """The labels of QEMU's chardevs (query-chardev) on path, or None if QMP does not answer."""
+    r = qmp_returns(path, ("query-chardev",), timeout)
+    return None if r is None else {c.get("label") for c in r[0] or []}
+
+
+def status_of(state):
+    """The run state a qmp_state reads as: "standby" for a running guest in standby (Quick Start+,
+    or suspended) and for one the IR relay stopped there (paused with its SoC down); else
+    query-status's run state; None for None."""
+    if state is None:
+        return None
+    status, standby, suspended = state
+    if standby and (status == "running" or (status == "paused" and suspended)):
+        return "standby"
+    return status
+
+
+def qmp_status(path, timeout=1.0):
+    """QMP's run state on path as status_of reads it ("running", "standby", "paused", ...), or
+    None if QMP does not answer."""
+    return status_of(qmp_state(path, timeout))
 
 
 # How long the power-off signal waits for QEMU to exit by itself, from the call, before the stop
@@ -96,6 +126,19 @@ def power_off_busy(reply):
     """Whether the refusal is tvpowerd's "com.webos.service.tvpower/power is busy" (W21P once
     answered so after about 49 h of uptime, and accepted a later stop): the call is retried."""
     return power_off_refused(reply) and "powerisbusy" in "".join(reply.split())
+
+
+def micom_standby(path):
+    """Whether the last line of the micom-status file at path has standby=1: the guest's IR pump
+    passed the suspend's entry on (include/webos-ir.h). False without a line."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 1024))
+            lines = f.read().decode("ascii", "replace").splitlines()
+    except OSError:
+        return False
+    return bool(lines) and "standby=1" in lines[-1].split()
 
 
 def micom_ready(run_dir):

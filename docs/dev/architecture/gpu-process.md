@@ -180,13 +180,13 @@ fixes the first two, the display socket after a stop or a reset; the third stays
   and with the cold restart the next boot has a new backend anyway. See "Two outputs (queue, and
   spacebuns until 2026-11-23)" below. So `auto` does not leave two-output guests out.
 - What pauses or resets a VM in beanjar (audited 2026-11-07): webOS's own restart, above, is a
-  normal workflow, and a cold start now; no pause is. The only `stop`
-  and `cont` target is the media pool's guest test (`guest/kernel/modules/media-pool/tests/run-tests.py`,
+  normal workflow, and a cold start now; no pause is. The `stop` and `cont` targets are the IR
+  relay's in standby (2026-11-26, never with the `vgpu` chardev, above) and the media pool's guest test (`guest/kernel/modules/media-pool/tests/run-tests.py`,
   step 3, "the doorbell across a pause"; `--skip-pause` leaves it out), which skips it for a VM
   whose QEMU has the `vgpu` chardev (`query-chardev`). The other `cont`s resume a VM started with `-S` before its
   guest runs: `display_setup.py` (the second output; `--keep-paused` with `QEMU_EXTRA=-S` leaves
   the `cont` to the user, still before the guest), `netns.off` (`link = "off"`'s link-down) and
-  `tests/integration/viewer/check-qemu-listener-close.py`. The standby step of `scripts/regress`, the viewer,
+  `tests/integration/viewer/check-qemu-listener-close.py`. The viewer,
   beanjar-vnc, `beanjar screenshot`, the web UI and `tests/regress/audio/capture.py` (HMP `wavcapture`)
   do not pause. Beanjar takes no snapshots and migrates nothing. QEMU itself pauses a VM when a
   writable disk hits ENOSPC on the host (`-drive` `werror=enospc`, the default); the unit makes it

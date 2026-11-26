@@ -146,14 +146,15 @@ Each check adds `<check>=pass` or `fail`; `result=pass` when all passed.
 | Check | What it does | Numbers |
 |---|---|---|
 | `gpu` (`tg-gpu.c`) | GBM on `/dev/dri/renderD128`, an EGL GLES 2 context (surfaceless), a 256x256 offscreen framebuffer cleared and drawn 100 times, the centre pixel read back; passes when it is the colour drawn and the renderer is virgl | `gpu.renderer`, `gpu.frame_ms` (draw and `glFinish`) |
-| `ports` (`tg-ports.c`) | every port of `qemu.py` by name (14); on `webos.media.0` a decode session of `include/webos-media.h` (OPEN, CAPS, DECODE, EOS) that the host's media helper answers with a PICTURE marked LAST; one SYNC frame of `include/webos-video.h` on `webos.video`, which is guest to host only | `ports.found`, `ports.media_rtt_ms` |
+| `ports` (`tg-ports.c`) | every port of `qemu.py` by name (15); on `webos.media.0` a decode session of `include/webos-media.h` (OPEN, CAPS, DECODE, EOS) that the host's media helper answers with a PICTURE marked LAST; one SYNC frame of `include/webos-video.h` on `webos.video`, which is guest to host only | `ports.found`, `ports.media_rtt_ms` |
 | `shares` (`tg-run`) | the read-only `host` share's `boot.conf` read and a write there refused; 32 MiB written to the `out` share, read back and compared | `shares.out_write_ms`, `shares.out_read_ms` |
 | `input` (`tg-input.c`) | the evdev node of QEMU's virtio keyboard; once open, it creates `testguest/input-ready` and waits up to 60 s for a key | `input.key`, `input.wait_ms` |
 | `bridge` (`tg-bridge.c`, the same program as `tests/integration/bridge/bridgetest.c`) | the 32-bit ABI through the kernel's compat table: uinput and evdev, DRM and virtio-gpu ioctls, a robust mutex, signals, fork, exec and wait, `/proc/<pid>/exe`; after `input`, as it creates an input device of its own | `bridge.userland` (`native`, or `qemu-user` under qemu-arm), `bridge.failed` |
 | `arm64` (`arm64/tg-arm64.c`) | a 64-bit ARM program on the AArch64 glibc in `/usr/lib64`: 8-byte pointers, `uname` says aarch64, `clock_gettime`, a file written to the out share, read back and removed, a thread, fork and wait, and DRM's version ioctl on the render node naming `virtio_gpu`; it runs natively on the arm64 guest kernel whatever `hardware.userland` says, and under qemu-aarch64 on the x86-64 one | `arm64.machine`, `arm64.failed` |
 
-`webos.ir` and `webos.memory` are held by the initramfs's pumps and `webos.standby` must not be
-opened (holding it open is the guest's standby), so the check only finds them. Times in the guest
+`webos.ir` and `webos.memory` are held by the initramfs's pumps, and `webos.standby` and
+`webos.suspended` must not be opened (holding them open is the guest's standby and its SoC down,
+which the host answers with a stop), so the check only finds them. Times in the guest
 are its own clock, which the launcher scales under TCG (`webos.time_scale`).
 
 ## The test command
@@ -187,7 +188,7 @@ gpu.renderer=virgl (D3D12 (the PC's GPU))
 gpu.gl_version=OpenGL ES 3.0 Mesa 26.0.1
 gpu.pixel=3399ccff
 gpu.frame_ms=4.686
-ports.found=14
+ports.found=15
 ports.media_rtt_ms=231.603
 shares.out_write_ms=1400
 shares.out_read_ms=4070

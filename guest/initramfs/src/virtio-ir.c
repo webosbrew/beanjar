@@ -19,7 +19,11 @@
  * micom-status, the viewer's front LED):
  *   standby=<0|1> power=<0xB1's state> ready=<0|1> led.<cmd>=<argument bytes in hex>/<writes> ...
  * with one led. word for each LED command the firmware has written ("led.6e=010101/2").
+ * At its start it hands lgemu the webos.suspended port (WEBOS_IR_SUSPENDED_PORT, an O_PATH
+ * descriptor): the kernel opens that one itself once the SoC is down, when this pump is frozen,
+ * and the host then stops the VM.
  * Errors go to stderr (guest/initramfs/rootfs/init: /run/virtio-ir.log). */
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <glob.h>
@@ -27,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
 #include "../../../include/webos-ir.h"
@@ -126,6 +131,15 @@ int main(void)
     if (status < 0) {
         fprintf(stderr, "virtio-ir: /dev/lgemu-ir: %s (lgemu.ko not loaded)\n", strerror(errno));
         return 1;
+    }
+    char suspended_dev[96];
+    find_port("webos.suspended", suspended_dev, sizeof suspended_dev);
+    if (suspended_dev[0]) {
+        int port = open(suspended_dev, O_PATH | O_CLOEXEC);
+        if (port < 0 || ioctl(status, WEBOS_IR_SUSPENDED_PORT, port) < 0)
+            fprintf(stderr, "virtio-ir: %s to lgemu: %s\n", suspended_dev, strerror(errno));
+        if (port >= 0)
+            close(port);
     }
     pid_t pid = fork();
     if (pid < 0) {

@@ -97,7 +97,8 @@ mitmweb, slirp4netns or viewer runs on the VM host):
              fails the step; the summary's "saver ON/ON s", "saver -" where tvpower has no request); the remote's POWER
              (ir-key.py 0x08); tests/regress/standby.py waits for the standby (the guest's
              webos.standby port), measures QEMU's CPU in it from STANDBY_SETTLE s on (the vCPUs
-             idle in s2idle: under STANDBY_CPU %), presses the power key (QMP system_powerdown) and waits for the wake;
+             idle in s2idle, then the VM stopped by the host: under STANDBY_CPU %), presses POWER on ir.sock
+             (the host's micom part wakes and continues it) and waits for the wake;
              guest.sh resumed: tvpowerd Active, the same tvservice and tvpowerd answering, the
              resume's time; then HOME as for shot and tests/regress/virgl/dbus-grab.py (<target>-resume.png)
   stop       host/scripts/vm-launcher stop, the guest's logs saved; device-census.json summarizes one

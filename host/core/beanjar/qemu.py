@@ -1181,7 +1181,12 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             f"virtserialport,chardev={port},name=webos.{port}",
         ]
     # the remote's keys reach the port through the micom's IR receiver on ir.sock (ir_relay.py)
-    p.ir_relay = (socks["IR_SOCK"], ir_relay.qemu_path(socks["IR_SOCK"]), socks["QMP_SOCK"])
+    p.ir_relay = (
+        socks["IR_SOCK"],
+        ir_relay.qemu_path(socks["IR_SOCK"]),
+        socks["QMP_SOCK"],
+        os.path.join(os.path.dirname(socks["QEMU_PIDFILE"]), "micom-status"),
+    )
     # `beanjar shell` (guestshell.py): the relay, started by the launcher on RUN_DIR's shell.sock,
     # holds QEMU's socket for the port; the guest's agent (virtio-shell.c) serves it
     shell_qemu = os.path.join(p.run_dir, guestshell.QEMU_NAME)
@@ -1231,6 +1236,15 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         "null,id=standby",
         "-device",
         "virtserialport,chardev=standby,name=webos.standby",
+    ]
+    # the SoC down (Quick Start+'s suspend reached s2idle): lgemu.ko opens webos.suspended itself
+    # at its last suspend step and closes it at its first resume step; the IR relay then stops the
+    # VM, and continues it at the wake (ir_relay.py, docs/dev/architecture/suspend.md)
+    devices += [
+        "-chardev",
+        "null,id=suspended",
+        "-device",
+        "virtserialport,chardev=suspended,name=webos.suspended",
     ]
     # the micom's state, a line at each change (the standby, its power state, the front LED's
     # latches: include/webos-ir.h), which the IR pump writes and the viewer's front LED reads

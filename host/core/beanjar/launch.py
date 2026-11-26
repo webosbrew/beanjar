@@ -530,7 +530,7 @@ def run(words, env=None):
     if p.ir_relay:
         # the micom's IR receiver (ir_relay.py): ir.sock listens before QEMU starts, and the child,
         # which outlives the exec below and ends with this pid, relays it to QEMU's webos.ir port
-        ir_sock, qemu_ir, qmp_sock = p.ir_relay
+        ir_sock, qemu_ir, qmp_sock, micom_status = p.ir_relay
         ir = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             os.unlink(ir_sock)
@@ -549,6 +549,7 @@ def run(words, env=None):
                     str(ir.fileno()),
                     qemu_ir,
                     qmp_sock,
+                    micom_status,
                 ],
                 env=helper_environment(p.env),
                 stdin=subprocess.DEVNULL,

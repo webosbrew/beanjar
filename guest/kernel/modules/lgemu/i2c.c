@@ -88,7 +88,12 @@
  *   Every write is acknowledged, every reply is CTS (0x80: clear to send, no error) and zeros: a
  *   chip that has done what it was told and has nothing to report (no signal). */
 #define pr_fmt(fmt) KBUILD_MODNAME ": i2c: " fmt
+#ifdef CONFIG_ACPI
+#include <linux/acpi.h>
+#endif
 #include <linux/bitops.h>
+#include <linux/cred.h>
+#include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/gpio/consumer.h>
 #include <linux/interrupt.h>
@@ -97,10 +102,12 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
+#include <linux/path.h>
 #include <linux/pid_namespace.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_wakeup.h>
 #include <linux/poll.h>
+#include <linux/rtc.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/slab.h>
@@ -270,7 +277,8 @@ static void arm_timer(void)
  * which comes before the set's own pre-suspend work (seconds on a slow path, with the CPU busy).
  * WT1H's sleepd suspends without a warm standby. Before a suspend the notifier waits for the pump
  * to have passed it on (its next poll), as the pump is frozen after it. A power key latched in
- * warm standby still wakes the SoC at the suspend's noirq entry (wake_noirq). */
+ * warm standby still wakes the SoC at the suspend's noirq entry (micom_suspend_noirq). Once the
+ * SoC is down the host stops the VM ("the SoC powered down", below). */
 static DECLARE_WAIT_QUEUE_HEAD(status_wq);
 static unsigned int status_seq;   /* changes of the standby state, with status_wq.lock */
 static unsigned int status_acked; /* the last one the pump has passed on */
@@ -314,8 +322,8 @@ static int pm_notify(struct notifier_block *nb, unsigned long action, void *data
             pr_warn("micom: the IR pump did not pass the standby on before the suspend\n");
         break;
     case PM_POST_SUSPEND:
-        /* the latched key ended the suspend at its entry (wake_noirq): the micom is active now,
-         * as after a key that woke the SoC (tvservice reads 0x9A, remote key, then) */
+        /* the latched key ended the suspend at its entry (micom_suspend_noirq): the micom is active
+         * now, as after a key that woke the SoC (tvservice reads 0x9A, remote key, then) */
         if (xchg(&wake_latched, false))
             set_power_state(POWER_STATE_ON, "woken by the power key");
         WRITE_ONCE(soc_suspended, false);
@@ -345,24 +353,166 @@ static irqreturn_t power_line_isr(int irq, void *data)
     return IRQ_WAKE_THREAD;
 }
 
-/* The latched key's wake: with the devices in noirq suspend, after the PM notifier's
- * PM_SUSPEND_PREPARE and before s2idle's loop, which ends at once for a pending wakeup, so the
- * SoC is up again as it is down. (The freezer clears a wakeup, so it cannot be raised earlier.) */
-static int wake_noirq(struct device *dev)
+/* ---- the SoC powered down ----
+ *
+ * A TV's SoC is powered down in standby; here the host stops the VM instead (QMP stop, its
+ * clocks with it: kvm-adjvtime holds arm64's virtual counter, QEMU kvm-clock on x86-64) and
+ * continues it at the wake (host/core/beanjar/ir_relay.py). It must not stop the VM before the
+ * guest is down, so the kernel itself tells it: the pump hands over the webos.suspended port
+ * (WEBOS_IR_SUSPENDED_PORT, an O_PATH descriptor: a path, kept, which needs no lookup later), and
+ * this device's noirq suspend, the last step before s2idle (user space frozen, the other devices
+ * suspended: it is registered after them and synchronous), opens it; its noirq resume, the first
+ * step after the wake, closes it. The host sees the open as the chardev's frontend-open.
+ *
+ * The open is safe there: dentry_open needs no path lookup and the kernel has no fanotify, so
+ * nothing waits on user space; virtio_console's open and release take spinlocks and send their
+ * control message by polling the control queue's used ring, not on its interrupt; the virtio-pci
+ * devices stay in D0 and keep running across s2idle (patch 0004, and no PM capability). The
+ * final fput is synchronous (__fput_sync): a plain fput from the suspending task would close it
+ * only on that task's return to user space, after the whole resume.
+ *
+ * The time the VM was stopped, like a TV's standby, is not in CLOCK_MONOTONIC; a TV's
+ * CLOCK_REALTIME and CLOCK_BOOTTIME do include it (its RTC, read at the resume). The stock
+ * rtc_resume skips that under s2idle (timekeeping_suspend never ran: no cpuidle driver), so this
+ * device does it: the RTC (rtc0: PL031 on arm64 virt, the CMOS RTC on q35, both following the
+ * host's clock while the VM is stopped) at its suspend and at its resume, against CLOCK_BOOTTIME,
+ * and the difference is injected as the kernel's persistent-clock path does
+ * (timekeeping_inject_sleeptime64, exported by patch 0029). The RTC counts whole seconds, so a
+ * difference under SLEEP_MIN_S, a suspend nobody stopped, is left alone rather than walked by a
+ * second either way at each one. */
+#define SLEEP_MIN_S 2
+static DEFINE_MUTEX(suspended_lock);
+static struct path suspended_path; /* the webos.suspended port, from the pump */
+static struct file *suspended_file;
+static bool rtc_valid;
+static time64_t rtc_at_suspend;
+static struct timespec64 boot_at_suspend;
+
+/* rtc0's time in t. alarm: say whether an alarm is armed, which cannot fire while the host has
+ * the VM stopped (a TV's power-on timers are the micom's). */
+static int read_rtc(time64_t *t, bool alarm)
 {
-    if (READ_ONCE(wake_latched)) {
-        pr_info("micom: the latched power key wakes the SoC as it suspends\n");
-        pm_system_wakeup();
+    struct rtc_device *rtc = rtc_class_open("rtc0");
+    struct rtc_wkalrm alrm = {};
+    struct rtc_time tm;
+    int err;
+
+    if (!rtc)
+        return -ENODEV;
+    err = rtc_read_time(rtc, &tm);
+    if (alarm && !rtc_read_alarm(rtc, &alrm) && alrm.enabled)
+        pr_warn("micom: rtc0 has an alarm armed for %ptRs: it does not fire while the SoC is "
+                "down\n",
+                &alrm.time);
+    rtc_class_close(rtc);
+    if (!err)
+        *t = rtc_tm_to_time64(&tm);
+    return err;
+}
+
+/* WEBOS_IR_SUSPENDED_PORT: the port's device, an O_PATH descriptor (fget_raw: fdget_raw is not
+ * exported) or any open file of it. */
+static long set_suspended_port(int fd)
+{
+    struct file *f = fget_raw(fd);
+    long err = 0;
+
+    if (!f)
+        return -EBADF;
+    if (!S_ISCHR(file_inode(f)->i_mode)) {
+        err = -ENOTTY;
+    } else {
+        mutex_lock(&suspended_lock);
+        path_put(&suspended_path);
+        suspended_path = f->f_path;
+        path_get(&suspended_path);
+        mutex_unlock(&suspended_lock);
+        pr_info("micom: the SoC's power-down shows on %pd\n", suspended_path.dentry);
+    }
+    fput(f);
+    return err;
+}
+
+static int micom_suspend(struct device *dev)
+{
+    int err = read_rtc(&rtc_at_suspend, true);
+
+    ktime_get_boottime_ts64(&boot_at_suspend);
+    rtc_valid = !err;
+    if (err)
+        pr_warn("micom: rtc0: %d: the standby's time will not be in the clocks\n", err);
+    return 0;
+}
+
+static int micom_resume(struct device *dev)
+{
+    struct timespec64 boot, slept;
+    time64_t rtc;
+
+    if (!rtc_valid || read_rtc(&rtc, false))
+        return 0;
+    ktime_get_boottime_ts64(&boot);
+    slept = timespec64_sub((struct timespec64){.tv_sec = rtc - rtc_at_suspend},
+                           timespec64_sub(boot, boot_at_suspend));
+    if (slept.tv_sec >= SLEEP_MIN_S) {
+        timekeeping_inject_sleeptime64(&slept);
+        pr_info("micom: the SoC was down %lld.%03ld s: added to the wall clock and boot time\n",
+                (long long)slept.tv_sec, slept.tv_nsec / NSEC_PER_MSEC);
     }
     return 0;
 }
-static struct dev_pm_domain wake_pm_domain = {.ops = {.suspend_noirq = wake_noirq}};
+
+/* The latched key's wake: with the devices in noirq suspend, after the PM notifier's
+ * PM_SUSPEND_PREPARE and before s2idle's loop, which ends at once for a pending wakeup, so the
+ * SoC is up again as it is down. (The freezer clears a wakeup, so it cannot be raised earlier.)
+ * Otherwise the SoC is down: the webos.suspended port opens. */
+static int micom_suspend_noirq(struct device *dev)
+{
+    struct file *f;
+
+    if (READ_ONCE(wake_latched)) {
+        pr_info("micom: the latched power key wakes the SoC as it suspends\n");
+        pm_system_wakeup();
+        return 0;
+    }
+    if (pm_wakeup_pending())
+        return 0; /* the suspend is aborted: it does not get down */
+    mutex_lock(&suspended_lock);
+    if (suspended_path.mnt && !suspended_file) {
+        f = dentry_open(&suspended_path, O_WRONLY | O_NONBLOCK, current_cred());
+        if (IS_ERR(f))
+            pr_warn("micom: webos.suspended: %ld: the host does not see the SoC down\n",
+                    PTR_ERR(f));
+        else
+            suspended_file = f;
+    }
+    mutex_unlock(&suspended_lock);
+    return 0;
+}
+
+static int micom_resume_noirq(struct device *dev)
+{
+    mutex_lock(&suspended_lock);
+    if (suspended_file)
+        __fput_sync(suspended_file);
+    suspended_file = NULL;
+    mutex_unlock(&suspended_lock);
+    return 0;
+}
+
+static struct dev_pm_domain wake_pm_domain = {.ops = {
+                                                  .suspend = micom_suspend,
+                                                  .resume = micom_resume,
+                                                  .suspend_noirq = micom_suspend_noirq,
+                                                  .resume_noirq = micom_resume_noirq,
+                                              }};
 
 /* In its own thread (status_wq's lock is not taken with interrupts off). Only a suspended SoC
  * wakes. A real micom latches a press while the set is going into warm standby and wakes it as
  * soon as it is down (the host sends the key when the standby shows, before the suspend, which a
  * loaded host stretches to seconds): the press is latched, and delivered at the suspend's entry
- * (wake_noirq). Without a warm standby it is lost, as the set ignores the key while it powers off.
+ * (micom_suspend_noirq). Without a warm standby it is lost, as the set ignores the key while it
+ * powers off.
  */
 static irqreturn_t power_line_thread(int irq, void *data)
 {
@@ -382,13 +532,72 @@ static irqreturn_t power_line_thread(int irq, void *data)
     return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_ACPI
+/* q35 (the x86-64 guest kernel): the wake line is ACPI's fixed power button, which QMP
+ * system_powerdown presses there (PM1 status PWRBTN_STS and the SCI). The kernel's ACPI button
+ * driver is left out (configs/x86_64.config), so webOS sees no power-button input there either.
+ * The SCI is a wakeup source of s2idle (acpi_s2idle_prepare) and a fixed event's status ends its
+ * loop (acpi_s2idle_wake); the handler runs in the SCI's thread when it is replayed at the resume,
+ * soc_suspended still set, and hands the rest to a work, as the GPIO's thread. */
+static bool acpi_button;
+
+static void acpi_button_work_fn(struct work_struct *work)
+{
+    power_line_thread(0, NULL);
+}
+static DECLARE_WORK(acpi_button_work, acpi_button_work_fn);
+
+static u32 acpi_button_event(void *context)
+{
+    power_line_isr(0, NULL);
+    schedule_work(&acpi_button_work);
+    return ACPI_INTERRUPT_HANDLED;
+}
+
+static bool acpi_button_init(void)
+{
+    acpi_status st;
+
+    if (acpi_disabled)
+        return false;
+    st = acpi_install_fixed_event_handler(ACPI_EVENT_POWER_BUTTON, acpi_button_event, NULL);
+    if (ACPI_FAILURE(st)) {
+        pr_warn("micom: ACPI power button: %s: nothing wakes a suspended guest\n",
+                acpi_format_exception(st));
+        return false;
+    }
+    acpi_button = true;
+    pr_info("micom: wake line is ACPI's power button\n");
+    return true;
+}
+
+static void acpi_button_exit(void)
+{
+    if (acpi_button)
+        acpi_remove_fixed_event_handler(ACPI_EVENT_POWER_BUTTON, acpi_button_event);
+    acpi_button = false;
+    cancel_work_sync(&acpi_button_work);
+}
+#else
+static bool acpi_button_init(void)
+{
+    return false;
+}
+
+static void acpi_button_exit(void)
+{
+}
+#endif
+
 static void power_line_init(void)
 {
     struct device_node *np = of_find_node_by_path("/gpio-keys/poweroff");
     int err;
 
     if (!np) {
-        pr_info("micom: no power button in the device tree: nothing wakes a suspended guest\n");
+        if (!acpi_button_init())
+            pr_info("micom: no power button in the device tree: nothing wakes a suspended "
+                    "guest\n");
         return;
     }
     power_line = fwnode_gpiod_get_index(of_fwnode_handle(np), NULL, 0, GPIOD_IN, "micom wake");
@@ -420,6 +629,7 @@ static void power_line_init(void)
 
 static void power_line_exit(void)
 {
+    acpi_button_exit();
     if (power_line_irq >= 0) {
         disable_irq_wake(power_line_irq);
         free_irq(power_line_irq, NULL);
@@ -719,6 +929,13 @@ static __poll_t ir_file_poll(struct file *file, poll_table *wait)
     return mask;
 }
 
+static long ir_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    if (cmd != WEBOS_IR_SUSPENDED_PORT)
+        return -ENOTTY;
+    return set_suspended_port((int)arg);
+}
+
 static int ir_release(struct inode *inode, struct file *file)
 {
     kfree(file->private_data);
@@ -822,6 +1039,8 @@ static const struct file_operations ir_fops = {
     .read = ir_read,
     .write = ir_write,
     .poll = ir_file_poll,
+    .unlocked_ioctl = ir_ioctl,
+    .compat_ioctl = ir_ioctl,
     .llseek = noop_llseek,
 };
 
@@ -1354,6 +1573,9 @@ void lgemu_i2c_exit(void)
     ir_registered = false;
     unregister_pm_notifier(&pm_nb);
     power_line_exit();
+    micom_resume_noirq(NULL);
+    path_put(&suspended_path);
+    suspended_path = (struct path){};
     cancel_delayed_work_sync(&action_work);
     cancel_delayed_work_sync(&timer_work);
     power_target_put(&action_target);

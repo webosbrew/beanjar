@@ -149,8 +149,9 @@ focus. `--no-statusbar` hides it.
 
 **Standby** (Quick Start+, docs/dev/architecture/suspend.md): the same QMP connection asks `query-chardev`
 each second; while the guest holds its `webos.standby` port open (chardev `standby`), the TV is in
-standby: the remotes' POWER is QMP `system_powerdown`, the micom's wake line, instead of an IR key
-(the micom reports no keys in standby). The panel is off then, and also in the micom's warm
+standby. The keys still go to `ir.sock`, where the micom's always-on part on the host
+(`beanjar/ir_relay.py`) drops them and wakes the guest on POWER (the micom reports no keys in
+standby); the host also stops the VM while the guest's SoC is down and continues it at the wake. The panel is off then, and also in the micom's warm
 standby (`micom-status` `power=2`: webOS's Active Standby after Power Off, the SoC running): the
 picture is black and LG's cursor is not drawn, as the guest never sends its hide. After the wake
 it is what the guest last sent.
@@ -191,7 +192,7 @@ a value for "no key"; the key is hidden only where nothing is decoded.
   to 4 joysticks (WT1H, W15M, W16R, W17H) use it.
 - **In standby**: in the micom's warm standby with the SoC running (webOS's Active Standby) the
   key goes to the micom, which reports it (unlike the remote's keys); with the SoC suspended
-  (Quick Start+) it is the micom's wake line, QMP `system_powerdown`, as the remote's POWER.
+  (Quick Start+) it wakes the SoC, as the remote's POWER (the host's micom part behind `ir.sock`).
 - **The front LED colour on the TV key** reads
   `micom-status` next to `qemu.pid` each second: the guest's micom state, a line at each change (its standby, power state and the last payload of each LED command
   the firmware wrote, `beanjar_ui/viewer/stats.py`, `front_led()`). Off while the set is on; red in standby

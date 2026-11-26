@@ -364,8 +364,9 @@ each within `SCREENSAVER_WAIT`, 60 s: a Screen Saver Ready that stays, with ever
 refused as busy, fails the step), POWER on the remote (headless: tvpower's `powerOff`, reason
 `remoteKey`), `tests/regress/standby.py` waits for the standby (the guest's `webos.standby` port in
 QMP), checks QEMU idles in it (`STANDBY_CPU`, 10 % of a host CPU, over 5 s from `STANDBY_SETTLE`, 2 s, after the
-standby: the s2idle entry follows the micom's standby) and presses the power key (QMP
-`system_powerdown`), `guest.sh resumed` checks tvpowerd is Active with the same tvservice and
+standby: the s2idle entry follows the micom's standby, then the host stops the VM) and presses
+POWER on `ir.sock` (the host's micom part pulses the wake line and continues the VM),
+`guest.sh resumed` checks tvpowerd is Active with the same tvservice and
 tvpowerd answering and times the resume, and a second screenshot after HOME, 12 s after the
 resume once the last app is back in front (`<target>-resume.png`), then
 `host/scripts/vm-launcher stop`. A key that comes before the s2idle (a loaded host stretches the micom's standby to s2idle gap to seconds)

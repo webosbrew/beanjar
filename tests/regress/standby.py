@@ -9,11 +9,13 @@ docs/dev/architecture/suspend.md):
     standby.py wake-early TIMEOUT  test hook: the power key the moment the standby shows (the
                                suspend's entry, before the s2idle: the micom latches it and wakes the
                                SoC at the suspend's noirq entry, i2c.c), then as wake
-    standby.py wake TIMEOUT    the power key (QMP system_powerdown, the micom's wake line), then
-                               wait until the standby ends: "WOKEN <seconds>"
+    standby.py wake TIMEOUT    the remote's POWER on ir.sock (the host's micom part, ir_relay.py,
+                               pulses the wake line and continues the VM it stopped), then wait
+                               until the standby ends: "WOKEN <seconds>"
 
 The guest is in standby while its webos.standby port is open: QMP query-chardev's frontend-open of
-chardev "standby" (include/webos-ir.h). QMP is RUN_DIR/qmp.sock (RUN_DIR default build), QEMU's
+chardev "standby" (include/webos-ir.h), also while the host has the VM stopped with the SoC down
+(chardev "suspended"). QMP is RUN_DIR/qmp.sock, the remote RUN_DIR/ir.sock (RUN_DIR default build), QEMU's
 pid RUN_DIR/qemu.pid. Exits 1 on a timeout.
 """
 
@@ -63,6 +65,17 @@ def wait_for(want, timeout):
     return None
 
 
+def power_key():
+    """The remote's POWER, down and up, on ir.sock (include/webos-ir.h records)."""
+    with socket.socket(socket.AF_UNIX) as s:
+        s.settimeout(5)
+        s.connect(os.path.join(RUN, "ir.sock"))
+        s.sendall(bytes((0x49, 1, 0x04, 0x08)))
+        time.sleep(0.1)
+        s.sendall(bytes((0x49, 0, 0x04, 0x08)))
+        time.sleep(0.2)  # the relay reads the records before the hang-up
+
+
 def cpu(seconds):
     with open(os.path.join(RUN, "qemu.pid")) as f:
         pid = int(f.read().split()[0])
@@ -97,7 +110,7 @@ def main(argv):
             print("not in standby")
             return 1
         start = time.monotonic()
-        qmp({"execute": "system_powerdown"})
+        power_key()
         t = wait_for(False, n)
         if t is None:
             print(f"still in standby {n:.0f} s after the power key")

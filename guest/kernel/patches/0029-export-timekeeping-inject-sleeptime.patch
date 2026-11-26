@@ -1,0 +1,19 @@
+timekeeping: export timekeeping_inject_sleeptime64
+
+The emulator's standby is suspend-to-idle with the VM stopped by the host, as a TV powers its SoC
+down. CLOCK_MONOTONIC must leave that time out (kvm-adjvtime and kvm-clock do), and
+CLOCK_REALTIME and CLOCK_BOOTTIME must include it, as on a TV. The stock rtc_resume skips the
+injection under s2idle without a cpuidle driver (timekeeping_rtc_skipresume: timekeeping_suspend
+never ran), so lgemu.ko reads the RTC across the suspend and injects the difference itself
+(guest/kernel/modules/lgemu/i2c.c, "the SoC powered down"), the same way rtc_resume does.
+
+--- a/kernel/time/timekeeping.c
++++ b/kernel/time/timekeeping.c
+@@ -1930,6 +1930,7 @@
+ 	/* Signal hrtimers about time change */
+ 	clock_was_set(CLOCK_SET_WALL | CLOCK_SET_BOOT);
+ }
++EXPORT_SYMBOL_GPL(timekeeping_inject_sleeptime64);
+ #endif
+ 
+ /**

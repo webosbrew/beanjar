@@ -126,3 +126,174 @@ def test_relays_to_qemu_socket(tmp_path):
     conn.close()
     qemu.close()
     server.close()
+
+
+class Vm:
+    """A fake VM for PowerDown: its run state, the guest's standby and SoC-down ports, the
+    micom-status standby, and the QMP commands it got."""
+
+    def __init__(self):
+        self.status, self.standby, self.suspended, self.micom = "running", False, False, False
+        self.commands = []
+        self.busy = False  # QMP held by another client
+        self.t = 0.0
+        self.down = ir_relay.PowerDown(self.state, self.command, lambda: self.micom, self.clock)
+
+    def clock(self):
+        return self.t
+
+    def state(self):
+        return None if self.busy else (self.status, self.standby, self.suspended)
+
+    def command(self, name):
+        if self.busy:
+            return False
+        self.commands.append(name)
+        if name == "stop":
+            self.status = "paused"
+        elif name == "cont":
+            self.status = "running"
+        return True
+
+    def tick(self):
+        self.t += ir_relay.POLL
+        self.down.tick()
+
+    def suspend(self):
+        """The guest's way down: the micom's standby, then its SoC down."""
+        self.micom = self.standby = True
+        self.tick()
+        self.suspended = True
+        self.tick()
+
+    def resume(self):
+        self.suspended = False
+        self.tick()
+        self.micom = self.standby = False
+        self.tick()
+
+
+@pytest.fixture
+def vm():
+    return Vm()
+
+
+def test_power_down_stops_once_the_soc_is_down(vm):
+    vm.micom = vm.standby = True
+    vm.tick()
+    assert vm.commands == []  # in standby, but the guest is not down yet
+    vm.suspended = True
+    vm.tick()
+    assert vm.commands == ["stop"] and vm.down.stopped
+    vm.tick()
+    assert vm.commands == ["stop"]
+
+
+def test_power_down_no_qmp_while_awake(vm):
+    asked = []
+    vm.down.state = lambda: asked.append(1)
+    for _ in range(5):
+        vm.tick()
+    assert asked == []
+
+
+def test_power_down_looks_every_poll(vm):
+    vm.micom = vm.standby = vm.suspended = True
+    vm.down.tick()
+    vm.status = "running"  # someone continued it
+    vm.down.stopped = False
+    vm.down.handled = False
+    vm.down.tick()  # at the same time: no second look
+    assert vm.commands == ["stop"]
+
+
+def test_wake_continues_what_it_stopped(vm):
+    vm.suspend()
+    vm.down.wake()
+    assert vm.commands == ["stop", "system_powerdown", "cont"]
+    assert vm.status == "running" and not vm.down.stopped
+    vm.tick()  # the guest has not shown the wake yet: not stopped again
+    assert vm.commands == ["stop", "system_powerdown", "cont"]
+    vm.resume()
+    vm.suspend()  # the next standby is stopped again
+    assert vm.commands[-1] == "stop"
+
+
+def test_wake_before_the_stop_keeps_it_running(vm):
+    """A key while the guest goes down: the wake, and no stop for that time down."""
+    vm.micom = vm.standby = True
+    vm.tick()
+    vm.down.wake()
+    vm.suspended = True
+    vm.tick()
+    assert vm.commands == ["system_powerdown"]
+
+
+def test_a_vm_paused_otherwise_is_left_paused(vm):
+    vm.status = "paused"
+    vm.suspend()
+    vm.down.wake()
+    assert vm.commands == ["system_powerdown"]
+    assert vm.status == "paused"
+
+
+def test_continued_by_someone_else(vm):
+    vm.suspend()
+    vm.status = "running"  # a QMP cont of its own
+    vm.tick()
+    assert not vm.down.stopped
+    vm.down.wake()
+    assert vm.commands == ["stop", "system_powerdown"]
+
+
+def test_qmp_busy_retries(vm):
+    vm.micom = vm.standby = vm.suspended = True
+    vm.busy = True
+    vm.tick()
+    assert vm.commands == []
+    vm.busy = False
+    vm.tick()
+    assert vm.commands == ["stop"]
+
+
+def test_cont_failed_is_tried_again(vm):
+    vm.suspend()
+    vm.busy = True
+    vm.down.wake()
+    assert vm.down.stopped  # QMP did not take it
+    vm.busy = False
+    vm.down.wake()
+    assert vm.commands == ["stop", "system_powerdown", "cont"]
+
+
+def test_status_reads_standby_while_stopped():
+    from beanjar import poweroff
+
+    assert poweroff.status_of(("running", True, False)) == "standby"
+    assert poweroff.status_of(("running", True, True)) == "standby"
+    assert poweroff.status_of(("paused", True, True)) == "standby"
+    assert poweroff.status_of(("paused", True, False)) == "paused"  # paused for another reason
+    assert poweroff.status_of(("paused", False, False)) == "paused"
+    assert poweroff.status_of(("running", False, False)) == "running"
+    assert poweroff.status_of(None) is None
+
+
+def test_micom_standby(tmp_path):
+    from beanjar import poweroff
+
+    p = tmp_path / "micom-status"
+    assert not poweroff.micom_standby(str(p))
+    p.write_text("standby=0 power=3 ready=1\nstandby=1 power=2 ready=1\n")
+    assert poweroff.micom_standby(str(p))
+    p.write_text("standby=1 power=2 ready=1\nstandby=0 power=3 ready=1\n")
+    assert not poweroff.micom_standby(str(p))
+
+
+def test_vhost_user_gpu_is_never_stopped(vm):
+    """A VM whose GPU is vhost-user-gpu keeps running in s2idle, as before the stop and cont."""
+    vm.down.stoppable = lambda: False
+    vm.suspend()
+    vm.tick()
+    assert vm.commands == []
+    vm.down.wake()
+    assert vm.commands == ["system_powerdown"]

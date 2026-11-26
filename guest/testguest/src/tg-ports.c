@@ -10,7 +10,8 @@
  * to host only, so the write is the check).
  *
  * webos.ir and webos.memory are held by the initramfs's pumps (virtio-ir, virtio-meminfo), and
- * webos.standby must not be opened (open is the guest's standby), so they are only looked for.
+ * webos.standby and webos.suspended must not be opened (open is the guest's standby, and its SoC
+ * down, which the host answers with a stop), so they are only looked for.
  * Prints key=value lines (ports.*); exits 0 when every check passed. */
 #include <dirent.h>
 #include <errno.h>
@@ -26,9 +27,9 @@
 #include "webos-video.h"
 
 static const char *const expected[] = {
-    "webos.cursor",  "webos.video",   "webos.ir",      "webos.standby", "webos.micom",
-    "webos.memory",  "webos.media.0", "webos.media.1", "webos.media.2", "webos.media.3",
-    "webos.media.4", "webos.media.5", "webos.media.6", "webos.media.7",
+    "webos.cursor",  "webos.video",   "webos.ir",      "webos.standby", "webos.suspended",
+    "webos.micom",   "webos.memory",  "webos.media.0", "webos.media.1", "webos.media.2",
+    "webos.media.3", "webos.media.4", "webos.media.5", "webos.media.6", "webos.media.7",
 };
 #define N_EXPECTED (sizeof expected / sizeof expected[0])
 

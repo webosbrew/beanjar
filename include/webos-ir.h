@@ -67,6 +67,14 @@ _Static_assert(sizeof(struct webos_ir_record) == 4, "IR wire record");
 #define WEBOS_IR_STATUS_ON      0
 #define WEBOS_IR_STATUS_STANDBY 1
 
+/* The SoC is down: the pump hands lgemu the webos.suspended port with this ioctl on /dev/lgemu-ir,
+ * its argument an O_PATH descriptor of the port's device. lgemu opens the port itself at the last
+ * step of the suspend (its noirq callback: user space frozen, the devices suspended) and closes it
+ * at the first step of the resume, which the host sees as the frontend-open of chardev "suspended"
+ * in QMP query-chardev. The host then stops the VM, as a TV powers its SoC down, and continues it
+ * at the wake (host/core/beanjar/ir_relay.py; docs/dev/architecture/suspend.md). */
+#define WEBOS_IR_SUSPENDED_PORT 0x4901 /* _IO('I', 1) */
+
 /* A read of n >= sizeof(struct webos_micom_status) from /dev/lgemu-ir has the whole state, of
  * which the standby byte is the first (a one-byte read has it alone): the micom's power state,
  * whether the firmware's power stack has started, and the front LED, the last payload the firmware

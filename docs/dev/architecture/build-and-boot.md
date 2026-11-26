@@ -364,6 +364,9 @@ scanout composes nothing, so the overlay is scanned out only while the primary h
 (LG's exclusive output path), at its visible source size, its position not kept. Spacebuns' gl
 layer carries the word with `tv_connector=1` (`guest/layers/gl/native-tv-rootfs`); no other target
 has it.
+`0029` exports `timekeeping_inject_sleeptime64`: lgemu.ko adds the time the host held the VM
+stopped in standby to `CLOCK_REALTIME` and `CLOCK_BOOTTIME` at the resume, as `rtc_resume` does on a
+set, which skips it under suspend-to-idle without a cpuidle driver (docs/dev/architecture/suspend.md).
 
 **How it was derived** (2026-09-28): `allnoconfig` with the options below forced
 (`make allnoconfig KCONFIG_ALLCONFIG=<list>`), booted and compared with the arm64 `defconfig`

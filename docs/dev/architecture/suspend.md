@@ -58,7 +58,8 @@ re-checked when its step is implemented.
   suspend means here.
 - **Patch 0004 is replaced.** `/sys/power/state` offers `freeze` and `mem` again, both suspending to
   idle.
-- **No QEMU patch.** The VM keeps running; its vCPUs simply idle in the guest.
+- **No QEMU patch.** The guest's vCPUs idle in s2idle, and once it is down the host stops the VM
+  (decision 6), as a TV powers its SoC down.
 
 ### 2. lgemu provides `/dev/lgib`, as LG's kernels do
 
@@ -80,11 +81,15 @@ restore. Decided instead:
   wake IRQ. There is no gpio-keys driver, so webOS never sees a power-button input device.
 - **The host wakes the guest by pulsing that line.** When the guest is in standby, the host's power
   key sends QMP `system_powerdown`, which pulses the line. On a TV, the always-on micom likewise wakes
-  the SoC on a line of its own.
-  The GTK viewer does that itself. From the CLI, VNC and the web, the manager does: `beanjar remote
-  press` and `remote pipe` (which the web viewer's popup remote uses; also for HOST/NAME, as they run on
-  the VM's host) turn a POWER key-down (IR 0x08) into `system_powerdown` when QMP shows the standby
-  chardev open, and drop its key-up. Awake, or for any other key, they send IR as before.
+  the SoC on a line of its own. On the x86-64 guest kernel (q35) the line is ACPI's fixed power
+  button, which `system_powerdown` presses there; lgemu installs the fixed event's handler, and the
+  kernel's ACPI button driver is configured out (`configs/x86_64.config`) so that it neither holds
+  the event nor gives webOS a power-button input. The SCI is a wakeup source of s2idle, and a fixed
+  event's status ends s2idle's loop.
+  Only the IR relay (below) sends it: the GTK viewer, `beanjar remote press` and `remote pipe` (the
+  web viewer's popup remote) send the keys to `ir.sock` in standby as when awake (2026-11-26; until
+  then each sent `system_powerdown` itself), so the one process that stops the VM (decision 6) also
+  wakes it.
 - **ir.sock does it for every client**. The micom model in the guest sleeps with it, and the IR
   pump that feeds it is frozen, so a key written to the `webos.ir` port while the SoC is suspended
   waited in the port: it woke nothing and reached tvservice after the next wake (measured on W22O
@@ -130,7 +135,74 @@ restore. Decided instead:
 - Until then the EEPROM snapshot flag is left as the firmware writes it, and `/sys/power/mode` stays
   `cold` (patch 0003).
 
+### 6. The host powers the SoC down: the VM is stopped in standby
+
+A TV's SoC is powered down in Quick Start+'s standby, and its `CLOCK_MONOTONIC` does not count the
+time. Under our s2idle it did (no cpuidle driver, above), and W22O's WebAppMgr aborted at the wake
+of a long standby (docs/research/w22o-resume-crashes.md). Decided (2026-11-26): once the guest is
+down, the host stops the VM with QMP `stop`, which holds the guest's clocks, and continues it at
+the wake. No guest kernel change beyond one export (patch 0029), no QEMU patch.
+
+- **The guest says when it is down.** lgemu's micom device opens a second port, `webos.suspended`
+  (chardev `suspended`, a null chardev), from its noirq suspend callback, the last step before
+  s2idle: user space is frozen and the other devices suspended (it is registered after them and
+  suspends synchronously). Its noirq resume, the first step after the wake, closes it. The host sees
+  the chardev's frontend-open in `query-chardev`. The IR pump cannot do it, as it is frozen by then;
+  it hands lgemu the port at its start instead (`WEBOS_IR_SUSPENDED_PORT`, an `O_PATH`
+  descriptor), so the kernel opens a kept `struct path` with `dentry_open`, with no path lookup in
+  the suspend. The rest of the open and the close is safe there too: the kernel has no fanotify, so
+  nothing waits on user space; virtio_console's open and release take spinlocks and send their
+  control message by polling the control queue's used ring, not on its interrupt; the virtio-pci
+  devices stay in D0 and keep running across s2idle (patch 0004). The close is `__fput_sync`: a
+  plain `fput` from the suspending task (tvpowerd) would close it only on that task's return to
+  user space, after the whole resume. A key latched on the way down (decision 3) skips the open.
+- **The IR relay stops it.** `beanjar/ir_relay.py` (the host's always-on micom part, running for the
+  VM's life) looks at QMP every 0.5 s while `micom-status` says standby (and never otherwise), and
+  stops a running VM whose `suspended` chardev is open, once for each time the SoC is down: after
+  a wake, which the guest takes a moment to show, it does not stop it again until the port has
+  closed. A VM paused for another reason is never continued.
+- **Not with vhost-user-gpu.** QEMU 10.0.2's vhost-user-gpu backend loses the display at a stop and
+  cont (docs/dev/architecture/gpu-process.md), and on the Pi (W22O queue, 2026-11-26) it aborted at
+  the third cont (`set_gpu_protocol_features: Assertion 'g->wait_in == 0' failed`); the guest's
+  captureservice then hung in virtio-gpu (D state) and every later suspend failed to freeze it. So
+  the relay never stops a VM whose QEMU has the `vgpu` chardev (the ARM hosts' default GPU), and
+  logs `VM left running (its GPU is vhost-user-gpu)`: such a VM keeps the s2idle with running
+  clocks of decisions 1 to 3, and W22O's WebAppMgr still aborts at the wake of a long standby there.
+- **The relay alone wakes it**: the power key (decision 3) is `system_powerdown`, then `cont` if the
+  relay stopped the VM. The edge is latched by QEMU's PL061 (and ACPI's PM1 status) while the VM is
+  stopped, so the guest sees the wake as soon as it runs. Every front end sends the keys to
+  `ir.sock` in standby, so no other process stops or continues it.
+- **Run state.** A VM the relay stopped is "paused" to QMP; `poweroff.qmp_status` reads paused with
+  both ports open as "standby", as for a running guest with `webos.standby` open, so `beanjar list`
+  and the power-off refusal see standby either way. A VM paused otherwise stays "paused".
+  `beanjar stop` of a stopped VM ends QEMU as before (the suspend synced the guest's disks).
+- **The wall clock follows the RTC.** `CLOCK_MONOTONIC` leaves the stop out (kvm-adjvtime holds
+  arm64's virtual counter, QEMU holds kvm-clock on x86-64). A TV's `CLOCK_REALTIME` and
+  `CLOCK_BOOTTIME` include the standby, through its RTC read at the resume; the stock `rtc_resume`
+  skips that under our s2idle (`timekeeping_rtc_skipresume`: `timekeeping_suspend` never ran).
+  So lgemu reads rtc0 (PL031 on arm64 virt, the CMOS RTC on q35; both follow the host's clock while
+  the VM is stopped) at its suspend and its resume, against `CLOCK_BOOTTIME`, and injects the
+  difference with `timekeeping_inject_sleeptime64`, as `rtc_resume` would; patch 0029 exports it.
+  The RTC counts whole seconds, so a difference under 2 s (an s2idle the host did not stop) is
+  left alone rather than walked by a second at each standby; the clock is up to a second off after
+  a stopped one. The host never pushes a time in.
+- **x86-64** (q35, the PC's guest kernel) works the same way: kvm-clock, the CMOS RTC, and ACPI's
+  fixed power button as the wake line (decision 3).
+- **RTC alarms** cannot fire while the VM is stopped. A TV's power-on timers are the micom's, which
+  lgemu does not model; lgemu logs an armed rtc0 alarm at each suspend
+  (`rtc0 has an alarm armed`).
+
 ## Verification
+
+- Stop and cont (decision 6), 2026-11-26, W22O queue (43.21.89.01): on the Pi (KVM, arm64 guest
+  kernel, `gpu = "virtio-gpu-gl"`) five power off/on cycles, one of 519 s and four of about 97 s;
+  each stopped about 66 s after POWER (W22O's own pre-suspend work) and continued at the wake. Over
+  the long one, 581 s of host time, `CLOCK_MONOTONIC` moved 128.7 s and `CLOCK_BOOTTIME` and
+  `CLOCK_REALTIME` 581 s (452.55 s injected); WebAppMgr kept its pids, no crash report, no
+  watchdog line, Home after each wake, and no rtc0 alarm was armed at any suspend. `beanjar stop`
+  of a stopped VM took 80 s (60 s of it the log save's wait, as before). On the PC (x86-64 guest
+  kernel, q35, KVM) two cycles of about 190 s: the ACPI power button woke it, 254 s of host time
+  moved `CLOCK_MONOTONIC` 133.7 s and `CLOCK_BOOTTIME` 255 s (121.5 s injected), no crash report.
 
 - On W16R, W17H, W18R and W19P, with Quick Start+ on:
   - The power key gives warm standby, then `/dev/lgib`, then the guest in s2idle with its vCPUs idle.
