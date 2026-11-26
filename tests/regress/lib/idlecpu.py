@@ -49,6 +49,19 @@ WAKEUPS_TCG = 250.0
 # second in all (voluntary switches over 30 s), and 1840-1960/s in one thread on k24 and k24n
 # under KVM; it uses 1.6 % of a core there.
 WAKEUP_ALLOWANCE = {"lginput2": 4000.0}
+# (process comm, thread comm): that thread's wakeup limit, for a stock thread whose own fixed sleep
+# wakes it more often than WAKEUPS (docs/research/idle-thread-polls.md has the disassembly): a
+# little above what its sleep allows, so the same thread polling faster still flags.
+#   tvservice CCThreadProc     W16K's libhal_rtd2999l, usleep(100) every pass (W17P's: 5 ms):
+#                              9,000-9,650/s on k2l and k2lp under KVM
+#   tvservice AudioProcessThr  W17P's libkadaptor, usleep(1000) every pass: 885-990/s on k3lp
+#   universal-contr            webOS 23+'s universal-control-manager, CNLTimer: a 1 ms nanosleep
+#                              while its 30-day timer runs: 940/s on k8lpn and o24 queue
+THREAD_WAKEUP_ALLOWANCE = {
+    ("tvservice", "CCThreadProc"): 11000.0,
+    ("tvservice", "AudioProcessThr"): 1100.0,
+    ("universal-contr", "universal-contr"): 1100.0,
+}
 EMULATED_FACTOR = 4  # the limits under qemu-user or TCG (and a flag there only WARNs)
 FLAG = "WARN"  # what a flag makes the item under KVM
 SAMPLES = 10  # idle-threads' samples of a flagged process's threads
@@ -145,10 +158,15 @@ def emulated(arch, accel):
     return accel == "tcg" or not (arch.startswith(("aarch64", "arm")))
 
 
-def wakeup_limit(accel, comm=None):
-    """A thread's wakeup limit in process comm: WAKEUPS (TCG: WAKEUPS_TCG), or its allowance."""
+def wakeup_limit(accel, comm=None, thread=None):
+    """A thread's wakeup limit in process comm: WAKEUPS (TCG: WAKEUPS_TCG), or the process's or
+    that thread's allowance."""
     base = WAKEUPS_TCG if accel == "tcg" else WAKEUPS
-    return max(base, WAKEUP_ALLOWANCE.get(comm, 0.0))
+    return max(
+        base,
+        WAKEUP_ALLOWANCE.get(comm, 0.0),
+        THREAD_WAKEUP_ALLOWANCE.get((comm, thread), 0.0),
+    )
 
 
 def limit(comm, emu):
@@ -205,8 +223,9 @@ def measure(data, accel="kvm"):
             whys.append(f"{min(cpu):.0f}-{max(cpu):.0f} % of a core (limit {p['limit']:.0f})")
         for tid in sorted(t for t in tids if ws[0][2][t][0] == pid):
             rates = [w[2][tid][2] for w in ws]
-            if min(rates) >= pwl:
-                whys.append(f"thread {ws[0][2][tid][4]} wakes {min(rates):.0f}/s (limit {pwl:.0f})")
+            twl = wakeup_limit(accel, comm, ws[0][2][tid][4])
+            if min(rates) >= twl:
+                whys.append(f"thread {ws[0][2][tid][4]} wakes {min(rates):.0f}/s (limit {twl:.0f})")
         if whys:
             flagged.append(dict(p, why="; ".join(whys), threads=top_threads(ws, pid, pwl)))
     procs.sort(key=lambda p: -sum(p["cpu"]))
@@ -226,6 +245,9 @@ def measure(data, accel="kvm"):
             "allowance": {k: limit(k, emu) for k in ALLOWANCE},
             "wakeups": wl,
             "wakeup_allowance": {k: wakeup_limit(accel, k) for k in WAKEUP_ALLOWANCE},
+            "thread_wakeup_allowance": {
+                f"{c}/{t}": wakeup_limit(accel, c, t) for c, t in THREAD_WAKEUP_ALLOWANCE
+            },
             "floor": FLOOR,
         },
         "processes": procs,

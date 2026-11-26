@@ -213,6 +213,27 @@ class Snapshots(unittest.TestCase):
         r = idlecpu.measure(data, "kvm")
         self.assertIn("lginput2", [p["comm"] for p in r["flagged"]])
 
+    def test_thread_wakeup_allowance(self):
+        # k2l's CCThreadProc sleeps 100 us a pass in stock code: 9000/s is under its own limit,
+        # 12000/s over it; the same rate in another thread of tvservice is still flagged
+        data = idlecpu.parse(self.text)
+        for _, _, threads in data["snaps"]:
+            threads[201][3] *= 45  # 200/s -> 9000/s
+        r = idlecpu.measure(data, "kvm")
+        self.assertNotIn("tvservice", [p["comm"] for p in r["flagged"]])
+        self.assertEqual(r["limits"]["thread_wakeup_allowance"]["tvservice/CCThreadProc"], 11000.0)
+        for _, _, threads in data["snaps"]:
+            threads[202][3] = threads[201][3]  # tAUDATV at 9000/s too
+        r = idlecpu.measure(data, "kvm")
+        (tv,) = [p for p in r["flagged"] if p["comm"] == "tvservice"]
+        self.assertIn("thread tAUDATV wakes", tv["why"])
+        self.assertNotIn("CCThreadProc wakes", tv["why"])
+        for _, _, threads in data["snaps"]:
+            threads[201][3] = threads[201][3] * 4 // 3  # 12000/s
+        r = idlecpu.measure(data, "kvm")
+        (tv,) = [p for p in r["flagged"] if p["comm"] == "tvservice"]
+        self.assertIn("thread CCThreadProc wakes 12000/s (limit 11000)", tv["why"])
+
     def test_one_burst_is_not_a_flag(self):
         data = idlecpu.parse(self.text)
         (_, p1, k1), (_, p2, k2) = data["snaps"][1:]
