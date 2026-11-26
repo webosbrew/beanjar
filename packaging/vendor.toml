@@ -35,9 +35,9 @@ arm64 = "4af1e0cd93a8cd79527218706b1b45ebe0a093036bbcae9c9c0021973575e28f"
 
 # neatvnc 1.0 and aml 1.0, /usr/lib/beanjar/neatvnc: beanjar-vnc
 [neatvnc]
-tag = "neatvnc-1.0.4+beanjar1"
-amd64 = "8cb1a4f7ffb3ff13b97b78d0197109af3da789774fbf2632a31c678e64d317f2"
-arm64 = "2c24a05a82b35b927099a76d0362814b9da2c7ef01efcb3fd80afc0e4512b14a"
+tag = "neatvnc-1.0.4+beanjar2"
+amd64 = "89f04fc26f789c30fd0c38d71b5679674bab42a6e63a1130168365ffc434afb4"
+arm64 = "318eb4694cb0fb36a06567a15cd149d9199e18263ca36e82ec78cf6ad7f5285c"
 
 # The test guest's userland, Buildroot's: scripts/testguest-setup, docs/dev/architecture/test-guest.md
 [testguest]
