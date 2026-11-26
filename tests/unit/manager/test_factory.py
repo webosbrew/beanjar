@@ -82,10 +82,12 @@ def test_apps_image(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(not TOOLS, reason="needs squashfs-tools, e2fsprogs and unshare")
 def test_no_model(tmp_path, monkeypatch):
+    """A release that ships no model (W22O 13.30.56): no image, no error."""
     root = rootfs(tmp_path, ["readme.txt"])
     monkeypatch.setattr(factory, "firmware_root", lambda *a: root)
-    with pytest.raises(factory.Error, match="no wake-word model"):
-        factory.apps_image("FW", ("o22", "queue"), None, str(tmp_path / "a.img"))
+    out = tmp_path / "a.img"
+    assert factory.apps_image("FW", ("o22", "queue"), None, str(out)) is None
+    assert not out.exists()
 
 
 def test_seeded_disk_sparse(tmp_path):

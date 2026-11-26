@@ -359,12 +359,12 @@ def _make(job, new, say):
     # microphone (factory.py, INFERRED factory state)
     if factory.needed(job.target):
         try:
-            record["factory_files"] = factory.apps_image(
-                job.fw, job.target, job.tree, os.path.join(new, APPS)
-            )
+            held = factory.apps_image(job.fw, job.target, job.tree, os.path.join(new, APPS))
         except (factory.Error, lls.Error, OSError, subprocess.SubprocessError) as e:
             raise Error(f"the apps partition's factory data: {e}") from None
-        record[APPS] = True
+        if held:
+            record["factory_files"] = held
+            record[APPS] = True
     # lls.cache_dir keys its run on these helpers where the firmware's LLS is a nyx module
     nyx = bool(rel.nvm.lls) and lls.Root(job.fw, job.target, job.tree).read(lls.NYX_LLS) is not None
     record["inputs"] = job.inputs()

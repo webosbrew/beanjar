@@ -72,11 +72,12 @@ def firmware_root(fw, target, tree):
 
 
 def apps_image(fw, target, tree, out):
-    """Makes the factory apps image of the target's firmware fw at out: (the files it holds)."""
+    """Makes the factory apps image of the target's firmware fw at out: the files it holds; None,
+    and no image, for a firmware that ships no wake-word model and THF config."""
     root = firmware_root(fw, target, tree)
     names = _names(root, SNSR)
     if not any("thf_config" in n for n in names) or not any(n.endswith(".snsr") for n in names):
-        raise Error(f"{fw}: no wake-word model and THF config in {SNSR}")
+        return None  # a release without the model: its sets have no such data either
     conf = root.read(MKE2FS_CONF)
     with tempfile.TemporaryDirectory(prefix="beanjar-apps-") as tmp:
         top = os.path.join(tmp, "root")
