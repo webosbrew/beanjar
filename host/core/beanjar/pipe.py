@@ -25,8 +25,8 @@ and the web server never opens a VM's socket itself.
   each change of the guest's rotation (run/rotation, rotation.py). It answers "ready" once
   connected, "error: ..." for a line it cannot do; at the end of stdin it releases what it holds
   and ends the touches that are down.
-- A POWER key-down while the guest is in standby (Quick Start+: the micom reports no keys) wakes it
-  with QMP system_powerdown, the PL061 wake line, instead of an IR edge; its key-up is dropped
+- In standby (Quick Start+) the keys go the same way: the micom's always-on part on the host
+  (ir_relay.py, behind the front end's ir.sock) wakes the guest on POWER and drops the other keys
   (docs/dev/architecture/suspend.md).
 - layout: the VM's remote (beanjar.remote_layouts, the GTK remote's data) as JSON.
 """
@@ -39,13 +39,12 @@ import sys
 import threading
 import time
 
-from . import dbus, framing, poweroff
+from . import dbus, framing
 from .core import Error
 from .dbus import SCREENSHOT_NAME, SCREENSHOT_PATH
 
 CHUNK = 1 << 16
 PRESS_HOLD = 0.1  # seconds a `remote press` holds each key: a short press
-POWER_CODE = 0x08  # LG's KEY_POWER IR code, the power key of every layout
 
 
 def vm_layout(vm):
@@ -178,7 +177,6 @@ class Remote(FrontEnd):
         super().__init__(vm, timeout)
         self.layout = vm_layout(vm)
         self.held = None
-        self.woke = False  # the power key-down woke the guest by QMP: its key-up is dropped
 
     def code(self, word):
         """A key's IR code: a number (0x7c, 124; a Japanese remote's extended code 0xdb30) or a name of
@@ -198,27 +196,7 @@ class Remote(FrontEnd):
             raise Error(f"IR code {word} is not 0 to 255 or 0xdb00 to 0xdbff")
         return code
 
-    def standby(self):
-        """Whether the guest is in standby (poweroff.qmp_status: the standby chardev's frontend open)."""
-        return poweroff.qmp_status(self.vm.qmp_sock) == "standby"
-
-    def wake(self):
-        """The power key in standby: QMP system_powerdown, the wake line."""
-        from . import launch
-
-        reply = launch.qmp(self.vm.qmp_sock, '{"execute": "system_powerdown"}')
-        if "error" in reply:
-            raise Error(f"QMP system_powerdown: {reply['error'].get('desc', reply['error'])}")
-
     def edge(self, code, down):
-        if code == POWER_CODE:
-            if down and self.standby():
-                self.wake()
-                self.woke = True
-                return
-            if not down and self.woke:
-                self.woke = False
-                return
         self._call(
             SCREENSHOT_NAME,
             SCREENSHOT_PATH,

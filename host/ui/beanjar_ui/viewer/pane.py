@@ -22,14 +22,13 @@ from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 from . import ui  # noqa: E402
 from .keys import HOME_KEYS  # noqa: E402
 from .elements_layer import ElementsLayer  # noqa: E402
-from .remote import LAYOUTS, NORMAL, RemotePanel, find  # noqa: E402
+from .remote import LAYOUTS, RemotePanel, find  # noqa: E402
 from .remote_window import RemoteWindow  # noqa: E402
 from .stats import Stats, front_led, panel_off  # noqa: E402
 from .statusbar import StatusBar  # noqa: E402
 from .view import TvView  # noqa: E402
 
 PORTRAIT = 270  # the angle the Rotate toggle's portrait is (what msc reports as portrait)
-POWER_CODE = NORMAL.keys[find("POWER")].code  # the remotes' power key, LG's 0x08
 # The set's own keys, the micom's local key codes (include/webos-ir.h WEBOS_LOCAL_*). The joystick's
 # directions (channel up/down, volume right/left) are inferred from LG's usual layout, not verified.
 LOCAL_PRESS, LOCAL_UP, LOCAL_DOWN, LOCAL_RIGHT, LOCAL_LEFT = 0xEA, 0x00, 0x01, 0x02, 0x03
@@ -182,13 +181,10 @@ class ViewerPane(Gtk.Box):
 
     def local_down(self, code):
         """A local key down, to the micom, which tells a short press from a long one (and reports
-        it in its warm standby too). With the SoC suspended (standby) the micom wakes it on its
-        local key: QMP system_powerdown, the wake line, as for the remote's power key."""
+        it in its warm standby too). With the SoC suspended (standby) the micom's always-on part
+        behind ir.sock (beanjar's ir_relay) wakes it on the local key, as on the remote's power
+        key."""
         self.local_up()
-        if self.standby:
-            if not self.stats or not self.stats.powerdown():
-                self.say("No QMP connection: the TV's key cannot wake the TV")
-            return
         self.core.local_key(code, True)
         self.local_held = code
 
@@ -209,12 +205,9 @@ class ViewerPane(Gtk.Box):
             self.ir(code, False)
 
     def ir(self, code, down):
-        """A remote button edge to the micom over webos.ir; in standby the micom reports no keys,
-        and its power key wakes the guest instead: QMP system_powerdown, the wake line."""
-        if not self.standby:
-            self.core.ir(code, down)
-        elif code == POWER_CODE and down and not self.stats.powerdown():
-            self.say("No QMP connection: the power key cannot wake the TV")
+        """A remote button edge to the micom over webos.ir; in standby the micom's always-on part
+        behind ir.sock (beanjar's ir_relay) drops the keys and wakes the guest on POWER."""
+        self.core.ir(code, down)
 
     def key_evdev(self, code, down):
         if code in HOME_KEYS:

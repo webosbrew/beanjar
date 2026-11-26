@@ -27,8 +27,8 @@
 - Standby: the guest is suspended (Quick Start+, or the guest suspended manually)
   while its webos.standby port is open, QMP query-chardev's frontend-open of chardev "standby"
   (include/webos-ir.h); power_state is None until reported, then a standby bool.
-  on_standby(bool) hears each change. powerdown() is the power key then:
-  QMP system_powerdown, QEMU virt's power button, the micom's wake line.
+  on_standby(bool) hears each change. The keys still go to ir.sock then, whose relay wakes the
+  guest (beanjar's ir_relay).
 
 - Micom: the last line of micom-status (the guest's micom state at each change: its standby,
   power state, whether webOS's power stack has started (ready) and front LED latches,
@@ -532,13 +532,6 @@ class Stats:
             if self.on_standby:
                 self.on_standby(standby)
 
-    def powerdown(self):
-        """The power key in standby: QMP system_powerdown. False without a QMP connection."""
-        if self._qmp != "ready":
-            return False
-        self._qmp_send({"execute": "system_powerdown", "id": "power"})
-        return True
-
     def _qmp_send(self, obj):
         try:
             self._conn.get_output_stream().write_all((json.dumps(obj) + "\n").encode(), None)
@@ -590,8 +583,6 @@ class Stats:
         elif "error" in o and o.get("id") == "chardev":
             self.power_state = None
             self.on_change()
-        elif "error" in o and o.get("id") == "power":
-            pass  # no standby to tell: the disk numbers stand
         elif "error" in o and o.get("id") == "balloon":
             # a VM started before every VM had a balloon
             self.guest_ram = None

@@ -588,7 +588,8 @@ class FakeQmp:
 
 
 class RemotePowerTest(unittest.TestCase):
-    """remote press / pipe: the power key wakes a guest in standby by QMP, not by IR."""
+    """remote press / pipe: the keys are IR edges in standby too; the micom's always-on part behind
+    ir.sock (ir_relay.py) wakes the guest, so the remote asks QMP nothing."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -600,7 +601,7 @@ class RemotePowerTest(unittest.TestCase):
         r = pipe.Remote.__new__(pipe.Remote)
         r.vm = mock.Mock(qmp_sock=sock)
         r.layout = pipe.vm_layout(mock.Mock(target=mock.Mock(side_effect=core.Error("none"))))
-        r.held, r.woke = None, False
+        r.held = None
         r._call = lambda dest, path, iface, method, signature, values: self.ir.append(values)
         self.remote = r
 
@@ -609,30 +610,15 @@ class RemotePowerTest(unittest.TestCase):
         self.remote.edge(code, True)
         self.remote.edge(code, False)
 
-    def test_power_in_standby_wakes(self):
+    def test_power_in_standby_is_ir(self):
         self.qmp.standby = True
         self.press("POWER")
-        self.assertEqual((self.qmp.commands, self.ir), (["system_powerdown"], []))
+        self.assertEqual((self.qmp.commands, self.ir), ([], [(8, True), (8, False)]))
         self.assertIsNone(self.remote.held)
 
     def test_power_awake_is_ir(self):
         self.press("POWER")
         self.assertEqual(self.qmp.commands, [])
-        self.assertEqual(self.ir, [(8, True), (8, False)])
-
-    def test_other_key_in_standby_is_ir(self):
-        self.qmp.standby = True
-        self.press("HOME")
-        self.assertEqual(self.qmp.commands, [])
-        self.assertEqual([d for _, d in self.ir], [True, False])
-
-    def test_up_after_wake_is_dropped_once(self):
-        """The up of a waking power key is dropped; a later awake power press is IR again."""
-        self.qmp.standby = True
-        self.press("POWER")
-        self.qmp.standby = False
-        self.press("POWER")
-        self.assertEqual(self.qmp.commands, ["system_powerdown"])
         self.assertEqual(self.ir, [(8, True), (8, False)])
 
 
