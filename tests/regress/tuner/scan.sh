@@ -14,7 +14,8 @@
 # cable analogue; legacy-broadcast-atsc ignores setAutoScanChannelType; Japan: terrestrial digital
 # alone). Our lineup is digital over the air, so each other pass is skipped as it starts, as the
 # stock app's Skip button does (scan/skipAutoScan): about 40 s instead of 20 minutes under TCG.
-# ALL=1 runs every pass.
+# ALL=1 runs every pass; PASSES names the passes kept, the source types without INPUTSOURCE_
+# (default TERRESTRIAL_DIGITAL; a US cable scan: "TERRESTRIAL_DIGITAL CABLE_DIGITAL").
 #
 # WATCH_IDS: the channelIds watched after the scan, an extended regular expression for a whole
 # "channelId":"..." pair; by default each US RF's first service (..._1_0_0_0). A Japanese set
@@ -30,6 +31,7 @@ WATCH_IDS=${2:-'"channelId":"[^"]*_1_0_0_0"'}
 # seconds since boot: the set's clock jumps when it takes the broadcast's time (STT)
 mono() { cut -d. -f1 /proc/uptime; }
 READY_WAIT=${READY_WAIT:-600}
+PASSES=${PASSES:-TERRESTRIAL_DIGITAL}
 t0=$(mono)
 L="luna-send -n 1 -w 30000"
 U=luna://com.webos.service.utp.channel/scan
@@ -114,7 +116,7 @@ while :; do
 	echo "t=$((now - scan_start)) $A $src" >> "$LOG"
 	echo "$A" | grep -q '"autoScanning":false' && [ $((now - scan_start)) -gt 10 ] && break
 	[ $((now - scan_start)) -ge "$TIMEOUT" ] && { echo "timeout=1"; break; }
-	if [ -z "$ALL" ] && [ -n "$src" ] && [ "$src" != INPUTSOURCE_TERRESTRIAL_DIGITAL ] &&
+	if [ -z "$ALL" ] && [ -n "$src" ] && ! echo " $PASSES " | grep -q " ${src#INPUTSOURCE_} " &&
 		[ "$src" != "$skipped" ]; then
 		echo "skip $src at t=$((now - scan_start)): $($L $U/skipAutoScan "$B" </dev/null | tr -d '\n ')" >> "$LOG"
 		echo "skipped=$src"
