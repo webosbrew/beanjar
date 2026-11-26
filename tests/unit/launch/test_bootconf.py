@@ -1093,6 +1093,69 @@ class BootConfTest(unittest.TestCase):
         devs = [w for w in lgemu if w.startswith("i2c_dev=")]
         self.assertEqual(devs, ["i2c_dev=nvm:7:0x50,light2:1:0x10,tof:1:0x41"])
 
+    def test_led_micom(self):
+        """The gaming LED micom is the board's: its tool type LX3Q (the OLED Flex), the chip the
+        channel (libdile_i2c's GAMING_LED_MICOM row: 0 on O22), at 7-bit 0x09; another tool type
+        or a chip without the row has none. It joins the table's i2c_dev."""
+        cases = {
+            (("o22", "number1"), "LX3Q"): "ledmicom:0:0x09",
+            (("o22", "ponytail"), "LX3Q"): "ledmicom:0:0x09",
+            (("o22n2", "ombre"), "LX3Q"): "ledmicom:0:0x09",
+            (("o22", "ponytail"), "C2"): None,
+            (("o22", "ponytail"), None): None,
+            (("k8hp", "mullet"), "LX3Q"): None,
+        }
+        for (target, tool), want in cases.items():
+            self.assertEqual(targets.led_micom_dev(target, tool), want, (target, tool))
+        derived = {"lgemu": ("i2c_dev=ledmicom:0:0x09",)}
+        lgemu = targets.module_params(("o22", "ponytail"), derived)["lgemu"]
+        devs = [w for w in lgemu if w.startswith("i2c_dev=")]
+        self.assertEqual(devs, ["i2c_dev=nvm:7:0x50,ledmicom:0:0x09"])
+
+    def test_model_board(self):
+        """A VM chooses another retail model of its chip by name (vm.toml's firmware.model, MODEL):
+        W22O's OLED Flex, 42LX3QPUA, a US set on the global firmware with its own board; its
+        standard is the board's; a chip without it, another standard or an unknown model is
+        refused."""
+        o22p = ("o22", "ponytail")
+        self.assertEqual(targets.models(o22p), ("42LX3QPUA",))
+        self.assertEqual(targets.models(("o22n", "number1")), ())
+        self.assertIsNone(targets.board_model(o22p))
+        self.assertEqual(targets.board_model(o22p, None, None, "42LX3QPUA"), "42LX3QPUA")
+        self.assertEqual(targets.board_broadcast(o22p, None, None, "42LX3QPUA"), "atsc")
+        self.assertEqual(targets.board_broadcast(o22p, None, "atsc", "42LX3QPUA"), "atsc")
+        src = targets.board_cmdline_src(o22p, "atsc", "42LX3QPUA")
+        self.assertEqual(src, "guest/layers/soc/o22/rootfs/etc/emulator/board-lx3q-atsc.cmdline")
+        self.assertIn(
+            'BOARD_CMDLINE="/etc/emulator/board-lx3q-atsc.cmdline"',
+            targets.boot_conf(o22p, [], broadcast="atsc", model="42LX3QPUA"),
+        )
+        words = nvm.board_words(o22p, broadcast="atsc", model="42LX3QPUA")
+        flex = dict(w.split("=", 1) for w in words if "=" in w)
+        c2 = dict(w.split("=", 1) for w in nvm.board_words(o22p, broadcast="atsc") if "=" in w)
+        self.assertEqual(
+            (flex["modelName"], flex["countryGrp"], flex["tvregion"]), ("42LX3QPUA", "2", "ATSC")
+        )
+        # the US C2's line but for ToolOpt word 1: panelInch 9 (42"), toolType 43 (LX3Q)
+        self.assertEqual(flex["hwopt"], c2["hwopt"])
+        tool = [int(w) for w in flex["ToolOpt"].split(":")]
+        self.assertEqual((tool[0] & 31, (tool[0] >> 5) & 63), (9, 43))
+        self.assertEqual(flex["ToolOpt"].split(":")[1:], c2["ToolOpt"].split(":")[1:])
+        # the bootloader's word for a bendable set, which lightingcontroller.sh gates on
+        self.assertIn("Bendable", words)
+        self.assertNotIn("Bendable", nvm.board_words(o22p, broadcast="atsc"))
+        self.assertEqual(
+            nvm.board_ram(o22p, broadcast="atsc", model="42LX3QPUA"), nvm.board_ram(o22p)
+        )
+        with self.assertRaisesRegex(targets.Error, "is a atsc set, not dvb"):
+            targets.board_broadcast(o22p, None, "dvb", "42LX3QPUA")
+        with self.assertRaisesRegex(
+            targets.Error, r"has no board for model 'X' \(it has: 42LX3QPUA\)"
+        ):
+            targets.board_model(o22p, None, None, "X")
+        with self.assertRaisesRegex(targets.Error, "o22n-number1 has no board for model"):
+            targets.board_cmdline(("o22n", "number1"), None, "42LX3QPUA")
+
     def test_thermalinfo(self):
         """/proc/thermalinfo where the firmware has fancontroller (lm21*, k7, k8*, kf23f, k24*, k25*,
         m23, the O22 family o2*, O20N and E60N),

@@ -796,12 +796,13 @@ def place_items(image, records, items):
     return bytes(image)
 
 
-def board_cmdline(target, tree=paths.TREE, broadcast=None, debug_mode=None):
+def board_cmdline(target, tree=paths.TREE, broadcast=None, debug_mode=None, model=None):
     """The board's words as guest/initramfs/rootfs/init appends them to /proc/cmdline (comment lines
-    left out, one line): the board of the broadcast standard broadcast (targets.board_cmdline), its
+    left out, one line): the board of the broadcast standard broadcast, or of the retail model
+    model (targets.board_cmdline), its
     debugMode= the number debug_mode when given (the VM's debug_mode setting, nvm.DEBUG_MODES)."""
     try:
-        return " ".join(nvm.board_words(target, tree, broadcast, debug_mode))
+        return " ".join(nvm.board_words(target, tree, broadcast, debug_mode, model))
     except nvm.Error as e:
         raise Error(str(e)) from None
 
@@ -1076,10 +1077,12 @@ def image(
     broadcast=None,
     debug_mode=None,
     country=None,
+    model=None,
 ):
     """The programmed 32 KiB image (bytes) for a new chip of target's board on the firmware fw
     (fw_name its name, the cache's directory): build/lls/<fw_name>/<key>/eeprom.img, made if
-    missing. broadcast: the board's broadcast standard (targets.board_broadcast)."""
+    missing. broadcast: the board's broadcast standard (targets.board_broadcast); model: the retail
+    model whose board it is (targets.board_model), if the VM chose one."""
     with open(
         os.path.join(
             cache_dir(
@@ -1092,6 +1095,7 @@ def image(
                 broadcast=broadcast,
                 debug_mode=debug_mode,
                 country=country,
+                model=model,
             ),
             "eeprom.img",
         ),
@@ -1111,11 +1115,14 @@ def debug_status_item(image, text):
     return place_items(image, parse_records(text), items)
 
 
-def default_records(fw, fw_name, target, tree=paths.TREE, say=print, broadcast=None):
+def default_records(fw, fw_name, target, tree=paths.TREE, say=print, broadcast=None, model=None):
     """LLS's own default records of target's board (parse_records of the probe's output): what
     initPlugInDB writes to a blank region, before the items the factory line writes."""
     with open(
-        os.path.join(cache_dir(fw, fw_name, target, tree, say, broadcast=broadcast), "records.txt")
+        os.path.join(
+            cache_dir(fw, fw_name, target, tree, say, broadcast=broadcast, model=model),
+            "records.txt",
+        )
     ) as f:
         return parse_records(f.read())
 
@@ -1123,7 +1130,7 @@ def default_records(fw, fw_name, target, tree=paths.TREE, say=print, broadcast=N
 OPTION_TABLE = "/etc/factorymanager/db/optionTable.json"
 
 
-def tool_option(fw, target, llsname, tree=paths.TREE, broadcast=None):
+def tool_option(fw, target, llsname, tree=paths.TREE, broadcast=None, model=None):
     """The board's value of the tool option item llsname (for example "localKeyType"), decoded as
     factorymanager decodes it: the firmware's own optionTable.json gives the item's word
     (toolOption<llsidx>), bit offset, width and value names (itemlist), and the board's ToolOpt=
@@ -1138,7 +1145,9 @@ def tool_option(fw, target, llsname, tree=paths.TREE, broadcast=None):
     # factorymanager's JSON has a comma before each closing brace
     table = json.loads(re.sub(r",(\s*[}\]])", r"\1", blob.decode()))
     words = dict(
-        w.split("=", 1) for w in board_cmdline(target, tree, broadcast).split() if "=" in w
+        w.split("=", 1)
+        for w in board_cmdline(target, tree, broadcast, model=model).split()
+        if "=" in w
     ).get("ToolOpt", "")
     words = [int(w) for w in words.split(":") if w]
     for word in table.get("lls", {}).get("tooloptions", ()):
@@ -1197,7 +1206,7 @@ def elf_str_enum(data, name):
     return None
 
 
-def local_key(fw, target, tree=paths.TREE, broadcast=None):
+def local_key(fw, target, tree=paths.TREE, broadcast=None, model=None):
     """The board's model's local key (tv.model.localKeyType: "joystick", "onekey", "ninekey",
     "sevenkey"), decoded from the board's ToolOpt= as the firmware's factorymanager does: with its
     option table (optionTable.json, tool_option) where it has one, else (webOS 5 and 6) with its
@@ -1205,7 +1214,9 @@ def local_key(fw, target, tree=paths.TREE, broadcast=None):
     and the names of its LOCALKEY_TYPE_STRING_ENUM; on a tvservice release (webOS 1 to 4) as its
     tvservice does, with the release's Nvm.local_key. None where the firmware has none of these."""
     words = dict(
-        w.split("=", 1) for w in board_cmdline(target, tree, broadcast).split() if "=" in w
+        w.split("=", 1)
+        for w in board_cmdline(target, tree, broadcast, model=model).split()
+        if "=" in w
     ).get("ToolOpt", "")
     words = [int(w) for w in words.split(":") if w]
     spec = targets.release(target).nvm.local_key
@@ -1216,7 +1227,7 @@ def local_key(fw, target, tree=paths.TREE, broadcast=None):
             return None
         value = (words[spec.word - 1] >> spec.offset) & ((1 << spec.width) - 1)
         return spec.names[value] if value < len(spec.names) else None
-    value = tool_option(fw, target, "localKeyType", tree, broadcast)
+    value = tool_option(fw, target, "localKeyType", tree, broadcast, model)
     if value is not None:
         return value if isinstance(value, str) else None
     return _layout_option(fw, target, words, "localKey", "LOCALKEY_TYPE_STRING_ENUM", tree)
@@ -1254,27 +1265,37 @@ def _layout_option(fw, target, words, field, enum, tree=paths.TREE):
     return next((n for n, v in names.items() if v == value), None)
 
 
-def digital_eye(fw, target, tree=paths.TREE, broadcast=None):
+def digital_eye(fw, target, tree=paths.TREE, broadcast=None, model=None):
     """The board's model's ambient light sensor option (tv.model.digitalEye: "off",
     "eye_sensor", "rgb_sensor" or "OTP_eyeSensor"), decoded from the board's ToolOpt= as the
     firmware's factorymanager does (as local_key: its optionTable.json, else its tool option layout
     and DIGITALEYE_STRING_ENUM). None where the firmware has neither (before webOS 5)."""
-    value = tool_option(fw, target, "digitalEye", tree, broadcast)
+    value = tool_option(fw, target, "digitalEye", tree, broadcast, model)
     if value is not None:
         return value if isinstance(value, str) else None
     words = dict(
-        w.split("=", 1) for w in board_cmdline(target, tree, broadcast).split() if "=" in w
+        w.split("=", 1)
+        for w in board_cmdline(target, tree, broadcast, model=model).split()
+        if "=" in w
     ).get("ToolOpt", "")
     words = [int(w) for w in words.split(":") if w]
     return _layout_option(fw, target, words, "DigitalEye", "DIGITALEYE_STRING_ENUM", tree)
 
 
-def motion_sensor(fw, target, tree=paths.TREE, broadcast=None):
+def motion_sensor(fw, target, tree=paths.TREE, broadcast=None, model=None):
     """The board's model's motion sensor option (tv.model.supportMotionDetectSensor: "off",
     "ToF_TBD_22Y" or "CAM_ART&R2_21Y"; a number where the firmware's item is one bit, as N21D's),
     decoded from the board's ToolOpt= by the firmware's optionTable.json (tool_option). None where
     the firmware has no such item."""
-    return tool_option(fw, target, "supportMotionDetectSensor", tree, broadcast)
+    return tool_option(fw, target, "supportMotionDetectSensor", tree, broadcast, model)
+
+
+def tool_type(fw, target, tree=paths.TREE, broadcast=None, model=None):
+    """The board's model's tool type (tv.model.toolType: "C2", "LX3Q", ...), decoded from the
+    board's ToolOpt= by the firmware's optionTable.json (tool_option). None where the firmware has
+    no such item."""
+    value = tool_option(fw, target, "toolType", tree, broadcast, model)
+    return value if isinstance(value, str) else None
 
 
 def panel_rate(cdir):
@@ -1305,12 +1326,14 @@ def cache_dir(
     broadcast=None,
     debug_mode=None,
     country=None,
+    model=None,
 ):
     """build/lls/<fw_name>/<key>, with eeprom.img, records.txt, the command line and the JSONs,
     made if missing; the board is the one for the broadcast standard broadcast
-    (targets.board_broadcast), its debugMode= the number debug_mode when given, its factory
-    countryName country (the VM's, an alpha-3 code) when given."""
-    cmdline = board_cmdline(target, tree, broadcast, debug_mode)
+    (targets.board_broadcast), or the retail model model's (targets.board_model), its debugMode=
+    the number debug_mode when given, its factory countryName country (the VM's, an alpha-3 code)
+    when given."""
+    cmdline = board_cmdline(target, tree, broadcast, debug_mode, model)
     if serial:
         cmdline = (
             " ".join(w for w in cmdline.split() if not w.startswith("serialNum="))

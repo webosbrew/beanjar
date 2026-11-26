@@ -349,6 +349,7 @@ class Plan:
             self.fw_name
         ) = None
         self.broadcast = None  # the board's broadcast standard (targets.board_broadcast)
+        self.model = None  # MODEL: the retail model whose board it boots (targets.board_model)
         self.country = None  # COUNTRY, checked against the board's (countries.check)
         # USERLAND: "native" or "qemu-user" as resolved (vmsettings.resolve_userland), with
         # qemu_arm the interpreter the guest gets; GUEST_KERNEL: "arm64" or "x86-64", whose
@@ -410,8 +411,12 @@ def vm_mem(env, tree=paths.TREE):
             return int(env["MEM"])
         fw, fw_name = tree.firmware(env.get("FW"))
         target = paths.firmware_target(fw, fw_name)
+        model = targets.board_model(target, fw, env.get("BROADCAST"), env.get("MODEL"))
         return nvm.board_ram(
-            target, tree, targets.board_broadcast(target, fw, env.get("BROADCAST"))
+            target,
+            tree,
+            targets.board_broadcast(target, fw, env.get("BROADCAST"), model),
+            model,
         )
     except (ValueError, OSError, targets.Error):
         return None
@@ -477,8 +482,14 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     except ValueError as e:
         raise Error(str(e)) from None
     try:
-        # the board's broadcast: the firmware's (model_id.json), else vm.toml's firmware.broadcast (BROADCAST)
-        p.broadcast = targets.board_broadcast(p.target, fw, env.get("BROADCAST"))
+        # the board's retail model: vm.toml's firmware.model (MODEL), where the VM chose one
+        p.model = targets.board_model(p.target, fw, env.get("BROADCAST"), env.get("MODEL"))
+    except targets.Error as e:
+        raise Error(f"MODEL: {e}") from None
+    try:
+        # the board's broadcast: the model's, else the firmware's (model_id.json), else vm.toml's
+        # firmware.broadcast (BROADCAST)
+        p.broadcast = targets.board_broadcast(p.target, fw, env.get("BROADCAST"), p.model)
     except targets.Error as e:
         raise Error(f"BROADCAST: {e}") from None
     if env.get("COUNTRY"):
@@ -486,7 +497,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
 
         try:
             p.country = countries.parse(env["COUNTRY"])
-            board = countries.check(fw, p.target, p.country, tree, p.broadcast)
+            board = countries.check(fw, p.target, p.country, tree, p.broadcast, p.model)
         except countries.Error as e:
             raise Error(f"COUNTRY: {e}") from None
         if board and board.names.get(p.country):
@@ -546,7 +557,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         "headless" if targets.release(p.target).always_layers == targets.WEBOS_LAYERS else "",
     )
     try:
-        tv_mem = int(env.get("MEM") or nvm.board_ram(p.target, tree, p.broadcast))
+        tv_mem = int(env.get("MEM") or nvm.board_ram(p.target, tree, p.broadcast, p.model))
     except (targets.Error, OSError, ValueError) as e:
         raise Error(str(e)) from None
     # -m: the TV's RAM, and qemu-user's own on top of it (vmsettings.guest_ram_mib). What webOS is
@@ -1011,7 +1022,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             raise Error(f"MAC={env['MAC']}: six hex octets with colons, unicast")
         append_net += f" webos.ethaddr={mac}"
     else:
-        mac = guest_mac(p.target, tree, p.broadcast)
+        mac = guest_mac(p.target, tree, p.broadcast, p.model)
     if env.get("SERIAL"):
         if not re.fullmatch(r"[0-9A-Z]{1,16}", env["SERIAL"]):
             raise Error(f"SERIAL={env['SERIAL']}: 1 to 16 upper-case letters and digits")
@@ -1301,7 +1312,9 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # MAC (macadr=, ethaddr=) and serial; then ours. (Its readers take the first 512 bytes.)
     if targets.release(p.target).board_in_kernel:
         try:
-            board = nvm.board_words(p.target, p.tree or paths.TREE, p.broadcast, debug_mode)
+            board = nvm.board_words(
+                p.target, p.tree or paths.TREE, p.broadcast, debug_mode, p.model
+            )
         except OSError as e:
             raise Error(f"board.cmdline: {e}") from None
         subst = {
@@ -1319,7 +1332,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
 
     try:
         gpu_res = env.get("GPU_RES") or nvm.board_graphic(
-            p.target, p.tree or paths.TREE, p.broadcast
+            p.target, p.tree or paths.TREE, p.broadcast, p.model
         )
     except (targets.Error, OSError) as e:
         raise Error(str(e)) from None
@@ -1610,12 +1623,12 @@ def bridge_id(n):
     return "disks" if n == 1 else f"disks{n}"
 
 
-def guest_mac(target, tree=paths.TREE, broadcast=None):
+def guest_mac(target, tree=paths.TREE, broadcast=None, model=None):
     """The board MAC (the target's board.cmdline's ethaddr=, which tvservice and libdile_crypto
     read; SimpleSmart's MBoot passes it as macadr=) of the target. Comment lines are not the
     cmdline's: one may name webos.ethaddr= in passing."""
     try:
-        with open(tree.src(targets.board_cmdline_src(target, broadcast))) as f:
+        with open(tree.src(targets.board_cmdline_src(target, broadcast, model))) as f:
             for line in f:
                 if line.lstrip().startswith("#"):
                     continue
@@ -1943,6 +1956,7 @@ def prepare_nvm(p, say):
         say,
         broadcast=p.broadcast,
         debug_mode=debug_mode,
+        model=p.model,
     )
 
 

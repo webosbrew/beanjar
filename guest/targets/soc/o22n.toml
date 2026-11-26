@@ -8,4 +8,6 @@
 
 base = "o22"
 broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emulator/board-dvb.cmdline" }
+# o22's OLED Flex is a W22O set (the models DB lists only W22O OTA ids for 42LX3QPUA)
+model_boards = {}
 mic = false

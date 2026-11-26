@@ -10,6 +10,11 @@ board_cmdline = "/etc/emulator/board-atsc.cmdline"
 # US/ATSC by the same generators and the USA RMM group 2 (board-atsc.cmdline); a VM whose
 # vm.toml says firmware.broadcast "dvb" boots the global C2, OLED55C21LA (board-dvb.cmdline).
 broadcast_boards = { atsc = "/etc/emulator/board-atsc.cmdline", dvb = "/etc/emulator/board-dvb.cmdline", arib = "/etc/emulator/board-arib.cmdline" }
+# The 42" OLED Flex, 42LX3QPUA, runs W22O's global firmware too (the models DB: the US C2's OTA
+# ids) and is the one set of it with the gaming LED micom (led_micom_bus); a VM boots it with
+# vm.toml's firmware.model (board-lx3q-atsc.cmdline says how it is derived). The models DB's
+# markets for it are the US and Canada: a US board.
+model_boards = { "42LX3QPUA" = { broadcast = "atsc", board = "/etc/emulator/board-lx3q-atsc.cmdline" } }
 # The Japanese board's terrestrial tuner: its firmware (legacy-broadcast-arib through
 # libdil_tu_plugin's DIL_TU_ChangeTransMedia and DIL_TU_SetPLL) sets DTV_DELIVERY_SYSTEM to
 # SYS_ISDBT (8) on frontend 0, which must be among the frontend's systems; the ISDB-T special data
@@ -43,6 +48,9 @@ lgemu = [
 light_bus = 1
 # TMF882X_SENSOR_N: channel 1 in the same tables
 tof_bus = 1
+# GAMING_LED_MICOM: channel 0 in the same tables (W22O 04.40.93 to 43.21.89, W23O, W24G), 8-bit
+# slave 0x12; a board whose tool type is LX3Q has it (targets.led_micom_dev)
+led_micom_bus = 0
 thermal = true
 # The board's model, OLED55C21LA (the C2, W22O: mullet, number1, ponytail and queue all boot
 # it), has the far-field microphone: the C2 service manual's IR & EYE board carries the

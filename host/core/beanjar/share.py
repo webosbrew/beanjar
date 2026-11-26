@@ -341,6 +341,7 @@ def assemble(
     qemu_arm=None,
     qemu_aarch64=None,
     emmc=None,
+    model=None,
 ):
     """Make RUN_DIR/share/host afresh and RUN_DIR/share/out if it is missing (the module's doc), with
     the boot.conf of the firmware target (chip, release) and its layers (resolve_layers' Layers,
@@ -348,8 +349,8 @@ def assemble(
     part_nodes: the eMMC partitions' nodes, qemu.part_nodes; vm: the VM's own module parameters,
     targets.boot_conf's; files: {name: path}, the files made from the firmware that the modules read
     as /host/<name>, targets.derived_files; fw, broadcast: the firmware directory and the board's
-    broadcast standard, targets.boot_conf's; qemu_arm: the interpreter of a USERLAND=qemu-user
-    guest, paths.Tree.qemu_arm, put as /host/qemu-arm and named in boot.conf's USERLAND;
+    broadcast standard, targets.boot_conf's; model: the retail model whose board the VM boots, if
+    it chose one; qemu_arm: the interpreter of a USERLAND=qemu-user guest, paths.Tree.qemu_arm, put as /host/qemu-arm and named in boot.conf's USERLAND;
     qemu_aarch64: its 64-bit ARM one on the x86-64 guest kernel, paths.Tree.qemu_aarch64, put as
     /host/qemu-aarch64 and named in USERLAND_AARCH64; emmc: firmware.updatable's whole-disk
     /dev/mmcblk0 plan, targets.boot_conf's)."""
@@ -379,6 +380,7 @@ def assemble(
                 "qemu-user" if qemu_arm else "native",
                 bool(qemu_arm and qemu_aarch64),
                 emmc,
+                model,
             )
         )
     binds = []

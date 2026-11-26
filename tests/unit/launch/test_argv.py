@@ -1607,7 +1607,7 @@ class ArgvTest(unittest.TestCase):
         country = os.path.join(run, "share", "vm", "etc", "emulator", "country")
         checked = []
 
-        def check(fw, target, code, tree=None, broadcast=None):
+        def check(fw, target, code, tree=None, broadcast=None, model=None):
             checked.append(code)
             if code != "CAN":
                 raise countries.Error(f"country {code!r} is not one of this board's: CAN, USA")

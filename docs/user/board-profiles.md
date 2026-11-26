@@ -54,6 +54,32 @@ set of this build. The VM starts again by itself, and the second boot keeps the 
 normally. Spacebuns' `getSystemInfo` `boardType` is empty on the US
 board, where the European board gives `O22N2_DVB_EU`.
 
+## Boot another model of the chip
+
+A few sets run the same firmware as the chip's default board but have hardware of their own. The
+`model` setting boots the firmware as one of them, while the VM is off:
+
+```sh
+beanjar config set tv1 model=42LX3QPUA
+beanjar config unset tv1 model
+```
+
+The value is the retail model name; the chip's soc file lists the models it has a board of
+(`model_boards`, `guest/targets/soc/<chip>.toml`), and any other is refused with that list. The
+model's board decides the broadcast standard: a `broadcast` of another standard, or a firmware of
+another, is refused. `unset` returns to the board of the broadcast standard. As with `broadcast`,
+change it only with fresh TV state (`beanjar wipe <vm>`): the EEPROM's factory records were made for
+the old board.
+
+| Chip | Firmware | Model | Board | What differs |
+| --- | --- | --- | --- | --- |
+| o22 | W22O (global) | 42LX3QPUA, the 42" OLED Flex (US) | `board-lx3q-atsc.cmdline` | tool type LX3Q and the `Bendable` word, which start the lighting service; the gaming LED micom (lgemu `ledmicom`) |
+
+The Flex's board is the US C2's line from the firmware's own tables with the Flex's tool options:
+`host/tools/research/model-config.py` derives the same `ToolOpt=` for 42LX3QPUA from W22O 13.30.56,
+33.31.68 and 43.21.89 (the 42" panel and tool type 43, LX3Q, in word 1; the rest the firmware's
+defaults); the board file says where each value comes from.
+
 ## Choose the TV's country
 
 A board is a model of one country group: its `countryGrp=` is the `grpCode` of one RMM group of

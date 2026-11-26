@@ -28,7 +28,7 @@ wrong types, missing required keys, a `base` or partition map that does not exis
 | File | What it holds | Python name |
 |---|---|---|
 | `<chip>-<release>.toml` | one target: its model codes, those still in bring-up, whether it was ever booted (`tested`), its own flags, and its own rows where its firmware line differs | `MODELS`, `BRING_UP`, `TARGETS`, `TARGET_SOCS`, `TARGET_RELEASES` |
-| `soc/<chip>.toml` | the SoC: board command line and broadcast boards, SoC module parameters, lgemu devices, the model's hardware facts | `SOCS`, `Soc` |
+| `soc/<chip>.toml` | the SoC: board command line, broadcast boards and other retail models' boards (`model_boards`, a VM's `model`), SoC module parameters, lgemu devices, the model's hardware facts | `SOCS`, `Soc` |
 | `release/<release>.toml` | the release: paks and mounts, state and NVM disks, the EEPROM layout, init system, platform and version, always-used layers, peripheral modules | `RELEASES`, `Release` |
 | `partmap/<name>.toml` | a partition map assembled for releases whose own is stale, named for the first row that uses it | `PartmapLayout` |
 

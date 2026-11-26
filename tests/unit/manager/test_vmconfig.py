@@ -326,6 +326,44 @@ def test_broadcast(path, tmp_path):
             vmconfig.read(path)
 
 
+def test_model(path, tmp_path):
+    """firmware.model: the retail model whose board the VM boots (MODEL), one of its chip's
+    model_boards where the manifest tells the chip, of the firmware's and broadcast's standard."""
+    base = {"firmware": {"directory": "firmware"}}
+    assert "model" not in vmconfig.decode(base)
+    assert "MODEL" not in vmsettings.launcher_env(vmconfig.decode(base))
+    cfg = vmconfig.decode(dict(base, firmware={"directory": "firmware", "model": "42LX3QPUA"}))
+    assert vmsettings.launcher_env(cfg)["MODEL"] == "42LX3QPUA"
+    with pytest.raises(core.Error, match="must be a string"):
+        vmconfig.decode(dict(base, firmware={"directory": "firmware", "model": 42}))
+    fw = tmp_path / "firmware"
+    fw.mkdir()
+    manifest = fw / "manifest.toml"
+    path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "42LX3QPUA"\n')
+    assert vmconfig.read(path)["model"] == "42LX3QPUA"  # no manifest: the launcher's
+    manifest.write_text('name = "x"\nchip = "o22"\nrelease = "ponytail"\n')
+    assert vmconfig.read(path)["model"] == "42LX3QPUA"
+    manifest.write_text('name = "x"\nchip = "o22n"\nrelease = "number1"\n')
+    with pytest.raises(
+        core.Error,
+        match="firmware.model: o22n-number1 has no board for model '42LX3QPUA' "
+        r"\(it has no model to choose\)",
+    ):
+        vmconfig.read(path)
+    manifest.write_text('name = "x"\nchip = "o22"\nrelease = "ponytail"\n')
+    path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "OLED65C2PUA"\n')
+    with pytest.raises(core.Error, match=r"no board for model 'OLED65C2PUA' \(it has: 42LX3QPUA\)"):
+        vmconfig.read(path)
+    # the model's standard is its board's: another broadcast, or firmware, is refused
+    path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "42LX3QPUA"\nbroadcast = "dvb"\n')
+    with pytest.raises(core.Error, match="model '42LX3QPUA' is a atsc set, not dvb"):
+        vmconfig.read(path)
+    path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "42LX3QPUA"\n')
+    with mock.patch.object(paths, "model_id", return_value={"region": "ARIB"}):
+        with pytest.raises(core.Error, match="is a atsc set, but the firmware is 'arib'"):
+            vmconfig.read(path)
+
+
 @pytest.fixture
 def broken_vm(tmp_path):
     """A library with a VM `tv` whose in-place firmware (manifest chip lm21u: no broadcast board, and
@@ -354,6 +392,24 @@ def test_configure_refuses_bad_broadcast(broken_vm):
         lib.configure("tv", prepare=False, broadcast="dvb")
     assert e.value.key == "broadcast"
     assert toml.read_text() == before
+
+
+def test_configure_model(broken_vm):
+    """configure checks model against the firmware before it saves (lm21u has no model to choose);
+    on a chip that has the model it is saved in upper case, and an empty value unsets it."""
+    lib, toml = broken_vm
+    before = toml.read_text()
+    with pytest.raises(
+        core.Error, match="firmware.model: lm21u-kisscurl has no board for model"
+    ) as e:
+        lib.configure("tv", prepare=False, model="42LX3QPUA")
+    assert e.value.key == "model"
+    assert toml.read_text() == before
+    other = str(toml.parent.parent.parent.parent / "fw2")
+    lib.configure("tv", prepare=False, fw=other, model="42lx3qpua")
+    assert lib.vm("tv").config["model"] == "42LX3QPUA"
+    lib.configure("tv", prepare=False, model="")
+    assert "model" not in lib.vm("tv").config
 
 
 def test_configure_fixes_saved_bad_broadcast(broken_vm):

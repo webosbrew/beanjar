@@ -70,9 +70,9 @@ def _json(root, path):
         raise Error(f"the firmware's {path}: {e}") from None
 
 
-def board(fw, target, tree=paths.TREE, broadcast=None):
+def board(fw, target, tree=paths.TREE, broadcast=None, model=None):
     """The Board of the firmware directory fw's target, on the board of broadcast standard
-    broadcast (targets.board_broadcast's). Error where the firmware's data does not say."""
+    broadcast (targets.board_broadcast's), or of the retail model model (targets.board_model). Error where the firmware's data does not say."""
     if targets.platform(target) != "webOS":
         raise Error(f"{targets.platform(target)} has no country setting (webOS only)")
     if targets.release(target, fw).init_system != "systemd":
@@ -82,7 +82,9 @@ def board(fw, target, tree=paths.TREE, broadcast=None):
         )
     try:
         words = dict(
-            w.split("=", 1) for w in lls.board_cmdline(target, tree, broadcast).split() if "=" in w
+            w.split("=", 1)
+            for w in lls.board_cmdline(target, tree, broadcast, model=model).split()
+            if "=" in w
         )
     except lls.Error as e:
         raise Error(str(e)) from None
@@ -137,10 +139,10 @@ def board(fw, target, tree=paths.TREE, broadcast=None):
     raise Error(f"no RMM group of the firmware has the board's countryGrp={grp}")
 
 
-def check(fw, target, country, tree=paths.TREE, broadcast=None):
+def check(fw, target, country, tree=paths.TREE, broadcast=None, model=None):
     """country (alpha-3, upper case) against the board's countries (board): the Board, or Error
     naming the board's countries and, for a country of another group, that group and block."""
-    b = board(fw, target, tree, broadcast)
+    b = board(fw, target, tree, broadcast, model)
     if country in b.countries:
         return b
     std = broadcast or "/".join(BLOCKS[b.block])

@@ -14,6 +14,7 @@ from collections.abc import Mapping
 FIELDS = {
     "fw": ("firmware", "directory"),
     "broadcast": ("firmware", "broadcast"),
+    "model": ("firmware", "model"),
     "country": ("firmware", "country"),
     "debug_mode": ("firmware", "debug_mode"),
     "updatable": ("firmware", "updatable"),
@@ -132,6 +133,7 @@ def decode(doc):
         "mitm_flow_bytes",
         "created",
         "broadcast",
+        "model",
         "country",
     ):
         if key in cfg and not isinstance(cfg[key], str):
@@ -214,14 +216,15 @@ def peek(path, names):
 
 
 def read(path, default=None, check_broadcast=True):
-    """vm.toml's settings. check_broadcast False leaves out the check of firmware.broadcast against
-    the firmware (check_firmware_broadcast), so a VM holding a bad value can still be read and fixed."""
+    """vm.toml's settings. check_broadcast False leaves out the check of firmware.broadcast and
+    firmware.model against the firmware (check_firmware_broadcast), so a VM holding a bad value can
+    still be read and fixed."""
     doc = _load(path)
     if doc is None:
         return default
     try:
         cfg = decode(doc)
-        if cfg.get("broadcast") and check_broadcast:
+        if (cfg.get("broadcast") or cfg.get("model")) and check_broadcast:
             _check_broadcast(path, cfg)
         return cfg
     except Exception as exc:
@@ -236,13 +239,15 @@ def _check_broadcast(path, cfg):
     from .core import vm_firmware
 
     fw = vm_firmware(os.path.dirname(os.path.abspath(path)), cfg.get("fw"))[0]
-    check_firmware_broadcast(fw, cfg["broadcast"])
+    check_firmware_broadcast(fw, cfg.get("broadcast"), cfg.get("model"))
 
 
-def check_firmware_broadcast(fw, broadcast):
-    """firmware.broadcast against the firmware directory fw (targets.board_broadcast): a standard its
-    chip has a board for, and the firmware's own where it names one (its model_id.json). A firmware
-    whose target its manifest does not tell is left to the launcher, which checks the same."""
+def check_firmware_broadcast(fw, broadcast, model=None):
+    """firmware.broadcast and firmware.model against the firmware directory fw
+    (targets.board_broadcast, targets.board_model): a standard its chip has a board for, a retail
+    model its chip has a board of (Soc.model_boards) of that standard, and the firmware's own
+    standard where it names one (its model_id.json). A firmware whose target its manifest does not
+    tell is left to the launcher, which checks the same."""
     from . import targets, paths
 
     if not os.path.isfile(os.path.join(fw, paths.MANIFEST)):
@@ -251,8 +256,13 @@ def check_firmware_broadcast(fw, broadcast):
         target = paths.firmware_target(fw)
     except (ValueError, OSError):
         return
+    if model:
+        try:
+            targets.board_model(target, fw, broadcast, model)
+        except targets.Error as e:
+            _fail(f"firmware.model: {e}", "model")
     try:
-        targets.board_broadcast(target, fw, broadcast)
+        targets.board_broadcast(target, fw, broadcast, model)
     except targets.Error as e:
         _fail(f"firmware.broadcast: {e}", "broadcast")
 

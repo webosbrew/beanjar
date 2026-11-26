@@ -283,6 +283,7 @@ DEFAULT_DEBUG_MODE = "debug"
 SETTINGS = {
     "fw": "FW",
     "broadcast": "BROADCAST",
+    "model": "MODEL",
     "country": "COUNTRY",
     "mem": "MEM",
     "smp": "SMP",
@@ -324,6 +325,15 @@ SETTING_HELP = {
         "the firmware's own, else the chip's default (US where it ships on US models)",
         "boot a global firmware as that broadcast standard's model",
         "the firmware's own, else the chip's default",
+    ),
+    "model": (
+        "MODEL",
+        "the board of the broadcast standard (broadcast=)",
+        "boot the firmware as another retail model of its chip, one whose hardware differs from "
+        "the default board's (W22O: 42LX3QPUA, the OLED Flex, with its gaming LED lighting); "
+        "refused where the chip has no board of it, naming those it has; its broadcast standard "
+        "is the model's; wipe the TV state when changing it",
+        "the board of the broadcast standard",
     ),
     "country": (
         "CODE",

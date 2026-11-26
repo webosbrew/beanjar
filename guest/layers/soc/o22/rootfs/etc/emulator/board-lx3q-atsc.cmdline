@@ -1,0 +1,32 @@
+# 42LX3QPUA, the US 42-inch OLED Flex (tool type LX3Q), on W22O's shared global firmware: the
+# models DB lists the same OTA ids for it as for the US C2 (HE_DTV_W22O_AFABATPU, _AFABATAA).
+# A VM boots it with vm.toml's firmware.model "42LX3QPUA" (targets.Soc.model_boards).
+# host/tools/research/model-config.py on W22O 33.31.68 derives it from the firmware's own tables,
+# with the US C2's choices (countryType US, countryGrp 2, OLED, UD, 120 Hz panel and SoC output,
+# 1920x1080 graphic plane, DDR 2.5G: queue's device profile for this tool type is
+# TV_2022_o22_W22O_OLED_2.5G_LX3Q):
+# hwopt: the US C2's line; the hwopt digits hold no model of their own.
+# ToolOpt: LLS's default record (libmodelOpt), as the C2's, with word 1's panelInch 9
+# (PANELINCH_STR_ENUM "42") and toolType 43 (PANELTOOL_STRING_ENUM "LX3Q"); the other words are
+# the firmware's defaults, as nothing in the firmware ties them to this model.
+# Bendable: lxboot (13.30.56, 33.31.68) appends the bare word for a panel strap combination (a GPIO
+# strap at 1 and the model-option ADC digits 1,1 or 1,2), not for ToolOpt; INFERRED the Flex's board
+# has them, since only this tool type's configd layer says the screen is bendable. webOS 7 and 8's
+# lightingcontroller.sh starts the service on it, and rollingscreen runs in its real mode (its
+# MICOM_ROLL_MTR reads fail and are only logged). No WirelessAV (libdile_gpio's other GPIO map)
+# and no transparentOLED (lightingcontroller's ambient LED path).
+# Identity is synthetic; A0 is a virtual revision.
+ethaddr=02:00:00:12:34:56
+devtmpfs.mount=1
+countryGrp=2
+modelopt=000000000
+hwopt=500210000105102000
+ToolOpt=1049961:19:1314890:65:14738995:825285385
+modelName=42LX3QPUA
+debugMode=3
+serialNum=000RAXX00001
+chip=O22A0
+tvregion=ATSC
+emmc_size=0x1d2000000
+Bendable
+cmdEnd

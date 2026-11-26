@@ -510,7 +510,9 @@ def vm_broadcast(vm):
     from . import targets
 
     try:
-        return targets.board_broadcast(vm.target(), vm.firmware_dir(), vm.config.get("broadcast"))
+        return targets.board_broadcast(
+            vm.target(), vm.firmware_dir(), vm.config.get("broadcast"), vm.config.get("model")
+        )
     except (Error, targets.Error, OSError):
         return None
 

@@ -170,7 +170,7 @@ def test_configure_country(vm):
     lib, toml = vm
     calls = []
 
-    def check(fw, target, country, tree=None, broadcast=None):
+    def check(fw, target, country, tree=None, broadcast=None, model=None):
         calls.append((target, country, broadcast))
         if not (country == "CAN" and broadcast == "atsc"):
             raise countries.Error(f"country {country!r} is not one of this board's: CAN, MEX, USA")

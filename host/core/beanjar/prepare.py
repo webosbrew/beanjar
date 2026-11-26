@@ -62,7 +62,8 @@ class Error(Exception):
 
 
 class Job:
-    """One VM's preparation: its firmware (fw, fw_name, target, broadcast), its board settings
+    """One VM's preparation: its firmware (fw, fw_name, target, broadcast, model: the retail model
+    whose board it boots, targets.board_model, None for the broadcast standard's), its board settings
     (serial, debug_mode: DEBUG_MODES' number or None), its FW_CACHE (cache), its directory (vm_dir:
     RUN_DIR's parent) and the tree."""
 
@@ -74,7 +75,12 @@ class Job:
         except ValueError as e:
             raise Error(str(e)) from None
         try:
-            self.broadcast = targets.board_broadcast(self.target, self.fw, env.get("BROADCAST"))
+            self.model = targets.board_model(
+                self.target, self.fw, env.get("BROADCAST"), env.get("MODEL")
+            )
+            self.broadcast = targets.board_broadcast(
+                self.target, self.fw, env.get("BROADCAST"), self.model
+            )
             self.debug_mode = nvm.debug_mode_number(env.get("DEBUG_MODE"))
         except (targets.Error, nvm.Error) as e:
             raise Error(str(e)) from None
@@ -112,6 +118,8 @@ class Job:
                 s.inputs,
                 s.light_bus,
                 s.tof_bus,
+                # only where set: the records of the other chips' VMs stay current
+                *((s.led_micom_bus,) if s.led_micom_bus is not None else ()),
             )
         )
         return {
@@ -125,13 +133,16 @@ class Job:
             "debug_mode": self.debug_mode,
             # only where set: the records of VMs without one stay current
             **({"country": self.country} if self.country else {}),
+            **({"model": self.model} if self.model else {}),
             "tables": hashlib.sha256(rows.encode()).hexdigest()[:16],
         }
 
     def base_files(self):
         """The files every record depends on: the firmware's paks and the board's board.cmdline."""
         out = [os.path.join(self.fw, n) for n in targets.firmware_paks(self.fw)]
-        out.append(self.tree.src(targets.board_cmdline_src(self.target, self.broadcast)))
+        out.append(
+            self.tree.src(targets.board_cmdline_src(self.target, self.broadcast, self.model))
+        )
         return out
 
     def stamps(self, files):
@@ -266,6 +277,7 @@ def _make(job, new, say):
         debug_mode=job.debug_mode,
         country=job.country or None,
         cache=job.cache,
+        model=job.model,
     )
     record = {"eeprom_note": chip.note}
     # the panel's refresh (viewer and beanjar-vnc output rate, vm-info.toml's panel_hz): the
@@ -283,7 +295,7 @@ def _make(job, new, say):
     if rel.nvm.lls or rel.nvm.local_key:
         try:
             record["local_key"] = lls.local_key(
-                job.fw, job.target, job.tree, broadcast=job.broadcast
+                job.fw, job.target, job.tree, broadcast=job.broadcast, model=job.model
             )
         except (lls.Error, OSError, subprocess.SubprocessError, ValueError, KeyError) as e:
             raise Error(f"the model's local key option: {e}") from None
@@ -305,7 +317,9 @@ def _make(job, new, say):
     # the board's own light sensor: where its tool options say the set has one (targets.light_dev)
     if targets.soc(job.target).light_bus is not None:
         try:
-            eye = lls.digital_eye(job.fw, job.target, job.tree, broadcast=job.broadcast)
+            eye = lls.digital_eye(
+                job.fw, job.target, job.tree, broadcast=job.broadcast, model=job.model
+            )
         except (lls.Error, OSError, subprocess.SubprocessError, ValueError, KeyError) as e:
             raise Error(f"the model's light sensor option: {e}") from None
         light = targets.light_dev(job.target, eye)
@@ -314,12 +328,26 @@ def _make(job, new, say):
     # the board's own ToF motion sensor: where its tool options name one (targets.tof_dev)
     if targets.soc(job.target).tof_bus is not None:
         try:
-            sensor = lls.motion_sensor(job.fw, job.target, job.tree, broadcast=job.broadcast)
+            sensor = lls.motion_sensor(
+                job.fw, job.target, job.tree, broadcast=job.broadcast, model=job.model
+            )
         except (lls.Error, OSError, subprocess.SubprocessError, ValueError, KeyError) as e:
             raise Error(f"the model's motion sensor option: {e}") from None
         tof = targets.tof_dev(job.target, sensor)
         if tof:
             record["derived_params"].setdefault("lgemu", []).append("i2c_dev=" + tof)
+    # the board's own gaming LED micom: where its tool type is one whose sets carry it
+    # (targets.led_micom_dev)
+    if targets.soc(job.target).led_micom_bus is not None:
+        try:
+            tool = lls.tool_type(
+                job.fw, job.target, job.tree, broadcast=job.broadcast, model=job.model
+            )
+        except (lls.Error, OSError, subprocess.SubprocessError, ValueError, KeyError) as e:
+            raise Error(f"the model's tool type: {e}") from None
+        micom = targets.led_micom_dev(job.target, tool)
+        if micom:
+            record["derived_params"].setdefault("lgemu", []).append("i2c_dev=" + micom)
     # lls.cache_dir keys its run on these helpers where the firmware's LLS is a nyx module
     nyx = bool(rel.nvm.lls) and lls.Root(job.fw, job.target, job.tree).read(lls.NYX_LLS) is not None
     record["inputs"] = job.inputs()
@@ -342,7 +370,7 @@ def ensure(job, say=print, why=None):
 
 def vm_env(vm_dir):
     """The environment a library VM's preparation needs (its vm.toml's FW, FW_CACHE, SERIAL,
-    BROADCAST, DEBUG_MODE, and its RUN_DIR)."""
+    BROADCAST, MODEL, DEBUG_MODE, and its RUN_DIR)."""
     from . import core
 
     try:

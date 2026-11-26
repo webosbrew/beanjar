@@ -2117,6 +2117,8 @@ class ManagerTest(unittest.TestCase):
         self.assertIsNone(self.cli_json("config", "unset", "a", "listen")["listen"])
         # broadcast has an unset: the firmware's own, else the chip's default board
         self.assertIsNone(self.cli_json("config", "unset", "a", "broadcast")["broadcast"])
+        # model too: the board of the broadcast standard
+        self.assertIsNone(self.cli_json("config", "unset", "a", "model")["model"])
         self.assertIn("mac_prefix", self.cli_json("library", "config", "show"))
         self.assertEqual(
             self.cli_json("host", "config", "show"),

@@ -107,6 +107,12 @@ SocModule = namedtuple("SocModule", "name params derived", defaults=(None,))
 # on the same global firmware, and the Japanese one). Where board_cmdline is one of them, that
 # standard is the chip's default (default_broadcast): a chip whose global firmware ships on US
 # retail models boots its US model by default (US_BOARD, its broadcast_boards with EU_BOARD).
+# model_boards: ((model, broadcast, board_cmdline), ...), the board of another retail model of the
+# chip that a VM chooses by name (vm.toml's firmware.model, board_model), in the same layer: a set
+# of the same firmware whose hardware differs from the default board's (W22O's OLED Flex,
+# 42LX3QPUA, with its tool type LX3Q). Its broadcast standard is the board's region; the VM's
+# board_broadcast is then that one. Its values come from the firmware's own tables, as the
+# broadcast boards' do.
 # touch: the board's model has a touch screen (the StanbyME's USB HID panel), a fact of that
 # model's hardware like mic: the launcher attaches QEMU's virtio-multitouch-pci, which the
 # initramfs's touch bridge gives webOS as LG's panel (guest/initramfs/src/README.md, "Touch screen").
@@ -125,6 +131,10 @@ SocModule = namedtuple("SocModule", "name params derived", defaults=(None,))
 # (8-bit slave 0x82) in the chip's firmwares; None where they have none. Whether a board has the
 # sensor is its own tool option supportMotionDetectSensor (lls.motion_sensor, prepared: tof_dev),
 # not the chip's (lgemu tof.c).
+# led_micom_bus: the I2C channel of the OLED Flex's gaming LED micom, libdile_i2c's GAMING_LED_MICOM
+# row (8-bit slave 0x12) in the chip's firmwares; None where they have none. Whether a board has the
+# micom is its own tool type (lls.tool_type, prepared: led_micom_dev), not the chip's (lgemu
+# ledmicom.c).
 # broadcast_params: ((broadcast, module, (words...)), ...): a module's parameters on the board of
 # that broadcast standard (board_broadcast; None: the chip's default, default_broadcast), each
 # word replacing the module's own word of the same name: the tuners of a US model differ from a
@@ -132,8 +142,25 @@ SocModule = namedtuple("SocModule", "name params derived", defaults=(None,))
 Soc = namedtuple(
     "Soc",
     "board_cmdline modules continent inputs lgemu board_src pointer_wakeup mic "
-    "broadcast_boards touch portrait light_bus thermal tof_bus broadcast_params",
-    defaults=(None, None, (), None, False, False, (), False, False, None, False, None, ()),
+    "broadcast_boards touch portrait light_bus thermal tof_bus broadcast_params led_micom_bus "
+    "model_boards",
+    defaults=(
+        None,
+        None,
+        (),
+        None,
+        False,
+        False,
+        (),
+        False,
+        False,
+        None,
+        False,
+        None,
+        (),
+        None,
+        (),
+    ),
 )
 # Prefer the US model: a chip whose global firmware (model_id.json region GLOBAL) ships on US retail
 # models, the models DB's models of its OTA ID, boots a US model of that firmware by default
@@ -420,6 +447,21 @@ def _broadcast_boards(where, v):
     return out
 
 
+def _model_boards(where, v):
+    if not isinstance(v, dict):
+        _fail(where, f"expected a table, not {v!r}")
+    out = []
+    for m, b in v.items():
+        t = _table(
+            f"{where}.{m}",
+            b,
+            {"broadcast": _one_of(BROADCASTS), "board": _str},
+            ("broadcast", "board"),
+        )
+        out.append((m, t["broadcast"], t["board"]))
+    return tuple(out)
+
+
 def _bytes(where, v):
     return bytes(_list(where, v, _byte))
 
@@ -428,12 +470,14 @@ SOC_KEYS = {
     "base": _str,
     "board_cmdline": _str,
     "broadcast_boards": _broadcast_boards,
+    "model_boards": _model_boards,
     "board_src": _str,
     "continent": _ints(3),
     "inputs": _bytes,
     "lgemu": _strs,
     "light_bus": _int,
     "tof_bus": _int,
+    "led_micom_bus": _int,
     "thermal": _bool,
     "mic": _bool,
     "touch": _bool,
@@ -967,23 +1011,27 @@ def soc(target):
     return TARGET_SOCS.get(tuple(target)) or SOCS[target[0]]
 
 
-def board_cmdline(target, broadcast=None):
+def board_cmdline(target, broadcast=None, model=None):
     """The guest path of the board.cmdline a VM of the target boots for the broadcast standard
-    broadcast (board_broadcast): the one of Soc.broadcast_boards for it, else Soc.board_cmdline."""
+    broadcast (board_broadcast): the board of the retail model model (board_model: one of
+    Soc.model_boards) when given, else the one of Soc.broadcast_boards for broadcast, else
+    Soc.board_cmdline."""
     s = soc(target)
+    if model:
+        return _model_board(target, model)[1]
     return (
         dict(s.broadcast_boards).get(broadcast, s.board_cmdline) if broadcast else s.board_cmdline
     )
 
 
-def board_cmdline_src(target, broadcast=None):
-    """The checkout-relative path of the target's board.cmdline (board_cmdline: for broadcast, in the
+def board_cmdline_src(target, broadcast=None, model=None):
+    """The checkout-relative path of the target's board.cmdline (board_cmdline: for broadcast or model, in the
     layer of Soc.board_src, the chip's soc layer by default), which the launcher reads on the
     host."""
     s = soc(target)
     return os.path.join(
         s.board_src or os.path.join("guest", "layers", "soc", target[0], "rootfs"),
-        board_cmdline(target, broadcast).lstrip("/"),
+        board_cmdline(target, broadcast, model).lstrip("/"),
     )
 
 
@@ -1046,13 +1094,53 @@ def default_broadcast(target):
     return next((b for b, path in s.broadcast_boards if path == s.board_cmdline), None)
 
 
-def board_broadcast(target, fw=None, broadcast=None):
+def models(target):
+    """The retail models a VM of the target may choose (Soc.model_boards), in the table's order."""
+    return tuple(m for m, _, _ in soc(target).model_boards)
+
+
+def _model_board(target, model):
+    """(broadcast, board_cmdline) of the retail model model's board (Soc.model_boards); an Error
+    naming the chip's models for one it has no board of."""
+    for m, b, path in soc(target).model_boards:
+        if m == model:
+            return b, path
+    have = models(target)
+    raise Error(
+        f"{name(target)} has no board for model {model!r}"
+        + (f" (it has: {', '.join(have)})" if have else " (it has no model to choose)")
+    )
+
+
+def board_model(target, fw=None, broadcast=None, model=None):
+    """The retail model whose board a VM of the target boots, or None for the board of its
+    broadcast standard (board_broadcast): model, the VM's choice (vm.toml's firmware.model: W22O's
+    OLED Flex, "42LX3QPUA"), which must be one of the chip's Soc.model_boards and whose standard
+    must be the one the firmware directory fw and broadcast name, where they name one."""
+    if not model:
+        return None
+    b, _ = _model_board(target, model)
+    own = firmware_broadcast(fw)
+    if own and own != b:
+        raise Error(
+            f"model {model!r} is a {b} set, but the firmware is {own!r} (its model_id.json)"
+        )
+    if broadcast and broadcast != b:
+        raise Error(f"model {model!r} is a {b} set, not {broadcast}: unset broadcast for it")
+    return model
+
+
+def board_broadcast(target, fw=None, broadcast=None, model=None):
     """The broadcast standard whose board a VM of the target boots (board_cmdline), worked out once
-    per launch: the firmware directory fw's own (firmware_broadcast: its model_id.json region), else
+    per launch: the standard of model's board where the VM chooses a model (board_model), else the
+    firmware directory fw's own (firmware_broadcast: its model_id.json region), else
     broadcast, the VM's choice for a global firmware (vm.toml's firmware.broadcast: W22O's global
     queue as the global C2, "dvb"), else the chip's default (default_broadcast: "atsc" for a chip
     that boots its US model). broadcast must be one the chip has a board of (Soc.broadcast_boards)
     and, where the firmware names one, that one."""
+    if model:
+        board_model(target, fw, broadcast, model)
+        return _model_board(target, model)[0]
     own = firmware_broadcast(fw)
     if not broadcast:
         return own or default_broadcast(target)
@@ -1571,6 +1659,23 @@ def tof_dev(target, motion_sensor):
     return f"tof:{bus}:0x{TOF_ADDR:02x}"
 
 
+# The gaming LED micom's 7-bit address (libdile_i2c's GAMING_LED_MICOM, 8-bit slave 0x12) and the
+# tool types whose sets carry it: the 2022 OLED Flex, LX3Q, whose configd profile gamingTV
+# (check_product.sh) has ledLighting, which starts lightingcontroller (docs/research/led-lighting.md).
+LED_MICOM_ADDR = 0x09
+LED_MICOM_TOOL_TYPES = ("LX3Q",)
+
+
+def led_micom_dev(target, tool_type):
+    """lgemu's i2c_dev entry for the board's gaming LED micom, "ledmicom:bus:addr", where its tool
+    type (lls.tool_type) is one whose sets carry it and the chip's firmware has its channel
+    (Soc.led_micom_bus); None otherwise."""
+    bus = soc(target).led_micom_bus
+    if bus is None or tool_type not in LED_MICOM_TOOL_TYPES:
+        return None
+    return f"ledmicom:{bus}:0x{LED_MICOM_ADDR:02x}"
+
+
 def _thermal(target):
     """lgemu's /proc/thermalinfo parameters for the target (Soc.thermal, IDDQ_RELEASE), else none."""
     if not soc(target).thermal:
@@ -1658,6 +1763,7 @@ def boot_conf(
     userland="native",
     aarch64=False,
     emmc=None,
+    model=None,
 ):
     """The text of /host/boot.conf, which guest/initramfs/rootfs/init
     sources and carries out: NAME="value" lines, lists space-separated. layers: the layers the
@@ -1667,7 +1773,8 @@ def boot_conf(
     the guest's /dev/mmcblk0pN nodes (qemu.part_nodes, from the VM's partinfo disk). vm: the VM's
     own parameters of a module, {module: (words...)}, after those (the TEE's tee_huk=). fw: the
     firmware directory, whose paks it names (release). broadcast: the board's broadcast standard
-    (board_broadcast), which picks the board (board_cmdline). userland: qemu-user adds USERLAND,
+    (board_broadcast), which picks the board (board_cmdline), or model, the retail model's
+    (board_model). userland: qemu-user adds USERLAND,
     which has init run the 32-bit programs under /host/qemu-arm (docs/dev/architecture/qemu-user-bridge.md);
     aarch64 (the x86-64 guest kernel's) adds USERLAND_AARCH64, the 64-bit ones under /host/qemu-aarch64.
     emmc (firmware.updatable on): (overlay serial, dm-linear table words of the whole-disk
@@ -1803,7 +1910,7 @@ def boot_conf(
         ),
         (
             "BOARD_CMDLINE",
-            _words([board_cmdline(target, broadcast)]),
+            _words([board_cmdline(target, broadcast, model)]),
             "the bootloader's parameters",
         ),
         (

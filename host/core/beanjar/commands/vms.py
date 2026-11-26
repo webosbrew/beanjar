@@ -88,8 +88,9 @@ def unit_row(name, props):
         fw = os.path.join(tree.top, tree.firmware(fw)[0])
         target = paths.firmware_target(fw)
         platform = targets.platform_title(target)
+        model = env.get("MODEL")
         mem = mem or nvm.board_ram(
-            target, tree, targets.board_broadcast(target, fw, env.get("BROADCAST"))
+            target, tree, targets.board_broadcast(target, fw, env.get("BROADCAST"), model), model
         )
     except Exception:  # a firmware this tree does not boot: shown as far as it is known
         pass

@@ -191,12 +191,12 @@ def with_debug_mode(words, number):
     return [f"debugMode={number}" if w.startswith("debugMode=") else w for w in words]
 
 
-def board_params(target, tree=paths.TREE, broadcast=None):
-    """{name: value} of the target's board.cmdline (for the broadcast standard broadcast:
-    targets.board_cmdline), as guest/initramfs/rootfs/init puts it on /proc/cmdline
+def board_params(target, tree=paths.TREE, broadcast=None, model=None):
+    """{name: value} of the target's board.cmdline (for the broadcast standard broadcast, or the
+    retail model model: targets.board_cmdline), as guest/initramfs/rootfs/init puts it on /proc/cmdline
     (comment lines left out, the first NAME= of each; the debugMode of the VM's setting is
     board_words'.)"""
-    path = tree.src(targets.board_cmdline_src(target, broadcast))
+    path = tree.src(targets.board_cmdline_src(target, broadcast, model))
     out = {}
     with open(path) as f:
         for text in f:
@@ -209,26 +209,26 @@ def board_params(target, tree=paths.TREE, broadcast=None):
     return out
 
 
-def board_words(target, tree=paths.TREE, broadcast=None, debug_mode=None):
+def board_words(target, tree=paths.TREE, broadcast=None, debug_mode=None, model=None):
     """The words of the target's board.cmdline in its order (comment lines left out): what
     guest/initramfs/rootfs/init appends to /proc/cmdline, or the launcher puts first on the kernel's
     command line (Release.board_in_kernel). debug_mode: the number the VM's debug_mode setting
     gives its debugMode= word (DEBUG_MODES), else the board's own."""
-    with open(tree.src(targets.board_cmdline_src(target, broadcast))) as f:
+    with open(tree.src(targets.board_cmdline_src(target, broadcast, model))) as f:
         words = [w for text in f if not text.startswith("#") for w in text.split()]
     return with_debug_mode(words, debug_mode)
 
 
-def board_graphic(target, tree=paths.TREE, broadcast=None):
+def board_graphic(target, tree=paths.TREE, broadcast=None, model=None):
     """ "WxH" of the target's model's graphic (OSD) plane: its board.cmdline's hwopt= (targets.graphic_resolution)."""
     return "%dx%d" % targets.screen_resolution(
-        target, board_params(target, tree, broadcast).get("hwopt")
+        target, board_params(target, tree, broadcast, model).get("hwopt")
     )
 
 
-def board_ram(target, tree=paths.TREE, broadcast=None):
+def board_ram(target, tree=paths.TREE, broadcast=None, model=None):
     """The RAM in MiB of the target's model: its board.cmdline's hwopt= DDR size (targets.ram)."""
-    return targets.ram(target, board_params(target, tree, broadcast).get("hwopt"))
+    return targets.ram(target, board_params(target, tree, broadcast, model).get("hwopt"))
 
 
 def tool_options(record, nvm, text):
@@ -497,6 +497,7 @@ def new_chip(
     debug_mode=None,
     country=None,
     cache=None,
+    model=None,
 ):
     """The Chip a blank EEPROM of the VM gets: the firmware's own default records programmed as a
         factory would (program; on a release whose chip lowlevelstorage owns, Nvm.lls, LLS's own
@@ -520,6 +521,7 @@ def new_chip(
                 broadcast=broadcast,
                 debug_mode=debug_mode,
                 country=country,
+                model=model,
             )
             with open(os.path.join(cdir, "eeprom.img"), "rb") as f:
                 image = f.read()
@@ -532,12 +534,12 @@ def new_chip(
         mode = (
             debug_mode
             if debug_mode is not None
-            else int(board_params(target, tree, broadcast)["debugMode"])
+            else int(board_params(target, tree, broadcast, model)["debugMode"])
         )
         return Chip(factory_chip(fw, nvm, mode, cache), None, None)
     if nvm.records is None:
         return Chip(None, None, None)
-    board = board_params(target, tree, broadcast)
+    board = board_params(target, tree, broadcast, model)
     block = nvm.debug_block_offset is not None
     try:
         data = records_file(fw, nvm) if block else None
@@ -566,7 +568,15 @@ def new_chip(
 
 
 def prepare(
-    img, target, chip, serial=None, tree=paths.TREE, say=print, broadcast=None, debug_mode=None
+    img,
+    target,
+    chip,
+    serial=None,
+    tree=paths.TREE,
+    say=print,
+    broadcast=None,
+    debug_mode=None,
+    model=None,
 ):
     """Bring the EEPROM image img (a state disk, SIZE bytes) to what the VM's board says before it
     starts, from the VM's prepared Chip (new_chip) and the board; nothing of the firmware is read.
@@ -579,12 +589,14 @@ def prepare(
     sync_debug_status and sync_debug_block."""
     nvm = targets.release(target).nvm
     if nvm.lls:
-        prepare_lls(img, target, chip, tree, say, broadcast=broadcast, debug_mode=debug_mode)
+        prepare_lls(
+            img, target, chip, tree, say, broadcast=broadcast, debug_mode=debug_mode, model=model
+        )
         return
     if nvm.records is None:
-        _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast)
+        _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast, model)
         return
-    board = board_params(target, tree, broadcast)
+    board = board_params(target, tree, broadcast, model)
     serial = serial or board.get("serialNum", "")
     with open(img, "r+b") as f:
         image = bytearray(f.read(SIZE))
@@ -645,7 +657,7 @@ def factory_chip(fw, nvm, mode, cache=None):
         raise Error(f"EEPROM factory fields from {pak}.pak:{path}: {e}") from None
 
 
-def _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast):
+def _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast, model=None):
     """prepare for a release whose EEPROM the emulator does not program with records (NetCast 4.5,
     SimpleSmart). A blank image (the launcher's new sparse file) becomes a new chip as it leaves
     the factory: chip.image (the factory fields, factory_chip), else every byte 0xFF, and the
@@ -671,21 +683,21 @@ def _prepare_unrecorded(img, nvm, chip, say, debug_mode, target, tree, broadcast
         mode = (
             debug_mode
             if debug_mode is not None
-            else int(board_params(target, tree, broadcast)["debugMode"])
+            else int(board_params(target, tree, broadcast, model)["debugMode"])
         )
         if sync_debug_status(image, nvm, mode, say):
             f.seek(0)
             f.write(image)
 
 
-def applied_debug_mode(img, target, tree, broadcast):
+def applied_debug_mode(img, target, tree, broadcast, model=None):
     """The debugMode= number the chip image img holds: the one its sidecar img.debugmode says
     prepare_lls last put there, else the board's own (what a chip is made with)."""
     try:
         with open(img + ".debugmode") as f:
             return int(f.read())
     except (OSError, ValueError):
-        return int(board_params(target, tree, broadcast)["debugMode"])
+        return int(board_params(target, tree, broadcast, model)["debugMode"])
 
 
 def _remember_debug_mode(img, number):
@@ -698,7 +710,9 @@ def _remember_debug_mode(img, number):
         f.write(f"{number}\n")
 
 
-def prepare_lls(img, target, chip, tree=paths.TREE, say=print, broadcast=None, debug_mode=None):
+def prepare_lls(
+    img, target, chip, tree=paths.TREE, say=print, broadcast=None, debug_mode=None, model=None
+):
     """A blank image of a chip lowlevelstorage owns (Nvm.lls)
     becomes a new chip as a set leaves the factory: chip.image, erased with LLS's own default
     records of the board (new_chip: beanjar/lls.py, which runs the firmware's code on the board's
@@ -717,9 +731,9 @@ def prepare_lls(img, target, chip, tree=paths.TREE, say=print, broadcast=None, d
             wanted = (
                 debug_mode
                 if debug_mode is not None
-                else int(board_params(target, tree, broadcast)["debugMode"])
+                else int(board_params(target, tree, broadcast, model)["debugMode"])
             )
-            if applied_debug_mode(img, target, tree, broadcast) == wanted:
+            if applied_debug_mode(img, target, tree, broadcast, model) == wanted:
                 return
             try:
                 new = lls.debug_status_item(image, chip.records or "")

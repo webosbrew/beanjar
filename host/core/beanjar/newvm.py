@@ -266,8 +266,9 @@ def cap_memory(lib, tree, target, fw_dir, cfg, out):
             out(f"warning: --mem {given} MiB is more than this host can give ({cap} MiB)")
         return
     try:
-        broadcast = targets.board_broadcast(target, fw_dir, cfg.get("broadcast"))
-        default = nvm.board_ram(target, tree, broadcast)
+        model = cfg.get("model")
+        broadcast = targets.board_broadcast(target, fw_dir, cfg.get("broadcast"), model)
+        default = nvm.board_ram(target, tree, broadcast, model)
     except (targets.Error, OSError):
         return
     if default and default > cap:

@@ -111,7 +111,7 @@ def vm_firmware(vm_dir, fw=None):
 
 
 # The settings a VM's prepared board data depends on (prepare.Job): a change prepares it again.
-BOARD_SETTINGS = ("fw", "broadcast", "debug_mode", "serial", "country")
+BOARD_SETTINGS = ("fw", "broadcast", "model", "debug_mode", "serial", "country")
 
 
 def prepare_board_data(lib, vm_dir, out=None, force=False):
@@ -277,7 +277,7 @@ class VM:
         target = self.target()
         try:
             broadcast = targets.board_broadcast(
-                target, self.firmware_dir(), self.config.get("broadcast")
+                target, self.firmware_dir(), self.config.get("broadcast"), self.config.get("model")
             )
         except targets.Error as error:
             raise Error(str(error), "broadcast") from None
@@ -381,10 +381,11 @@ class VM:
             return self.config["mem"]
         try:
             target = self.target()
+            model = self.config.get("model")
             broadcast = targets.board_broadcast(
-                target, self.firmware_dir(), self.config.get("broadcast")
+                target, self.firmware_dir(), self.config.get("broadcast"), model
             )
-            return nvm.board_ram(target, paths.Tree(self.library.repo), broadcast)
+            return nvm.board_ram(target, paths.Tree(self.library.repo), broadcast, model)
         except (Error, targets.Error, OSError):
             return None
 
@@ -1029,7 +1030,7 @@ class Library:
 
     def configure(self, name, out=None, prepare=True, **values):
         """Change settings (SETTINGS' keys) of a VM that is off; None leaves one as it is. A change
-        of what its board data comes from (the firmware, broadcast, debug mode or serial) has it
+        of what its board data comes from (the firmware, broadcast, model, debug mode or serial) has it
         prepared again (prepare.py; unless prepare is False: the caller does, as the GUI does in the
         background, a Settings dialog that waits for it would freeze); out(line) gets what that says."""
         vm = self.vm(name)
@@ -1098,6 +1099,11 @@ class Library:
             elif k == "broadcast" and not str(v).strip():
                 cfg.pop(k, None)  # the firmware's own, else the chip's default board
                 continue
+            elif k == "model":
+                if not str(v).strip():
+                    cfg.pop(k, None)  # the board of the broadcast standard
+                    continue
+                v = str(v).strip().upper()
             elif k == "country":
                 if not str(v).strip():
                     cfg.pop(k, None)  # the board's own; a TV state keeps the one it has
@@ -1137,10 +1143,11 @@ class Library:
         d, _cache = vm_firmware(vm.dir, cfg.get("fw"))
         if not paths.root_pak(d):
             raise Error(f"firmware {d}: no rootfs.pak or root.pak", "fw")
-        if cfg.get("broadcast"):
-            vmconfig.check_firmware_broadcast(d, cfg["broadcast"])  # before anything is saved
+        if cfg.get("broadcast") or cfg.get("model"):
+            # before anything is saved
+            vmconfig.check_firmware_broadcast(d, cfg.get("broadcast"), cfg.get("model"))
         if cfg.get("country") and any(
-            values.get(k) is not None for k in ("country", "fw", "broadcast")
+            values.get(k) is not None for k in ("country", "fw", "broadcast", "model")
         ):
             # the board's country group, after the broadcast standard that picks the board
             try:
@@ -1150,7 +1157,8 @@ class Library:
                     target,
                     cfg["country"],
                     paths.Tree(self.repo),
-                    targets.board_broadcast(target, d, cfg.get("broadcast")),
+                    targets.board_broadcast(target, d, cfg.get("broadcast"), cfg.get("model")),
+                    cfg.get("model"),
                 )
             except (ValueError, OSError, targets.Error) as e:
                 raise Error(f"country: {e}", "country") from None
