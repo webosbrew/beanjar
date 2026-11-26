@@ -186,6 +186,7 @@ def test_done_waits_for_minimal_boot_done(tmp_path):
 
 def test_done_wiring():
     unit = (LAYER / "etc/systemd/system/emulator-firstuse-done.service").read_text()
+    assert "ConditionPathExists=!/var/luna/preferences/ran-firstuse" in unit
     assert "ExecStart=/usr/sbin/emulator-firstuse-done" in unit
     assert "After=settings-service.service" in unit
     wants = (
@@ -546,10 +547,11 @@ echo "luna-send $*" >> "{calls}"
     return {"PATH": f"{bin_dir}:/usr/bin:/bin", "EMULATOR_ROOT": str(root)}, calls
 
 
-def test_data_migrator_waits_then_runs_the_stock_script(tmp_path):
-    """data-migrator.service runs the stock script, untouched (a new state's first boot is FirstUse,
-    whose data-migrator-init.sh records the version), only once the hub lists surfacemanager's
-    showSpinner and the list has stopped changing."""
+def test_data_migrator_first_boot(tmp_path):
+    """Without platform_upgrade/version (a blank state started in Normal by the headless layer),
+    data-migrator.service records the version (writeVersion) and runs no /run, as FirstUse's boot
+    does on a set; with it, the stock script runs, untouched (a VM that keeps its state). Both
+    start only once the hub lists surfacemanager's showSpinner and the list has stopped changing."""
     dropin = (
         LAYER / "etc/systemd/system/data-migrator.service.d/emulator-firstuse.conf"
     ).read_text()
@@ -564,8 +566,18 @@ def test_data_migrator_waits_then_runs_the_stock_script(tmp_path):
     # the list changes three times, then stays the same for two more polls
     assert lines[:6] == ["hub"] * 6
     assert lines[6].startswith("logger ") and "settled after" in lines[6]
-    assert lines[7:] == ["stock"]
-    assert not any("writeVersion" in ln for ln in lines)
+    assert lines[7] == "luna-send -n 1 -f luna://com.webos.service.datamigrator/writeVersion {}"
+    assert lines[8].startswith("logger ")
+    assert "stock" not in lines
+
+    calls.unlink()
+    version = tmp_path / "mnt/lg/cmn_data/platform_upgrade/version"
+    version.parent.mkdir(parents=True)
+    version.write_text('{"previous_version":"11","current_version":"11"}')
+    subprocess.run(["sh", str(script)], env=env, check=True)
+    lines = calls.read_text().splitlines()
+    assert lines[-1] == "stock"
+    assert "hub" in lines and "settled after" in lines[-2]
 
 
 def test_data_migrator_wait_times_out(tmp_path):
@@ -578,7 +590,7 @@ def test_data_migrator_wait_times_out(tmp_path):
     polls = lines.count("hub")
     assert 5 < polls <= 13
     assert "not settled after 120 s" in lines[polls]
-    assert lines[polls + 1] == "stock"
+    assert lines[polls + 1].endswith("/writeVersion {}")
 
 
 @pytest.mark.parametrize(
@@ -602,4 +614,44 @@ def test_data_migrator_no_wait(tmp_path, readiness, replies, logged):
     assert lines.count("hub") == (1 if logged else 0)
     if logged:
         assert logged in lines[1]
-    assert lines[-1] == "stock"
+    assert any(ln.endswith("/writeVersion {}") for ln in lines)
+
+
+HEADLESS = TOP / "guest/layers/headless/rootfs"
+
+
+@pytest.mark.parametrize("normal, existing", [(True, False), (True, True), (False, False)])
+def test_headless_marker(tmp_path, normal, existing):
+    # headless with the normal layer: ran-firstuse before bootd (FirstUse's UI cannot run there);
+    # without the normal layer the set stays in FirstUse; an existing marker is kept
+    marker = tmp_path / "var/luna/preferences/ran-firstuse"
+    if normal:
+        (tmp_path / "usr/sbin").mkdir(parents=True)
+        (tmp_path / "usr/sbin/emulator-firstuse-done").write_text("")
+    if existing:
+        marker.parent.mkdir(parents=True)
+        marker.write_text("kept")
+    subprocess.run(
+        ["/bin/sh", str(HEADLESS / "usr/sbin/emulator-headless-firstuse")],
+        env={"PATH": "/usr/bin:/bin", "EMULATOR_ROOT": str(tmp_path)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+    )
+    assert marker.exists() == normal
+    if normal:
+        assert marker.read_text() == ("kept" if existing else "")
+
+
+def test_headless_marker_wiring():
+    unit = (HEADLESS / "etc/systemd/system/emulator-headless-firstuse.service").read_text()
+    assert "After=mount-readwrite.service" in unit and "Before=bootd.service" in unit
+    wants = (
+        HEADLESS / "etc/systemd/system/mount-readwrite.service.d/emulator-headless-firstuse.conf"
+    ).read_text()
+    assert "Wants=emulator-headless-firstuse.service" in wants
+    job = (HEADLESS / "etc/init/emulator-headless-firstuse.conf").read_text()
+    lines = [ln.strip() for ln in job.splitlines() if not ln.startswith("#")]
+    assert "start on starting bootd or starting utp" in lines
+    assert "task" in lines
+    assert "exec /usr/sbin/emulator-headless-firstuse" in lines

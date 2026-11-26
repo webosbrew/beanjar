@@ -10,12 +10,13 @@
 #
 # bootd runs in its real-TV modes (hostname LGSmartTV, bootTarget "hardware"); the real-TV
 # modes of the WT1H boot. What is expected depends on the mode:
-#   FirstUse completed by the normal layer (LAYERS=normal,gl or normal,headless): a new state boots
-#     in FirstUse; the layer's emulator-firstuse-done calls bootManager/firstUseDone as the
-#     FirstUse app once bootd has sent minimal-boot-done, and bootd writes ran-firstuse, launches
-#     the last input app and goes on to boot-done, bootStatus normal, in the same boot. Later boots
-#     are Normal: boot-done. Either way the check first waits up to WAIT seconds (default 150) for
-#     boot-done and wants bootStatus normal.
+#   The normal layer (LAYERS=normal,gl): a new state boots in FirstUse; the layer's
+#     emulator-firstuse-done calls bootManager/firstUseDone as the FirstUse app once bootd has sent
+#     minimal-boot-done, and bootd writes ran-firstuse, launches the last input app and goes on to
+#     boot-done, bootStatus normal, in the same boot. Later boots are Normal: boot-done. With
+#     normal,headless the headless layer makes ran-firstuse before bootd (FirstUse's UI cannot run
+#     without a compositor), so every boot is Normal. Either way the check first waits up to WAIT
+#     seconds (default 150) for boot-done and wants bootStatus normal.
 #   FirstUse (no normal layer): bootd launches the web app com.palm.app.firstuse,
 #     waits for it to come to the foreground, waits for the CPU to go idle and sends
 #     minimal-boot-done. That is where it stays until the user finishes first use (firstUseDone).
@@ -88,7 +89,7 @@ check "hostname is not an emulator's" sh -c '! hostname | grep -q qemu'
 check "bootTarget hardware" sh -c "echo '$status' | grep -q '\"bootTarget\":\"hardware\"'"
 if [ $normal = 1 ]; then
 	check "boot-done" sh -c "echo '$status' | grep -q '\"boot-done\":true'"
-	check "bootStatus normal (FirstUse completed)" sh -c "echo '$status' | grep -q '\"bootStatus\":\"normal\"'"
+	check "bootStatus normal" sh -c "echo '$status' | grep -q '\"bootStatus\":\"normal\"'"
 elif echo "$status" | grep -q '"bootStatus":"firstUse"'; then
 	check "firstUse: com.palm.app.firstuse launched" sh -c "echo '$status' | grep -q '\"firstAppLaunched\":true'"
 	if [ $gl = 1 ]; then

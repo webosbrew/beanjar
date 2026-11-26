@@ -1,0 +1,21 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The headless layer with the normal layer: setup is finished from the start, before bootd looks.
+# FirstUse is a UI flow: bootd launches the web app com.palm.app.firstuse and waits for it in the
+# foreground, and headless has no WebAppMgr or compositor, so those waits can only run out (three
+# launches of 30 s with no reply, 30 s for the foreground, and after firstUseDone 30 s for Live
+# TV: boot-done 195 s after core-boot-done on a ROCK Pi, W22O 43.21.89). So with the normal layer
+# (its usr/sbin/emulator-firstuse-done, which completes FirstUse with graphics) this makes
+# /var/luna/preferences/ran-firstuse, the mark bootd's mode choice reads, and bootd boots in Normal;
+# the normal layer's own setup writes (emulator-firstuse) still run. Without the normal layer the
+# set is left in FirstUse, as stock. A state that has the marker is left as it is.
+ROOT=${EMULATOR_ROOT:-}
+[ -e "$ROOT/usr/sbin/emulator-firstuse-done" ] || exit 0
+DIR=$ROOT/var/luna/preferences
+mkdir -p "$DIR" || exit 1
+[ -e "$DIR/ran-firstuse" ] && exit 0
+: > "$DIR/ran-firstuse" || exit 1
+sync
+# The marker is what counts: a log line that cannot be sent (no syslog socket) is no failure
+logger -s "[headless] ran-firstuse made: Normal without FirstUse's UI" || :

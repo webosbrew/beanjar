@@ -8,7 +8,9 @@
 # (W16P to W25P, and WT1H and W15M by their call graph) then writes ran-firstuse itself, runs the
 # release's completion call (factorymanager doFirstUseCompleted from webOS 5, tv.power's on
 # webOS 4), launches the last input app (W16P: Live TV) and goes on to rest-boot-done, boot-done
-# and bootStatus normal in the same boot. A state that has the marker is left alone.
+# and bootStatus normal in the same boot. A state that has the marker is left alone: one past
+# FirstUse, or one the headless layer starts in Normal (usr/sbin/emulator-headless-firstuse there:
+# FirstUse's UI cannot run without a compositor and WebAppMgr).
 #
 # Waited for first, each up to WAIT seconds:
 # - the set's country in settings (option country an alpha-3, not "other"): devicereset's from

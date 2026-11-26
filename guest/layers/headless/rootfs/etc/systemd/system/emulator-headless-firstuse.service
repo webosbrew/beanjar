@@ -1,0 +1,12 @@
+# The headless layer's ran-firstuse with the normal layer (usr/sbin/emulator-headless-firstuse):
+# started with mount-readwrite.service, which mounts the state's partitions, after it and before
+# bootd reads the marker.
+[Unit]
+Description=Emulator: headless, setup finished before bootd
+DefaultDependencies=no
+After=mount-readwrite.service
+Before=bootd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/emulator-headless-firstuse

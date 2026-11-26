@@ -5,6 +5,8 @@
 [Unit]
 Description=Emulator: the normal layer's end of FirstUse
 After=settings-service.service
+# a state past FirstUse, or started in Normal by the headless layer (emulator-headless-firstuse)
+ConditionPathExists=!/var/luna/preferences/ran-firstuse
 
 [Service]
 Type=oneshot

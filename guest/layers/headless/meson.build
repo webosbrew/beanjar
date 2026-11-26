@@ -8,6 +8,9 @@
 #                                    lsm-ready and stays up, the jobs that need it left manual
 #   rootfs/usr/bin/com.webos.app.inputcommon   Live TV, which sends bootd's banner-ready and ends
 #   rootfs/etc/systemd/system/       systemd: webapp-mgr not started (needs a GPU)
+#   rootfs/usr/sbin/emulator-headless-firstuse  with the normal layer, ran-firstuse before bootd
+#                                    (FirstUse's UI cannot run headless), from a task job
+#                                    (Upstart) or a unit before bootd.service (systemd)
 #   usr/bin/surface-manager          systemd releases only (the release's init_system): the
 #                                    compositor stand-in src/surface-manager.c, under the stock
 #                                    unit and LG's role for that path
