@@ -1481,7 +1481,8 @@ no version negotiation.
 
 **Versions across machines.** A command sent to a host runs that host's code, which may be another
 commit's than this machine's. Before it, `beanjar` asks the host's `beanjar --version --json` (kept
-for 60 seconds in the shared connection's directory) and compares it with its own: the host's
+for 60 seconds in the shared connection's directory; a host that does not answer within 10 seconds
+is skipped, and kept so for the minute) and compares it with its own: the host's
 `beanjar` with this one, and the host's guest payload with the host's `beanjar`. Each difference is
 one `beanjar: warning: ...` on stderr, naming both versions and the command that fixes it, and with
 `--json` an item of a `drift` array added to the command's object (its result on stdout, or its
@@ -1506,9 +1507,12 @@ uri = "ssh://user@vmhost"
 scheme. A host's name is 1 to 32 letters, digits, `_` or `-`; `local` is this machine and cannot be
 a host. The host must be in `known_hosts` already (ssh never asks).
 
-**SSH.** `ssh -T -o BatchMode=yes -o ConnectTimeout=5 -o ControlMaster=auto -o ControlPersist=60
+**SSH.** `ssh -T -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o
+ServerAliveCountMax=3 -o ControlMaster=auto -o ControlPersist=60
 -o ControlPath=$XDG_RUNTIME_DIR/beanjar-ssh/%C [-p PORT] [-l USER] -- HOST beanjar ARGS`
 (`/tmp/beanjar-ssh-UID` without `XDG_RUNTIME_DIR`), so the calls of one minute share a connection.
+A host that goes silent (down, its sshd stuck) ends the connection, the shared one included, after
+15 seconds without an answer, so no call waits on a dead connection.
 Arguments are quoted for the remote shell. The remote's stderr (progress) is passed on, each line
 prefixed `HOST: `; with `--json` it is passed as it is, after the command ends. A remote exit status
 of 0, 1 or 2 is ours; ssh's own failure (status 255) and a missing `beanjar` (127) are an error
@@ -1517,11 +1521,13 @@ naming the host.
 **list.** With hosts configured, `list` asks every host in parallel and lists this machine's VMs
 first, then each host's in config order. Text has a `HOST` column first (`local` for this machine);
 `--json` rows always have a `host` key (`null` for this machine's, the host's name otherwise). A
+local VM whose firmware does not answer within 3 seconds (a collection on a network mount whose
+server is gone) is warned about once per collection and listed without its platform and RAM. A
 host is asked `list --local`: its own VMs only, never those of hosts it has itself, so a machine
 reached both directly and through another host (the PC managing the boards that the Pi also
 manages) is listed once, under its own name.
-A host that fails (unreachable, no `beanjar`, output that is not JSON, a non-zero status) is a
-`beanjar: warning: host NAME: REASON` on stderr and its VMs are left out; the exit status is 0
+A host that fails (unreachable, no `beanjar`, output that is not JSON, a non-zero status, no answer
+within 30 seconds) is a `beanjar: warning: host NAME: REASON` on stderr and its VMs are left out; the exit status is 0
 unless every source failed (then 1, with nothing on stdout). `--all` is forwarded, so it means each
 machine's whole `beanjar.slice`. `--local` asks no host and prints what `list` printed before
 hosts existed; `--host HOST` lists one host (`--host local` this machine). The GTK manager builds its

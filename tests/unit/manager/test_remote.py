@@ -191,7 +191,8 @@ class SshTest(Base):
     def test_argv(self):
         argv = remote.ssh_argv("ssh://me@pi:2222", ["show", "tv 1", "--json"], control="/run/c")
         self.assertEqual(argv[0], "ssh")
-        for opt in ("BatchMode=yes", "ConnectTimeout=5", "ControlMaster=auto", "ControlPersist=60",
+        for opt in ("BatchMode=yes", "ConnectTimeout=5", "ServerAliveInterval=5",
+                    "ServerAliveCountMax=3", "ControlMaster=auto", "ControlPersist=60",
                     "ControlPath=/run/c/%C"):  # fmt: skip
             self.assertIn(opt, argv)
         self.assertEqual(argv[argv.index("-p") + 1], "2222")
@@ -1620,3 +1621,47 @@ class QueryTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SilentFirmwareTest(unittest.TestCase):
+    def test_firmware_deadline(self):
+        """A VM whose firmware does not answer (a network mount whose server is gone) is listed
+        without its firmware's facts after FIRMWARE_DEADLINE, warned about once per collection, and
+        the next VM of that collection is not asked at all."""
+        import threading
+
+        from beanjar.commands import vms
+
+        gone = threading.Event()
+        asked = []
+
+        class VM:
+            config = {"mem": 1536}
+
+            def __init__(self, name):
+                self.name = name
+
+            def firmware_dir(self):
+                return "/net/fw/" + self.name
+
+            def platform_title(self):
+                asked.append(self.name)
+                gone.wait(10)
+                return "webOS 6"
+
+            touch = portrait = firmware_name = mem = guest_ram = platform_title
+
+        self.addCleanup(gone.set)
+        err = io.StringIO()
+        with (
+            mock.patch.object(vms, "FIRMWARE_DEADLINE", 0.2),
+            mock.patch.object(vms, "_silent_firmware", set()),
+            contextlib.redirect_stderr(err),
+        ):
+            first = vms.firmware_facts(VM("a"))
+            second = vms.firmware_facts(VM("b"))
+        expect = {"platform": "", "touch": False, "portrait": False, "mem": 1536, "guest_ram": None}
+        self.assertEqual(first, dict(expect, firmware="a"))
+        self.assertEqual(second, dict(expect, firmware="b"))
+        self.assertEqual(asked, ["a"], "the collection is not asked again")
+        self.assertEqual(err.getvalue().count("did not answer within 0.2 s"), 1)

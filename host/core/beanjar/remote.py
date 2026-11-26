@@ -28,8 +28,13 @@ _HOST = r"[A-Za-z0-9][A-Za-z0-9._-]*|\[[0-9A-Fa-f:.]+\]"
 URI_RE = re.compile(rf"ssh://(?:(?P<user>{_USER})@)?(?P<host>{_HOST})(?::(?P<port>[0-9]{{1,5}}))?")
 
 CONNECT_TIMEOUT = 5  # seconds to reach a host
+# a host gone silent (down, its sshd stuck): the connection, a shared master included, ends after
+# ALIVE_INTERVAL * ALIVE_COUNT seconds without an answer, so no call waits on it forever
+ALIVE_INTERVAL = 5
+ALIVE_COUNT = 3
+VERSION_TIMEOUT = 10  # seconds the version probe of a forwarded command may take (identity)
 PERSIST = 60  # seconds a shared connection stays open after its last use
-LIST_TIMEOUT = 90  # seconds a remote list (or a name probe) may take
+LIST_TIMEOUT = 30  # seconds a remote list (or a name probe) may take: then the host is left out
 REMOTE_PROGRAM = "beanjar"
 
 
@@ -150,6 +155,10 @@ def shell_argv(uri, command, control=None, tty=False):
         "BatchMode=yes",
         "-o",
         f"ConnectTimeout={CONNECT_TIMEOUT}",
+        "-o",
+        f"ServerAliveInterval={ALIVE_INTERVAL}",
+        "-o",
+        f"ServerAliveCountMax={ALIVE_COUNT}",
         "-o",
         "ControlMaster=auto",
         "-o",
@@ -338,7 +347,9 @@ def call_json(name, uri, argv, timeout=LIST_TIMEOUT):
 def identity(name, uri):
     """Host name's `beanjar --version --json` object (commands.common.version_info; an older beanjar
     gives {"name", "version"} only), or None when it cannot be asked or answers with no object.
-    Kept for PERSIST seconds in control_dir(), so that a run of commands asks once."""
+    Kept for PERSIST seconds in control_dir(), so that a run of commands asks once; a host that
+    does not answer within VERSION_TIMEOUT is kept as None too, so that it delays one command a
+    minute at most."""
     path = os.path.join(control_dir(), f"version-{name}.json")
     try:
         if time.time() - os.stat(path).st_mtime < PERSIST:
@@ -349,11 +360,11 @@ def identity(name, uri):
     except (OSError, ValueError):
         pass
     try:
-        info = call_json(name, uri, ["--version"], timeout=LIST_TIMEOUT)
+        info = call_json(name, uri, ["--version"], timeout=VERSION_TIMEOUT)
     except Error:
-        return None
+        info = None
     if not isinstance(info, dict):
-        return None
+        info = None
     try:
         with open(path + ".tmp", "w") as f:
             json.dump({"uri": uri, "info": info}, f)

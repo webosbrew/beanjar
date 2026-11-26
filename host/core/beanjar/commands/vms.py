@@ -15,11 +15,62 @@ from .forward import bare_new_name
 from .settings import settings_of, warn_mitm
 
 
+# seconds a VM's firmware may take to answer list (firmware_facts): a firmware collection on a
+# network mount whose server is gone must not hang the listing of every VM
+FIRMWARE_DEADLINE = 3
+_silent_firmware = set()  # the firmware directories' parents that did not answer, this process
+
+
+def firmware_facts(vm):
+    """What list reads from a VM's firmware (its target's platform, touch screen and portrait, the
+    manifest's name, the TV's RAM), in a daemon thread given FIRMWARE_DEADLINE seconds. A firmware
+    that does not answer (its collection on a network mount whose server is gone) is warned about
+    once per collection and listed without them, as a firmware this tree does not boot is."""
+    import threading
+
+    d = vm.firmware_dir()
+    parent = os.path.dirname(d.rstrip("/"))
+    fallback = {
+        "platform": "",
+        "touch": False,
+        "portrait": False,
+        "firmware": os.path.basename(d.rstrip("/")),
+        "mem": vm.config.get("mem"),
+        "guest_ram": None,
+    }
+    if parent in _silent_firmware:
+        return fallback
+    out = {}
+
+    def read():
+        out.update(
+            platform=vm.platform_title(),
+            touch=vm.touch(),
+            portrait=vm.portrait(),
+            firmware=vm.firmware_name(),
+            mem=vm.mem(),
+            guest_ram=vm.guest_ram(),
+        )
+
+    t = threading.Thread(target=read, daemon=True)
+    t.start()
+    t.join(FIRMWARE_DEADLINE)
+    if t.is_alive():
+        _silent_firmware.add(parent)
+        warn(
+            f"{vm.name}: its firmware {d} did not answer within {FIRMWARE_DEADLINE} s (a network "
+            "mount whose server is gone?): listed without its platform and RAM"
+        )
+        return fallback
+    return out
+
+
 def vm_row(vm):
     """A library VM as `list` shows it."""
     state, detail = vm.state(qmp=True)
     c = vm.config
     unit = vm.unit_name() if state != core.OFF else vmunits.vm_unit_name(vm.dir)
+    fw = firmware_facts(vm)
     return {
         "name": vm.name,
         "library": vm.library.root,
@@ -27,14 +78,14 @@ def vm_row(vm):
         "unit": unit,
         "state": state,
         "detail": detail,
-        "platform": vm.platform_title(),
-        "touch": vm.touch(),  # a touch screen: the web viewer sends its touches to it
-        "portrait": vm.portrait(),  # turns to portrait: the viewers turn the picture
+        "platform": fw["platform"],
+        "touch": fw["touch"],  # a touch screen: the web viewer sends its touches to it
+        "portrait": fw["portrait"],  # turns to portrait: the viewers turn the picture
         "fw": vm.firmware_dir(),
-        "firmware": vm.firmware_name(),
+        "firmware": fw["firmware"],
         "fw_external": vm.firmware_external(),
-        "mem": vm.mem(),  # the TV's RAM
-        "guest_ram": vm.guest_ram(),  # QEMU's -m: under qemu-user more (VM.guest_ram)
+        "mem": fw["mem"],  # the TV's RAM
+        "guest_ram": fw["guest_ram"],  # QEMU's -m: under qemu-user more (VM.guest_ram)
         "smp": c.get("smp"),
         "display": c.get("display", ""),
         "network": vmsettings.network_label(c.get("link"), c.get("mode")),

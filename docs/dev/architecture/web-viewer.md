@@ -630,8 +630,9 @@ failures do not replace the page with a disconnected message.
 The relay has no application-level idle deadline: `Server.rfb()` and `Server.stream()` wait for
 bytes or a socket/pipe close; `RfbPause` withholds picture updates under H.264 without closing
 RFB. The manager's `remote.attach()` inherits SSH stdio without a stream timeout;
-`ConnectTimeout=5` concerns connection setup, and `ControlPersist=60` concerns a master with no
-remaining sessions. A still or paused RFB connection can therefore be silent while audio stays
+`ConnectTimeout=5` concerns connection setup, `ServerAliveInterval=5` with `ServerAliveCountMax=3`
+ends a connection whose host has gone silent for 15 seconds, and `ControlPersist=60` concerns a
+master with no remaining sessions. A still or paused RFB connection can therefore be silent while audio stays
 busy. The server now sends RFB WebSocket pings after 20 seconds without inbound traffic;
 browsers answer with protocol pongs, without sending fake RFB input or waking the guest display.
 [Cloudflare documents idle WebSocket closure and recommends ping/pong](https://developers.cloudflare.com/network/websockets/#idle-timeout),
