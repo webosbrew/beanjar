@@ -21,8 +21,11 @@
    cursor once, scaled like the picture (16x16 at 1920x1080 is 8x8 at 960x540); pointer moves,
    frame requests and the guest's unchanged heartbeat packets send no further update. A padded
    cursor (cursor-control "padded") arrives cropped to its visible box with the hotspot moved; a
-   hidden one as a transparent 1x1 cursor. beanjar-vnc's vnc_cursors counts exactly those. In a
-   larger desktop a cursor over 128 pixels is shrunk to fit 128x128.
+   hidden one as a transparent 1x1 cursor; a translucent one ("translucent", alpha 64) keeps its
+   alpha as VMware's alpha cursor, where neatvnc has it, and is masked out entirely by the Cursor
+   pseudo-encoding. Over WebSocket a client asking as noVNC does gets VMware's cursor, or without
+   it the Cursor pseudo-encoding with red and blue swapped. beanjar-vnc's vnc_cursors counts
+   exactly those. In a larger desktop a cursor over 128 pixels is shrunk to fit 128x128.
    org.beanjar.Display1.Ir (the core's, on the VM's bus) sends a remote button's edges over IR; a
    button held by a client that leaves the bus is released.
 5. SIGTERM ends beanjar-vnc cleanly (exit 0, frames rendered).
@@ -158,6 +161,7 @@ class WebSocket:
 
 
 RSA_AES, RSA_AES256 = 5, 129
+VMWARE_CURSOR = 0x574D5664  # VMware's cursor pseudo-encoding (type 1: alpha)
 RSA_KEY = []  # the client's RSA key, made once
 
 
@@ -221,7 +225,10 @@ class RFB:
         user="check-vnc",
         cursor=False,
     ):
-        self.cursors = []  # (w, h, hot_x, hot_y, RGBX bytes, mask bytes) received
+        # (w, h, hot_x, hot_y, RGBX bytes, mask bytes) received; for VMware's alpha cursor
+        # (cursor="vmware", asked for before the Cursor pseudo-encoding, as noVNC does) RGBA bytes
+        # and no mask
+        self.cursors = []
         if isinstance(port, str):  # a unix socket's path (--unix)
             self.s = socket.socket(socket.AF_UNIX)
             self.s.settimeout(10)
@@ -259,7 +266,9 @@ class RFB:
             + struct.pack(">BBBBHHHBBBxxx", 32, 24, 0, 1, 255, 255, 255, 0, 8, 16)
         )
         # raw, and QEMU's extended key events; with cursor the Cursor pseudo-encoding
-        encodings = [0, -258] + ([-239] if cursor else [])
+        encodings = (
+            [0, -258] + ([VMWARE_CURSOR] if cursor == "vmware" else []) + ([-239] if cursor else [])
+        )
         self.s.sendall(
             struct.pack(">BxH", 2, len(encodings)) + struct.pack(f">{len(encodings)}i", *encodings)
         )
@@ -342,6 +351,12 @@ class RFB:
                     continue
                 if encoding == -239:  # a cursor: pixels, then a bit mask, rows padded to bytes
                     self.cursors.append((w, h, x, y, self.rx(w * h * 4), self.rx((w + 7) // 8 * h)))
+                    continue
+                if encoding == VMWARE_CURSOR:  # a type, a padding byte, R, G, B, A pixels
+                    kind = self.rx(2)[0]
+                    if kind != 1:
+                        fail(f"VMware cursor of type {kind}, not 1 (alpha)")
+                    self.cursors.append((w, h, x, y, self.rx(w * h * 4), None))
                     continue
                 if encoding != 0:
                     fail(f"unexpected encoding {encoding}")
@@ -571,6 +586,52 @@ def check_cursor(port, log):
     if len(client.cursors) != 3:
         fail(f"{len(client.cursors)} cursor updates, not 3")
     client.close()
+
+
+def check_alpha_cursor(port, log):
+    """A translucent cursor (LG's 16x16 at alpha 64): VMware's alpha cursor keeps its alpha; the
+    Cursor pseudo-encoding's 1-bit mask (alpha above half) drops all of it."""
+    with open(os.path.join(os.path.dirname(log), "cursor-control"), "w") as f:
+        f.write("translucent")
+    received = {}
+    for kind in ("vmware", True):
+        client = RFB(port, cursor=kind)
+        for _ in range(40):
+            client.frame()
+            if (
+                client.cursors
+                and client.cursors[-1][:2] == (8, 8)
+                and client.cursors[-1][4][3] < 255
+            ):
+                break
+            time.sleep(0.05)
+        received[kind] = client.cursors[-1]
+        client.close()
+    w, h, hx, hy, pixels, mask = received[True]
+    if (w, h) != (8, 8) or any(mask):
+        fail(
+            f"translucent cursor with the Cursor encoding: {w}x{h} mask {mask.hex()}, not 8x8 empty"
+        )
+    w, h, hx, hy, pixels, mask = received["vmware"]
+    if mask is not None:
+        print("cursor: neatvnc has no VMware cursor; a translucent one is lost to the 1-bit mask")
+        return
+    off = [
+        tuple(pixels[i : i + 4])
+        for i in range(0, len(pixels), 4)
+        if not (
+            abs(pixels[i + 3] - 64) <= 2
+            and all(abs(pixels[i + k] - c) <= 4 for k, c in enumerate((220, 80, 20)))
+        )
+    ]
+    if (w, h, hx, hy) != (8, 8, 0, 0) or off:
+        fail(
+            f"translucent VMware cursor {w}x{h} hotspot {hx},{hy}: {len(off)} pixels not "
+            f"(220, 80, 20) at alpha 64, e.g. {off[:2]}"
+        )
+    print(
+        f"cursor: a translucent one as VMware's alpha cursor, {w}x{h} at alpha 64 (the mask drops it)"
+    )
 
 
 def check_large(bus, tmp):
@@ -1103,23 +1164,33 @@ def main():
         wait_log(input_log, ["Keyboard.Press 48", "Keyboard.Release 48"])
         client.close()
         print("websocket: frame matches the core's render, a key reaches the core")
-        # noVNC reads a cursor's pixels as BGRX (beanjar-vnc's set_cursor): over WebSocket the
-        # cursor comes with red and blue swapped, so noVNC shows LG's (220, 80, 20) as such
-        client = RFB(ws_port, websocket=True, cursor=True)
+        # As noVNC asks: VMware's alpha cursor, LG's (220, 80, 20) as it is, where neatvnc has
+        # it; else the Cursor pseudo-encoding, whose pixels noVNC reads as BGRX (beanjar-vnc's
+        # set_cursor), so over WebSocket with red and blue swapped
+        client = RFB(ws_port, websocket=True, cursor="vmware")
         for _ in range(20):
             client.frame()
             if client.cursors:
                 break
             time.sleep(0.1)
-        if not client.cursors or client.cursors[-1][4][:3] != bytes((20, 80, 220)):
+        if not client.cursors:
+            fail("no websocket cursor")
+        vmware = client.cursors[-1][5] is None
+        want = bytes((220, 80, 20, 255)) if vmware else bytes((20, 80, 220))
+        if client.cursors[-1][4][: len(want)] != want:
             fail(
-                f"websocket cursor {client.cursors[-1][:4] if client.cursors else None} is not "
-                f"LG's with red and blue swapped: {client.cursors[-1][4][:3] if client.cursors else b''!r}"
+                f"websocket cursor {client.cursors[-1][:4]} ({'VMware' if vmware else 'Cursor'}) "
+                f"is {client.cursors[-1][4][:4]!r}, not {want!r}"
             )
         client.close()
-        print("websocket: the cursor has red and blue swapped, for noVNC")
+        print(
+            "websocket: the cursor as VMware's alpha cursor, colours as they are"
+            if vmware
+            else "websocket: the cursor (no VMware cursor in neatvnc) has red and blue swapped, for noVNC"
+        )
 
         check_cursor(port, log.name)
+        check_alpha_cursor(port, log.name)
 
         vnc.send_signal(signal.SIGTERM)
         rc = vnc.wait(timeout=10)
@@ -1127,9 +1198,9 @@ def main():
         text = open(log.name).read()
         if rc != 0 or "vnc_frames=" not in text:
             fail(f"beanjar-vnc exited {rc}: {text}")
-        # the start's hidden one, LG's, the padded one, the hidden one
-        if f"vnc_cursors={log_cursors(log.name)}" not in text or log_cursors(log.name) != 4:
-            fail(f"beanjar-vnc sent {log_cursors(log.name)} cursors, not 4: {text}")
+        # the start's hidden one, LG's, the padded one, the hidden one, the translucent one
+        if f"vnc_cursors={log_cursors(log.name)}" not in text or log_cursors(log.name) != 5:
+            fail(f"beanjar-vnc sent {log_cursors(log.name)} cursors, not 5: {text}")
         print(next(line for line in text.splitlines() if "vnc_frames=" in line))
         vnc = None
 

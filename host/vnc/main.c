@@ -6,13 +6,13 @@
  * windows and LG's cursor, in a surfaceless EGL context, with no display server; neatvnc
  * (its aml loop driven from the core's GLib main loop, one thread) encodes it for the clients,
  * only when it changes. LG's cursor is drawn into the picture at the VNC pointer; with
- * --native-cursor it goes to the clients as their own cursor (the Cursor pseudo-encoding, 1-bit
- * mask) instead. Keys go through the core's PC key map (Super is the remote's Home), the pointer
- * and the wheel to the core as the GTK viewer sends them. With --audio-local the core's mixed
- * audio (the guest's and the media's) goes to an owner-only unix socket as Opus or PCM (audio.c);
- * without it there is no audio. With --video-local the same composed frames go to an owner-only
- * unix socket as H.264 (video.c: NVENC, VA-API or x264 through libavcodec, or a V4L2 encoder),
- * for the web viewer.
+ * --native-cursor it goes to the clients as their own cursor instead (VMware's alpha cursor where
+ * neatvnc and the client have it, else the Cursor pseudo-encoding's 1-bit mask). Keys go through
+ * the core's PC key map (Super is the remote's Home), the pointer and the wheel to the core as the
+ * GTK viewer sends them. With --audio-local the core's mixed audio (the guest's and the media's)
+ * goes to an owner-only unix socket as Opus or PCM (audio.c); without it there is no audio. With
+ * --video-local the same composed frames go to an owner-only unix socket as H.264 (video.c:
+ * NVENC, VA-API or x264 through libavcodec, or a V4L2 encoder), for the web viewer.
  * With --password-file, clients
  * authenticate with RSA-AES (neatvnc's), with any user name; an address other than loopback
  * requires it. The password is read from that file at start, never taken from argv or the
@@ -184,7 +184,9 @@ struct server {
      * fed the same frames */
     struct nvnc *nvnc[4];
     struct nvnc_display *display[4];
-    bool ws[4]; /* the WebSocket listener's (noVNC's) */
+#ifndef NVNC_HAS_VMWARE_ALPHA_CURSOR
+    bool ws[4]; /* the WebSocket listener's (noVNC's): its cursor's red and blue swapped */
+#endif
     int servers;
     struct nvnc_fb_pool *pool;
 #ifdef HAVE_GBM
@@ -906,8 +908,10 @@ static void render_frame(struct server *s)
 
 /* LG's cursor (wv_cursor) as the clients' cursor: cropped to its visible pixels and the hotspot,
  * scaled like the TV picture into the desktop (as the composed cursor is drawn), straight alpha;
- * hidden, a transparent 1x1 one. neatvnc sends it to every client that takes the Cursor
- * pseudo-encoding, and to clients that connect later. */
+ * hidden, a transparent 1x1 one. neatvnc sends it to every client that takes a cursor
+ * pseudo-encoding, and to clients that connect later. A neatvnc with VMware's alpha cursor
+ * (NVNC_HAS_VMWARE_ALPHA_CURSOR, beanjar-vendor's patch) sends it with its alpha to the clients
+ * that take that (noVNC, TigerVNC); otherwise, and to other clients, with a 1-bit mask. */
 static void premultiply(uint8_t *p, size_t n, int un)
 {
     for (size_t i = 0; i < n; i++, p += 4) {
@@ -928,10 +932,14 @@ static void set_cursor(struct server *s, struct nvnc_fb *fb, int w, int h, int h
         return;
     g_free(s->cursor_pixels);
     s->cursor_pixels = g_memdup2(pixels, bytes);
-    /* The WebSocket listener's clients are noVNC, which (1.7.0 and master, core/rfb.js
-     * _handleCursor, "Decode from BGRX pixels") reads a Cursor's pixels as BGRX though it asks for
-     * RGBX (red-shift 0), so it shows red and blue swapped: that listener gets them swapped first.
-     * Another WebSocket client sees them swapped. */
+#ifdef NVNC_HAS_VMWARE_ALPHA_CURSOR
+    for (int i = 0; i < s->servers; i++)
+        nvnc_set_cursor(s->nvnc[i], fb, (uint16_t)hx, (uint16_t)hy, true);
+#else
+    /* A neatvnc without VMware's alpha cursor sends noVNC the Cursor pseudo-encoding, whose
+     * pixels noVNC (1.7.0 and master, core/rfb.js _handleCursor, "Decode from BGRX pixels") reads
+     * as BGRX though it asks for RGBX (red-shift 0): it shows red and blue swapped, so the
+     * WebSocket listener gets them swapped first. Another WebSocket client sees them swapped. */
     struct nvnc_fb *swapped = NULL;
     bool any_ws = false;
     for (int i = 0; i < s->servers; i++)
@@ -948,12 +956,11 @@ static void set_cursor(struct server *s, struct nvnc_fb *fb, int w, int h, int h
             q[i + 3] = pixels[i + 3];
         }
     }
-    for (int i = 0; i < s->servers; i++) {
-        struct nvnc_fb *f = s->ws[i] ? swapped : fb;
-        nvnc_set_cursor(s->nvnc[i], f, (uint16_t)hx, (uint16_t)hy, true);
-    }
+    for (int i = 0; i < s->servers; i++)
+        nvnc_set_cursor(s->nvnc[i], s->ws[i] ? swapped : fb, (uint16_t)hx, (uint16_t)hy, true);
     if (swapped)
         nvnc_fb_unref(swapped);
+#endif
     fprintf(stderr, "beanjar-vnc: cursor %dx%d hotspot %d,%d%s\n", w, h, hx, hy, lg);
     s->cursor_w = w;
     s->cursor_h = h;
@@ -1318,9 +1325,9 @@ static const char usage[] =
     "host's own clients (beanjar vnc pipe): its permissions are the access control.\n"
     "--audio-local PATH: the guest's and the media's audio, mixed, on a unix socket at PATH, mode\n"
     "0600, as Opus or 48 kHz s16 PCM, as each client asks (beanjar vnc audio-pipe).\n" VIDEO_HELP
-    "--native-cursor: LG's cursor sent as the clients' own cursor (the VNC Cursor pseudo-encoding, "
-    "with\n"
-    "a 1-bit mask: no translucency), instead of drawn into the picture at the VNC pointer.\n"
+    "--native-cursor: LG's cursor sent as the clients' own cursor, instead of drawn into the\n"
+    "picture at the VNC pointer: with its alpha (VMware's cursor) where neatvnc and the client\n"
+    "have it, else with a 1-bit mask (the Cursor pseudo-encoding).\n"
     "--gl-adapter NAME: on WSL the picture is composed with Mesa's d3d12 on the GPU whose\n"
     "name contains NAME (e.g. NVIDIA, Intel). Without it, d3d12's default adapter unless\n"
     "GALLIUM_DRIVER or LIBGL_ALWAYS_SOFTWARE is set; software: llvmpipe (anywhere).\n"
@@ -1668,7 +1675,9 @@ int main(int argc, char **argv)
             server = kinds[i] == WEBSOCKET ? listen_on(listen, (uint16_t)websocket, true)
                                            : listen_on(listen, (uint16_t)port, false);
         }
+#ifndef NVNC_HAS_VMWARE_ALPHA_CURSOR
         s.ws[i] = kinds[i] == WEBSOCKET;
+#endif
         if (!server) {
             int e = errno;
             bool w = kinds[i] == WEBSOCKET;

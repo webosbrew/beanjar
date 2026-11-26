@@ -10,7 +10,7 @@ beanjar vnc start tv1               # vnc://127.0.1.N:5900, N the VM's slot; wit
                                     # vnc://<its LAN address>:5900
 beanjar vnc start tv1 --size 1920x1080 --fps 60
 beanjar vnc start tv1 --port 5901   # 5900 is taken (the Pi desktop's wayvnc holds *:5900)
-beanjar vnc start tv1 --native-cursor  # LG's cursor as the clients' own (1-bit mask), not in the picture
+beanjar vnc start tv1 --native-cursor  # LG's cursor as the clients' own, not in the picture
 beanjar vnc start tv1 --listen 0.0.0.0  # link nat: on every address of this host
 beanjar vnc stop tv1
 beanjar vnc password show tv1       # print the VM's password, to copy it into a client
@@ -985,11 +985,11 @@ By default LG's cursor is composed into the picture where the VNC pointer is, fo
 the picture in any client; each pointer move costs a frame, and the cursor trails by a round trip.
 
 `--native-cursor` (`beanjar vnc start NAME --native-cursor`) sends it to the clients as their own cursor
-instead, with the VNC Cursor pseudo-encoding (`nvnc_set_cursor`), and the client draws it at its
-pointer: no frame per pointer move, no lag. The core gives it (`wv_cursor`) and draws the scene
+instead (`nvnc_set_cursor`), and the client draws it at its pointer: no frame per pointer move, no
+lag. The core gives it (`wv_cursor`) and draws the scene
 without it (`no-cursor`), so a pointer move or libim moving the cursor is no change of the
 picture. It is opt-in because of the mask (below): every 1-bit rendering of webOS 26's pointer
-looked worse than the composed one.
+looked worse than the composed one, and the released neatvnc has nothing else.
 
 - **Shape.** The picture webos.cursor carries, cropped to its visible pixels (alpha above 0) and
   the hotspot, then scaled like the TV picture into the desktop, as the composed cursor is. LG's
@@ -1009,15 +1009,24 @@ looked worse than the composed one.
   that connects later. Each change is logged, with LG's own geometry, e.g.
   `beanjar-vnc: cursor 40x48 hotspot 4,1 (LG's: 60x85, visible 57x71 at 2,7, hotspot 9,9, 40x57 in
   the desktop)`; `vnc_cursors=` at exit counts them.
-- **The mask.** neatvnc 0.9.1 and 1.0.3 offer only the plain Cursor pseudo-encoding (-239):
+- **The mask.** neatvnc 0.9.1 and 1.0.4 offer only the plain Cursor pseudo-encoding (-239):
   colours and a 1-bit mask, a pixel opaque when its alpha is above half (`extract_alpha_mask`).
   A true-colour cursor needs VMware's alpha cursor (0x574d5664 type 1: noVNC, TigerVNC) or
-  CursorWithAlpha (-314: TigerVNC), which neatvnc has neither of. LG's newer pointers
+  CursorWithAlpha (-314: TigerVNC), which upstream neatvnc has neither of. LG's newer pointers
   depend on alpha: webOS 26's is a white outline (alpha 255) around a black fill and a soft shadow
   at alpha 64 to 127, so through the mask only the outline is left, nearly invisible over light
   pictures (seen on W22O queue's Home). Cutting at a lower alpha makes the fill solid black
   instead; neither looks like the TV, which is why composed is the default. WT1H's pointer is
   opaque and looks as composed apart from hard edges.
+- **The alpha cursor.** A neatvnc patch for beanjar-vendor (not in its releases yet) adds VMware's
+  cursor pseudo-encoding, type 1: each pixel's R, G, B and straight alpha bytes, whatever the
+  client's pixel format. A client that asks for it gets the cursor that way,
+  any other the Cursor pseudo-encoding as before. noVNC 1.7.0 asks for VMware's before Cursor and
+  decodes it in `_handleVMwareCursor`; TigerVNC asks for CursorWithAlpha, then VMware's, and reads
+  type 1 as it is. The patched `neatvnc.h` defines `NVNC_HAS_VMWARE_ALPHA_CURSOR`, and beanjar-vnc
+  built against it drops the noVNC colour swap (below), which applies to the Cursor pseudo-encoding
+  only. Against a neatvnc without it, beanjar-vnc is unchanged. check-vnc covers both: a cursor at
+  alpha 64 arrives at alpha 64 through VMware's encoding, and is masked out entirely through Cursor.
 - **neatvnc 0.9.1's mask overflow.** Its `cursor_encode` reserves `(width*height+7)/8` bytes for
   the mask but writes `(width+7)/8` a row, past the buffer unless the width is a multiple of 8. It
   crashed beanjar-vnc ("double free or corruption") on LG's 38-pixel cursor. Fixed in 1.0
@@ -1026,8 +1035,10 @@ looked worse than the composed one.
 - **noVNC's colours.** noVNC (1.7.0 and master) decodes a Cursor's pixels as BGRX in
   `core/rfb.js` `_handleCursor` ("Decode from BGRX pixels"), though the pixel format it asks for is
   RGBX (red-shift 0) and its raw decoder reads RGBX: it shows red and blue swapped (WT1H's red
-  pointer came out blue). The WebSocket listener's clients are noVNC, so that listener's cursor has
-  red and blue swapped beforehand. Another client over WebSocket sees them swapped.
+  pointer came out blue). Without the alpha cursor, the WebSocket listener's clients are noVNC, so
+  that listener's cursor has red and blue swapped beforehand; another client over WebSocket sees
+  them swapped, and noVNC on the local socket (the web viewer) sees them swapped. VMware's cursor
+  has no such bug, so with the alpha cursor nothing is swapped.
 
 Measured 2026-10-12, LG's cursors (all on a 1920x1080 UI screen), and what beanjar-vnc sends in
 its default 1280x720 desktop with `--native-cursor`:

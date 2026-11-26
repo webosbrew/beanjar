@@ -805,9 +805,10 @@ from the PATH; from the checkout, `host/web/bin/beanjar-web` runs the checkout's
 - The status bar's numbers (CPU, disk, network) of the GTK viewer.
 - The same VM in the GTK viewer and the web at once: both front ends take QEMU's single-client
   chardevs. Several browsers on the same VM share beanjar-vnc (`shared`).
-- With `--native-cursor`, noVNC shows LG's cursor with red and blue swapped: the local socket is
-  plain RFB, and the swap beanjar-vnc does for noVNC applies to its WebSocket listener only
-  ([vnc](vnc.md#the-cursor)). beanjar-web starts VNC without it (LG's cursor in the picture).
+- With `--native-cursor` and a neatvnc without VMware's alpha cursor, noVNC shows LG's cursor with
+  red and blue swapped: the local socket is plain RFB, and the swap beanjar-vnc does for noVNC
+  applies to its WebSocket listener only ([vnc](vnc.md#the-cursor)); with the alpha cursor the
+  colours are right. beanjar-web starts VNC without it (LG's cursor in the picture).
 
 ## Tests
 

@@ -117,6 +117,7 @@ def picture(w, h):
 
 PADDED = []  # "padded" (cursor-control): the cursor as a 64x64 picture, mostly transparent
 LARGE = []  # "large": a 200x240 opaque cursor (256x256 picture), hotspot 100,120
+TRANSLUCENT = []  # "translucent": the plain 16x16 cursor at alpha 64 (and shown, not padded)
 
 
 def cursor_frame(visible):
@@ -138,7 +139,7 @@ def cursor_frame(visible):
         hot = (14, 15)
     else:
         w = h = 16
-        pixels = bytes((20, 80, 220, 255)) * (w * h)  # BGRA on the wire
+        pixels = bytes((20, 80, 220, 64 if TRANSLUCENT else 255)) * (w * h)  # BGRA on the wire
         hot = (0, 0)
     header = b"WOSCUR1\0" + struct.pack(
         "<IIiiIIIIIIII", 56 + len(pixels), visible, 960, 540, 1920, 1080, w, h, w, h, *hot
@@ -633,6 +634,11 @@ def main():
             clients.clear()
         if command == "large":  # and shown
             LARGE.append(1)
+            legacy_visible = 1
+            heartbeat()
+        if command == "translucent":  # not padded
+            TRANSLUCENT.append(1)
+            PADDED.clear()
             legacy_visible = 1
             heartbeat()
         if command == "padded":
