@@ -134,6 +134,7 @@ class Job:
                 s.tof_bus,
                 # only where set: the records of the other chips' VMs stay current
                 *((s.led_micom_bus,) if s.led_micom_bus is not None else ()),
+                *((s.firmware_params,) if s.firmware_params else ()),
             )
         )
         return {
@@ -338,6 +339,10 @@ def _make(job, new, say):
         raise Error(str(e)) from None
     if tee:
         record["derived_params"].setdefault("lgemu", []).extend(tee)
+    # the parameters of this firmware line's own board (targets.firmware_module_params: W21Z's DLP
+    # controller on W21P's K7LP)
+    for module, words in targets.firmware_module_params(job.target, job.fw_name).items():
+        record["derived_params"].setdefault(module, []).extend(words)
     # the board's own light sensor: where its tool options say the set has one (targets.light_dev)
     if targets.soc(job.target).light_bus is not None:
         try:

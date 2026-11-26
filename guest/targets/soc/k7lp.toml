@@ -33,10 +33,11 @@ thermal = true
 # (mw_fan_checkAbnormal, once a second) counts the level changes of FAN1-3 (FAN1-5 for the micom's
 # fan options 1 and 2) and, after 12 s of 0 RPM on one, powers the set off ("fan3": micom 25 00 ad).
 # W21P's map has no line among them; its fancontroller has no such check.
-# gpio_level 106 and 137, W21Z's as well (W21P's map has neither): its panelcontroller's
+# gpio_level 106, W21Z's as well (W21P's map does not have it): its panelcontroller's
 # mw_checkDMDPG reads raw GPIO 106 every 0.5 s and, unless it is 1, resets the DLP controller
-# (DPP6540) three times and then powers the set off ("dpp_abnormal": micom 25 00 b6); 137 is
-# GPIO_RD_I2C_BUSY, which DPP6540_WriteRegisters waits to be 1 before each I2C write.
+# (DPP6540) three times and then powers the set off ("dpp_abnormal": micom 25 00 b6). GPIO 137,
+# GPIO_RD_I2C_BUSY, the controller's SYSTEM_BUSY output, stays 0 (free): every DPP6540 access
+# waits for it to read 0 (firmware_params below).
 [[modules]]
 name = "rtk"
 params = [
@@ -68,7 +69,7 @@ params = [
     "tee=1",
     "fb=1:512x2160",
     "vsc_screen=3840,2160",
-    "gpio_level=40:1,152:1,106:1,137:1",
+    "gpio_level=40:1,152:1,106:1",
     "gpio_usb_vbus=41,151",
     "gpio_tach=128,122,124,130,126,118",
 ]
@@ -121,3 +122,10 @@ name = "dtv_soc"
 # atsc_internaldemod_drv.c, and W21P's own atsc_dtv_soc.ko (.data+0xac: 0b 13 02)
 [broadcast_params.atsc]
 webos_tv = ["frontends=1", "delsys=11+19+2"]
+
+# W21Z's (the HU710P projector's) DLP controller, a TI DLPC6540 (lgemu dlpc.c): its
+# panelcontroller's DPP6540 row, /dev/i2c-3 at 7-bit 0x1a. Its projector build of legacy-broadcast
+# waits on panelcontroller, which waits on the controller, before tv-ready. W21P has no such
+# controller (its panelcontroller has no DPP code).
+[firmware_params.W21Z]
+lgemu = ["i2c_dev=dlpc:3:0x1a"]

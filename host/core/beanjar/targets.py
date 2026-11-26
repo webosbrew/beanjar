@@ -145,11 +145,15 @@ DERIVED_PAKS = {"mstar-mboot": ("boot",)}
 # that broadcast standard (board_broadcast; None: the chip's default, default_broadcast), each
 # word replacing the module's own word of the same name: the tuners of a US model differ from a
 # European one's (webos_tv's frontends= and delsys=).
+# firmware_params: ((model code, module, (words...)), ...): a module's parameters added for a
+# firmware of that model code (paths.model_of: W21Z) only, where a chip runs firmware lines whose
+# boards differ: W21Z, the HU710P projector on W21P's K7LP, has a DLP controller on I2C (lgemu's
+# i2c_dev dlpc). prepare.py adds them to the VM's derived parameters (firmware_module_params).
 Soc = namedtuple(
     "Soc",
     "board_cmdline modules continent inputs lgemu board_src pointer_wakeup mic "
     "broadcast_boards touch portrait light_bus thermal tof_bus broadcast_params led_micom_bus "
-    "model_boards",
+    "model_boards firmware_params",
     defaults=(
         None,
         None,
@@ -165,6 +169,7 @@ Soc = namedtuple(
         None,
         (),
         None,
+        (),
         (),
     ),
 )
@@ -452,6 +457,17 @@ def _broadcast_params(where, v):
     return tuple(out)
 
 
+def _firmware_params(where, v):
+    if not isinstance(v, dict):
+        _fail(where, f"expected a table, not {v!r}")
+    out = []
+    for code, mods in v.items():
+        if not isinstance(mods, dict):
+            _fail(f"{where}.{code}", f"expected a table, not {mods!r}")
+        out += [(code, m, _strs(f"{where}.{code}.{m}", words)) for m, words in mods.items()]
+    return tuple(out)
+
+
 def _broadcast_boards(where, v):
     out = _pairs_of(_str)(where, v)
     for b, _ in out:
@@ -497,6 +513,7 @@ SOC_KEYS = {
     "pointer_wakeup": _bool,
     "modules": lambda w, v: _list(w, v, _module),
     "broadcast_params": _broadcast_params,
+    "firmware_params": _firmware_params,
 }
 SOC_REQUIRED = ("board_cmdline", "modules")
 
@@ -1737,6 +1754,16 @@ def _join_i2c_dev(words):
             out.append("i2c_dev=" + ",".join(devs))
             joined = True
     return tuple(out)
+
+
+def firmware_module_params(target, fw_name):
+    """{module: (words...)}: the parameters Soc.firmware_params adds for the firmware fw_name (by
+    its model code, paths.model_of), none for another firmware of the chip."""
+    code, out = paths.model_of(fw_name), {}
+    for c, module, words in soc(target).firmware_params:
+        if c == code:
+            out[module] = out.get(module, ()) + tuple(words)
+    return out
 
 
 def board_module_params(target, module, broadcast=None):

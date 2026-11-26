@@ -53,6 +53,17 @@ def test_base_replaces_keys_whole():
     assert targets.RELEASES["beehive"].paks == targets.RELEASES["afro"].paks
 
 
+def test_firmware_params_by_model_code():
+    """Soc.firmware_params apply to the firmware of their model code only: W21Z, the projector on
+    W21P's K7LP, gets its DLP controller on I2C; W21P, on the same target, nothing."""
+    k7 = ("k7lp", "kisscurl")
+    assert targets.firmware_module_params(k7, "03.00.27.01-HE_PJT_W21Z_AAAAGLAA") == {
+        "lgemu": ("i2c_dev=dlpc:3:0x1a",)
+    }
+    assert targets.firmware_module_params(k7, "03.70.25.01-HE_DTV_W21P_AFADATAA") == {}
+    assert targets.firmware_module_params(k7, None) == {}
+
+
 def test_card_only_on_arib_boards():
     """The stub card (webos_tv's acas=1) is on O22's Japanese board only, not on its US or global
     one; its ID is 12 hex digits from the serial, the same for the same serial, starting 0xBE."""
