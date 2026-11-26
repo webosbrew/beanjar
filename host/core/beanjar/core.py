@@ -1269,12 +1269,12 @@ class Library:
                 raise Error(why, "listen")
             vm.acquire()
         try:
-            rc = hostprocs.run_streamed(
-                [*self.launcher(), "start", "--dir", vm.dir, *args], out, cwd=self.repo
-            )
             from . import snapshot
 
             snapshot.finish_reset(vm.dir, out)  # never a start of a half-restored VM
+            rc = hostprocs.run_streamed(
+                [*self.launcher(), "start", "--dir", vm.dir, *args], out, cwd=self.repo
+            )
         except BaseException:
             if not vm.pid():
                 vm.release()
