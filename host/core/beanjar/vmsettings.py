@@ -155,18 +155,20 @@ def resolve_userland(setting, guest_kernel, accel, aarch32_el0, platform=None):
     return userland, f"userland: {userland} ({why})"
 
 
-# qemu-user's own memory in the guest, as a share of the TV's (mem): every 32-bit process runs
-# under a qemu-arm of its own, with its heap, its page tracking of the guest program and its
-# translated code on top of the program's own memory. mem stays the TV's RAM (what its firmware is
-# built for); a qemu-user start gives the guest this much more (guest_ram_mib).
-QEMU_USER_OVERHEAD_PERCENT = 50
+# qemu-user's own memory in the guest, in MiB on top of the TV's (mem): every 32-bit process runs
+# under a qemu-arm of its own, with its translated code (init's QEMU_TB_SIZE caps it at 32 MiB a
+# process), its heap and its per-thread malloc arenas on top of the program's own memory. That
+# follows the number of processes and the code they run, not mem: measured at Home on lm21ann-queue
+# (webOS 26, 150 processes), 1.34 GiB of translated code and 0.73 GiB of qemu-arm's own against
+# 0.47 GiB of the programs' (docs/research/qemu-user-memory.md). mem stays the TV's RAM (what its
+# firmware is built for); a qemu-user start gives the guest this much more (guest_ram_mib).
+QEMU_USER_OVERHEAD_MIB = 1536
 
 
 def qemu_user_overhead_mib(mem, userland):
     """The RAM in MiB a start with userland (native or qemu-user, as resolved) adds to the TV's
-    mem MiB for qemu-user's own: QEMU_USER_OVERHEAD_PERCENT of it, rounded down to a whole MiB;
-    0 for native."""
-    return int(mem) * QEMU_USER_OVERHEAD_PERCENT // 100 if userland == "qemu-user" else 0
+    mem MiB for qemu-user's own: QEMU_USER_OVERHEAD_MIB; 0 for native."""
+    return QEMU_USER_OVERHEAD_MIB if userland == "qemu-user" else 0
 
 
 def guest_ram_mib(mem, userland):
@@ -175,17 +177,16 @@ def guest_ram_mib(mem, userland):
     return int(mem) + qemu_user_overhead_mib(mem, userland)
 
 
-# Most of qemu-user's overhead is touched once and then cold (one 128 MiB translated-code buffer a
-# process): a qemu-user start also gives the guest a swap disk backed by host RAM (hostswap.py),
-# this share of the TV's mem, which costs the host only what the guest swaps out.
-QEMU_USER_SWAP_PERCENT = 50
+# Most of qemu-user's overhead is touched once and then cold (a process's translated code above
+# all): a qemu-user start also gives the guest a swap disk backed by host RAM (hostswap.py) of this
+# many MiB, which costs the host only what the guest swaps out. Fixed, as the overhead is.
+QEMU_USER_SWAP_MIB = 1536
 
 
 def qemu_user_swap_mib(mem, userland):
     """The size in MiB of the host-RAM swap (hostswap.py) a start with userland (native or
-    qemu-user, as resolved) gives a TV of mem MiB: QEMU_USER_SWAP_PERCENT of it, rounded down to a
-    whole MiB; 0 (none) for native."""
-    return int(mem) * QEMU_USER_SWAP_PERCENT // 100 if userland == "qemu-user" else 0
+    qemu-user, as resolved) gives a TV of mem MiB: QEMU_USER_SWAP_MIB; 0 (none) for native."""
+    return QEMU_USER_SWAP_MIB if userland == "qemu-user" else 0
 
 
 def memory_note(mem, userland):
@@ -371,8 +372,8 @@ SETTING_HELP = {
     "mem": (
         "MIB",
         "the firmware's model's own",
-        "the TV's RAM in MiB; a start with userland qemu-user gives the guest half as much again "
-        "for qemu-user's own memory",
+        "the TV's RAM in MiB; a start with userland qemu-user gives the guest 1536 MiB more for "
+        "qemu-user's own memory",
         None,
     ),
     "smp": ("N", str(vmconfig.DEFAULTS["smp"]), "CPUs", None),

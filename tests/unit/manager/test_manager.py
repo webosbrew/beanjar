@@ -1984,9 +1984,9 @@ class ManagerTest(unittest.TestCase):
         self.cli("stop", "a")
 
     def test_qemu_user_guest_ram(self):
-        """A VM whose userland resolves to qemu-user keeps mem as the TV's RAM and gets half as
-        much again for qemu-user's own, and a swap disk in host RAM as large: list shows MEM as
-        1024+512, info its tv_ram, guest_ram and host_swap, and the start's admission asks the
+        """A VM whose userland resolves to qemu-user keeps mem as the TV's RAM and gets a fixed
+        1536 MiB more for qemu-user's own, and a swap disk in host RAM as large: list shows MEM as
+        1024+1536, info its tv_ram, guest_ram and host_swap, and the start's admission asks the
         host for the guest's RAM but not the swap, which is taken only as the guest swaps. Under
         KVM the unit's MemoryHigh allows for the swap too (its memfd is charged to QEMU's
         cgroup), and a running VM's claim on the host leaves the swap out as the admission
@@ -1996,19 +1996,19 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual((rows["a"]["mem"], rows["a"]["guest_ram"]), (1024, 1024))
         self.cli("config", "set", "a", "userland=qemu-user")
         rows = self.listing()
-        self.assertEqual((rows["a"]["mem"], rows["a"]["guest_ram"]), (1024, 1536))
-        self.assertRegex(self.cli("list"), r"\b1024\+512\b")
+        self.assertEqual((rows["a"]["mem"], rows["a"]["guest_ram"]), (1024, 2560))
+        self.assertRegex(self.cli("list"), r"\b1024\+1536\b")
         info = self.info("a")
-        self.assertEqual((info["mem"], info["tv_ram"], info["guest_ram"]), (1024, 1024, 1536))
-        self.assertEqual(info["host_swap"], 512)
+        self.assertEqual((info["mem"], info["tv_ram"], info["guest_ram"]), (1024, 1024, 2560))
+        self.assertEqual(info["host_swap"], 1536)
         vm = self.lib().vm("a")
-        self.assertEqual(vm.host_swap(), 512)
+        self.assertEqual(vm.host_swap(), 1536)
         kvm = dict(vm.launch_env(), ACCEL="kvm")
         self.assertEqual(
-            unit.resources(1536, kvm),
+            unit.resources(2560, kvm),
             [
                 f"CPUWeight={unit.CPU_WEIGHT}",
-                f"MemoryHigh={capacity.reservation_mib(1536, kvm) + 512}M",
+                f"MemoryHigh={capacity.reservation_mib(2560, kvm) + 1536}M",
             ],
         )
         with (
@@ -2017,15 +2017,15 @@ class ManagerTest(unittest.TestCase):
             mock.patch.object(vm, "unit_up", return_value=True),
             mock.patch(
                 "beanjar.vmunits.systemctl",
-                return_value=(0, "MemoryHigh=3221225472\nMemoryCurrent=1073741824\n"),
+                return_value=(0, "MemoryHigh=5368709120\nMemoryCurrent=1073741824\n"),
             ),
         ):
-            self.assertEqual(capacity.claim_mib(vm), 3072 - 512 - 1024)
-        need = capacity.reservation_mib(1536, vm.launch_env())
+            self.assertEqual(capacity.claim_mib(vm), 5120 - 1536 - 1024)
+        need = capacity.reservation_mib(2560, vm.launch_env())
         self.mem_available(need - 1)
         out = self.cli("start", "a", ok=False)
         self.assertIn(
-            "not enough free memory to start VM a: it needs 1536 MiB (1024 for the TV and 512 for "
+            "not enough free memory to start VM a: it needs 2560 MiB (1024 for the TV and 1536 for "
             f"qemu-user's overhead) and {capacity.START_HEADROOM_MIB} MiB of headroom",
             out,
         )

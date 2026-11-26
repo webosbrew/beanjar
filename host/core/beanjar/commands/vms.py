@@ -495,7 +495,7 @@ def show_data(vm):
 
 def mem_cell(row):
     """list's MEM: the TV's RAM in MiB, with qemu-user's overhead added as +N when the guest gets
-    more (2048+1024)."""
+    more (2048+1536)."""
     mem, ram = row["mem"], row.get("guest_ram")
     if not mem:
         return ""

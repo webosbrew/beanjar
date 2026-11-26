@@ -502,6 +502,22 @@ if [ "$INIT_SYSTEM" = systemd ] && \
 		> /webos/etc/systemd/system.conf.d/zz-beanjar-display.conf
 	log "Weston: stock shell on virtual primary and secondary outputs"
 fi
+# --- USERLAND=qemu-user: the size of each qemu-arm's translation cache ---
+# Every 32-bit process runs under a qemu-arm of its own, whose translated code fills a cache of up
+# to 128 MiB (QEMU's user-mode default; WebAppMgr and the web apps fill it). 32 MiB caps the few
+# largest without costing a busy process retranslation; 16 doubled the boot's CPU time
+# (docs/research/qemu-user-memory.md). qemu-arm reads QEMU_TB_SIZE (MiB) from its environment and
+# passes the environment on to its program: PID 1 gets it from here, systemd's services through
+# DefaultEnvironment, and every child inherits it from its parent.
+if [ "${USERLAND:-native}" = qemu-user ]; then
+	export QEMU_TB_SIZE=32
+	if [ "$INIT_SYSTEM" = systemd ]; then
+		mkdir -p /webos/etc/systemd/system.conf.d
+		printf '%s\n' '[Manager]' "DefaultEnvironment=QEMU_TB_SIZE=$QEMU_TB_SIZE" \
+			> /webos/etc/systemd/system.conf.d/zz-beanjar-qemu-user.conf
+	fi
+	log "userland: qemu-arm's translation cache $QEMU_TB_SIZE MiB a process"
+fi
 # SimpleSmart (sysvinit): the nodes of the firmware's /etc/device_table, which on a set
 # kdrv_msd93f2g.ko's devices put on devtmpfs before rc.local runs lginit (whose own
 # `makedevs -D /etc/device_table` runs in the read-only lginit squashfs and makes nothing): the

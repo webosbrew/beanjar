@@ -99,11 +99,11 @@ command line changes in two places, its RAM and a swap disk.
 
 Each 32-bit process under qemu-arm carries qemu-arm's own heap, its tracking of the guest
 program's pages and its translated code on top of the program's own memory, so a qemu-user start
-gives the guest `vmsettings.QEMU_USER_OVERHEAD_PERCENT` (50 %) of `mem` more (`-m`:
-`vmsettings.guest_ram_mib`) and logs `memory: 2048 MB for the TV + 1024 MB for qemu-user's
-overhead`. `mem` stays the TV's RAM. The host's memory admission and the unit's MemoryHigh
+gives the guest a fixed `vmsettings.QEMU_USER_OVERHEAD_MIB` (1536 MiB) more than `mem` (`-m`:
+`vmsettings.guest_ram_mib`) and logs `memory: 2048 MB for the TV + 1536 MB RAM and 1536 MB
+host-RAM swap for qemu-user's overhead`. `mem` stays the TV's RAM. The host's memory admission and the unit's MemoryHigh
 (`capacity`, `qemu.vm_guest_ram`, `VM.guest_ram`) use the larger size; `beanjar list` shows MEM as
-`2048+1024` and `beanjar show` both (`tv_ram`, `guest_ram`). What webOS is told the set has is the
+`2048+1536` and `beanjar show` both (`tv_ram`, `guest_ram`). What webOS is told the set has is the
 model's board parameters (board.cmdline's `hwopt=`), which do not follow `-m`; the balloon is never
 inflated and the media pool has its own size, so neither changes.
 
@@ -111,12 +111,20 @@ Measured on WT1H at the Live TV "No Signal" screen 120 s after boot-done (x86-64
 natively under TCG the processes held 232 MiB anonymous memory and the guest had 1546 MiB
 available; under qemu-user (x86-64 guest kernel, `-m 3072`) 1514 MiB and 1106 MiB. The overhead
 is about 1.3 GiB, of which about 930 MiB is qemu-arm's translated code (one 128 MiB code buffer
-per process), so it follows the number of processes and how much code they ran rather than `mem`,
-and 50 % leaves the guest about 440 MiB less available than a native run of the same TV.
+per process), so it follows the number of processes and how much code they ran rather than `mem`.
+A newer firmware runs more of them: lm21ann-queue (webOS 26, 150 processes) had 2.1 to 2.2 GiB of
+overhead at Home against 0.33 to 0.54 GiB of the programs' own, and with the earlier 50 % of `mem`
+(768 MiB RAM and 768 MiB swap on its 1536 MiB board) both swaps filled during the first boot
+([the study](../../research/qemu-user-memory.md)). Hence a fixed amount, not a share of `mem`.
+
+`guest/initramfs/rootfs/init` also caps each qemu-arm's translation cache at 32 MiB
+(`QEMU_TB_SIZE`, in PID 1's environment and systemd's `DefaultEnvironment`; every child inherits
+it), down from QEMU's user-mode default of 128 MiB, which only WebAppMgr, the web apps and a few
+large services reach. 16 MiB cost the first boot three times the CPU time in retranslation.
 
 Most of that overhead is cold (only about 105 of the 1515 MiB anonymous memory was touched in 60 s
 idle), so a qemu-user start also gives the guest a swap disk in host RAM
-(`vmsettings.QEMU_USER_SWAP_PERCENT`, 50 % of `mem`; `host/core/beanjar/hostswap.py`): a sparse
+(`vmsettings.QEMU_USER_SWAP_MIB`, 1536 MiB; `host/core/beanjar/hostswap.py`): a sparse
 memfd the process that runs QEMU creates just before it does (`hostswap.open_fds` in `launch.py`
 and `netns.py`), passed with `-add-fd` at descriptors 200 (read-write) and 201 (read-only; QEMU
 takes from the fdset a descriptor with the access mode it opens with, and opens both ways), and
