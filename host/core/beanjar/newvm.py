@@ -48,7 +48,7 @@ import tempfile
 import threading
 import time
 
-from . import capacity, compat, firmware, keys, nvm, targets, paths, vmconfig
+from . import capacity, compat, firmware, keys, nvm, targets, paths, vmconfig, vmidentity
 from .core import NAME_RE, VM, Error, Library, prepare_board_data, vm_firmware
 from .tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
 from .vmidentity import free_slot, make_identity_dir, slot_lock
@@ -381,6 +381,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
         try:
             keys.ensure(make_identity_dir(scratch), label=name)  # its SSH keys (beanjar/keys.py)
             keys.ensure_tee_huk(make_identity_dir(scratch))  # its TEE's key, made here
+            vmidentity.ensure_lgudid(make_identity_dir(scratch), cfg["mac"])  # its LGUDID
             # the library's CA (shared by its VMs), made with the first VM; again if it was lost
             keys.ensure_ca(os.path.join(lib.root, keys.CA), warn=out if lib.names() else None)
         except keys.Error as e:

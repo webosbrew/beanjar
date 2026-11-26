@@ -27,6 +27,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+import uuid
 
 import pytest
 from unittest import mock
@@ -133,6 +134,7 @@ KEY_FILES = sorted(
         "id_ed25519",
         "id_ed25519.pub",
         "known_hosts",
+        "lgudid.toml",
         "rootssh_host_key",
         "rootssh_host_key.pub",
         "tee-huk",
@@ -1043,6 +1045,13 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn(before["rootssh_host_key.pub"].split()[1], after["known_hosts"])
         for n in ("sestore.toml", "authorized_keys"):
             self.assertEqual(after[n], before[n], f"{n} kept")
+        # a new LGUDID, of the new MAC (macadr.new_ids)
+        new_ids = core.vmidentity.read_lgudid(ident)
+        self.assertNotEqual(after["lgudid.toml"], before["lgudid.toml"])
+        self.assertEqual(
+            new_ids[0],
+            str(uuid.uuid5(uuid.UUID(new_ids[1]), new["mac"].upper())),
+        )
         self.assertEqual(files(os.path.join(self.lib_dir, "ca")), ca, "the library's CA kept")
         self.assertFalse(os.path.exists(state) and os.listdir(state), "every state disk wiped")
         self.assertEqual(
@@ -1119,6 +1128,9 @@ class ManagerTest(unittest.TestCase):
             self.assertEqual(os.stat(os.path.join(dst_dir, "identity", n)).st_mode & 0o777, 0o600)
         self.assertNotIn("known_hosts", after, "written at its first start, for its own address")
         self.assertNotEqual(after["vnc.password"], before["vnc.password"])
+        lgudid, ns = core.vmidentity.read_lgudid(os.path.join(dst_dir, "identity"))
+        self.assertNotEqual(after["lgudid.toml"], before["lgudid.toml"], "a new LGUDID")
+        self.assertEqual(lgudid, str(uuid.uuid5(uuid.UUID(ns), new["mac"].upper())))
         self.assertIn(f"beanjar {os.path.basename(dst_dir)}".encode(), after["id_ed25519.pub"])
         self.assertEqual(os.stat(os.path.join(dst_dir, "identity")).st_mode & 0o777, 0o700)
         st_src, st_dst = (
@@ -3026,6 +3038,7 @@ class ManagerTest(unittest.TestCase):
 
         fill()
         self.cli("vnc", "password", "set", "a", input="throwaway-kept\n")
+        lgudid = slurp(os.path.join(self.lib_dir, "vms", "a", "identity", "lgudid.toml"))
         self.cli("wipe", "a", "--part", "db8", "--part", "appstore")
         self.assertEqual(
             sorted(os.listdir(state)),
@@ -3038,8 +3051,11 @@ class ManagerTest(unittest.TestCase):
         )
         self.cli("wipe", "a")
         self.assertFalse(os.path.exists(state) and os.listdir(state))
-        # the state goes, the identity's VNC password stays
+        # the state goes, the identity's VNC password and LGUDID stay
         self.assertEqual(self.cli("vnc", "password", "show", "a"), "throwaway-kept\n")
+        self.assertEqual(
+            slurp(os.path.join(self.lib_dir, "vms", "a", "identity", "lgudid.toml")), lgudid
+        )
 
     # ---------------------------------------------------------------- viewer
     def test_view_unview(self):

@@ -117,6 +117,58 @@ def new_serial(taken=()):
             return serial
 
 
+# The TV's LGUDID, LG's unique device ID (sm's deviceid/getIDs, nyx DeviceInfo), which a set's
+# factory writes once to the macadr partition (macadr.py). Here it is the identity directory's
+# lgudid.toml: the LGUDID and the random UUID it was made from (macadr.new_ids, of the MAC the VM
+# had then), made with the VM; kept by wipe and snapshot reset (the identity is never in a
+# snapshot) and by a change of MAC, as a set's is; new for identity reset and clone.
+LGUDID = "lgudid.toml"
+UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+LGUDID_HEADER = (
+    "# The TV's LGUDID, which the guest finds in its macadr partition, and the random UUID it was\n"
+    "# made from. Made with the VM; identity reset and clone make new ones.\n"
+)
+
+
+def read_lgudid(d):
+    """(lgudid, namespace) of the identity directory d, or None if it has none (or not one)."""
+    try:
+        t = read_toml(os.path.join(d, LGUDID))
+    except Error:
+        return None
+    if not isinstance(t, dict):
+        return None
+    ids = (t.get("lgudid"), t.get("namespace"))
+    return ids if all(isinstance(v, str) and UUID_RE.fullmatch(v) for v in ids) else None
+
+
+def write_lgudid(d, mac):
+    """New ids in d (macadr.new_ids of mac), owner-only; returns (lgudid, namespace)."""
+    from . import macadr
+
+    namespace, lgudid = macadr.new_ids(mac)
+    path = os.path.join(d, LGUDID)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(f'{LGUDID_HEADER}lgudid = "{lgudid}"\nnamespace = "{namespace}"\n')
+    os.replace(tmp, path)
+    return lgudid, namespace
+
+
+def ensure_lgudid(d, mac, warn=None):
+    """(lgudid, namespace) of d, made (of mac) if it has none or not one; warn(line), if given, is
+    told when they are."""
+    ids = read_lgudid(d)
+    if ids:
+        return ids
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    ids = write_lgudid(d, mac)
+    if warn:
+        warn(f"warning: {d} had no usable {LGUDID}; made a new LGUDID, {ids[0]}")
+    return ids
+
+
 def lan_parent_of(root):
     """The library's lan_parent (its slot domain's config.toml, as addresses_of), or None."""
     cfg = (read_toml(os.path.join(slot_domain(root)[0], "config.toml"), {}) or {}) if root else {}
@@ -158,16 +210,27 @@ def next_identity(prefix, macs, serials, cfg=None):
     return mac, serial
 
 
-def renew_keys(d, label, address=None):
+def renew_keys(d, label, mac, address=None):
     """A new identity's files in the identity directory d: every key pair made anew (keys.renew;
-    known_hosts rewritten with address) and a new random VNC password. The model key (sestore.toml),
-    tee-huk and authorized_keys are left as they are. Returns the names made (keys.renewed()
-    lists every file it may replace). Used by identity reset and clone; raises keys.Error."""
+    known_hosts rewritten with address), a new random VNC password and a new LGUDID (of mac, the new
+    identity's MAC). The model key
+    (sestore.toml), tee-huk and authorized_keys are left as they are. Returns the names made
+    (renewed() lists every file it may replace). Used by identity reset and clone; raises
+    keys.Error."""
     from . import keys
 
     made = keys.renew(d, label=label, address=address)
     keys.set_vnc_password(d, None)
-    return made + [keys.VNC_PASSWORD]
+    write_lgudid(d, mac)
+    return made + [keys.VNC_PASSWORD, LGUDID]
+
+
+def renewed():
+    """The names of the files of an identity directory that a new identity replaces (renew_keys):
+    keys.renewed()'s and the LGUDID. Clone leaves them out of the copy."""
+    from . import keys
+
+    return keys.renewed() + [LGUDID]
 
 
 def ensure_identity(vm_dir, say=None):

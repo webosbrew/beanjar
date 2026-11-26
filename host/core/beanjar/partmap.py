@@ -300,9 +300,10 @@ def same_layout(a, b):
 
 def nodes(m, target):
     """[(N, serial)]: the /dev/mmcblk0pN nodes the guest gets, each the disk of serial (the release's
-    partitions: name -> disk serial), at the first partition of that name. Error if the map lacks one."""
+    partitions and its LGUDID's, targets.partition_disks: name -> disk serial), at the first partition
+    of that name. Error if the map lacks one."""
     out = []
-    for name, serial in targets.release(target).partitions.items():
+    for name, serial in targets.partition_disks(target).items():
         f = first(m, name)
         if f is None:
             raise Error(f"{targets.name(target)}: the map has no partition {name}")
@@ -314,7 +315,7 @@ def disk_sizes(m, target):
     """{serial: bytes}: the size of each disk the map's partitions back, the largest of its names'
     entries (partinfo and mapbak share one)."""
     out = {}
-    for name, serial in targets.release(target).partitions.items():
+    for name, serial in targets.partition_disks(target).items():
         f = first(m, name)
         if f is not None:
             out[serial] = max(out.get(serial, 0), f[1].size)

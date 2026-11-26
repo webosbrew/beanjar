@@ -38,6 +38,12 @@ peripherals = [
 # W19P's table (58 partitions, partinfo p2) has uhdcp again (p50, its stock fstab's)
 state_disks = { db8 = "512M", cmn_data = "1G", appstore = "2G", uhdcp = "16M" }
 
+# The set's LGUDID: securitymanager (deviceid/getIDs; goldilocks2 to ponytail) and from queue on
+# also libsecretagent (SM_SA_GetLGUDID, through nyx DeviceInfo) read a 92-byte record at 0x3fc00
+# of /dev/mmcblk0p10, macadr (beanjar/macadr.py; docs/research/lgudid.md). Without it each
+# securitymanager start, and on queue each caller, makes a new one.
+lgudid = { partition = "macadr", number = 10, offset = 0x3fc00 }
+
 [nvm]
 eeprom = "eeprom"
 records = { pak = "tvservice-dvb", path = "/mnt/lg/tvservice/lgapp/tvservice" }

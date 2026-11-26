@@ -112,7 +112,7 @@ def vm_firmware(vm_dir, fw=None):
 
 
 # The settings a VM's prepared board data depends on (prepare.Job): a change prepares it again.
-BOARD_SETTINGS = ("fw", "broadcast", "model", "debug_mode", "serial", "country")
+BOARD_SETTINGS = ("fw", "broadcast", "model", "debug_mode", "serial", "mac", "country")
 
 
 def prepare_board_data(lib, vm_dir, out=None, force=False):
@@ -1421,7 +1421,8 @@ class Library:
     def renew_identity(self, name, out=None):
         """A new identity for a VM that is off: its state disks wiped (all of them, as wipe does,
         so no service keeps the old NDUID), then a new MAC (the library's prefix) and serial in
-        vm.toml, every key pair of identity/ and its VNC password made anew (beanjar/keys.py), and its
+        vm.toml, every key pair of identity/, its VNC password and LGUDID made anew (beanjar/keys.py,
+        vmidentity.renew_keys), and its
         DVR key (sestore.toml) dropped for the next start to make anew. The model key, the user's
         authorized_keys and the library's CA are kept. Returns (vm, mac, serial)."""
         out = out or print
@@ -1435,12 +1436,11 @@ class Library:
         cfg.update(mac=mac, serial=serial)
         vm.save_config(cfg)
         out(f"mac {mac}, serial {serial}")
-        prepare_board_data(self, vm.dir, out)  # the new chip has the new serial
         from . import keys, sestore
 
         try:
             made = vmidentity.renew_keys(
-                vmidentity.make_identity_dir(vm.dir), name, vm.service_host()
+                vmidentity.make_identity_dir(vm.dir), name, mac, vm.service_host()
             )
             keys.ensure(
                 vm.identity_dir, address=vm.service_host()
@@ -1449,6 +1449,8 @@ class Library:
         except (keys.Error, sestore.Error) as e:
             raise Error(str(e)) from None
         out(f"new keys in {vm.identity_dir}: {', '.join(made)}")
+        # the new chip has the new serial, the macadr partition the new LGUDID
+        prepare_board_data(self, vm.dir, out)
         pid = vm.vnc_pid()
         if pid:
             out(

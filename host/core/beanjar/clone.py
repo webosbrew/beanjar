@@ -233,7 +233,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
         ident = os.path.join(stage, "identity")
         os.mkdir(ident, 0o700)
         try:
-            made = vmidentity.renew_keys(ident, dst_name)
+            made = vmidentity.renew_keys(ident, dst_name, mac)
         except keys.Error as e:
             raise Error(str(e)) from None
         rc, image = src.sh(
@@ -257,7 +257,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
         )
         if not scratch.startswith(f"{root}/vms/{SCRATCH}"):
             raise Error(f"{dst.where}: mktemp gave {scratch!r}")
-        exclude = [f"identity/{n}" for n in keys.renewed()] + [EEPROM]
+        exclude = [f"identity/{n}" for n in vmidentity.renewed()] + [EEPROM]
         out(f"copying {', '.join(present) or 'nothing'} from {src_label} to {dst.where}")
         if present:
             pipe(

@@ -179,9 +179,15 @@ Release = namedtuple(
     "Release",
     "paks pak_lowers state_disks nvm_disks nvm init_system pmlog_mode pmlog_job trust_bundles "
     "trust_hash_dir ddr_sizes cap_last_cap partmap partitions emmc_disks platform version always_layers dram "
-    "board_in_kernel screen pointer_wakeup ssg_key peripherals init unions",
-    defaults=(WEBOS_LAYERS, None, False, "graphic", False, False, (), "/sbin/init", ()),
+    "board_in_kernel screen pointer_wakeup ssg_key peripherals init unions lgudid",
+    defaults=(WEBOS_LAYERS, None, False, "graphic", False, False, (), "/sbin/init", (), None),
 )
+# lgudid: where the release's LG code reads the set's LGUDID, a Lgudid (the eMMC partition's name,
+# the node number the code opens, /dev/mmcblk0pNUMBER, and the record's offset in the partition),
+# or None where none does. The VM's identity gives it one (macadr.py):
+# prepare builds the partition from it, and the launcher attaches it as the disk MACADR_DISK.
+Lgudid = namedtuple("Lgudid", "partition number offset")
+MACADR_DISK = "macadr"
 # unions: ((mount point, (lower, ...)), ...), read-only unions of directories in the firmware's root,
 # the highest first, which init makes with overlayfs once the paks are mounted: NetCast 4's lginit
 # mounts "unionfs" (dirs=/mnt/nsu/patch:/mnt/nsu/base=ro), which LG's kernel has and ours has not,
@@ -557,6 +563,11 @@ def _partmap_ref(where, v):
     return PartmapFile(**_table(where, v, {"pak": _str, "path": _str}, ("pak", "path")))
 
 
+def _lgudid(where, v):
+    keys = {"partition": _str, "number": _int, "offset": _int}
+    return Lgudid(**_table(where, v, keys, tuple(keys)))
+
+
 def _screen(where, v):
     return v if v in ("graphic", "panel") else _ints(2)(where, v)
 
@@ -589,6 +600,7 @@ RELEASE_KEYS = {
     "partmap": _partmap_ref,
     "nvm": _nvm,
     "partitions": lambda w, v: dict(_pairs_of(_str)(w, v)),
+    "lgudid": _lgudid,
 }
 RELEASE_REQUIRED = (
     "platform", "init_system", "cap_last_cap", "ddr_sizes", "paks", "state_disks", "nvm_disks",
@@ -1379,6 +1391,16 @@ def size_bytes(s):
     """Bytes of a disk size as the tables give it: 512M, 32K, 2G or a number."""
     units = {"K": 1 << 10, "M": 1 << 20, "G": 1 << 30}
     return int(s[:-1]) * units[s[-1]] if s[-1] in units else int(s)
+
+
+def partition_disks(target):
+    """{partition name: disk serial}: the release's partitions, and the LGUDID's (Release.lgudid),
+    the disk MACADR_DISK."""
+    r = release(target)
+    out = dict(r.partitions)
+    if r.lgudid:
+        out[r.lgudid.partition] = MACADR_DISK
+    return out
 
 
 def emmc_disks(target):

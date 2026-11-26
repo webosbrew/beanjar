@@ -247,7 +247,9 @@ machine, `config set NAME listen=0.0.0.0` (with `link=nat`), or use `link=lan` (
 
 ## Identity
 
-Each VM has its own MAC, serial and keys, made when it is created. Without a model key of your own
+Each VM has its own MAC, serial, keys and LGUDID (LG's unique device ID, which apps get from the
+TV), made when it is created. Wiping or resetting the VM to a snapshot keeps them; `identity reset`
+and `clone` make new ones. Without a model key of your own
 it has a synthetic one, which LG's servers do not accept. If you have the model key of a matching
 TV, install it while the VM is off:
 

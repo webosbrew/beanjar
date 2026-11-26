@@ -22,10 +22,13 @@ development VMs and the regress instances have one too):
                   chip takes when the VM's debug mode changes
   appstore.img    the apps partition's factory pre-built data (factory.py: the wake-word model of a
                   model with the microphone), a new appstore disk's first contents
+  macadr.img      the macadr partition as the factory leaves it (macadr.py: the MAC and the
+                  identity's LGUDID), where the release's LG code reads the LGUDID (Release.lgudid);
+                  the launcher attaches it with its writes discarded at power-off
 
 What it depends on, and how a start tells it is stale without reading the firmware: the inputs
 (this module's VERSION and lls.VERSION, the firmware's directory, the target, the effective
-broadcast standard, the VM's serial and debug mode, and a digest of the target's table rows), all
+broadcast standard, the VM's serial, MAC, LGUDID and debug mode, and a digest of the target's table rows), all
 cheap to work out; and the size and mtime of every file it came from: each pak of the firmware,
 the board's board.cmdline and the helpers whose code ran (lls.py's probe and, where the firmware's
 LLS is a nyx module, the guest kernel, initramfs and lgemu.ko, which lls.cache_dir keys its run
@@ -47,7 +50,8 @@ import shutil
 import subprocess
 import sys
 
-from . import factory, fwcache, lls, nvm, partmap, paths, targets
+from . import factory, fwcache, lls, macadr, nvm, partmap, paths, targets, vmidentity
+from .base import identity_dir
 
 VERSION = 6
 DIR = "prepared"
@@ -58,6 +62,7 @@ PARTINFO = "partinfo.img"
 EEPROM = "eeprom.img"
 RECORDS = "records.txt"
 APPS = "appstore.img"
+MACADR = "macadr.img"
 
 
 class Error(Exception):
@@ -94,6 +99,15 @@ class Job:
         run_dir = os.path.join(tree.top, env.get("RUN_DIR") or "build")
         self.vm_dir = os.path.dirname(os.path.abspath(run_dir))
         self.dir = os.path.join(self.vm_dir, DIR)
+        # the VM's identity directory (IDENTITY_DIR, as the launcher's) and MAC (MAC, else the
+        # board's, qemu.guest_mac): the macadr partition's
+        ident = env.get("IDENTITY_DIR")
+        self.identity_dir = os.path.join(tree.top, ident) if ident else identity_dir(self.vm_dir)
+        self.mac = (env.get("MAC") or "").lower()
+        if not self.mac and targets.release(self.target).lgudid:
+            from . import qemu
+
+            self.mac = qemu.guest_mac(self.target, tree, self.broadcast, self.model).lower()
 
     def rel(self, path):
         """path relative to the VM's directory if it is in it, else absolute."""
@@ -136,9 +150,15 @@ class Job:
             "debug_mode": self.debug_mode,
             # only where set: the records of VMs without one stay current
             **({"country": self.country} if self.country else {}),
+            **(self.lgudid_inputs() if targets.release(self.target).lgudid else {}),
             **({"model": self.model} if self.model else {}),
             "tables": hashlib.sha256(rows.encode()).hexdigest()[:16],
         }
+
+    def lgudid_inputs(self):
+        """The macadr partition's inputs: the MAC and the identity's LGUDID ("" while it has none)."""
+        ids = vmidentity.read_lgudid(self.identity_dir)
+        return {"mac": self.mac, "lgudid": ":".join(ids) if ids else ""}
 
     def base_files(self):
         """The files every record depends on: the firmware's paks and the board's board.cmdline."""
@@ -187,7 +207,7 @@ def stale(job):
         )
         return "made from other files (" + ", ".join(os.path.basename(p) for p in diff[:3]) + ")"
     own = [PARTINFO] if targets.board_data(job.target) else []
-    for name in own + [n for n in (EEPROM, RECORDS, APPS) if record.get(n)]:
+    for name in own + [n for n in (EEPROM, RECORDS, APPS, MACADR) if record.get(n)]:
         if not os.path.isfile(os.path.join(job.dir, name)):
             return f"missing its {name}"
     return None
@@ -216,6 +236,8 @@ class Prepared:
         self.chip = nvm.Chip(image, records, record.get("eeprom_note"))
         # {state disk: its factory image}: what a new one starts with (factory.py)
         self.factory = {factory.DISK: os.path.join(job.dir, APPS)} if record.get(APPS) else {}
+        # the macadr partition's image (macadr.py), None where the release reads no LGUDID
+        self.macadr = os.path.join(job.dir, MACADR) if record.get(MACADR) else None
 
 
 def _helpers(job, nyx):
@@ -365,11 +387,37 @@ def _make(job, new, say):
         if held:
             record["factory_files"] = held
             record[APPS] = True
+    # the macadr partition, where the release reads the LGUDID (Release.lgudid)
+    if targets.release(job.target).lgudid:
+        macadr_image(job, os.path.join(new, PARTINFO), os.path.join(new, MACADR), say)
+        record[MACADR] = True
     # lls.cache_dir keys its run on these helpers where the firmware's LLS is a nyx module
     nyx = bool(rel.nvm.lls) and lls.Root(job.fw, job.target, job.tree).read(lls.NYX_LLS) is not None
     record["inputs"] = job.inputs()
     record["files"] = job.stamps(job.base_files() + _helpers(job, nyx) + list(files.values()))
     return record
+
+
+def macadr_image(job, partinfo, out, say=print):
+    """Write to out the macadr partition as the factory leaves it (macadr.image): its size the map's
+    (partinfo, the prepared map's image), the MAC job's, the LGUDID its identity's (made now if it
+    has none, said). Error if the map has the partition at a node the firmware does not open."""
+    lgudid = targets.release(job.target).lgudid
+    try:
+        ids = vmidentity.ensure_lgudid(job.identity_dir, job.mac, say)
+        entry = partmap.first(partmap.read(partinfo), lgudid.partition)
+        if entry is None:
+            raise macadr.Error(f"the partition map has no {lgudid.partition} partition")
+        if entry[0] != lgudid.number:
+            raise macadr.Error(
+                f"the partition map has it as p{entry[0]}; the firmware opens "
+                f"/dev/mmcblk0p{lgudid.number}"
+            )
+        data = macadr.image(entry[1].size, *ids, job.mac, lgudid.offset)
+        with open(out, "wb") as f:
+            f.write(data)
+    except (macadr.Error, partmap.Error, OSError) as e:
+        raise Error(f"the {lgudid.partition} partition: {e}") from None
 
 
 def ensure(job, say=print, why=None):

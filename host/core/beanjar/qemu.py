@@ -750,6 +750,26 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             p.disks.append((img, size, seed))
         elif not os.path.isfile(img):
             p.disks.append((img, size, seed))
+    # the macadr partition, where the release reads the LGUDID (Release.lgudid): the prepared image
+    # of the VM's identity (prepare.py, macadr.py), its writes discarded at power-off: the identity
+    # is the LGUDID's only record, and a set's factory data is not the guest's to change
+    if targets.release(p.target).lgudid:
+        serial = targets.MACADR_DISK
+        img = (
+            p.prepared.macadr
+            if p.prepared
+            else os.path.join(
+                os.path.dirname(os.path.abspath(run_dir)), prepare.DIR, prepare.MACADR
+            )
+        )
+        if not dry and not img:
+            raise Error("the prepared board data has no macadr partition (beanjar prepare NAME)")
+        devices += [
+            "-drive",
+            f"if=none,id={serial},format=raw,snapshot=on,file={img}",
+            "-device",
+            f"virtio-blk-pci,drive={serial},serial={serial}",
+        ]
     if fresh:
         say(
             f"state: none (this run's fresh state in {state}: kept across guest restarts, "

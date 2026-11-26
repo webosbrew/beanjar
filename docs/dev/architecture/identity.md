@@ -21,7 +21,11 @@ The manager's `identity renew` workflow handles the identity and state together;
 
 ## Device identity and model key
 
-The MAC and serial distinguish VMs. A model key is a separate provisioning input used by LG's
+The MAC and serial distinguish VMs, as does the LGUDID, LG's unique device ID: a set's factory
+writes it with the MAC into the eMMC's macadr partition, where securitymanager and, from queue on,
+libsecretagent read it. The VM's is generated once, as the factory does, and kept in `identity/`;
+the launcher presents the partition built from it ([the LGUDID](../../research/lgudid.md)), so
+it is the same across processes and boots and survives a wipe. A model key is a separate provisioning input used by LG's
 identity/authentication algorithms; a synthetic key does not authenticate to LG's servers.
 No key material is distributed with the project. 
 
