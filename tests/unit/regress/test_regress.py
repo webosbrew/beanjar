@@ -2941,11 +2941,18 @@ class InterruptTest(unittest.TestCase):
             self.assertLess(time.monotonic() - began, 5)
             with open(pidfile) as f:
                 pid = int(f.read())
+
         # the wait's own children went with it (its process group)
-        for _ in range(50):
+        # (a killed process nobody reaps, as under a container's init, stays a zombie: not running)
+        def running():
             try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+                with open(f"/proc/{pid}/stat") as f:
+                    return f.read().rpartition(")")[2].split()[0] not in ("Z", "X")
+            except OSError:
+                return False
+
+        for _ in range(50):
+            if not running():
                 break
             time.sleep(0.1)
         else:
