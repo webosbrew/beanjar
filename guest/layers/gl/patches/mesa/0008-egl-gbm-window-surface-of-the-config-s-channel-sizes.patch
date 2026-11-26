@@ -1,0 +1,40 @@
+egl/gbm: a window surface of the config's channel sizes, as the TV's Mali.
+
+LG's Qt EGLFS Starfish plugin of the ponytail releases takes the first config eglChooseConfig gives
+for its alpha-8 surface format and creates the gbm_surface in the output's configured format,
+abgr8888. W23A ponytail's Mali driver (33.31.66, bsppart libmali.so.0.1) lists its GBM window
+configs XR24, AR24, RG16, ... (gbm_get_configs), so the plugin gets the ARGB8888 config for an
+ABGR8888 surface; the driver's config_compatible_with_format compares the config's red, green,
+blue and alpha sizes with the format's (as r46p0's and r51's do), and the set draws. Mesa requires
+compatible formats, refuses the pair with EGL_BAD_MATCH, and the compositor aborts in a loop.
+
+Where the gl layer names the TV driver's GBM window formats (/usr/share/beanjar/gbm-window-formats,
+a Mali GBM winsys), an RGB surface format whose channel sizes are the config's is compatible too.
+The surface's buffers keep its own format, which the renderer draws into. Without the file nothing
+changes.
+--- a/src/egl/drivers/dri2/platform_drm.c
++++ b/src/egl/drivers/dri2/platform_drm.c
+@@ -129,6 +129,23 @@
+        util_is_format_compatible(fmt_s, fmt_c))
+       return true;
+ 
++   /* The emulated TV's Mali driver (Beanjar's gl layer names its GBM window
++    * formats) accepts a window surface whose format has the config's channel
++    * sizes, whatever their order (libmali config_compatible_with_format), so
++    * a client may render with an ARGB8888 config to an ABGR8888 surface. */
++   if (access("/usr/share/beanjar/gbm-window-formats", R_OK) == 0 &&
++       fmt_c->colorspace == UTIL_FORMAT_COLORSPACE_RGB &&
++       fmt_s->colorspace == UTIL_FORMAT_COLORSPACE_RGB) {
++      for (unsigned c = 0; c < 4; c++) {
++         if (util_format_get_component_bits(gl_config->color_format,
++                                            UTIL_FORMAT_COLORSPACE_RGB, c) !=
++             util_format_get_component_bits(visual->pipe_format,
++                                            UTIL_FORMAT_COLORSPACE_RGB, c))
++            return false;
++      }
++      return true;
++   }
++
+    return false;
+ }
+ 
