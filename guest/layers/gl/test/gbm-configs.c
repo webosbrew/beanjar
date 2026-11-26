@@ -4,11 +4,12 @@
  * of each can be made: LG's compositors ask for theirs (Weston's gbm-format, eglfs_starfish's
  * output format) and fail without one (EGL_BAD_MATCH, "No EGLConfig matches"). Mesa patch 0006
  * keeps the formats' configs apart. Prints each window config's id and EGL_NATIVE_VISUAL_ID, then
- * one line per format, and "GBM-CONFIGS PASS" when ARGB8888, ABGR8888, XRGB8888 and XBGR8888 each
- * have a config whose window surface is made.
+ * the first RGBA 8888 config, one line per format, and "GBM-CONFIGS PASS" when ARGB8888, ABGR8888,
+ * XRGB8888 and XBGR8888 each have a config whose window surface is made.
  *
- *   gbm-configs [DEVICE]     (default /dev/dri/renderD128; built by
- * guest/layers/gl/test/meson.build)
+ *   gbm-configs [DEVICE]     default /dev/dri/renderD128
+ *
+ * Built by guest/layers/gl/test/meson.build.
  */
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -64,6 +65,21 @@ int main(int argc, char **argv)
         eglGetConfigAttrib(dpy, configs[i], EGL_BLUE_SIZE, &b);
         eglGetConfigAttrib(dpy, configs[i], EGL_ALPHA_SIZE, &a);
         printf("config %d rgba %d%d%d%d visual %.4s\n", id, r, g, b, a, (const char *)&visual);
+    }
+    /* What a client that takes the first alpha-8 config gets (LG's Qt EGLFS Starfish plugin):
+     * the TV driver's format first where the gl layer names it (Mesa patch 0007) */
+    for (EGLint i = 0; i < n; i++) {
+        EGLint id, visual, r, g, b, a;
+        eglGetConfigAttrib(dpy, configs[i], EGL_RED_SIZE, &r);
+        eglGetConfigAttrib(dpy, configs[i], EGL_GREEN_SIZE, &g);
+        eglGetConfigAttrib(dpy, configs[i], EGL_BLUE_SIZE, &b);
+        eglGetConfigAttrib(dpy, configs[i], EGL_ALPHA_SIZE, &a);
+        if (r != 8 || g != 8 || b != 8 || a != 8)
+            continue;
+        eglGetConfigAttrib(dpy, configs[i], EGL_CONFIG_ID, &id);
+        eglGetConfigAttrib(dpy, configs[i], EGL_NATIVE_VISUAL_ID, &visual);
+        printf("first rgba 8888 config: %d visual %.4s\n", id, (const char *)&visual);
+        break;
     }
     int failed = 0;
     for (size_t f = 0; f < sizeof(formats) / sizeof(formats[0]); f++) {

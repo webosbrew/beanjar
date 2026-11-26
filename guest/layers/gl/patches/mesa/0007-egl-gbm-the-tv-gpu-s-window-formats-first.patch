@@ -1,0 +1,100 @@
+egl/gbm: the TV GPU's window formats first.
+
+LG's Qt EGLFS Starfish plugin of the ponytail releases takes the first config eglChooseConfig gives
+for its alpha-8 surface format (Qt 5.12's chooser compares channel sizes only, filterConfig is the
+base's) and creates the gbm_surface in the output's configured format, abgr8888, whatever the
+config's EGL_NATIVE_VISUAL_ID. On the set that matches: the Mali r46p0 GBM winsys (libmali.so.0.46.0,
+gbm_get_configs) makes window configs of XBGR8888 and ABGR8888 only. Mesa lists the BGRA/BGRX
+configs first, so the plugin got ARGB8888 and eglCreateWindowSurface failed with EGL_BAD_MATCH.
+
+The gl layer writes the TV driver's formats to /usr/share/beanjar/gbm-window-formats (its first line
+that is not a # comment: DRM fourccs, "XB24 AB24"); their configs are added first, so they get the
+lower config IDs and come first among equal configs. The other formats keep their configs after
+them, for the compositors that ask by visual. Without the file nothing changes.
+--- a/src/egl/drivers/dri2/platform_drm.c
++++ b/src/egl/drivers/dri2/platform_drm.c
+@@ -527,6 +527,53 @@
+    gbm_dri_bo_unmap_dumb(bo);
+ }
+ 
++/* The GBM formats the emulated TV's own GPU driver makes window configs of
++ * (Beanjar's gl layer): the first line of the file that is not a '#' comment,
++ * DRM fourccs separated by spaces ("XB24 AB24"). Their configs are added first,
++ * so they get the lower config IDs and eglChooseConfig returns them before the
++ * other formats' equal configs, as the TV's driver lists only those. Without
++ * the file the order is Mesa's own. */
++#define GBM_WINDOW_FORMATS_FILE "/usr/share/beanjar/gbm-window-formats"
++
++static unsigned
++drm_tv_window_formats(uint32_t *formats, unsigned max)
++{
++   char text[1024];
++   size_t n = 0;
++   unsigned count = 0;
++   FILE *f = fopen(GBM_WINDOW_FORMATS_FILE, "r");
++
++   if (f) {
++      n = fread(text, 1, sizeof(text) - 1, f);
++      fclose(f);
++   }
++   text[n] = '\0';
++   for (const char *line = text; *line;) {
++      const char *end = strchr(line, '\n');
++
++      if (!end)
++         end = line + strlen(line);
++      if (*line != '#' && line != end) {
++         for (const char *p = line; p + 4 <= end && count < max;) {
++            if (*p == ' ' || *p == '\t') {
++               p++;
++               continue;
++            }
++            formats[count++] = (uint32_t)(unsigned char)p[0] |
++                               (uint32_t)(unsigned char)p[1] << 8 |
++                               (uint32_t)(unsigned char)p[2] << 16 |
++                               (uint32_t)(unsigned char)p[3] << 24;
++            p += 4;
++         }
++         break;
++      }
++      if (!*end)
++         break;
++      line = end + 1;
++   }
++   return count;
++}
++
+ static void
+ drm_add_configs_for_visuals(_EGLDisplay *disp)
+ {
+@@ -534,9 +581,13 @@
+    const struct gbm_dri_visual *visuals = dri2_dpy->gbm_dri->visual_table;
+    int num_visuals = dri2_dpy->gbm_dri->num_visuals;
+    unsigned int format_count[num_visuals];
++   uint32_t tv_formats[16];
++   unsigned num_tv_formats = drm_tv_window_formats(tv_formats, 16);
+ 
+    memset(format_count, 0, num_visuals * sizeof(unsigned int));
+ 
++   /* The TV driver's formats first (pass 0), then the others (pass 1) */
++   for (unsigned pass = 0; pass < 2; pass++)
+    for (unsigned i = 0; dri2_dpy->driver_configs[i]; i++) {
+       const struct dri_config *config = dri2_dpy->driver_configs[i];
+       struct gl_config *gl_config = (struct gl_config *) config;
+@@ -544,10 +595,16 @@
+       for (unsigned j = 0; j < num_visuals; j++) {
+          struct dri2_egl_config *dri2_conf;
+          EGLint config_group = 0;
++         bool tv_format = false;
+ 
+          if (visuals[j].pipe_format != gl_config->color_format)
+             continue;
+ 
++         for (unsigned k = 0; k < num_tv_formats; k++)
++            tv_format |= tv_formats[k] == visuals[j].gbm_format;
++         if (tv_format != (pass == 0))
++            continue;
++
+          /* Put the 16 bpc rgb[a] unorm formats into a lower priority EGL config
+           * group 1, so they don't get preferably chosen by eglChooseConfig().
+           */

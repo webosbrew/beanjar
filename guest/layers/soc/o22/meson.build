@@ -12,6 +12,12 @@
 # nn-proxy's AIBSP_Initialize failed at /dev/video241 and its teardown crashed; pqcontroller's
 # workers retried /dev/mem forever and W24G's AIBSP_PQ_Enable read a failed mmap. Every imported
 # entry succeeds as a no-op. Spacebuns has both too.
+# The GBM formats the Mali driver makes window configs of (gl_vendor_gbm_formats; the gl layer's
+# Mesa lists their configs first): W24G 33.31.68's bsppart libmali.so.0.46.0, gbm_get_configs, makes
+# them of XBGR8888 and ABGR8888 only, so LG's Qt EGLFS Starfish plugin, which takes the first
+# alpha-8 config and creates its surface in the output's abgr8888, gets a matching one. The other
+# O22-family chips' Mali drivers are taken to be the same (not read).
+gl_vendor_gbm_formats = ['XB24', 'AB24']
 hal_stock = {
   'libdile_gal': ['libdile_gal.so.1', 'libdile_gal.so.1.0.2', []],
   'libdile_crypto': ['libdile_crypto.so.0', 'libdile_crypto.so.0.1.1', []],

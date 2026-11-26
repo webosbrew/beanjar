@@ -6,14 +6,15 @@
 # ponytail) needs from the launcher's configuration on virtio-gpu, which has one scanout plane per
 # CRTC (and a cursor plane): product.env gives it two displays, the panel (fb0) and a 512x2160
 # secondary popup (fb1) on its own plane of the same CRTC, and it aborts ("Fail to choose plane for
-# output fb1"). One display instead, the stock launcher's own default. eglfs_starfish.env gives each
-# output the format abgr8888 (W25P's argb8888), which virtio-gpu's primary plane cannot scan out (it
-# lists XR24 only); Mesa's GBM EGL has no ABGR8888 config (its ABGR8888 configs merge into the
-# same-sized ARGB8888 ones): ombre's plugin falls back to the config's ARGB by itself, ponytail's
-# creates the ABGR surface and eglCreateWindowSurface fails (EGL_BAD_MATCH). xrgb8888 instead, the
-# plane's format, as the Weston releases' gbm-format. Each file is replaced by a runtime copy,
-# bind-mounted, with only those changes; an unexpected content fails rather than boot an unknown
-# configuration. An optional root prefix allows tests without mounts.
+# output fb1"). One display instead, the stock launcher's own default. The outputs keep their
+# formats (abgr8888, W25P's argb8888): the primary plane scans both out (guest kernel patch 0027).
+# The plugin takes the first alpha-8 EGL config and creates its surface in the output's format;
+# Mesa's GBM EGL has a config for each format (the gl layer's Mesa patch 0006) and, where the soc
+# table names the TV driver's formats (O22's Mali: XBGR8888 and ABGR8888), lists theirs first
+# (patch 0007), so the first config matches abgr8888 as on the set; elsewhere Mesa's ARGB8888 comes
+# first, which W25P's argb8888 matches. The file is replaced by a runtime copy, bind-mounted, with
+# only that change; an unexpected content fails rather than boot an unknown configuration. An
+# optional root prefix allows tests without mounts.
 set -eu
 root=${1-}
 runtime=$root/run/beanjar/starfish
@@ -21,8 +22,8 @@ mkdir -p "$runtime"
 trap 'rm -f "$runtime"/*.tmp' 0
 trap 'exit 1' HUP INT TERM
 
-# rewrite NAME OLD NEW [LINES]: /etc/surface-manager.d/NAME with OLD changed to NEW in each of
-# its LINES (default 1) lines containing it
+# rewrite NAME OLD NEW: /etc/surface-manager.d/NAME with OLD changed to NEW in its one line
+# containing it
 rewrite() {
 	src=$root/etc/surface-manager.d/$1 out=$runtime/$1
 	# A service restart in the same boot reuses the binding made at the first start.
@@ -31,14 +32,10 @@ rewrite() {
 		echo "starfish-virtio-output: $1 already mounted by another owner" >&2
 		exit 1
 	fi
-	awk -v old="$2" -v new="$3" -v lines="${4-1}" 'index($0, old) { n++; i = index($0, old)
+	awk -v old="$2" -v new="$3" 'index($0, old) { n++; i = index($0, old)
 	        $0 = substr($0, 1, i - 1) new substr($0, i + length(old)) }
-	     { print } END { if (n != lines) exit 1 }' "$src" > "$out.tmp"
+	     { print } END { if (n != 1) exit 1 }' "$src" > "$out.tmp"
 	mv "$out.tmp" "$out"
 	[ -n "$root" ] || mount --bind "$out" "$src"
 }
 rewrite product.env 'export WEBOS_COMPOSITOR_DISPLAYS=2' 'export WEBOS_COMPOSITOR_DISPLAYS=1'
-# The primary output's and the secondary's (unused with one display), in the firmware's one format
-format=argb8888
-grep -qF '"format":"abgr8888"' "$root/etc/surface-manager.d/eglfs_starfish.env" && format=abgr8888
-rewrite eglfs_starfish.env "\"format\":\"$format\"" '"format":"xrgb8888"' 2

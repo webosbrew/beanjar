@@ -34,6 +34,9 @@
 #   libIMGegl.so*, libsrv_um.so*, libglslcompiler.so*   empty stubs
 #   /usr/share/beanjar/gles-version             the TV's OpenGL ES version (gl_es_version), at most
 #                                               which Mesa gives a context (patches/mesa/0005-*)
+#   /usr/share/beanjar/gbm-window-formats       the GBM formats the TV's driver makes window configs
+#                                               of (gl_vendor_gbm_formats), listed first by Mesa
+#                                               (patches/mesa/0007-*)
 #   libjail-gpu.so                              the render node in native app jails, in sam's
 #                                               LD_PRELOAD by etc/init/sam.override or
 #                                               sam.service.d/zz-beanjar-jail.conf: the common
@@ -278,6 +281,15 @@ gl_es_version = get_variable('gl_es_version', '')
 if gl_es_version != ''
   gl_layer_args += ['--file', configure_file(input: gl_es_version_in, output: 'gles-version',
     configuration: {'GLES': gl_es_version}), 'usr/share/beanjar/gles-version', '644']
+endif
+# usr/share/beanjar/gbm-window-formats: the GBM formats the TV's own GPU driver makes window
+# configs of, the chip's gl_vendor_gbm_formats (soc table, DRM fourccs), whose configs the guest's
+# Mesa lists first (patches/mesa/0007-*); none where the chip states none
+gl_gbm_formats = get_variable('gl_vendor_gbm_formats', [])
+if gl_gbm_formats.length() > 0
+  gl_layer_args += ['--file', configure_file(input: 'gbm-window-formats.in',
+    output: 'gbm-window-formats', configuration: {'FORMATS': ' '.join(gl_gbm_formats)}),
+    'usr/share/beanjar/gbm-window-formats', '644']
 endif
 # sam's preload with libjail-gpu in front of the common layer's libjail-trust: the same path as the
 # common layer's file (guest/layers/common/meson.build, jail_sam_in), which this one replaces

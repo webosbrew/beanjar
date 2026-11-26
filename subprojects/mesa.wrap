@@ -6,4 +6,4 @@ directory = mesa-26.2.3
 source_url = https://archive.mesa3d.org/mesa-26.2.3.tar.xz
 source_filename = mesa-26.2.3.tar.xz
 source_hash = 1628058a8d2c0615975de5a15ab7bbb9638c50000b5bed9456ff423ea034a81f
-diff_files = mesa/0001-glsl-relaxed-es-global-initializers.patch, mesa/0002-egl-IMG-multisampled-render-to-texture.patch, mesa/0003-virgl-no-alpha-render-targets-on-native-alpha-hosts.patch, mesa/0004-virgl-gl-FragColor-to-at-most-four-draw-buffers.patch, mesa/0005-mesa-gles-version-at-most-the-tv-s.patch, mesa/0006-egl-gbm-configs-keep-their-native-visual.patch
+diff_files = mesa/0001-glsl-relaxed-es-global-initializers.patch, mesa/0002-egl-IMG-multisampled-render-to-texture.patch, mesa/0003-virgl-no-alpha-render-targets-on-native-alpha-hosts.patch, mesa/0004-virgl-gl-FragColor-to-at-most-four-draw-buffers.patch, mesa/0005-mesa-gles-version-at-most-the-tv-s.patch, mesa/0006-egl-gbm-configs-keep-their-native-visual.patch, mesa/0007-egl-gbm-the-tv-gpu-s-window-formats-first.patch
