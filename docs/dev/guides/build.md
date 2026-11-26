@@ -289,8 +289,9 @@ again, so another build may come in between; the run then waits for it, saying s
 none and prints the mode. The run directory's `source.json` says what was tested: the commit, the
 tree (`public`, `private`, `working-tree`; `checkout` with `--local`), whether it was `filtered`, the
 `host_commit` the hosts checked out, whether this checkout had uncommitted changes (tracked or
-untracked, not ignored: left out of a commit's run, tested by `--working-tree` and `--local`) and the
-`hosts`; with `--no-sync` the commit is `null`. `summary.txt` ends with the same in a line, and
+untracked, not ignored: left out of a commit's run, tested by `--working-tree` and `--local`), the
+`hosts`, and each host's installed `packages` (its `beanjar --version --json`, `null` without one);
+with `--no-sync` the commit is `null`. `summary.txt` ends with the same in a line, and
 `summary.json` has each target's `commit`. The runner itself, its judges and the test apps it packs run
 from this checkout.
 
@@ -305,8 +306,12 @@ has its targets copied back into the one run directory here. At the start the ru
 ssh what each host can do (`TRAITS` in `scripts/regress`): its architecture; a toolchain (`meson`,
 `ninja`, `cc`, which `scripts/build.sh host` needs); `/dev/dri/renderD128`, the render node the
 launcher gives a KVM guest's virgl display (`RENDERNODE`'s default under KVM, `qemu.py`), without which
-a graphics start fails; and a desktop session (a Wayland socket in `XDG_RUNTIME_DIR`, or X `:0`), where
-the `--viewer` window opens. A graphics target goes only to a host with that render node, with `--viewer`
+a graphics start fails; a desktop session (a Wayland socket in `XDG_RUNTIME_DIR`, or X `:0`), where
+the `--viewer` window opens; and its installed packages (`beanjar --version --json`). The lanes use the
+host's checkout alone, never the installed `beanjar`, so the packages fail nothing; but an installed
+`beanjar` or `beanjar-guest` of another commit than the run's is a warning naming both versions and the
+command that fixes it, since `HOST/NAME` commands and a plain `beanjar` on that host run the installed
+code. A graphics target goes only to a host with that render node, with `--viewer`
 only to one with a desktop too, and any target only to a host whose firmware collections have its
 firmware; a target no host can take fails without booting, with each host's reason under "not run:". A
 host without a toolchain (a ROCK Pi 4 board) builds nothing: the sync ships it this checkout's

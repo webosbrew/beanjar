@@ -1526,11 +1526,23 @@ class HostFirmwareTest(unittest.TestCase):
                 return self.r
 
         self.assertEqual(
-            regress.host_traits(H(0, "arch aarch64\nrender\n")),
-            {"arch": "aarch64", "toolchain": False, "render": True, "desktop": False},
+            regress.host_traits(H(0, "arch aarch64\nrender\npackages \n")),
+            {
+                "arch": "aarch64",
+                "toolchain": False,
+                "render": True,
+                "desktop": False,
+                "packages": None,
+            },
         )
         self.assertEqual(
-            regress.host_traits(H(0, "arch aarch64\ntoolchain\nrender\ndesktop\n")), CAPABLE
+            regress.host_traits(H(0, "arch aarch64\ntoolchain\nrender\ndesktop\n")),
+            dict(CAPABLE, packages=None),
+        )
+        info = {"name": "beanjar", "version": "0.7.0+git215.g" + "a" * 12}
+        self.assertEqual(
+            regress.host_traits(H(0, f"arch aarch64\npackages {json.dumps(info)}\n"))["packages"],
+            info,
         )
         with self.assertRaises(RuntimeError):
             regress.host_traits(H(255, "ssh: no route"))
@@ -1543,7 +1555,39 @@ class HostFirmwareTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         lines = r.stdout.split("\n")
         self.assertEqual(lines[0], f"arch {os.uname().machine}")
-        self.assertTrue(set(lines[1:]) <= {"toolchain", "render", "desktop", ""}, r.stdout)
+        self.assertTrue(
+            {w for w in lines[1:] if not w.startswith("packages ")}
+            <= {"toolchain", "render", "desktop", ""},
+            r.stdout,
+        )
+
+    def test_package_drift(self):
+        """The hosts' installed packages against the run's commit: recorded for source.json, a
+        warning for each difference naming both versions and the fix, never a failure."""
+        a = argparse.Namespace(hosts=["pi", "rock", "nuc"])
+        a.source = {
+            "commit": "b" * 40,
+            "identity": f'version = "0.7.0+git276.g{"b" * 12}"\ncommit = "{"b" * 40}"\n',
+        }
+        same = {"name": "beanjar", "version": "0.7.0+git276.g" + "b" * 12, "commit": "b" * 40,
+                "source": "package", "guest": {"version": "0.7.0+git276.g" + "b" * 12, "commit": "b" * 40}}  # fmt: skip
+        old = {"name": "beanjar", "version": "0.7.0+git251.g" + "a" * 12, "commit": "a" * 40,
+               "source": "package", "guest": {"version": "0.7.0+git181.g" + "c" * 12, "commit": "c" * 40}}  # fmt: skip
+        a.traits = {"pi": {"packages": same}, "rock": {"packages": old}, "nuc": {"packages": None}}
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            regress.package_drift(a)
+        text = out.getvalue()
+        self.assertEqual(a.source["packages"], {"pi": same, "rock": old, "nuc": None})
+        self.assertNotIn("pi:", text)
+        self.assertIn("warning: rock: its installed beanjar is 0.7.0+git251", text)
+        self.assertIn("the run's commit 0.7.0+git276", text)
+        self.assertIn("host rock's guest payload is 0.7.0+git181", text)
+        self.assertIn("nuc: no installed beanjar", text)
+        # --no-sync pins nothing: nothing to compare
+        a.source = {"commit": None}
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            regress.package_drift(a)
+        self.assertNotIn("warning", out.getvalue())
 
 
 class ResultTest(unittest.TestCase):

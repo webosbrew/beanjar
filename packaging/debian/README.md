@@ -230,7 +230,10 @@ the remote's layouts it asks the CLI for; it imports nothing of it), on `beanjar
 `/usr/lib/beanjar/installation.toml` records the host's version, commit and architecture;
 `/usr/share/beanjar/guest/installation.toml` the guest's version, commit and the SHA-256 of its
 payload. Both are information: the launcher copies the versions into a run's `vm-info.toml`
-for logs and messages. VM directories carry no version or format marker.
+for logs and messages, `beanjar --version --json` reports both (`commit`, `guest`), and a command
+forwarded to another machine, `beanjar host show NAME` and a regression run compare them with the
+caller's or the pinned commit and warn, naming the install command (the manager's "Several
+machines"). VM directories carry no version or format marker.
 
 ### arm64 packages from the PC
 

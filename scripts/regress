@@ -34,7 +34,8 @@ its checkout, build and lanes; a second run, or a sync command run by hand, fail
 holder. The run directory's source.json says what was tested: the commit, the tree (public, private,
 working-tree; checkout with --local), whether it was filtered, the host commit the hosts checked out,
 whether this checkout had uncommitted changes (tracked or untracked, not ignored: left out of a commit's
-run, tested by --working-tree and --local) and the hosts; with --no-sync the commit is null (the hosts'
+run, tested by --working-tree and --local), the hosts, and each host's installed packages (packages:
+its `beanjar --version --json`, null without one); with --no-sync the commit is null (the hosts'
 checkouts as they were). summary.txt's last line says the same, and summary.json each target's commit.
 The runner itself, its judges and the test apps it packs are this checkout's. The
 VM host boots each target's firmware from its own firmware collections (`host/scripts/vm-launcher config
@@ -49,7 +50,10 @@ back only that host (a host whose preparation fails runs nothing; a target only 
 saying so). What each host can do is read over ssh at the start (TRAITS: uname -m; a toolchain,
 meson, ninja and cc, which `scripts/build.sh host` needs; the render node the launcher gives a KVM
 guest's virgl display, /dev/dri/renderD128, without which a graphics start fails; a desktop session, a
-Wayland socket in XDG_RUNTIME_DIR or X :0, where the --viewer window opens). A graphics target runs
+Wayland socket in XDG_RUNTIME_DIR or X :0, where the --viewer window opens; the installed packages'
+`beanjar --version --json`). The run uses each host's checkout alone, never its installed beanjar, but
+an installed beanjar or guest of another commit than the run's is a warning naming both versions and
+the fix (package_drift): HOST/NAME commands and a plain `beanjar` there run it. A graphics target runs
 only on a host with that render node, with --viewer only on one with a desktop too, and any target only
 where its firmware is in that host's collections. A host without a toolchain (an arm64 board) builds
 nothing: the sync ships it this checkout's cross-built build/publish-arm64 (scripts/build.sh host-arm64,
@@ -257,6 +261,7 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -265,7 +270,7 @@ IDENTITY_PY = os.path.join(TOP, "packaging", "identity.py")
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
 sys.path.insert(0, os.path.join(TOP, "scripts"))
-from beanjar import guestlayers, launch, nvm, targets, paths, qemu, vmunits  # noqa: E402
+from beanjar import compat, guestlayers, launch, nvm, targets, paths, qemu, vmunits  # noqa: E402
 import buildlock  # noqa: E402
 import checklist  # noqa: E402
 import hostsrc  # noqa: E402
@@ -3254,7 +3259,9 @@ TRAITS = (
     + '[ "$(basename "$(readlink -f /sys/class/drm/${n##*/}/device)")" != vgem ] && echo render; '
     + "rt=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}; "
     + "{ ls -d $rt/wayland-[0-9]* 2>/dev/null | grep -qv lock || [ -S /tmp/.X11-unix/X0 ]; } "
-    + "&& echo desktop; true"
+    + "&& echo desktop; "
+    # the installed packages (`beanjar --version --json`: what HOST/NAME commands run there)
+    + 'printf "packages %s\\n" "$(beanjar --version --json 2>/dev/null | head -n 1)"; true'
 )
 
 
@@ -3270,12 +3277,63 @@ def host_traits(h):
     words = dict((line.split(" ", 1) + [""])[:2] for line in out.splitlines() if line)
     if rc or "arch" not in words:
         raise RuntimeError(f"cannot read {h.host}'s traits: {out.strip()}")
+    try:
+        packages = json.loads(words.get("packages") or "null")
+    except ValueError:
+        packages = None
     return {
         "arch": words["arch"],
         "toolchain": "toolchain" in words,
         "render": "render" in words,
         "desktop": "desktop" in words,
+        "packages": packages if isinstance(packages, dict) else None,
     }
+
+
+def pinned_identity(src):
+    """The run's commit as compat.drift takes it ({"version", "commit"}): the source identity's
+    (make_host_commit), else the commit alone; None when the run pins none (--no-sync)."""
+    if not src.get("commit"):
+        return None
+    try:
+        ident = tomllib.loads(src.get("identity") or "")
+    except ValueError:
+        ident = {}
+    return {"version": ident.get("version") or src["commit"][:12], "commit": src["commit"]}
+
+
+def package_drift(a):
+    """Each VM host's installed packages (its traits' `beanjar --version --json`) against the run's
+    commit: a.source["packages"] {host: that object or None} for source.json, and a warning for
+    each difference (compat.drift). The run uses the hosts' checkouts, so nothing fails by it, but a
+    HOST/NAME command or a plain `beanjar` there runs the installed code."""
+    pinned = pinned_identity(a.source)
+    a.source["packages"] = {host: a.traits[host].get("packages") for host in a.hosts}
+    for host, info in a.source["packages"].items():
+        if info is None:
+            say(f"{host}: no installed beanjar answers `beanjar --version --json`")
+            continue
+        for item in compat.drift(pinned, info, host) if pinned else []:
+            if item["package"] == "beanjar":
+                say(
+                    f"warning: {host}: its installed beanjar is {compat.label(item['found'])}, "
+                    f"the run's commit {compat.label(item['expected'])}; the run uses its checkout, "
+                    f"but HOST/NAME commands and `beanjar` there run the installed one; fix: "
+                    f"{item['fix']}"
+                )
+            else:
+                say(f"warning: {compat.drift_text(item)}")
+
+
+def write_source(a):
+    """The run directory's source.json (a.source); nothing on a dry run."""
+    if a.dry_run:
+        return
+    d = os.path.join(TOP, "build", "regress", a.run)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "source.json"), "w") as f:
+        json.dump(a.source, f, indent=1)
+        f.write("\n")
 
 
 def host_firmwares(h, names):
@@ -3467,12 +3525,7 @@ def main(argv=None):
         say(f"host commit of {a.source['commit']}: {e}")
         return 1
     say(f"source: {describe(a.source)}")
-    if not a.dry_run:
-        d = os.path.join(TOP, "build", "regress", a.run)
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "source.json"), "w") as f:
-            json.dump(a.source, f, indent=1)
-            f.write("\n")
+    write_source(a)
     for p, _fw in sel:
         warning = targets.untested_warning(targets.by_name(p))
         if warning:
@@ -3500,6 +3553,9 @@ def main(argv=None):
             f"{host}: {t['arch']}, "
             + ", ".join(f"{'' if t[k] else 'no '}{k}" for k in ("toolchain", "render", "desktop"))
         )
+    if a.hosts:
+        package_drift(a)
+        write_source(a)
     # this checkout's build/ is the run's from here to its end: exclusive while it builds here, then
     # shared (its outputs read, synced, booted); each VM host's checkout too: its checkout, build and
     # lanes
