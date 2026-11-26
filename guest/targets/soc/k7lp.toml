@@ -33,6 +33,10 @@ thermal = true
 # (mw_fan_checkAbnormal, once a second) counts the level changes of FAN1-3 (FAN1-5 for the micom's
 # fan options 1 and 2) and, after 12 s of 0 RPM on one, powers the set off ("fan3": micom 25 00 ad).
 # W21P's map has no line among them; its fancontroller has no such check.
+# gpio_level 106 and 137, W21Z's as well (W21P's map has neither): its panelcontroller's
+# mw_checkDMDPG reads raw GPIO 106 every 0.5 s and, unless it is 1, resets the DLP controller
+# (DPP6540) three times and then powers the set off ("dpp_abnormal": micom 25 00 b6); 137 is
+# GPIO_RD_I2C_BUSY, which DPP6540_WriteRegisters waits to be 1 before each I2C write.
 [[modules]]
 name = "rtk"
 params = [
@@ -64,7 +68,7 @@ params = [
     "tee=1",
     "fb=1:512x2160",
     "vsc_screen=3840,2160",
-    "gpio_level=40:1,152:1",
+    "gpio_level=40:1,152:1,106:1,137:1",
     "gpio_usb_vbus=41,151",
     "gpio_tach=128,122,124,130,126,118",
 ]
