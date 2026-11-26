@@ -53,5 +53,8 @@ params = [
     "adv_fn009=45:90:186",
     "xc_window=19,52,50,245,247,193",
     "xc_riu=0x1f000000:0x130000",
+    # DEL_MUTEX leaves the name, as the semutex driver of W16R's kernel (3.10.23-74.deua.5, read
+    # from its image and its GPL source) does (docs/research/m2r-rootinit-xc-mutex-hang.md)
+    "semutex_del_keeps=1",
 ]
 derived = "mstar-mboot"

@@ -53,6 +53,11 @@ params = [
     "xc_riu=0x1f000000:0x130000",
     "utopia_gpio=1",
     "gpio_pad_level=43:1",
+    # DEL_MUTEX leaves the name, as the semutex driver of W17R's kernel (4.4.3-78.drd4tv.2, read
+    # from its image) does: tvconfig-gen's exit deletes MPool_Mutex while tvservice still uses its
+    # index, and RootInit hung when a new name took the slot
+    # (docs/research/m2r-rootinit-xc-mutex-hang.md)
+    "semutex_del_keeps=1",
 ]
 
 # W17R's btmtk_usb.ko (btmtk_nl_init: __netlink_kernel_create unit 30) and btmngr's

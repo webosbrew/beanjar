@@ -33,6 +33,15 @@ module_param(semutex_shm_capacity, uint, 0444);
 MODULE_PARM_DESC(semutex_shm_capacity,
                  "shared-memory capacity returned by the newer semutex query, in bytes");
 
+/* What DEL_MUTEX does. The older drivers (W16R's 3.10 GPL source; W17R's 4.4.3 kernel, read from
+ * its image) only check the index: the name stays, so the slot is never handed out again and a
+ * process that still uses the old index keeps its own mutex. The later ones (W18R's 4.4.84 GPL
+ * source) clear the name, and the next new name takes the slot. */
+static bool semutex_del_keeps;
+module_param(semutex_del_keeps, bool, 0444);
+MODULE_PARM_DESC(semutex_del_keeps, "DEL_MUTEX leaves the name, so a deleted slot is never reused "
+                                    "(the older MStar drivers)");
+
 #define SEMUTEX_INDEX_BEGIN 0xff
 #define SEMUTEX_MUTEXES     320
 #define SEMUTEX_NAME_LEN    64
@@ -193,10 +202,13 @@ static long semutex_ioctl(struct file *file, unsigned int cmd, unsigned long arg
         mutex_unlock(&semutex_lock);
         return free < 0 ? -ENOSPC : SEMUTEX_INDEX_BEGIN + free;
     }
-    case MDRV_SEMUTEX_DEL_MUTEX: /* the name goes; a holder keeps its lock */
+    case MDRV_SEMUTEX_DEL_MUTEX: /* the name goes (unless semutex_del_keeps); a holder keeps its
+                                    lock */
         m = semutex_mutex_at(uarg, &index);
         if (!m)
             return -EINVAL;
+        if (semutex_del_keeps)
+            return 0;
         mutex_lock(&semutex_lock);
         m->name[0] = 0;
         mutex_unlock(&semutex_lock);

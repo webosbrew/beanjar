@@ -44,4 +44,7 @@ params = [
         0x1f000000:0x131f04:0x8000""",
     "i2c=micom:0x0452,nvm:0x00a0,amp:0x0054",
     "gop_fb=27",
+    # DEL_MUTEX leaves the name, as the semutex driver of SS1A's kernel (3.10.23, read from its
+    # image) does (docs/research/m2r-rootinit-xc-mutex-hang.md)
+    "semutex_del_keeps=1",
 ]
