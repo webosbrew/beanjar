@@ -8,8 +8,9 @@
 Takes the VM's channel map (beanjar io tuner list NAME) and the services of the lineup in effect on
 it (beanjar io tuner lineup show NAME: the VM's own, or the built-in one of its board's standard,
 US ATSC, the Japanese ISDB-T one on an ARIB board or the European DVB one on a DVB board) as what
-the scan must find, on the air and on cable: the scan keeps the passes of the mapped RFs' media
-(terrestrial digital for an air RF, cable digital for a cable one, C78) and skips the others,
+the scan must find, on the air and on cable: the scan keeps the digital passes, terrestrial and
+(where the board has cable: ATSC, DVB) cable, so that a cable channel found by an earlier scan is
+not kept when its RF is unmapped, and skips the others (analogue, satellite),
 waits for its legacy-broadcast (legacy-broadcast-atsc, -arib or -dvb) to be steady (the same
 process for a minute, registered with the bus and answering; a first boot respawns it), runs tests/regress/tuner/scan.sh in the guest as root
 (beanjar ares-shell --root: the VM needs the rootssh layer), and checks its answers: every mapped
@@ -49,6 +50,7 @@ def env():
 def shell(name, command, timeout):
     r = subprocess.run(
         [BEANJAR, "ares-shell", "--root", "-d", name, "-r", command],
+        check=False,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -66,8 +68,9 @@ WATCH = {
     "arib": '"channelId":"1_[^"]*"',
     "dvb": '"channelId":"[13]_[^"]*"',
 }
-# the scan passes kept, by the mapped RFs' media (scan.sh's PASSES)
-PASSES = {False: "TERRESTRIAL_DIGITAL", True: "CABLE_DIGITAL"}
+# the scan passes kept (scan.sh's PASSES): the digital ones of the board's standard. A pass that is
+# skipped keeps the channels an earlier scan found in it.
+PASSES = {"atsc": "TERRESTRIAL_DIGITAL CABLE_DIGITAL", "dvb": "TERRESTRIAL_DIGITAL CABLE_DIGITAL"}
 
 
 def label(number, cable):
@@ -196,14 +199,16 @@ def main():
         timeout=120,
     )
     watch = f" '{WATCH[broadcast]}'" if broadcast in WATCH else ""
-    passes = " ".join(dict.fromkeys(PASSES[tuner_band.parse(c)[0]] for c in mapped + streams))
+    passes = PASSES.get(broadcast, "TERRESTRIAL_DIGITAL")
     out = shell(a.name, f"PASSES='{passes}' sh /tmp/scan.sh {a.timeout}{watch}", a.timeout + 300)
     now = time.time()
     r = parse(out)
     want = expected(mapped, now, lineup)
     got_channels, ids = {}, {}
     for v in r.get("channel", []):
-        number, cname, cid = (v.split(" ", 2) + ["", ""])[:3]
+        # NUMBER NAME CHANNELID, the name may have spaces (DVB: "Beanjar Eins")
+        number, _, rest = v.partition(" ")
+        cname, _, cid = rest.rpartition(" ")
         source = cid.split("_")[0]
         if source not in (SOURCE_AIR, SOURCE_CABLE):
             continue  # a satellite preset of a Japanese set

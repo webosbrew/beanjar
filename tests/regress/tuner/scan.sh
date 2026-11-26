@@ -12,14 +12,15 @@
 #
 # The passes are fixed by the region (US: terrestrial digital, terrestrial analogue, cable digital,
 # cable analogue; legacy-broadcast-atsc ignores setAutoScanChannelType; Japan: terrestrial digital
-# alone; Germany: those of the US and satellite). Our lineups are digital, so each other pass is
-# skipped as it starts, as the stock app's Skip button does (scan/skipAutoScan): about 40 s instead
-# of 20 minutes under TCG. ALL=1 runs every pass; PASSES names the passes kept, the source types
-# without INPUTSOURCE_ (default TERRESTRIAL_DIGITAL; run-scan.py adds CABLE_DIGITAL when a cable
-# RF, C78, is mapped).
+# alone); a DVB set (Germany) runs the digital passes of the media setAutoScanChannelType names,
+# below. Our lineups are digital, so each other pass is skipped as it starts, as the stock app's
+# Skip button does (scan/skipAutoScan): about 40 s instead of 20 minutes under TCG. ALL=1 runs every
+# pass; PASSES names the passes kept, the source types without INPUTSOURCE_ (default
+# TERRESTRIAL_DIGITAL; run-scan.py keeps CABLE_DIGITAL too on ATSC and DVB boards).
 #
 # WATCH_IDS: the channelIds watched after the scan, an extended regular expression for a whole
-# "channelId":"..." pair; by default each US RF's first service (..._1_0_0_0). A Japanese set (run-scan.py: '"channelId":"1_[^"]*"', terrestrial digital)
+# "channelId":"..." pair; by default each US RF's first service (..._1_0_0_0). A Japanese set
+# (run-scan.py: '"channelId":"1_[^"]*"', terrestrial digital)
 # lists its satellite presets too, which are not watched; a DVB set's digital channels are watched
 # each ('"channelId":"[13]_[^"]*"'). They are watched in channelId order (the source type first:
 # 1 terrestrial, 3 cable), so Live TV is left on the last one.
@@ -74,6 +75,15 @@ source_type() {
 close_livetv() {
 	$L luna://com.webos.service.applicationmanager/closeByAppId '{"id":"com.webos.app.livetv"}' </dev/null >/dev/null 2>&1
 }
+# a DVB set scans the media its scan channel type names (terrestrial by default, as the first-use
+# wizard leaves it): cable too when the cable pass is kept. legacy-broadcast-atsc answers and keeps
+# to its region's passes.
+case " $PASSES " in *" CABLE_DIGITAL "*) cable=true ;; *) cable=false ;; esac
+$L $U/setAutoScanChannelType "{\"scanChannelType\":{\"terrestrial\":true,\"cable\":$cable,\"satellite\":false}}" </dev/null >/dev/null 2>&1
+# and its cable scan digital only (as its terrestrial one is by default): a cable analogue pass,
+# skipped as it starts, left the scan hanging (W21P's DVB board, autoScanning true, no tune for
+# 10 minutes). Its four fields, or it cannot take them apart.
+$L $U/setDvbCableScanOption '{"scanOption":{"supportSkipScrambleProgram":true,"supportDigitalOnly":true,"digitalOnly":true,"skipScrambleProgram":false}}' </dev/null >/dev/null 2>&1
 tries=0
 START=
 while :; do
@@ -160,11 +170,15 @@ for cid in $(echo "$CH" | grep -oE "$WATCH_IDS" | sed 's/"channelId":"\(.*\)"/\1
 done
 kill $WATCH 2>/dev/null
 EV=$($L $I/getCurrentEventList "{\"channelId\":[$IDS],\"dataType\":0,\"sort\":0}" </dev/null | tr -d '\n')
-# each entry's programName follows its channelId (a Japanese set's is empty: its signalChannelId,
-# ONID_SVCID_TSID, the tail of the channel's channelId)
+# each entry's channelId, signalChannelId and programName, in an order that differs by set (a
+# DVB set's programName comes before its signalChannelId): an entry ends where one of the three
+# comes again. A Japanese and a DVB set's channelId is empty: its signalChannelId (ARIB
+# ONID_SVCID_TSID, DVB TSID_SVCID_ONID) is the tail of the channel's channelId.
 echo "$EV" | grep -oE '"(channelId|signalChannelId|programName)":"[^"]*"' |
-	awk -F'"' '$2 == "channelId" { c = $4 } $2 == "signalChannelId" { s = $4 }
-		$2 == "programName" { print "event=" (c != "" ? c : s) " " $4 }'
+	awk -F'"' 'function flush() { if (p != "") print "event=" (c != "" ? c : s) " " p; c = s = p = ""; seen = "" }
+		index(seen, " " $2 " ") { flush() } { seen = seen " " $2 " " }
+		$2 == "channelId" { c = $4 } $2 == "signalChannelId" { s = $4 } $2 == "programName" { p = $4 }
+		END { flush() }'
 echo "events=$(echo "$EV" | sed -n 's/.*"programListCount":\([0-9]*\).*/\1/p')"
 echo "--- raw"
 echo "channel_list=$(echo "$CH" | cut -c1-6000)"
