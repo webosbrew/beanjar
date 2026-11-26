@@ -8,11 +8,13 @@
  * _Mapping_SharedMem, with the driver's semantics (drivers/mstar2/drv/semutex): a mutex is a
  * counting semaphore of 1 by name, the same index (from 255) for the name in every process; any
  * thread of any process may unlock it (KADP locks and unlocks from different threads); a process
- * whose file is released gives back the mutexes it holds, so a daemon that dies holding one does
- * not wedge the others. The shared memory is one block, created at the first CREATE_SHAREMEMORY
- * with its size (QUERY_ISFIRST tells that caller), mapped by mmap, and freed when the last file
- * that created or found it is released. The ioctl numbers are W16R's KADP's (MsOS_* in
- * libkadaptor): the older numbering, LOCK and UNLOCK as _IO. */
+ * that exits gives back the mutexes it holds, so a daemon that dies holding one does not wedge the
+ * others: by its tgid as it closes the file (flush), as the driver does, and by the file when that
+ * is released. The file outlives the holder when a child it forked keeps it open. The shared memory
+ * is one block, created at the first CREATE_SHAREMEMORY with its size (QUERY_ISFIRST tells that
+ * caller), mapped by mmap, and freed when the last file that created or found it is released. The
+ * ioctl numbers are W16R's KADP's (MsOS_* in libkadaptor): the older numbering, LOCK and UNLOCK as
+ * _IO. */
 
 #define MDRV_SEMUTEX_LOCK                      _IO('S', 0)
 #define MDRV_SEMUTEX_UNLOCK                    _IO('S', 1)
@@ -96,6 +98,30 @@ static int semutex_release(struct inode *inode, struct file *file)
     }
     mutex_unlock(&semutex_shm_lock);
     kfree(f);
+    return 0;
+}
+
+/* An exiting process closes the file: it gives back the mutexes it holds, as MStar's driver does
+ * (_MDrv_SEMUTEX_Flush, by tgid). The file may live on in a child that the holder forked, so its
+ * release does not come then, and the holder is gone. */
+static int semutex_flush(struct file *file, fl_owner_t id)
+{
+    if (!(current->flags & PF_EXITING))
+        return 0;
+    mutex_lock(&semutex_lock);
+    for (int i = 0; i < SEMUTEX_MUTEXES; i++) {
+        struct semutex_mutex *m = &semutex_mutexes[i];
+
+        if (m->locked_file && m->tgid == current->tgid) {
+            pr_info("semutex: %s[%d] exits holding %s: given back\n", current->comm, current->tgid,
+                    m->name);
+            sem_ev(SEM_OP_RELEASE, i, 0,
+                   div_u64(ktime_get_boottime_ns() - m->since, NSEC_PER_MSEC));
+            m->locked_file = NULL;
+            up(&m->sem);
+        }
+    }
+    mutex_unlock(&semutex_lock);
     return 0;
 }
 
@@ -292,6 +318,7 @@ static int semutex_mmap(struct file *file, struct vm_area_struct *vma)
 const struct file_operations semutex_fops = {
     .owner = THIS_MODULE,
     .open = semutex_open,
+    .flush = semutex_flush,
     .release = semutex_release,
     .mmap = semutex_mmap,
     .unlocked_ioctl = semutex_ioctl,

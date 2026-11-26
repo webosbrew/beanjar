@@ -28,7 +28,7 @@ Build `check-semutex.c` as a static arm64 or AArch32 executable with `-O2 -Wall 
 -Werror`. Run it before firmware in a fresh isolated init0 VM after loading `mstar-utopia`
 with the selected imported LM14 memory geometry and `secure_shm_id=7 mbx_trace=1`.
 It checks named mutexes across separate opens, timeout,
-cross-file unlock, holder release, deletion while held, and shared-memory aliases and
+cross-file unlock, holder release, a holder that exits while a forked child keeps its file, deletion while held, and shared-memory aliases and
 last-user release. The mailbox trace records the held-lock timeout.
 
 For the ARM64 semutex check, build into the test output directory:

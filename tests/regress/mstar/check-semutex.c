@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define LOCK         _IO('S', 0)
@@ -49,8 +50,9 @@ int main(void)
 {
     long pagesize = sysconf(_SC_PAGESIZE);
     char name[64];
-    int index, timeout[2];
+    int index, timeout[2], keep[2], status;
     uint32_t size;
+    pid_t holder;
 
     check(pagesize > 0 && (unsigned long)pagesize <= UINT32_MAX / 2, "page size");
     page = (size_t)pagesize;
@@ -75,6 +77,33 @@ int main(void)
     check(close(a) == 0, "close holder");
     a = -1;
     check(ioctl(b, TRY_LOCK, &index) == 0, "holder release returns lock");
+    check(ioctl(b, UNLOCK, &index) == 0, "returned lock unlocks");
+    /* A process that exits holding a lock gives it back although a child it forked keeps the
+     * file open (MStar's flush by tgid); the child keeps it until the pipe closes. */
+    check(pipe(keep) == 0, "keeper pipe");
+    holder = fork();
+    check(holder >= 0, "fork holder");
+    if (holder == 0) {
+        int c = open("/dev/semutex", O_RDWR);
+        char byte;
+
+        if (c < 0 || ioctl(c, LOCK, &index) != 0)
+            _exit(1);
+        close(keep[1]);
+        if (fork() == 0) {
+            if (read(keep[0], &byte, 1) < 0)
+                _exit(1);
+            _exit(0);
+        }
+        _exit(0);
+    }
+    close(keep[0]);
+    check(waitpid(holder, &status, 0) == holder && WIFEXITED(status) && !WEXITSTATUS(status),
+          "holder locks, forks a keeper and exits");
+    timeout[0] = index;
+    timeout[1] = 1000;
+    check(ioctl(b, LOCK_TIMEOUT, timeout) == 0, "exited holder's lock returns, file kept");
+    close(keep[1]);
     check(ioctl(b, DELETE_MUTEX, &index) == 0, "delete name while held");
     check(ioctl(b, TRY_LOCK, &index) == 1, "deletion retains held lock");
     check(ioctl(b, UNLOCK, &index) == 0, "deleted holder can unlock");
@@ -116,6 +145,6 @@ int main(void)
           "fresh allocation after last release");
     x = mmap(NULL, page, PROT_READ | PROT_WRITE, MAP_SHARED, a, 0);
     check(x != MAP_FAILED && x[0] == 0 && x[1] == 0, "released memory is discarded");
-    puts("semutex naming, ownership, timeout and shared memory PASS");
+    puts("semutex naming, ownership, exit, timeout and shared memory PASS");
     return 0;
 }
