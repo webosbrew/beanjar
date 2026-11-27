@@ -9,6 +9,10 @@ import shutil
 import subprocess
 
 
+# the hooks that run the pre-commit framework (.pre-commit-config.yaml), after an inherited one
+WRAPPED = ("pre-commit", "pre-push")
+
+
 def git(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
@@ -33,12 +37,15 @@ def main():
                     and os.access(hook, os.X_OK)
                     and not hook.name.endswith(".sample")
                 ):
-                    name = "pre-commit.inherited" if hook.name == "pre-commit" else hook.name
+                    name = hook.name + ".inherited" if hook.name in WRAPPED else hook.name
                     (dispatch / name).symlink_to(hook)
-    shutil.copyfile(root / "scripts/format-hooks/pre-commit.sh", dispatch / "pre-commit")
-    (dispatch / "pre-commit").chmod(0o755)
+    for name in WRAPPED:
+        shutil.copyfile(root / f"scripts/format-hooks/{name}.sh", dispatch / name)
+        (dispatch / name).chmod(0o755)
     subprocess.run(["git", "config", "--local", "core.hooksPath", str(dispatch)], check=True)
-    print(f"Installed formatting hook in {dispatch}; inherited hooks remain in {inherited}.")
+    print(
+        f"Installed the pre-commit and pre-push hooks in {dispatch}; inherited hooks remain in {inherited}."
+    )
 
 
 if __name__ == "__main__":

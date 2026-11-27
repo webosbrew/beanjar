@@ -47,3 +47,14 @@ review the change, stage it and commit again. For partially staged files, pre-co
 temporarily saves unstaged changes and restores them afterward. If restoring them conflicts
 with formatter edits, pre-commit rolls back the formatter changes and blocks the commit.
 It does not stage formatter changes or discard unstaged edits.
+
+## Before a push
+
+The same installer sets up a `pre-push` hook (`act-check` in `.pre-commit-config.yaml`) that runs
+`scripts/act-check`: the public Tests workflow's `lint` and `unit` (amd64) jobs and, when the
+commits being pushed touch `guest/`, `meson/` or `packaging/debian/build-deps/`, the Test guest
+workflow, each in the CI's `debian:trixie` container through [nektos/act](https://github.com/nektos/act)
+(a release binary in `~/.local/bin`, with Docker and Node.js installed). It prints each job's
+result and time, and the push fails when a job fails. A run takes about 7 minutes without the
+guest build. Skip it with `git push --no-verify`; `scripts/act-check --guest` runs everything by
+hand. It runs the working tree, not the pushed commit, and does not cover the arm64 unit entry.

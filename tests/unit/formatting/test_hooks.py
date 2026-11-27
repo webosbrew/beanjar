@@ -40,6 +40,7 @@ class TestHooks:
             "pyproject.toml",
             "scripts/format-hooks/install-hooks.py",
             "scripts/format-hooks/pre-commit.sh",
+            "scripts/format-hooks/pre-push.sh",
             "scripts/format-hooks/python-format.py",
             "scripts/format",
         ):
@@ -74,6 +75,23 @@ class TestHooks:
         assert (self.repo / ".git/commit-msg-calls").read_text() == "called\ncalled\n"
         assert self.commit_msg.read_bytes() == self.original_hook
         self.run_cmd("python3", "scripts/format-hooks/install-hooks.py")
+
+    def test_pre_push_runs_the_check_and_no_verify_skips_it(self):
+        bare = self.repo.parent / "remote.git"
+        self.run_cmd("git", "init", "-q", "--bare", str(bare))
+        self.run_cmd("git", "remote", "add", "origin", str(bare))
+        check = self.repo / "scripts/act-check"
+        check.write_text('#!/bin/sh\necho "$PRE_COMMIT_TO_REF" >> .git/act-calls\nexit 1\n')
+        check.chmod(0o755)
+        self.run_cmd("git", "push", "-q", "--no-verify", "origin", "HEAD:refs/heads/main")
+        assert not (self.repo / ".git/act-calls").exists()
+        self.run_cmd("git", "commit", "-q", "--allow-empty", "-m", "another")
+        head = self.run_cmd("git", "rev-parse", "HEAD").stdout.strip()
+        result = self.run_cmd("git", "push", "-q", "origin", "HEAD:refs/heads/main", ok=False)
+        assert result.returncode != 0, result.stderr  # the failing check stops the push
+        assert (self.repo / ".git/act-calls").read_text() == head + "\n"
+        self.run_cmd("git", "push", "-q", "--no-verify", "origin", "HEAD:refs/heads/main")
+        assert (self.repo / ".git/act-calls").read_text() == head + "\n"
 
     def test_partial_staging_restores_unstaged_edits(self):
         source = self.repo / "sample.py"
