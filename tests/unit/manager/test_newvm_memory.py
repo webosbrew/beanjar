@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""create's default RAM is capped to the host's memory (newvm.cap_memory); an explicit one is not."""
+"""create's default RAM is capped to the host's memory (vm.create.cap_memory); an explicit one is not."""
 
 import os
 from pathlib import Path

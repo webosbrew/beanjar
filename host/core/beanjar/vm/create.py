@@ -25,7 +25,7 @@ the platform is derived from that target.
 Every new VM is a TV of its own: a MAC (the library's mac_prefix, three random octets) and a
 serial number, random, that no other VM of the library has (core.Library.new_identity), and SSH keys
 of its own in identity/ (keys.ensure; root's authorized_keys with no key of the user's), and a
-slot, its host address (vmidentity.ensure_slot), taken with the rename that publishes it. The
+slot, its host address (vm.identity.ensure_slot), taken with the rename that publishes it. The
 library's CA for the mode=mitm proxy, <library>/ca, which its VMs share, is made with its first VM
 (keys.ensure_ca).
 
@@ -399,7 +399,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
         # the partition map, the new EEPROM chip, the local key and the modules' parameters
         prepare_board_data(lib, scratch, out, force=True)
         _hold(True)
-        # its slot (vmidentity.ensure_slot): the lowest free one, taken under the slot domain's lock
+        # its slot (vm.identity.ensure_slot): the lowest free one, taken under the slot domain's lock
         # with the rename that makes the VM, so two made at once never share one
         with slot_lock(lib.root):
             cfg["slot"] = free_slot(lib.root)

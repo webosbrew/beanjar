@@ -11,7 +11,7 @@ holds (25027700 bytes in 04.28.15, the field says 8250484). Mainline cramfs read
 So the launcher unpacks the pak with epk2extract, which decodes LZ4P and extracts LG's XIP cramfs
 (its uncramfs), and packs the tree with mksquashfs (official squashfs-tools), all files root's as on
 the set. Nothing of our own decodes or parses either format. The image is kept in the firmware
-cache (fwcache.default_cache or FW_CACHE) as <pak>-<first 16 hex of the source's sha256>.sqfs, made
+cache (firmware.cache.default_cache or FW_CACHE) as <pak>-<first 16 hex of the source's sha256>.sqfs, made
 once per firmware; the scratch tree is removed.
 
   python3 -m beanjar.firmware.lz4p PAK OUT    write PAK's SquashFS image to OUT

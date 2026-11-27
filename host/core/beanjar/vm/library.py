@@ -364,14 +364,14 @@ class VM:
 
     def guest_ram(self):
         """The guest's RAM in MiB (QEMU's -m): its TV's (mem) with qemu-user's overhead on top
-        when its userland resolves to qemu-user (vmsettings.guest_ram_mib); None if mem is not
+        when its userland resolves to qemu-user (vm.settings.guest_ram_mib); None if mem is not
         known. What the host must have for it (capacity) is this."""
         mem = self.mem()
         return None if mem is None else settings.guest_ram_mib(mem, self.userland())
 
     def host_swap(self):
         """The size in MiB of its swap disk in host RAM (hostswap.py): under qemu-user
-        vmsettings.qemu_user_swap_mib of its TV's RAM, else 0; 0 too if mem is not known. Not
+        vm.settings.qemu_user_swap_mib of its TV's RAM, else 0; 0 too if mem is not known. Not
         counted by the admission (capacity), only by its unit's MemoryHigh."""
         mem = self.mem()
         return 0 if mem is None else settings.qemu_user_swap_mib(mem, self.userland())
@@ -976,7 +976,7 @@ class Library:
         return tags
 
     def create(self, name, **kw):
-        """A new VM: newvm.create (fw, the settings; out)."""
+        """A new VM: vm.create.create (fw, the settings; out)."""
         from . import create as vm_create
 
         return vm_create.create(self, name, **kw)
@@ -1145,7 +1145,7 @@ class Library:
             if refusal:
                 raise Error(refusal, "guest_kernel")
         if userland == "qemu-user" or guest_kernel != settings.DEFAULT_GUEST_KERNEL:
-            # refused on some platforms (vmsettings.NATIVE_ONLY)
+            # refused on some platforms (vm.settings.NATIVE_ONLY)
             try:
                 platform = targets.platform(paths.firmware_target(d))
             except ValueError as e:
@@ -1384,7 +1384,7 @@ class Library:
         """A new identity for a VM that is off: its state disks wiped (all of them, as wipe does,
         so no service keeps the old NDUID), then a new MAC (the library's prefix) and serial in
         vm.toml, every key pair of identity/, its VNC password and LGUDID made anew (beanjar/vm/keys.py,
-        vmidentity.renew_keys), and its
+        vm.identity.renew_keys), and its
         DVR key (sestore.toml) dropped for the next start to make anew. The model key, the user's
         authorized_keys and the library's CA are kept. Returns (vm, mac, serial)."""
         out = out or print

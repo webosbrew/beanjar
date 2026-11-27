@@ -20,7 +20,7 @@ Where a release's map comes from (targets.Release.partmap):
                             the sizes of paks and state disks it names; offsets ours, consecutive
 
 The partinfo disk's image (image()): the 12368 bytes, the CRC, zeros to the size of the map's
-partinfo entry. build() keeps it in the firmware cache (fwcache.default_cache or FW_CACHE):
+partinfo entry. build() keeps it in the firmware cache (firmware.cache.default_cache or FW_CACHE):
 <cache>/partinfo-<16 hex>.img, keyed by the source paks and the release row.
 
   python3 -m beanjar.board.partmap [FW]    print the map of FW (default: as the launcher's FW)
@@ -242,7 +242,7 @@ def image(blob):
 
 
 def _key(fw, target, cache, updatable=False):
-    """What the cached image depends on: the source paks' sha256 (recorded as fwcache does), the
+    """What the cached image depends on: the source paks' sha256 (recorded as firmware.cache does), the
     assembled table's pak sizes and the release row, and updatable (the inactive bank's headroom), so
     the updatable and non-updatable images never share a cache slot."""
     src = targets.release(target, fw).partmap

@@ -251,7 +251,7 @@ class UnitEnvTest(unittest.TestCase):
         self.assertEqual(self.wait_seen(), self.expected())
 
     def test_vm_toml_keys_pass(self):
-        """A VM's vm.toml upper-case keys are launcher variables passed through (vmsettings.SETTINGS):
+        """A VM's vm.toml upper-case keys are launcher variables passed through (vm.settings.SETTINGS):
         Bg keeps them for the unit."""
         vm_dir = os.path.join(self.tmp, "vm")
         os.makedirs(vm_dir)

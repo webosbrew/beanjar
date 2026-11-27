@@ -91,7 +91,7 @@ def resource_list(entries):
 
 
 def module(parts):
-    """Module 0 of a BML folder's files, parts [(name, content type, bytes)] (tuner_lineup.bml_parts,
+    """Module 0 of a BML folder's files, parts [(name, content type, bytes)] (tuner.lineup.bml_parts,
     startup.bml first): a multipart/mixed entity (ARIB STD-B24 vol. 2, 9.3) with a resource list
     first and the files. The boundary is quoted: the sets' NetFront BML browser reads an unquoted
     one wrong (it repeats its first character) and then finds no part. Without the resource list

@@ -98,7 +98,7 @@ Serial console: RUN_DIR/console.sock (`console`; SOCK/LOG for another RUN_DIR, o
 LOG_DIR/console.log. webOS console (hvc0): LOG_DIR/webos.log.
 
 --dir VM-DIR: a VM kept in a directory of its own (the VM manager's layout, host/core/README.md).
-Its vm.toml holds the settings, which are the launcher's environment (vmsettings.SETTINGS; an upper-case
+Its vm.toml holds the settings, which are the launcher's environment (vm.settings.SETTINGS; an upper-case
 key is a launcher variable passed through as it is, but ROOTFS and UNCOMPRESSED_PAKS, the checkout
 VM's experiments). The firmware is the VM's own, <vm-dir>/firmware (FW), with its partition map
 in firmware/cache (FW_CACHE). A fw in vm.toml names another directory instead (absolute, or
@@ -113,7 +113,7 @@ with a warning, if it is missing; only its certificate goes into run/share/vm.
 It boots what is built (BUILD=0), refuses to start a VM that runs, and runs as beanjar-vm-<tag>-<vm>,
 <tag> its library's (vmunits.vm_unit_name). A
 vm.toml without mac or serial (the TV's identity, MAC and SERIAL) gets them at start, written back,
-with a warning (vmidentity.ensure_identity).
+with a warning (vm.identity.ensure_identity).
 `status` prints "off", "starting <pid>" or "running <pid>" and exits 3 if off.
 
 start (either kind) refuses, before anything changes, a VM beyond the machine's max_running (`beanjar
@@ -702,7 +702,7 @@ class Bg:
             self.run_dir, netns.PASSWORD_FILE
         )  # the inspector's (netns.py)
         # Beyond the unit's own allowlist (unit.env_for), the VM's vm.toml settings: any upper-case
-        # key there is a launcher variable passed through as it is (vmsettings.SETTINGS).
+        # key there is a launcher variable passed through as it is (vm.settings.SETTINGS).
         self.keep = settings_vars(os.path.dirname(self.run_dir))
 
     def recorded_unit(self):

@@ -7,7 +7,7 @@ arib.py for ISDB-T, dvb.py for DVB) make their streams from a parsed
 lineup only; the built-in lineups are the files in builtin-lineups/ beside this module, one per broadcast
 standard.
 
-Each physical channel has its name, "rf" (tuner_band: "7" on the air, "C78" on cable): an ATSC one
+Each physical channel has its name, "rf" (tuner.band: "7" on the air, "C78" on cable): an ATSC one
 from its channel and medium (air or cable), a DVB one from its channel and system (t: DVB-T, c:
 DVB-C), an ARIB one from its UHF channel.
 
@@ -64,7 +64,7 @@ BML_TYPES = {
     ".aiff": "audio/X-arib-aiff",
 }
 BML_STARTUP = "startup.bml"
-BML_MAX = 255 * 4066  # a module's DDB blocks are numbered in a byte (tuner_stream_arib.BLOCK_SIZE)
+BML_MAX = 255 * 4066  # a module's DDB blocks are numbered in a byte (tuner.arib.BLOCK_SIZE)
 
 
 def default_path(broadcast):
@@ -337,7 +337,7 @@ def _atsc_rf(w, where, rf, base, check):
     }
 
 
-SYSTEMS = ("t", "c")  # DVB-T, DVB-C (tuner_band); DVB-T2 is not made yet
+SYSTEMS = ("t", "c")  # DVB-T, DVB-C (tuner.band); DVB-T2 is not made yet
 
 
 def _dvb_rf(w, where, rf, base, check):

@@ -35,7 +35,7 @@ Environment (both):
             statistics, never inflated, so the guest still has all of MEM), and the host takes back
             the free 4 MiB blocks the guest reports. Opt-in: it has a cost.
   MEDIA_HWDEC  auto (default), none or a hardware device type (vm.toml's hardware.hwdec,
-            vmsettings.HWDECS): the media helper's --hwdec. none adds --software-only: software
+            vm.settings.HWDECS): the media helper's --hwdec. none adds --software-only: software
             decoding locked against the viewers' preferences, with a short codec list; it needs
             the media sandbox, so MEDIA_SANDBOX=off is refused with it
   UPDATABLE  on or off (default; vm.toml's firmware.updatable): on attaches a whole-disk
@@ -50,8 +50,8 @@ Environment (both):
             the guest kernel's compat table (docs/dev/architecture/qemu-user-bridge.md): the
             launcher puts qemu-arm into the host share and boot.conf's USERLAND has init register
             it with binfmt_misc. auto picks native or qemu-user by the host and the accelerator
-            (vmsettings.resolve_userland, host_aarch32_el0) and says which and why. NetCast and
-            SimpleSmart always run native (vmsettings.NATIVE_ONLY): where the host cannot, they
+            (vm.settings.resolve_userland, host_aarch32_el0) and says which and why. NetCast and
+            SimpleSmart always run native (vm.settings.NATIVE_ONLY): where the host cannot, they
             do not start
   GUEST_KERNEL  arm64 (default) or x86-64 (vm.toml's hardware.guest_kernel; experimental): the
             x86-64 guest kernel (build/x86_64) on q35, x86-64 hosts only, userland qemu-user
@@ -74,8 +74,8 @@ Environment (both):
             once per value. Default: none, the board's own
   MEM, SMP  the TV's RAM in MiB (default: the firmware's model's DDR, its board.cmdline's
             hwopt=: nvm.board_ram) / CPUs (default 4). A qemu-user start gives the guest more
-            (-m: vmsettings.guest_ram_mib, the TV's and qemu-user's overhead) and a swap disk in
-            host RAM as large again (vmsettings.qemu_user_swap_mib, hostswap.py), and says so
+            (-m: vm.settings.guest_ram_mib, the TV's and qemu-user's overhead) and a swap disk in
+            host RAM as large again (vm.settings.qemu_user_swap_mib, hostswap.py), and says so
   NET_LINK  where the guest's NIC is attached (vm.toml's network.link; docs/dev/architecture/network.md):
               nat     (default) behind this host, on its own 10.0.2.0/24, as NET_MODE says
               lan     on the host's wired LAN (the library's lan_parent), a TV of its own there:
@@ -354,7 +354,7 @@ class Plan:
         self.broadcast = None  # the board's broadcast standard (targets.board_broadcast)
         self.model = None  # MODEL: the retail model whose board it boots (targets.board_model)
         self.country = None  # COUNTRY, checked against the board's (countries.check)
-        # USERLAND: "native" or "qemu-user" as resolved (vmsettings.resolve_userland), with
+        # USERLAND: "native" or "qemu-user" as resolved (vm.settings.resolve_userland), with
         # qemu_arm the interpreter the guest gets; GUEST_KERNEL: "arm64" or "x86-64", whose
         # qemu-user guest also gets qemu_aarch64 for the 64-bit ARM programs
         self.userland, self.qemu_arm, self.qemu_aarch64 = "native", None, None
@@ -427,7 +427,7 @@ def vm_mem(env, tree=paths.TREE):
 
 def vm_userland(env):
     """The userland (native or qemu-user) a launch with env resolves to, as plan does on this host
-    (vmsettings.resolve_userland, without the firmware's refusals); None for a setting that does
+    (vm.settings.resolve_userland, without the firmware's refusals); None for a setting that does
     not resolve."""
     guest_kernel = env.get("GUEST_KERNEL") or settings.DEFAULT_GUEST_KERNEL
     accel = vm_accel(env)
@@ -445,14 +445,14 @@ def vm_userland(env):
 def vm_guest_ram(env, tree=paths.TREE):
     """The guest's RAM in MiB (QEMU's -m) a launch with env gets: the TV's (vm_mem) with
     qemu-user's overhead on top when its userland resolves to qemu-user
-    (vmsettings.guest_ram_mib); None if the TV's is not known."""
+    (vm.settings.guest_ram_mib); None if the TV's is not known."""
     mem = vm_mem(env, tree)
     return None if mem is None else settings.guest_ram_mib(mem, vm_userland(env))
 
 
 def vm_host_swap(env, tree=paths.TREE):
     """The size in MiB of the swap disk in host RAM (hostswap.py) a launch with env gets: under
-    qemu-user vmsettings.qemu_user_swap_mib of the TV's RAM (vm_mem), else 0; 0 too if the TV's
+    qemu-user vm.settings.qemu_user_swap_mib of the TV's RAM (vm_mem), else 0; 0 too if the TV's
     is not known."""
     mem = vm_mem(env, tree)
     return 0 if mem is None else settings.qemu_user_swap_mib(mem, vm_userland(env))
@@ -563,7 +563,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         tv_mem = int(env.get("MEM") or nvm.board_ram(p.target, tree, p.broadcast, p.model))
     except (targets.Error, OSError, ValueError) as e:
         raise Error(str(e)) from None
-    # -m: the TV's RAM, and qemu-user's own on top of it (vmsettings.guest_ram_mib). What webOS is
+    # -m: the TV's RAM, and qemu-user's own on top of it (vm.settings.guest_ram_mib). What webOS is
     # told the set has comes from the board's hwopt= (board.cmdline), not from -m.
     mem = str(settings.guest_ram_mib(tv_mem, p.userland))
     note = settings.memory_note(tv_mem, p.userland)

@@ -132,7 +132,7 @@ host lane's `beanjar-qemu` carries it, in `share/beanjar/qemu-user/<guest arch>`
 guest kernel is built by the guest lane on an x86-64 build machine and goes into
 its own optional package, `beanjar-guest-x86-64` (amd64): `beanjar-guest` stays architecture all
 without it, so an arm64 host carries nothing it cannot use. Nothing pulls it in; the launcher refuses
-`guest_kernel=x86-64` without it and names the package (`vmsettings.guest_kernel_package_refusal`).
+`guest_kernel=x86-64` without it and names the package (`vm.settings.guest_kernel_package_refusal`).
 `libexec` holds host executables and host launchers only.
 
 Host Python helpers are executable code and belong under `/usr/lib/beanjar/helpers`,

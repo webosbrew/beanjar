@@ -257,7 +257,7 @@ def vm_service_host(vm_dir, cfg):
 ARES_QUERY = "_ares"  # the query another machine's ares-TOOL -d HOST/NAME asks a host's beanjar
 ROOT_OPTION = "--root"  # ares-TOOL's and the query's: root on root SSH, not developer mode
 LOCAL = "local"  # the name of this machine in HOST/NAME, reserved (remote.py)
-# The settings target reads (vmconfig.peek)
+# The settings target reads (vm.config.peek)
 TARGET_SETTINGS = ("layers", "slot", "listen", "SSH_PORT", "link", "mode")
 LAN_FILE = "lan.json"  # in a VM's run directory: its LAN address while it runs (netns.LAN_FILE)
 

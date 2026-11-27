@@ -132,7 +132,7 @@ def test_lan_direct():
 def test_userland():
     """hardware.userland: auto, the default, is not written out; native and qemu-user are
     USERLAND; qemu-user is refused on the firmware lines that need native 32-bit execution
-    (vmsettings.NATIVE_ONLY)."""
+    (vm.settings.NATIVE_ONLY)."""
     base_doc = {"firmware": {"directory": "firmware"}}
     assert "userland" not in config.decode(base_doc)
     assert "USERLAND" not in settings.launcher_env(config.decode(base_doc))

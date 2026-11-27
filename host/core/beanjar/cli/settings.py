@@ -100,7 +100,7 @@ def cmd_config(lib, a):
 
 
 def settings_help():
-    """The config keys as `beanjar config set --help` lists them, from vmsettings.SETTING_HELP."""
+    """The config keys as `beanjar config set --help` lists them, from vm.settings.SETTING_HELP."""
     import textwrap
 
     def described(text):

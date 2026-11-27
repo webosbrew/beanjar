@@ -1771,7 +1771,7 @@ class Manager:
 
     def _fw_sources(self, form, fw, new, vm_dir=None):
         """The firmware's sources (form.sources: (label, kind, value)). New VM: each firmware of the
-        host's collections (newvm.collection; the first selected), used in place unless imported
+        host's collections (vm.create.collection; the first selected), used in place unless imported
         (fw_import), a .epk, extracted into the VM's folder, or a directory, used in place or
         imported. Settings: the VM's own firmware/ (labelled as the VM list does, fw_label) if it
         has one, or a directory used in place (fw: vm.toml's, selected)."""
@@ -2054,7 +2054,7 @@ class Manager:
     def create_async(self, form, name, v, epk=None):
         """A New VM that takes time: python3 -m beanjar.vm.create with a progress dialog over New VM.
         Done, both close; cancelled or failed (nothing is left of it either way), Close goes back
-        to New VM, whose banner has the refusal. epk: the .epk it extracts (newvm.check's plan)."""
+        to New VM, whose banner has the refusal. epk: the .epk it extracts (vm.create.check's plan)."""
         args = [
             name,
             "--firmware",

@@ -17,7 +17,7 @@ bytes; docs/research/lgudid.md):
                which fails where there is no partition: a new LGUDID every time
 
 The rest of the partition is zeros. The VM's LGUDID and namespace are its identity's
-(vmidentity.LGUDID); prepare.py builds the image, which the launcher attaches as the partition.
+(vm.identity.LGUDID); prepare.py builds the image, which the launcher attaches as the partition.
 
   python3 -m beanjar.board.macadr IMAGE [OFFSET]    print the MAC and the LGUDID record of an image
 """

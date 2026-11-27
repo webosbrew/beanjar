@@ -434,7 +434,7 @@ host ── (nothing of the VM: no relay, no address; beanjar-vnc on VM_ADDRESS 
   are reached only as the LAN routes to them, exactly as from another device of the LAN: a service
   the host opens to the LAN is open to the guest. That is the point of the mode; `nat` without
   `lan_access` is the one that keeps the guest away from the LAN.
-- **LG's services.** `mock` cannot hold here, and the setting refuses it (`vmsettings.validate`,
+- **LG's services.** `mock` cannot hold here, and the setting refuses it (`vm.settings.validate`,
   `qemu.plan` and `Library.start`: "needs lg_services=real"). Every means `mock` has sits in the
   inner namespace's IP stack: the resolver at `10.0.2.254` handed out by the namespace's own DHCP
   server, the pref 90 `prohibit` rules for LG's literal addresses and for other resolvers, and the
@@ -579,7 +579,7 @@ the guest.
   forwards, the relay and the inspector, the `known_hosts` pins (rewritten at the VM's next start;
   no alias for the old address is kept), `beanjar show` and its ares profile, `list`, the GUI and
   `vm-launcher config ADDRESS`. The rest of this section says `127.0.1.N` for the default.
-- **Slots.** A VM's slot is `network.slot` in its `vm.toml` (`vmidentity.ensure_slot`, `keys.address`),
+- **Slots.** A VM's slot is `network.slot` in its `vm.toml` (`vm.identity.ensure_slot`, `keys.address`),
   from 1 to 254. It is assigned when the VM is made: the lowest slot no VM of its slot domain
   holds, chosen under the domain's lock (`<library>/.slots.lock`) together with the rename that
   publishes the VM, so two VMs made at once never share one. It is kept while the VM exists and

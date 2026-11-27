@@ -220,7 +220,7 @@ class LineupTest(unittest.TestCase):
 
 
 def fake_make(cache, lu, ch, now):
-    """tuner_stream.make without the tools: the stream if it is in cache."""
+    """tuner.atsc.make without the tools: the stream if it is in cache."""
     path = atsc.stream_path(cache, lu, ch, now)
     if os.path.exists(path):
         return path

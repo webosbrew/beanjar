@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """What a VM's start needs from its firmware, its model's board and its board settings, worked out
-ahead (docs/dev/architecture/manager.md, "Prepared board data"): when the VM is made (newvm.create),
+ahead (docs/dev/architecture/manager.md, "Prepared board data"): when the VM is made (vm.create.create),
 when a setting it depends on changes (core.Library.configure: fw, broadcast, debug_mode, serial,
 country;
 identity reset; a local clone), or with `beanjar prepare NAME`. A start only reads it.

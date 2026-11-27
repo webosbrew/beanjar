@@ -8,7 +8,7 @@ disks (first use, region, installed apps), its own firmware/ when it has one (an
 directory is used in place, and must be at the same path on DEST's host) and its identity/ but the
 files a new identity replaces: sestore.toml with the model key, tee-huk (the TEE's key, which what the
 state's secure store holds is encrypted with), authorized_keys and anything else there. What is new,
-as `identity reset` makes it (vmidentity.next_identity, vmidentity.renew_keys): the MAC and serial, every key pair,
+as `identity reset` makes it (vm.identity.next_identity, vm.identity.renew_keys): the MAC and serial, every key pair,
 the VNC password; known_hosts is written at DEST's first start. The state is not wiped: the guest
 brings what it derives from the identity in line at boot (the NDUID from the MAC, the devmode and
 Homebrew Channel keys from the per-VM layer), and the EEPROM's serial records, which a start does not

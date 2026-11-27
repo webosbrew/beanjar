@@ -185,7 +185,7 @@ def prepare(env, tree=paths.TREE):
         with open(Path(library) / ".development.lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if not config.exists():
-                # its slot, taken with the rename that makes it (vmidentity.ensure_slot)
+                # its slot, taken with the rename that makes it (vm.identity.ensure_slot)
                 with (
                     vm_identity.slot_lock(library),
                     tempfile.TemporaryDirectory(prefix=".new-dev-", dir=library) as temporary,

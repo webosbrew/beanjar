@@ -59,9 +59,9 @@ def json_error(e, code):
 
 
 def plain(cfg):
-    """Whether base.target answers for a VM with settings cfg (vmconfig.peek) as the library does:
+    """Whether base.target answers for a VM with settings cfg (vm.config.peek) as the library does:
     a slot (the library gives a VM without one its slot), and layers, slot and listen of the types
-    vmconfig.read would let through. For any other the query asks the library, which gives read's
+    vm.config.read would let through. For any other the query asks the library, which gives read's
     Error."""
     slot, layers, listen = cfg.get("slot"), cfg.get("layers"), cfg.get("listen")
     if isinstance(slot, bool) or slot not in base.SLOTS:
@@ -87,7 +87,7 @@ def ares_query(argv, i):
     An internal query, left out of the help; it reads the VM and asks no host. A word it does not
     take is a usage error (status 2, which ares.remote_vm reads as a beanjar to update).
 
-    It reads only that VM's vm.toml (vmconfig.peek) and key, without the library module; a vm.toml
+    It reads only that VM's vm.toml (vm.config.peek) and key, without the library module; a vm.toml
     the light reading cannot answer for (plain) is read by the library (ares.target), as any other
     command reads it."""
     try:

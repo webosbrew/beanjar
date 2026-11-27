@@ -66,7 +66,7 @@ userland = "qemu-user"   # auto (default, not written), native or qemu-user
 ```
 
 `beanjar config set NAME userland=qemu-user`; the launcher's variable is `USERLAND`. `auto` is
-resolved at each start by `vmsettings.resolve_userland`, and the launcher logs the result and the
+resolved at each start by `vm.settings.resolve_userland`, and the launcher logs the result and the
 reason in one line (`userland: qemu-user (KVM on a CPU without AArch32 at EL0)`):
 
 | Guest kernel and accelerator | userland |
@@ -99,8 +99,8 @@ command line changes in two places, its RAM and a swap disk.
 
 Each 32-bit process under qemu-arm carries qemu-arm's own heap, its tracking of the guest
 program's pages and its translated code on top of the program's own memory, so a qemu-user start
-gives the guest a fixed `vmsettings.QEMU_USER_OVERHEAD_MIB` (1536 MiB) more than `mem` (`-m`:
-`vmsettings.guest_ram_mib`) and logs `memory: 2048 MB for the TV + 1536 MB RAM and 1536 MB
+gives the guest a fixed `vm.settings.QEMU_USER_OVERHEAD_MIB` (1536 MiB) more than `mem` (`-m`:
+`vm.settings.guest_ram_mib`) and logs `memory: 2048 MB for the TV + 1536 MB RAM and 1536 MB
 host-RAM swap for qemu-user's overhead`. `mem` stays the TV's RAM. The host's memory admission and the unit's MemoryHigh
 (`capacity`, `qemu.vm_guest_ram`, `VM.guest_ram`) use the larger size; `beanjar list` shows MEM as
 `2048+1536` and `beanjar show` both (`tv_ram`, `guest_ram`). What webOS is told the set has is the
@@ -124,7 +124,7 @@ large services reach. 16 MiB cost the first boot three times the CPU time in ret
 
 Most of that overhead is cold (only about 105 of the 1515 MiB anonymous memory was touched in 60 s
 idle), so a qemu-user start also gives the guest a swap disk in host RAM
-(`vmsettings.QEMU_USER_SWAP_MIB`, 1536 MiB; `host/core/beanjar/runtime/hostswap.py`): a sparse
+(`vm.settings.QEMU_USER_SWAP_MIB`, 1536 MiB; `host/core/beanjar/runtime/hostswap.py`): a sparse
 memfd the process that runs QEMU creates just before it does (`hostswap.open_fds` in `launch.py`
 and `netns.py`), passed with `-add-fd` at descriptors 200 (read-write) and 201 (read-only; QEMU
 takes from the fdset a descriptor with the access mode it opens with, and opens both ways), and
@@ -174,7 +174,7 @@ ENOEXEC, and any program that escaped binfmt_misc would fail to start.
 
 ## Where it is refused
 
-`vmsettings.NATIVE_ONLY`, firmware lines that need native 32-bit execution whatever the host can
+`vm.settings.NATIVE_ONLY`, firmware lines that need native 32-bit execution whatever the host can
 do: an explicit `qemu-user` and `guest_kernel = "x86-64"` are refused by `beanjar config set` and at
 launch, and `auto` fails the start where the host cannot run them natively:
 

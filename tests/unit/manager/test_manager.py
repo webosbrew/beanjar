@@ -459,7 +459,7 @@ class ManagerTest(unittest.TestCase):
         self.cli("config", "set", "tv1", "link=nat", "mode=mitm")
         cfg = tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
         self.assertEqual((cfg["link"], cfg["mode"], "address" in cfg), ("nat", "mitm", False))
-        # the inspector's flow history: vmsettings.MITM_FLOWS by default, in status, the default not written out
+        # the inspector's flow history: vm.settings.MITM_FLOWS by default, in status, the default not written out
         self.assertEqual(self.info("tv1")["mitm_flows"], vm_settings.MITM_FLOWS)
         self.cli("config", "set", "tv1", "mitm_flows=200")
         self.assertEqual(
@@ -550,7 +550,7 @@ class ManagerTest(unittest.TestCase):
             "mac_prefix: 02:be:a0", self.cli("library", "config", "set", "mac_prefix=02:BE:A0")
         )
         self.assertEqual(tload(os.path.join(self.lib_dir, "config.toml"))["mac_prefix"], "02:be:a0")
-        # lan_parent: named, must exist and be wired (vmidentity.parse_lan_parent's own cases: test-vmconfig.py)
+        # lan_parent: named, must exist and be wired (vm.identity.parse_lan_parent's own cases: test-vmconfig.py)
         self.assertIn(
             "no such network interface",
             self.cli("library", "config", "set", "lan_parent=nosuch0", ok=False),
@@ -621,7 +621,7 @@ class ManagerTest(unittest.TestCase):
         ):
             self.assertIn(bad.split("=")[0], self.cli("config", "set", "tv1", bad, ok=False))
         self.assertIn('"mac": "02:aa:bb:cc:dd:ee"', self.cli("show", "tv1", "--json"))
-        # missing: made at the start (the launcher, vmidentity.ensure_identity), written back, with a warning
+        # missing: made at the start (the launcher, vm.identity.ensure_identity), written back, with a warning
         cfg = self.vm_toml("tv2")
         del cfg["mac"], cfg["serial"]
         vm_library.vm_config.write(
@@ -681,7 +681,7 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn("slot", tload(path))
         self.lib()
         self.assertEqual(tload(path)["slot"], 2)
-        # and at the launcher's start (vmidentity.ensure_identity), with a note
+        # and at the launcher's start (vm.identity.ensure_identity), with a note
         with open(path, "w") as f:
             f.write(text.replace("slot = 2\n", ""))
         said = []
@@ -3281,7 +3281,7 @@ class ManagerTest(unittest.TestCase):
 
 
 class LayersTest(unittest.TestCase):
-    """The layers the dialogs list (core.Library.layers, vmsettings.layer_list), for a VM's own target."""
+    """The layers the dialogs list (core.Library.layers, vm.settings.layer_list), for a VM's own target."""
 
     def test_initramfs_has_no_firmware_lists(self):
         """guest/initramfs/rootfs/init takes the paks, layers, state disks and firmware paths from boot.conf
@@ -3994,7 +3994,7 @@ class CliParseTest(unittest.TestCase):
             )
 
     def test_config_help(self):
-        """`config set --help` lists every setting and tags, from the table that holds them (vmsettings.SETTING_HELP)."""
+        """`config set --help` lists every setting and tags, from the table that holds them (vm.settings.SETTING_HELP)."""
         p = subprocess.run(
             [sys.executable, "-m", "beanjar", "config", "set", "--help"],
             env=dict(os.environ, PYTHONPATH=os.path.join(TOP, "host", "core")),

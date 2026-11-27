@@ -202,7 +202,7 @@ class FlowLimit:
         loader.add_option(
             "max_flows",
             int,
-            5000,  # beanjar's vmsettings.MITM_FLOWS; netns.py always passes it
+            5000,  # beanjar's vm.settings.MITM_FLOWS; netns.py always passes it
             "Flows mitmweb keeps; the oldest finished ones are dropped beyond it. 0: no limit.",
         )
         loader.add_option(

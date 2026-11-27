@@ -10,10 +10,10 @@ them) and
 those of the user's streams, which of them are mapped and what the set is tuned to; `beanjar io
 tuner map NAME RF...` and `unmap NAME RF...|all` change the map, which is kept in the VM's state
 (tuner.json) for its next starts. An RF is named by its channel number, or C and the number on
-cable ("7", "C78": tuner_band), and each has its centre frequency and delivery system: a US air
+cable ("7", "C78": tuner.band), and each has its centre frequency and delivery system: a US air
 channel 8VSB, a US cable one QAM annex B, so air 7 and cable C7, both on 177 MHz, are two RFs. A mapped channel's stream is made (Lineup.make, into the cache's
 tuner/) when it is mapped; `map NAME RF --stream FILE` instead copies a transport stream of the
-user's into the state's tuner-streams/ (checked by tuner_ts.inspect) and loops it as it is
+user's into the state's tuner-streams/ (checked by tuner.user_stream.inspect) and loops it as it is
 (RecordedStream), only its clock tables set to now.
 
 Two halves, which may run on two machines:
@@ -105,15 +105,15 @@ def ts_frames(freq, packets):
 
 
 class Lineup:
-    """A broadcast's physical channels with a signal, by name ("7", "C78": tuner_band): their
+    """A broadcast's physical channels with a signal, by name ("7", "C78": tuner.band): their
     centre frequencies, delivery systems and services, how a channel's stream is made into a cache
     and which of its packets carry the time, rewritten to now as they are sent (clock: {PID:
-    rewrite(packet, now)}). spec: the parsed lineup file (tuner_lineup), own: a VM's own rather
+    rewrite(packet, now)}). spec: the parsed lineup file (tuner.lineup), own: a VM's own rather
     than the built-in one."""
 
     def __init__(self, name, rate, services, make, clock, spec, own=False):
         self.name, self.rate = name, rate
-        self.channels = [rf["rf"] for rf in spec["rf"]]  # in tuner_band.sort_key order
+        self.channels = [rf["rf"] for rf in spec["rf"]]  # in tuner.band.sort_key order
         self.system = {rf["rf"]: rf.get("system") for rf in spec["rf"]}
         self.services = services  # channel -> ["name", ...]
         self.make = make  # (cache, channel, now) -> the stream's path
@@ -145,7 +145,7 @@ class Lineup:
         self.center_hz(ch)
 
 
-# the delivery systems a board of each standard tunes (tuner_band)
+# the delivery systems a board of each standard tunes (tuner.band)
 SYSTEMS = {
     "atsc": {band.SYS_ATSC, band.SYS_DVBC_ANNEX_B},
     "arib": {band.SYS_ISDBT},
@@ -168,7 +168,7 @@ def _services(spec, label):
 
 
 def from_spec(spec, own=False, fed=False):
-    """The Lineup of a parsed lineup file (tuner_lineup.load); fed: its files are with a feed on
+    """The Lineup of a parsed lineup file (tuner.lineup.load); fed: its files are with a feed on
     another machine, which makes its streams. The generators are looked up when called, so a test
     can stand in for them."""
     b = spec["broadcast"]
@@ -285,7 +285,7 @@ def lineup_for_systems(state_dir, systems):
 
 
 def streams(state_dir):
-    """{channel: record} of the user's streams in the VM's state (tuner_ts.inspect's record, with
+    """{channel: record} of the user's streams in the VM's state (tuner.user_stream.inspect's record, with
     "path"; a fed one, played by a feed on another machine, has "fed" and no file here)."""
     try:
         with open(os.path.join(state_dir, STATE)) as f:
@@ -380,7 +380,7 @@ class Stream:
 
 
 class RecordedStream(Stream):
-    """A user's stream (tuner_ts.inspect's record rec) looped at its own rate, mapped rather than
+    """A user's stream (tuner.user_stream.inspect's record rec) looped at its own rate, mapped rather than
     read, so a long recording costs no memory. So that the set keeps its picture over the wrap:
     each PID plays from its first PES or section start to before its last (rec's cuts: no part of
     one is cut off), its continuity counters run on over the wrap, and after each wrap the first
@@ -600,7 +600,7 @@ MAKE_HINT = "; or map them from a machine that has the tools: beanjar io tuner m
 
 
 def inspect_stream(path, lu, ch):
-    """tuner_ts.inspect of a user's stream for the lineup's standard and RF ch."""
+    """tuner.user_stream.inspect of a user's stream for the lineup's standard and RF ch."""
     lu.check_band(ch)
     return user_stream.inspect(path, lu.name, lu.center_hz(ch), ch)
 

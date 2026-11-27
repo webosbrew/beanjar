@@ -890,7 +890,7 @@ class ArgvTest(unittest.TestCase):
 
     def test_userland(self):
         """USERLAND=qemu-user changes -m, where the guest gets a fixed amount more for qemu-user's
-        own (vmsettings.guest_ram_mib), and adds the swap disk in host RAM (vmsettings.
+        own (vm.settings.guest_ram_mib), and adds the swap disk in host RAM (vmsettings.
         qemu_user_swap_mib; hostswap.argv: the memfd's -add-fd, its -drive and its virtio-blk disk), after the state
         disks; the rest is native's, and the start says so; the plan carries the interpreter
         (QEMU_ARM, else build/qemu-user/bin/qemu-arm) for the host share. An unknown value, and
@@ -981,7 +981,7 @@ class ArgvTest(unittest.TestCase):
 
     def test_userland_auto(self):
         """USERLAND=auto, the default, resolves at each start by the host and the accelerator
-        (vmsettings.resolve_userland) and says so in one note: native under TCG and where KVM's
+        (vm.settings.resolve_userland) and says so in one note: native under TCG and where KVM's
         CPU has AArch32 at EL0 (host_aarch32_el0), qemu-user where it has not. NetCast and
         SimpleSmart then run native or not at all."""
         arm = os.path.join(self.tmp, "qemu-arm")
