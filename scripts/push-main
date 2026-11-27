@@ -1,0 +1,46 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Check a commit as GitHub's CI would, then push it to main (docs/dev/guides/formatting.md,
+# "Before a push").
+#
+#   scripts/push-main [--guest] [COMMIT [REMOTE]]
+#
+# COMMIT defaults to HEAD and REMOTE to origin. scripts/act-check runs on COMMIT in a clean clone
+# (testguest too when guest/, meson/ or packaging/debian/build-deps/ differ from the remote's
+# main, or with --guest). When it passes, a stamp build/act/passed/<sha> records the results and
+# the date, and `git push REMOTE <sha>:main` runs. When it fails, nothing is pushed.
+#
+# Why not a pre-push hook that runs the check: git opens the connection before the hook runs and
+# GitHub drops it during the minutes the check takes. The hook only looks for the stamp.
+set -eu
+TOP=$(cd "$(dirname "$0")/.." && pwd)
+cd "$TOP"
+guest=
+case ${1:-} in
+--guest) guest=--guest; shift ;;
+-*) sed -n '7,8p' "$0" >&2; exit 2 ;;
+esac
+commit=${1:-HEAD}
+remote=${2:-origin}
+sha=$(git rev-parse --verify -q "$commit^{commit}") || { echo "push-main: no such commit: $commit" >&2; exit 2; }
+base=$(git ls-remote "$remote" refs/heads/main | cut -f1)
+git cat-file -e "${base:-0}^{commit}" 2>/dev/null || base=$(git rev-parse -q --verify "refs/remotes/$remote/main" || echo)
+
+out=$(mktemp)
+status=$(mktemp)
+trap 'rm -f "$out" "$status"' EXIT
+# the check's own exit status goes through a file: a pipeline's status would be tee's
+# $guest is empty or one option
+# shellcheck disable=SC2086
+{ ACT_CHECK_COMMIT=$sha ACT_CHECK_BASE=$base "$TOP/scripts/act-check" $guest; echo $? >"$status"; } 2>&1 | tee "$out"
+[ "$(cat "$status")" = 0 ] || { echo "push-main: the check failed for $sha; not pushing" >&2; exit 1; }
+
+mkdir -p "$TOP/build/act/passed"
+{
+	echo "commit $sha"
+	echo "date $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	sed -n '/^act-check results:/,$p' "$out"
+} >"$TOP/build/act/passed/$sha"
+echo "push-main: check passed for $sha; pushing to $remote main"
+exec git push "$remote" "$sha:refs/heads/main"

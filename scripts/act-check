@@ -10,11 +10,11 @@
 # Always: tests.yml's lint and unit (amd64). The Test guest workflow (testguest.yml) runs too with
 # --guest, or by default when the commits being pushed touch guest/, meson/ or
 # packaging/debian/build-deps/. Not covered: the arm64 unit entry (this machine cannot run it).
-# Exit status: nonzero when a job fails. `git push --no-verify` skips the hook.
+# Exit status: nonzero when a job fails. scripts/push-main runs this and then pushes; the pre-push
+# hook only checks that it did (`git push --no-verify` skips the hook).
 #
-# What is checked: by hand, the working tree. Run by the pre-push hook (scripts/format-hooks/
-# pre-push.sh sets ACT_CHECK_COMMIT to the commit being pushed and ACT_CHECK_BASE to what the
-# remote has), a throwaway clone of that commit, so files that are not being pushed are not tested;
+# What is checked: by hand, the working tree. Run by scripts/push-main (which sets
+# ACT_CHECK_COMMIT to the commit being pushed and ACT_CHECK_BASE to what the remote has), a throwaway clone of that commit, so files that are not being pushed are not tested;
 # it is removed afterwards, also after a failure or an interrupt. The output says which.
 #
 # What act cannot do by itself in these jobs, and what is set here for it:

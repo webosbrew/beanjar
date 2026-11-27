@@ -26,16 +26,6 @@ repos:
         entry: bash -c 'if [ -f scripts/publish/leak-check.py ]; then exec python3 scripts/publish/leak-check.py "$@"; fi' --
         types: [text]
         stages: [pre-commit]
-      # The public workflows' lint and unit jobs (and Test guest for guest changes) in the CI's
-      # container, through act: `git push --no-verify` skips it (docs/dev/guides/formatting.md)
-      - id: act-check
-        name: Public workflows (act)
-        language: system
-        entry: scripts/act-check
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-push]
       - id: ruff-check
         name: Ruff format check
         language: system

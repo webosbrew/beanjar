@@ -76,29 +76,31 @@ class TestHooks:
         assert self.commit_msg.read_bytes() == self.original_hook
         self.run_cmd("python3", "scripts/format-hooks/install-hooks.py")
 
-    def test_pre_push_runs_the_check_and_no_verify_skips_it(self):
-        # the check gates main on GitHub only: a path with github.com/ in it stands for it
+    def github_remote(self):
+        # the gate applies to main on GitHub only: a path with github.com/ in it stands for it
         bare = self.repo.parent / "github.com" / "remote.git"
         bare.parent.mkdir()
         self.run_cmd("git", "init", "-q", "--bare", str(bare))
         self.run_cmd("git", "remote", "add", "origin", str(bare))
-        check = self.repo / "scripts/act-check"
-        check.write_text('#!/bin/sh\necho "$PRE_COMMIT_TO_REF" >> .git/act-calls\nexit 1\n')
-        check.chmod(0o755)
-        self.run_cmd("git", "push", "-q", "--no-verify", "origin", "HEAD:refs/heads/main")
-        assert not (self.repo / ".git/act-calls").exists()
-        self.run_cmd("git", "commit", "-q", "--allow-empty", "-m", "another")
+        return bare
+
+    def test_pre_push_wants_a_stamp_for_main_on_github(self):
+        self.github_remote()
         head = self.run_cmd("git", "rev-parse", "HEAD").stdout.strip()
         result = self.run_cmd("git", "push", "-q", "origin", "HEAD:refs/heads/main", ok=False)
-        assert result.returncode != 0, result.stderr  # the failing check stops the push
-        assert (self.repo / ".git/act-calls").read_text() == head + "\n"
+        assert result.returncode != 0
+        assert "scripts/push-main" in result.stderr
+        assert head in result.stderr
+        stamp = self.repo / "build/act/passed" / head
+        stamp.parent.mkdir(parents=True)
+        stamp.write_text("commit " + head + "\n")
+        self.run_cmd("git", "push", "-q", "origin", "HEAD:refs/heads/main")
+        # a new commit has no stamp; --no-verify skips the hook as for any hook
+        self.run_cmd("git", "commit", "-q", "--allow-empty", "-m", "another")
+        self.run_cmd("git", "push", "-q", "origin", "HEAD:refs/heads/main", ok=False)
         self.run_cmd("git", "push", "-q", "--no-verify", "origin", "HEAD:refs/heads/main")
-        assert (self.repo / ".git/act-calls").read_text() == head + "\n"
 
     def test_pre_push_skips_other_hosts_and_branches(self):
-        check = self.repo / "scripts/act-check"
-        check.write_text("#!/bin/sh\necho called >> .git/act-calls\nexit 1\n")
-        check.chmod(0o755)
         sync = self.repo.parent / "host-sync.git"  # a source sync to one of the project's hosts
         self.run_cmd("git", "init", "-q", "--bare", str(sync))
         self.run_cmd("git", "push", "-q", str(sync), "HEAD:refs/heads/main")
@@ -106,7 +108,6 @@ class TestHooks:
         github.parent.mkdir()
         self.run_cmd("git", "init", "-q", "--bare", str(github))
         self.run_cmd("git", "push", "-q", str(github), "HEAD:refs/heads/topic")
-        assert not (self.repo / ".git/act-calls").exists()
 
     def test_partial_staging_restores_unstaged_edits(self):
         source = self.repo / "sample.py"

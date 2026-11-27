@@ -50,17 +50,25 @@ It does not stage formatter changes or discard unstaged edits.
 
 ## Before a push
 
-The same installer sets up a `pre-push` hook (`act-check` in `.pre-commit-config.yaml`) that runs
-`scripts/act-check`: the public Tests workflow's `lint` and `unit` (amd64) jobs and, when the
-commits being pushed touch `guest/`, `meson/` or `packaging/debian/build-deps/`, the Test guest
-workflow, each in the CI's `debian:trixie` container through [nektos/act](https://github.com/nektos/act)
-(a release binary in `~/.local/bin`, with Docker and Node.js installed). It prints each job's
-result and time, and the push fails when a job fails. A run takes about 7 minutes without the
-guest build (about 16 with it). Skip it with `git push --no-verify`.
+Push `main` to GitHub with `scripts/push-main [--guest] [COMMIT [REMOTE]]` (HEAD and `origin` by
+default). It runs `scripts/act-check` on the commit, in a throwaway clone that is removed
+afterwards, so uncommitted files in the working tree do not matter: the public Tests workflow's
+`lint` and `unit` (amd64) jobs and, when the commit changes `guest/`, `meson/` or
+`packaging/debian/build-deps/` against the remote's `main` (or with `--guest`), the Test guest
+workflow, each in the CI's `debian:trixie` container through
+[nektos/act](https://github.com/nektos/act) (a release binary in `~/.local/bin`, with Docker and
+Node.js installed). It prints each job's result and time. A run takes about 7 minutes without the
+guest build (about 16 with it). When the jobs pass it writes a stamp `build/act/passed/<sha>` and
+runs `git push <remote> <sha>:refs/heads/main`; when one fails it pushes nothing.
 
-The hook checks the commit being pushed, in a throwaway clone that is removed afterwards, so
-uncommitted files in the working tree do not matter. `scripts/act-check` run by hand checks the
-working tree (`--guest` also runs the Test guest workflow); its output says which it checked.
+The check is not a pre-push hook because git opens the connection before it runs a pre-push hook,
+and GitHub drops the idle connection during the minutes the check takes. The `pre-push` hook that
+the installer sets up only looks for the stamp: a push of `main` to a GitHub URL without a stamp
+for the pushed commit is refused with a line naming `scripts/push-main`. Other branches and other
+remotes are not held up. `git push --no-verify` skips the hook.
+
+`scripts/act-check` run by hand checks the working tree (`--guest` also runs the Test guest
+workflow); its output says which it checked.
 
 The jobs run on a temporary copy of each workflow with only the container image replaced, by
 `beanjar-act-node:trixie`: the stock `debian:trixie` plus this machine's `node`, which the node-based
