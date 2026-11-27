@@ -469,7 +469,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     accel = accel or env.get("ACCEL") or default_accel(guest_kernel)
     if accel not in ("tcg", "kvm"):
         raise Error(f"unknown ACCEL={accel} (tcg or kvm)")
-    from ..vm import development
+    from . import development
 
     explicit_ca = "NETSTUB_CA" in env
     env = development.environment(env, tree)

@@ -35,7 +35,7 @@ DEFAULT_MODEL = b"cJbhRLJFZD9VYKzaaWeU7v1BUOafcEreZkElG7PI3+k="
 
 def effective(identity):
     """Resolve TOML items and the stable synthetic default, which only a VM with no model item of
-    any name gets; legacy files are migration-only."""
+    any name gets."""
     missing, items = load(identity)
     if missing == "fallback" and not any(name in items for name in MODELS):
         items[MODEL] = DEFAULT_MODEL
@@ -270,44 +270,6 @@ def _write(identity, data):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-
-
-def migrate(identity, merge=False):
-    """Import legacy inputs once, or explicitly fill gaps. Keep sources and existing entries."""
-    data = document(identity)
-    load(identity)  # refuse invalid existing entries before any mutation
-    if data is not None and not merge:
-        return []
-    data = data or {"missing": "fallback", "items": {}}
-    items = data.setdefault("items", {})
-    imported = []
-    for name, filename in ((MODEL, "model-secret"), (SSG, "ssg-key"), (YOUTUBE, "youtube-key")):
-        path = Path(identity) / filename
-        # Earlier migrations kept SSG as a legacy file reference. Make that import self-contained.
-        if name in items and not (name == SSG and items[name] == {"file": filename}):
-            continue
-        if not os.path.lexists(path):
-            continue
-        try:
-            value = _private_read(path)
-            if name == MODEL:
-                value = modelkey.validate(value)
-                entry = {"text": value.decode("ascii")}
-            elif name == YOUTUBE:
-                if value.endswith(b"\n"):
-                    value = value[:-1]
-                validate_item(name, value + b"\0")
-                entry = {"text": value.decode("ascii"), "nul_terminated": True}
-            else:
-                validate_item(name, value)
-                entry = {"text": value.decode("ascii")}
-            items[name] = entry
-            imported.append(name)
-        except (ValueError, UnicodeError, Error):
-            raise Error(f"cannot migrate {filename}: invalid or unreadable key") from None
-    if imported:
-        _write(identity, data)
-    return imported
 
 
 def model_item(regional, broadcast):

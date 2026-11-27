@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Exact host-to-kernel/client bytes, missing policy and migration without a VM."""
+"""Exact host-to-kernel/client bytes, missing policy without a VM."""
 
 import base64
 import ctypes
@@ -176,50 +176,7 @@ class TestInputsTest:
         with pytest.raises(sestore.Error):
             sestore.load(self.identity)
 
-    def test_migration_keeps_originals_and_is_repeatable(self):
-        model = base64.b64encode(bytes(range(32)))
-        pem = b"-----BEGIN PRIVATE KEY-----\ndummy\n-----END PRIVATE KEY-----\n"  # gitleaks:allow
-        originals = {"model-secret": model + b"\n", "ssg-key": pem, "youtube-key": b"a;b\n"}
-        for name, value in originals.items():
-            self.private(name, value)
-        assert sestore.migrate(self.identity) == [sestore.MODEL, sestore.SSG, sestore.YOUTUBE]
-        assert sestore.load(self.identity) == (
-            "fallback",
-            {sestore.MODEL: model, sestore.SSG: pem, sestore.YOUTUBE: b"a;b\0"},
-        )
-        before = self.config.read_bytes()
-        assert sestore.migrate(self.identity, merge=True) == []
-        assert self.config.read_bytes() == before
-        assert self.config.stat().st_mode & 0o777 == 0o600
-        for name, value in originals.items():
-            assert (self.identity / name).read_bytes() == value
-        assert not any(p.name.startswith(".sestore-") for p in self.identity.iterdir())
-
-    def test_existing_document_controls_missing_and_migration(self):
-        self.private("youtube-key", b"a;b\n")
-        self.write('missing="error"\n[items]\n"C1FFB834"={text="custom;value",nul_terminated=true}')
-        before = self.config.read_bytes()
-        assert sestore.migrate(self.identity, merge=True) == []
-        assert self.config.read_bytes() == before
-        self.write('missing="error"\n[items]\n')
-        assert sestore.migrate(self.identity) == []
-        assert sestore.load(self.identity) == ("error", {})
-        assert sestore.migrate(self.identity, merge=True) == [sestore.YOUTUBE]
-        assert sestore.load(self.identity) == ("error", {sestore.YOUTUBE: b"a;b\0"})
-
-    def test_refused_migration_leaves_inputs_untouched(self):
-        self.private("model-secret", b"not canonical")
-        with pytest.raises(sestore.Error):
-            sestore.migrate(self.identity)
-        assert not self.config.exists()
-        assert (self.identity / "model-secret").read_bytes() == b"not canonical"
-        self.write('[items]\n"1D492999"={text="bad"}')
-        before = self.config.read_bytes()
-        with pytest.raises(sestore.Error):
-            sestore.migrate(self.identity)
-        assert self.config.read_bytes() == before
-
-    def test_model_command_updates_migrated_document(self):
+    def test_model_command_updates_the_document(self):
         value = base64.b64encode(bytes(range(32)))
         self.write('missing="error"\n[items]\n"browser_secret"={text="hello\\u007f"}\n')
         sestore.set_model(self.identity, value)
@@ -260,21 +217,17 @@ class TestInputsTest:
         with pytest.raises(sestore.Error):
             sestore.set_model(self.identity, value, "3382732D")
 
-    def test_effective_defaults_migrated_inputs_and_strict_policy(self):
+    def test_effective_defaults_and_strict_policy(self):
         default = base64.b64encode(
             hashlib.sha256(b"webos-hypervisor emulator SDP_MODEL secret for 42LB650V").digest()
         )
         assert sestore.effective(self.identity) == ("fallback", {sestore.MODEL: default})
         supplied = base64.b64encode(bytes(range(32)))
         self.private("model-secret", supplied + b"\n")
-        self.private("youtube-key", b"dummy;key\n")
-        assert not sestore.has_model(self.identity)
+        assert not sestore.has_model(self.identity)  # a legacy file is not read
         assert sestore.effective(self.identity) == ("fallback", {sestore.MODEL: default})
-        sestore.migrate(self.identity)
-        assert sestore.effective(self.identity) == (
-            "fallback",
-            {sestore.MODEL: supplied, sestore.YOUTUBE: b"dummy;key\0"},
-        )
+        sestore.set_model(self.identity, supplied)
+        assert sestore.effective(self.identity) == ("fallback", {sestore.MODEL: supplied})
         self.write('missing="error"\n[items]\n"item"={hex="00ff"}')
         assert sestore.effective(self.identity) == ("error", {"item": b"\0\xff"})
         encoded = sestore.bundle(*sestore.effective(self.identity))
@@ -301,27 +254,6 @@ class TestInputsTest:
         ]:
             with pytest.raises(sestore.Error):
                 sestore.bundle(policy, items)
-
-    def test_legacy_sources_are_migration_only(self):
-        self.write('missing="fallback"\n[items]\n')
-        source = self.private("youtube-key", b"dummy;key\n")
-        source.chmod(0o644)
-        assert sestore.YOUTUBE not in sestore.effective(self.identity)[1]
-        with pytest.raises(sestore.Error, match="cannot migrate"):
-            sestore.migrate(self.identity, merge=True)
-        source.chmod(0o600)
-        sestore.migrate(self.identity, merge=True)
-        source.write_bytes(b"changed;original")
-        assert sestore.effective(self.identity)[1][sestore.YOUTUBE] == b"dummy;key\0"
-
-    def test_previous_ssg_migration_becomes_self_contained(self):
-        pem = b"-----BEGIN PRIVATE KEY-----\ndummy\n-----END PRIVATE KEY-----\n"
-        source = self.private("ssg-key", pem)
-        self.write('missing="error"\n[items]\n"77D1DD90"={file="ssg-key"}\n')
-        assert sestore.migrate(self.identity, merge=True) == [sestore.SSG]
-        assert source.read_bytes() == pem
-        source.unlink()
-        assert sestore.effective(self.identity) == ("error", {sestore.SSG: pem})
 
     def test_dvr_key_made_once_kept_and_dropped_for_a_new_identity(self):
         said = []

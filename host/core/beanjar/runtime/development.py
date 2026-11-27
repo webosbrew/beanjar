@@ -11,11 +11,11 @@ from pathlib import Path
 
 from .. import base, paths
 from ..firmware import probe
-from ..runtime import vmunits
-from . import config as vm_config
-from . import identity as vm_identity
-from . import library as vm_library
-from . import settings
+from ..vm import config as vm_config
+from ..vm import identity as vm_identity
+from ..vm import library as vm_library
+from ..vm import settings
+from . import vmunits
 
 
 class Error(Exception):

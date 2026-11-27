@@ -188,7 +188,7 @@ def say(line):
 # ------------------------------------------------------------------ instances of the checkout VM
 def instance_env(env, tree=TREE):
     """Default runtime and identity paths of a managed development VM."""
-    from ..vm import development
+    from . import development
 
     try:
         return development.environment(env, tree)
@@ -1284,7 +1284,7 @@ def parser():
 def main(argv_=None):
     a = parser().parse_args(argv_)
     try:
-        from ..vm import development
+        from . import development
 
         if not getattr(a, "dir", None) and a.cmd not in (
             "config",
