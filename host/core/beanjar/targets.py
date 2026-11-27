@@ -1460,14 +1460,14 @@ def module_params_var(module):
 
 # host/helpers/rtk/rpc-table.py, which reads rtk.ko's RPC answers out of a Realtek firmware's libkadaptor
 RPC_TABLE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(os.path.dirname(base.CORE)),
     "host",
     "helpers",
     "rtk",
     "rpc-table.py",
 )
 
-_installed = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_installed = os.path.dirname(base.CORE)
 if os.path.isfile(os.path.join(_installed, "installation.toml")):
     RPC_TABLE = os.path.join(_installed, "helpers", "rtk", "rpc-table.py")
 

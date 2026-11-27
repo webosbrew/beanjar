@@ -134,6 +134,7 @@ import time
 import tomllib
 
 from . import (
+    base,
     compat,
     console,
     core,
@@ -216,7 +217,7 @@ def helper_environment(env):
     """env for a `python3 -m beanjar.X` helper: this package on its PYTHONPATH."""
     helper_env = dict(env)
     helper_env["PYTHONPATH"] = os.pathsep.join(
-        x for x in (os.path.dirname(os.path.dirname(__file__)), helper_env.get("PYTHONPATH")) if x
+        x for x in (base.CORE, helper_env.get("PYTHONPATH")) if x
     )
     return helper_env
 

@@ -13,6 +13,10 @@ the address this host reaches its TV-service ports on, and the query's answer (t
 import os
 import re
 
+# host/core, the directory that holds this package (beanjar/): found here once, so that a module
+# moving between subpackages cannot change where it looks.
+CORE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 class Error(Exception):
     """A refusal or failure to report to the user as it is (core.Error). key: the vm.toml key (or

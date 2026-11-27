@@ -58,6 +58,7 @@ import threading
 import time
 
 from . import tuner_band, tuner_lineup, tuner_stream, tuner_stream_arib, tuner_stream_dvb, tuner_ts
+from . import base
 from .base import Error
 
 MAGIC = 0x4E555457
@@ -1232,8 +1233,7 @@ def start_feed(host, uri, name, address, cache, spawn=subprocess.Popen, parent=N
     log_path = os.path.join(cache, "feeds", f"{host}-{name}.log")
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     env = dict(os.environ)
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env["PYTHONPATH"] = os.pathsep.join(x for x in (here, env.get("PYTHONPATH")) if x)
+    env["PYTHONPATH"] = os.pathsep.join(x for x in (base.CORE, env.get("PYTHONPATH")) if x)
     with open(log_path, "ab") as out:
         proc = spawn(
             feed_argv(host, uri, name, address, cache, content),
