@@ -77,7 +77,9 @@ class TestHooks:
         self.run_cmd("python3", "scripts/format-hooks/install-hooks.py")
 
     def test_pre_push_runs_the_check_and_no_verify_skips_it(self):
-        bare = self.repo.parent / "remote.git"
+        # the check gates main on GitHub only: a path with github.com/ in it stands for it
+        bare = self.repo.parent / "github.com" / "remote.git"
+        bare.parent.mkdir()
         self.run_cmd("git", "init", "-q", "--bare", str(bare))
         self.run_cmd("git", "remote", "add", "origin", str(bare))
         check = self.repo / "scripts/act-check"
@@ -92,6 +94,19 @@ class TestHooks:
         assert (self.repo / ".git/act-calls").read_text() == head + "\n"
         self.run_cmd("git", "push", "-q", "--no-verify", "origin", "HEAD:refs/heads/main")
         assert (self.repo / ".git/act-calls").read_text() == head + "\n"
+
+    def test_pre_push_skips_other_hosts_and_branches(self):
+        check = self.repo / "scripts/act-check"
+        check.write_text("#!/bin/sh\necho called >> .git/act-calls\nexit 1\n")
+        check.chmod(0o755)
+        sync = self.repo.parent / "host-sync.git"  # a source sync to one of the project's hosts
+        self.run_cmd("git", "init", "-q", "--bare", str(sync))
+        self.run_cmd("git", "push", "-q", str(sync), "HEAD:refs/heads/main")
+        github = self.repo.parent / "github.com" / "other.git"
+        github.parent.mkdir()
+        self.run_cmd("git", "init", "-q", "--bare", str(github))
+        self.run_cmd("git", "push", "-q", str(github), "HEAD:refs/heads/topic")
+        assert not (self.repo / ".git/act-calls").exists()
 
     def test_partial_staging_restores_unstaged_edits(self):
         source = self.repo / "sample.py"
