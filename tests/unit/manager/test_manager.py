@@ -3609,7 +3609,7 @@ class CliParseTest(unittest.TestCase):
     form; the old names are refused as usage errors (exit status 2)."""
 
     def parse(self, *argv):
-        from beanjar.commands import parser
+        from beanjar.cli import parser
 
         return parser.parse(list(argv))
 
@@ -3629,7 +3629,7 @@ class CliParseTest(unittest.TestCase):
         return p.returncode, p.stdout, p.stderr
 
     def test_forms(self):
-        from beanjar.commands import devices, display, identity, mitm, sensors, settings, vms
+        from beanjar.cli import devices, display, identity, mitm, sensors, settings, vms
 
         for argv, func, attrs in (
             (["list", "--all", "--json"], vms.cmd_list, {"all": True, "json": True}),
@@ -3757,7 +3757,7 @@ class CliParseTest(unittest.TestCase):
     def test_global_options_anywhere(self):
         """--json, --library and --repo go anywhere on the line: before the command, between a
         group and its verb, after the VM; not in shell's command, nor after --."""
-        from beanjar.commands import vms
+        from beanjar.cli import vms
 
         for argv in (
             ["--json", "--library", "L", "list"],
@@ -3789,7 +3789,7 @@ class CliParseTest(unittest.TestCase):
         """Durations carry a unit (ms, s, m); a bare number is refused."""
         import argparse
 
-        from beanjar.commands import common
+        from beanjar.cli import common
 
         for text, seconds in (("200ms", 0.2), ("1.5s", 1.5), ("2m", 120.0), ("0ms", 0.0)):
             self.assertAlmostEqual(common.duration(text), seconds)
@@ -3911,7 +3911,7 @@ class CliParseTest(unittest.TestCase):
         import io
         import json
 
-        from beanjar import commands
+        from beanjar.cli import dispatch
 
         keys = {"name", "version", "commit", "source", "dirty", "guest"}
         for argv, check, lines in (
@@ -3929,7 +3929,7 @@ class CliParseTest(unittest.TestCase):
         ):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
-                self.assertEqual(commands.main(argv), 0)
+                self.assertEqual(dispatch.main(argv), 0)
             check(out.getvalue())
             self.assertEqual(out.getvalue().count("\n"), lines)
         info = json.loads(out.getvalue())
@@ -3940,7 +3940,7 @@ class CliParseTest(unittest.TestCase):
         import contextlib
         import io
 
-        from beanjar.commands.common import Usage
+        from beanjar.cli.common import Usage
 
         for argv in (
             ["status", "tv1"],

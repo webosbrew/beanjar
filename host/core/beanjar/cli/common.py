@@ -11,7 +11,7 @@ import json
 import sys
 
 from ..vm import library
-from ..cli import json_error
+from .main import json_error
 from ..base import Error
 
 

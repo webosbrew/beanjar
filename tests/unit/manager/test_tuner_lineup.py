@@ -20,7 +20,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import cli
+from beanjar.cli import main
 from beanjar.access import remote
 from beanjar.tuner import antenna, band, lineup, atsc as tuner_atsc, user_stream
 from beanjar.tuner import arib as arib
@@ -700,7 +700,7 @@ class RemoteTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(["--repo", self.dir, *argv])
+                rc = main.main(["--repo", self.dir, *argv])
             except SystemExit as e:
                 rc = e.code
         return rc, out.getvalue(), err.getvalue()

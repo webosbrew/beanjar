@@ -17,9 +17,9 @@ from unittest import mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import cli, commands
+from beanjar.cli import main, dispatch
 from beanjar.access import remote
-from beanjar.commands import forward
+from beanjar.cli import forward
 
 
 class LogShow(unittest.TestCase):
@@ -47,13 +47,13 @@ class LogShow(unittest.TestCase):
         err = io.StringIO()
         with (
             mock.patch.object(remote, "locate", return_value=(None, "tv")),
-            mock.patch.object(commands, "Library") as library,
+            mock.patch.object(dispatch, "Library") as library,
             contextlib.redirect_stdout(out),
             contextlib.redirect_stderr(err),
         ):
             library.return_value.vm.return_value = self.vm
             try:
-                rc = cli.main(list(args))
+                rc = main.main(list(args))
             except SystemExit as error:
                 rc = error.code
         out.flush()
@@ -135,7 +135,7 @@ class LogShowRemote(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(list(args))
+                rc = main.main(list(args))
             except SystemExit as error:
                 rc = error.code
         return rc, out.getvalue(), err.getvalue()
@@ -151,7 +151,7 @@ class LogShowRemote(unittest.TestCase):
                 mock.patch.object(remote, "hosts", return_value={"pi": "ssh://pi"}),
                 mock.patch.object(remote, "identity", return_value=None),
                 mock.patch.object(forward, "run_remote", return_value=0) as run,
-                mock.patch.object(commands, "Library") as library,
+                mock.patch.object(dispatch, "Library") as library,
             ):
                 rc, _out, _err = self.invoke(
                     "--library",
@@ -178,7 +178,7 @@ class LogShowRemote(unittest.TestCase):
         ):
             out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
             with contextlib.redirect_stdout(out):
-                rc = cli.main(["log", "show", "pi/tv", "run/x.log", "--json"])
+                rc = main.main(["log", "show", "pi/tv", "run/x.log", "--json"])
             out.flush()
         self.assertEqual(rc, 0)
         self.assertEqual(json.loads(out.buffer.getvalue()), data)

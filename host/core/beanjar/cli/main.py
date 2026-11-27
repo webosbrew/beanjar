@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """python3 -m beanjar, and the launcher's `beanjar ARGS`: the VM manager's command line
-(host/core/README.md). The commands are the commands package's.
+(host/core/README.md). The commands are the rest of this package's (dispatch.py).
 
 This front reads only where the command word is, so that the `_ares` query another machine's
 remote ares-TOOL asks at every run (ares.remote_vm) is answered without loading the commands or
@@ -11,7 +11,7 @@ costs tens of milliseconds. The query reads the one VM's vm.toml and key (base.t
 import os
 import sys
 
-from . import base
+from .. import base
 
 
 def command_index(argv):
@@ -44,7 +44,7 @@ def global_options(words):
 
 def json_error(e, code):
     """Error e as --json reports it, one JSON object on stderr ({"error": message, "key": setting
-    or absent, "usage": true or absent, "drift": [...] or absent}, commands/common.py's conventions): code, the exit status."""
+    or absent, "usage": true or absent, "drift": [...] or absent}, common.py's conventions): code, the exit status."""
     import json
 
     error = {"error": str(e)}
@@ -104,14 +104,14 @@ def ares_query(argv, i):
             return json_error(base.Error(usage), 2)
         root = base.ROOT_OPTION in flags
         vm_dir = base.vm_dir(base.library_root(opts["library"]), name)
-        from .vm import config
+        from ..vm import config
 
         cfg = config.peek(os.path.join(vm_dir, base.CONFIG), base.TARGET_SETTINGS)
         if cfg is not None and plain(cfg):
             answer = base.target(name, vm_dir, cfg, root)
         else:
-            from .access import ares
-            from .vm import library
+            from ..access import ares
+            from ..vm import library
 
             answer = ares.target(library.Library(opts["library"], opts["repo"]).vm(name), root)
         import json
@@ -127,9 +127,9 @@ def main(argv=None):
     i = command_index(argv)
     if i < len(argv) and argv[i] == base.ARES_QUERY:
         return ares_query(argv, i)
-    from . import commands
+    from . import dispatch
 
-    return commands.main(argv)
+    return dispatch.main(argv)
 
 
 if __name__ == "__main__":

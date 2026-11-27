@@ -238,7 +238,7 @@ class GamepadCliTest(unittest.TestCase):
         self.assertEqual(self.calls, [])  # refused here, before the host
 
     def test_rows(self):
-        from beanjar.commands import devices
+        from beanjar.cli import devices
 
         text = devices.usb_rows(
             [{"id": "1", "kind": "gamepad", "socket": "/r/usb-1.sock", "connected": True,

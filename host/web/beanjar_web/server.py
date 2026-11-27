@@ -945,7 +945,9 @@ class Server:
 def default_beanjar():
     """The core package beside this one in a checkout (host/core), else `beanjar` on PATH."""
     core = os.path.join(os.path.dirname(os.path.dirname(HERE)), "core")
-    if os.path.isfile(os.path.join(core, "beanjar", "cli.py")) and not HERE.startswith("/usr/"):
+    if os.path.isfile(os.path.join(core, "beanjar", "cli", "main.py")) and not HERE.startswith(
+        "/usr/"
+    ):
         return f"env PYTHONPATH={shlex.quote(core)} {shlex.quote(sys.executable)} -m beanjar"
     return "beanjar"
 

@@ -610,7 +610,7 @@ def stage_host(work, hp, arch, ident):
             'if len(sys.argv)==1 and os.path.isdir("/usr/lib/beanjar/ui"):\n'
             "    from beanjar_ui.manager.gui import main\n"
             "else:\n"
-            "    from beanjar.cli import main\n"
+            "    from beanjar.cli.main import main\n"
             "sys.exit(main())\n"
         ),
         0o755,

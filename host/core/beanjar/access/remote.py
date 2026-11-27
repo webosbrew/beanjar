@@ -346,7 +346,7 @@ def call_json(name, uri, argv, timeout=LIST_TIMEOUT):
 
 
 def identity(name, uri):
-    """Host name's `beanjar --version --json` object (commands.common.version_info; an older beanjar
+    """Host name's `beanjar --version --json` object (cli.common.version_info; an older beanjar
     gives {"name", "version"} only), or None when it cannot be asked or answers with no object.
     Kept for PERSIST seconds in control_dir(), so that a run of commands asks once; a host that
     does not answer within VERSION_TIMEOUT is kept as None too, so that it delays one command a

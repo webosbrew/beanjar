@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The VM manager's commands (host/core/README.md), which `python3 -m beanjar` and the
-launcher's `beanjar` run through cli.main (cli.py answers the `_ares` query itself, without this
+launcher's `beanjar` run through cli.main (main.py answers the `_ares` query itself, without this
 package or the library's). main parses (parser.py: each module's commands and options) and runs
 the command here or, for HOST/NAME, on that host (forward.py); ares_main runs an ares-TOOL.
 
@@ -25,7 +25,7 @@ ares-TOOL run (on a board, every module imported costs tens of milliseconds)."""
 import sys
 
 from ..access import remote
-from ..cli import command_index, global_options
+from .main import command_index, global_options
 from ..vm.library import Library
 from ..base import Error
 from .common import Parser, Usage, fail, warn

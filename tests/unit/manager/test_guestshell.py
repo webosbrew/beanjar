@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""`beanjar shell` (host/core/beanjar/access/guestshell.py, commands/shell.py): the frames of
+"""`beanjar shell` (host/core/beanjar/access/guestshell.py, cli/shell.py): the frames of
 include/webos-shell.h, the relay's sessions between clients and the guest, a client's session end
 to end against a fake guest agent, and the command line. No VM.
 `pytest tests/unit/manager/test_guestshell.py`."""
@@ -14,8 +14,8 @@ import threading
 import pytest
 
 from beanjar.access import guestshell as gs
-from beanjar.commands import parser
-from beanjar.commands.shell import command_words
+from beanjar.cli import parser
+from beanjar.cli.shell import command_words
 
 
 def test_frames_round_trip_in_pieces():

@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
 from beanjar.access import ares, remote
-from beanjar import cli
+from beanjar.cli import main
 from beanjar.tuner import antenna, band, lineup, atsc
 from beanjar.tuner import arib as arib
 
@@ -536,7 +536,7 @@ class RemoteCliTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(["--repo", self.checkout, *argv])
+                rc = main.main(["--repo", self.checkout, *argv])
             except SystemExit as e:
                 rc = e.code
         return rc, out.getvalue(), err.getvalue()

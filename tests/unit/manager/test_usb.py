@@ -22,7 +22,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
 from beanjar.access import ares, remote
-from beanjar import base, cli
+from beanjar import base
+from beanjar.cli import main
 from beanjar.runtime import lifecycle
 from beanjar.devices import usb
 
@@ -758,7 +759,7 @@ class CliTest(unittest.TestCase):
         out.buffer = io.BytesIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(list(argv))
+                rc = main.main(list(argv))
             except SystemExit as e:
                 rc = e.code
         return rc, out.getvalue() + out.buffer.getvalue().decode(), err.getvalue()
@@ -817,7 +818,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_rows(self):
-        from beanjar.commands import devices
+        from beanjar.cli import devices
 
         text = devices.usb_rows(
             [{"id": "1", "kind": "redir", "socket": "/r/usb-1.sock", "connected": True,

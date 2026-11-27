@@ -200,7 +200,7 @@ def elsewhere_rows(lib, units):
     a unit of another RUN_DIR (a regress target's), with that directory. Each a dict: key, name,
     state, address, where (the library or run directory, ~ shortened), tooltip, and library (the
     core.Library a Stop goes to; None for a unit of no library). Asks systemd: off the main loop."""
-    from beanjar.commands.vms import unit_row
+    from beanjar.cli.vms import unit_row
 
     shown = set()
     for vm in lib.vms():

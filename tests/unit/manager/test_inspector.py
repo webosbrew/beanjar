@@ -129,7 +129,7 @@ def test_link_lan_url_is_the_lan_address_and_this_host_uses_the_vm_address(tmp_p
 
 
 def test_status_gives_the_lan_url_and_this_hosts():
-    from beanjar.commands import vms
+    from beanjar.cli import vms
 
     lan = inspector.State(
         "mitm",

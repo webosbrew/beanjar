@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The CLI's remote hosts (host/core/beanjar/access/remote.py, cli.py): the hosts table, URIs, name
+"""The CLI's remote hosts (host/core/beanjar/access/remote.py, cli/main.py): the hosts table, URIs, name
 resolution, the ssh command line, list merging and forwarding. The ssh runner (remote.transport)
 is replaced: no network. One test asks OpenSSH for its effective configuration with -G (no
 connection). `meson test -C build/host --suite manager`, or run directly."""
@@ -24,12 +24,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar.access import ares, remote  # noqa: E402
-from beanjar import base, cli, commands  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.cli import main, dispatch  # noqa: E402
 from beanjar.vm import library as vm_library  # noqa: E402
 from beanjar.runtime import hostconfig  # noqa: E402
 from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.network import inspector  # noqa: E402
-from beanjar.commands import vms as vm_commands  # noqa: E402
+from beanjar.cli import vms as vm_commands  # noqa: E402
 import subprocess  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0\0\0\rIHDR" + (1280).to_bytes(4, "big") + (720).to_bytes(4, "big")
@@ -104,7 +105,7 @@ class Base(unittest.TestCase):
         out.buffer = io.BytesIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(list(argv))
+                rc = main.main(list(argv))
             except SystemExit as e:  # argparse's usage error
                 rc = e.code
         return rc, out.getvalue() + out.buffer.getvalue().decode("latin-1"), err.getvalue()
@@ -296,7 +297,7 @@ class CommandsTest(Base):
         """A host whose beanjar is another commit's: a warning on stderr once per command, naming
         both versions and the fix, and with --json a "drift" field in the result or the error.
         The host's version is asked once in PERSIST seconds; the command runs all the same."""
-        from beanjar.commands import forward
+        from beanjar.cli import forward
 
         mine = {"name": "beanjar", "version": "0.7.0+git276.g" + "b" * 12, "commit": "b" * 40,
                 "source": "checkout", "dirty": False, "guest": {"version": "unknown", "commit": None}}  # fmt: skip
@@ -747,7 +748,7 @@ class PointerCliTest(Base):
             "source_height": 1080}  # fmt: skip
         with (
             mock.patch.object(pipe, "pointer", fake),
-            mock.patch.object(commands.Library, "vm", lambda self, name: name),
+            mock.patch.object(dispatch.Library, "vm", lambda self, name: name),
         ):
             rc, out, _ = self.beanjar("remote", "click", "tv", "640.5", "360", "--button", "right")
             self.assertEqual(rc, 0, out)
@@ -1422,7 +1423,7 @@ class LightTest(Base):
 
     def test_imports(self):
         code = (
-            "import sys; sys.path.insert(0, sys.argv[1]); from beanjar import cli\n"
+            "import sys; sys.path.insert(0, sys.argv[1]); from beanjar.cli import main as cli\n"
             "rc = cli.main(sys.argv[2:])\n"
             "heavy = ('argparse', 'concurrent.futures', 'beanjar.display.gpu', 'beanjar.display.elements',\n"
             "         'beanjar.display.screensaver')\n"
@@ -1465,9 +1466,9 @@ class LightTest(Base):
         lib = os.path.join(self.tmp, "lib")
         write_vm(lib, "tv", '[layers]\nenabled = ["normal", "devmode", "rootssh"]\n')
         code = (
-            "import sys; sys.path.insert(0, sys.argv[1]); from beanjar import cli\n"
+            "import sys; sys.path.insert(0, sys.argv[1]); from beanjar.cli import main as cli\n"
             "rc = cli.main(sys.argv[2:])\n"
-            "heavy = ('beanjar.vm.library', 'beanjar.commands', 'beanjar.access.ares', 'beanjar.vm.keys',\n"
+            "heavy = ('beanjar.vm.library', 'beanjar.cli.dispatch', 'beanjar.access.ares', 'beanjar.vm.keys',\n"
             "         'beanjar.access.remote', 'beanjar.firmware.targets', 'argparse', 'shutil', 'subprocess')\n"
             "print(rc, [m for m in heavy if m in sys.modules])\n"
         )
@@ -1484,11 +1485,11 @@ class LightTest(Base):
 
     def test_global_options(self):
         self.assertEqual(
-            cli.global_options(["--library", "/l", "--repo=/r"]), {"library": "/l", "repo": "/r"}
+            main.global_options(["--library", "/l", "--repo=/r"]), {"library": "/l", "repo": "/r"}
         )
-        self.assertEqual(cli.global_options([]), {"library": None, "repo": None})
+        self.assertEqual(main.global_options([]), {"library": None, "repo": None})
         for words in (["--library"], ["-h"], ["--lib", "/l"], ["--json"]):
-            self.assertIsNone(cli.global_options(words), words)
+            self.assertIsNone(main.global_options(words), words)
 
 
 def write_vm(lib, name, toml="", slot=3, keys=("devmode_rsa", "id_ed25519")):
@@ -1621,7 +1622,7 @@ class SilentFirmwareTest(unittest.TestCase):
         the next VM of that collection is not asked at all."""
         import threading
 
-        from beanjar.commands import vms
+        from beanjar.cli import vms
 
         gone = threading.Event()
         asked = []

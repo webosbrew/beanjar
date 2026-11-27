@@ -21,12 +21,13 @@ from unittest import mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import base, cli, commands
+from beanjar import base
+from beanjar.cli import main, dispatch
 from beanjar.vm import library as vm_library
 from beanjar.runtime import poweroff
 from beanjar.access import remote
 from beanjar.display import screensaver as ss
-from beanjar.commands import forward
+from beanjar.cli import forward
 
 
 class Clock:
@@ -538,7 +539,7 @@ class CliTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
-                rc = cli.main(list(args))
+                rc = main.main(list(args))
             except SystemExit as error:
                 rc = error.code
         return rc, out.getvalue(), err.getvalue()
@@ -549,7 +550,7 @@ class CliTest(unittest.TestCase):
         )
         with (
             mock.patch.object(remote, "locate", return_value=(None, "tv")),
-            mock.patch.object(commands, "Library") as library,
+            mock.patch.object(dispatch, "Library") as library,
             mock.patch.object(ss, "control", return_value=result) as control,
         ):
             rc, out, err = self.invoke(
@@ -565,7 +566,7 @@ class CliTest(unittest.TestCase):
         )
         with (
             mock.patch.object(remote, "locate", return_value=(None, "tv")),
-            mock.patch.object(commands, "Library") as library,
+            mock.patch.object(dispatch, "Library") as library,
             mock.patch.object(ss, "control", return_value=result) as control,
         ):
             rc, out, err = self.invoke("screensaver", "stop", "local/tv", "--json")

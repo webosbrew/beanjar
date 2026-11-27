@@ -426,8 +426,8 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
 
 
 def main(argv=None):
-    from ..commands.settings import settings_of
-    from ..commands.vms import create_arguments
+    from ..cli.settings import settings_of
+    from ..cli.vms import create_arguments
 
     p = argparse.ArgumentParser(
         prog="beanjar.vm.create", description="the GUI's New VM (not a user command)"

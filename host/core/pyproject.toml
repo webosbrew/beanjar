@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-beanjar = "beanjar.cli:main"
+beanjar = "beanjar.cli.main:main"
 
 # Not on PATH: the Debian package puts these in /usr/libexec/beanjar.
 [tool.beanjar.libexec]
