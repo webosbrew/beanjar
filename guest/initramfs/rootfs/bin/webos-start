@@ -40,7 +40,8 @@ chmod +x /run/webos-init
 (
 	# The restart and the power-off both end with the filesystems read-only (sysrq u, done when
 	# the kernel logs it, 0.1 s under load), which leaves them clean, then an immediate kernel
-	# call: sysrq b (emergency restart, shuts nothing down) or sysrq o (power off).
+	# call: sysrq b (emergency restart, shuts nothing down) or sysrq o (power off, which still
+	# shuts the devices down first, so it narrows the race below without removing it).
 	# Not reboot -f or poweroff -f: the kernel's restart shuts the devices down first, and the
 	# virtio bus breaks and resets each one while user space still runs, so a page swapped in
 	# meanwhile fails ("Read-error on swap-device"; init's own so panics the kernel) and so do the
