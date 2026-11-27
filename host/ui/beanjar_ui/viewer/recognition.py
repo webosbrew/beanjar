@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The Elements layer's recognition (host/viewer/README.md, "Elements layer"): frames of the
-TV picture read by beanjar.elements, the reading `beanjar elements` does, off the main loop.
+TV picture read by beanjar.display.elements, the reading `beanjar elements` does, off the main loop.
 
 No GTK here: the layer's widget is elements_layer.py. A frame is taken on the main loop (the
 core's screenshot, a GL read back) at most MAX_RATE times a second and only while no reading is
@@ -62,14 +62,14 @@ class RateMeter:
 def picture_box(frame, picture):
     """(x, y, w, h) of the TV picture in a frame of frame = (width, height): the core letterboxes
     the guest's display into a screenshot as it does into the view, so the shown picture's aspect
-    (picture = (width, height)) places it (beanjar.framing.picture_box)."""
-    from beanjar import framing
+    (picture = (width, height)) places it (beanjar.display.framing.picture_box)."""
+    from beanjar.display import framing
 
     return framing.picture_box(frame, picture)
 
 
 def overlay_items(data, rect):
-    """The boxes of a reading (data: beanjar.elements.read_screen's) in the view's coordinates,
+    """The boxes of a reading (data: beanjar.display.elements.read_screen's) in the view's coordinates,
     the picture shown at rect = (x, y, w, h): [(kind, text, (x, y, w, h)), ...] in reading order.
     The label is the element's text, its value and unit for a progress bar."""
     rx, ry, rw, rh = rect
@@ -111,7 +111,7 @@ class Recognizer:
     """Frames read one at a time. grab(path, width, height) writes the frame as PPM on the main
     loop (True on success); source() is the guest display's (width, height) or None; post(fn)
     runs fn on the main loop; on_result(result) gets {"taken", "took", "data", "png"} or
-    {"taken", "error"}. read is beanjar.elements.read_screen's signature."""
+    {"taken", "error"}. read is beanjar.display.elements.read_screen's signature."""
 
     def __init__(self, grab, source, post, on_result, read=None, clock=time.monotonic):
         self.grab, self.source, self.post, self.on_result = grab, source, post, on_result
@@ -126,7 +126,7 @@ class Recognizer:
 
     def start(self):
         """Resolves go-textshot first: an Error (not installed) leaves the layer off."""
-        from beanjar import elements
+        from beanjar.display import elements
 
         if self.given is None:  # resolved at each start: it may have been installed or removed
             self.binary = elements.executable()
@@ -163,7 +163,7 @@ class Recognizer:
         return True
 
     def _read(self, ppm, taken, source, generation):
-        from beanjar import framing
+        from beanjar.display import framing
 
         png = ppm[:-4] + ".png"
         try:

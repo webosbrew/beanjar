@@ -368,7 +368,7 @@ def start_capture_relay(p):
                 [
                     sys.executable,
                     "-m",
-                    "beanjar.capture_relay",
+                    "beanjar.display.capture_relay",
                     str(os.getpid()),
                     str(sock.fileno()),
                     qemu_sock,
@@ -499,7 +499,7 @@ def run(words, env=None):
     info["beanjar"] = compat.run_info(p.tree)  # the versions, for logs and messages only
     paths.write_vm_info(p.run_dir, info)
     if p.gpu_backend_argv:
-        # the GPU process (beanjar.gpu_backend): the vhost-user socket listens before QEMU starts;
+        # the GPU process (beanjar.display.gpu_backend): the vhost-user socket listens before QEMU starts;
         # the child takes QEMU's connection and becomes the backend, which ends with it
         gpu = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
@@ -513,7 +513,7 @@ def run(words, env=None):
                 [
                     sys.executable,
                     "-m",
-                    "beanjar.gpu_backend",
+                    "beanjar.display.gpu_backend",
                     str(os.getpid()),
                     str(gpu.fileno()),
                     *p.gpu_backend_argv,
@@ -598,7 +598,13 @@ def run(words, env=None):
         if p.display_setup:
             helper_env = helper_environment(p.env)
             setup = subprocess.Popen(
-                [sys.executable, "-m", "beanjar.display_setup", str(os.getpid()), *p.display_setup],
+                [
+                    sys.executable,
+                    "-m",
+                    "beanjar.display.secondary",
+                    str(os.getpid()),
+                    *p.display_setup,
+                ],
                 env=helper_env,
                 stdin=subprocess.DEVNULL,
                 close_fds=True,

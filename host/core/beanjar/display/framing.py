@@ -3,9 +3,7 @@
 """Screenshots: the TV picture's box in a frame, frame and source coordinates, and the
 PNG a screenshot is (the guest display's size recorded in it)."""
 
-from .base import (
-    Error,
-)
+from ..base import Error
 
 
 # A headless viewer takes its picture this long after the first scanout, for the video windows and

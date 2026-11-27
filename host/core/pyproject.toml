@@ -18,7 +18,7 @@ dependencies = [
   "tomlkit",
   "pyelftools",
   "dnspython",
-  # Gio (PyGObject) for the VMs' private D-Bus (beanjar/dbus.py), imported only when used
+  # Gio (PyGObject) for the VMs' private D-Bus (beanjar/display/dbus.py), imported only when used
   "PyGObject",
 ]
 

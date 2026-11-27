@@ -49,9 +49,9 @@ they saw before. Only that mode changes the RAM; virtio-gpu-gl keeps QEMU's anon
 ## The process and its lifetime
 
 The launcher (`launch.run`) binds and listens on the socket before it starts anything, then
-starts `python3 -m beanjar.gpu_backend PID FD vhost-user-gpu --virgl --render-node=NODE`, and
+starts `python3 -m beanjar.display.gpu_backend PID FD vhost-user-gpu --virgl --render-node=NODE`, and
 execs QEMU. QEMU's connect at realize lands in the listen backlog, so it never races the
-backend. `beanjar.gpu_backend` accepts that one connection and execs the backend with it
+backend. `beanjar.display.gpu_backend` accepts that one connection and execs the backend with it
 (`--fd=N`); it gives up if PID (the launcher's, then QEMU's) ends first. The backend writes to
 `run/gpu-backend.out`.
 
@@ -184,7 +184,7 @@ fixes the first two, the display socket after a stop or a reset; the third stays
   relay's in standby (2026-11-26) and the media pool's guest test (`guest/kernel/modules/media-pool/tests/run-tests.py`,
   step 3, "the doorbell across a pause"; `--skip-pause` leaves it out). Both stopped only VMs with
   virtio-gpu-gl until the backend took a new display socket (patch 0005, above). The other `cont`s resume a VM started with `-S` before its
-  guest runs: `display_setup.py` (the second output; `--keep-paused` with `QEMU_EXTRA=-S` leaves
+  guest runs: `secondary.py` (the second output; `--keep-paused` with `QEMU_EXTRA=-S` leaves
   the `cont` to the user, still before the guest), `netns.off` (`link = "off"`'s link-down) and
   `tests/integration/viewer/check-qemu-listener-close.py`. The viewer,
   beanjar-vnc, `beanjar screenshot`, the web UI and `tests/regress/audio/capture.py` (HMP `wavcapture`)

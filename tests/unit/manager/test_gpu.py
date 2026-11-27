@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""beanjar/gpu.py against a stand-in /proc and cgroup tree: no GPU, no VM."""
+"""beanjar/display/gpu.py against a stand-in /proc and cgroup tree: no GPU, no VM."""
 
 import os
 from pathlib import Path
@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from beanjar import gpu
+from beanjar.display import gpu
 
 UNIT = "/user.slice/user-1000.slice/user@1000.service/beanjar.slice/beanjar-vm-x-y.service"
 # v3d on the Pi 5 (kernel 6.18): QEMU's client in two fds, and a second, idle one

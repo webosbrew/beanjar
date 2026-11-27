@@ -3,7 +3,7 @@
 """The Elements layer (More > Show planes > Elements; host/viewer/README.md): what screen
 recognition reads in the TV picture, drawn over it. Each element gets a box in its kind's colour
 and a label with its kind and text; a line in the corner has the count, the measured reading rate
-and the age of the result shown. The reading is recognition.py's (beanjar.elements, the one
+and the age of the result shown. The reading is recognition.py's (beanjar.display.elements, the one
 `beanjar elements` does); this widget only draws, and takes no input."""
 
 import gi

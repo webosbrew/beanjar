@@ -18,8 +18,8 @@ import secrets
 import shlex
 import time
 
-from . import base, console, paths, poweroff
-from .base import Error
+from .. import base, console, paths, poweroff
+from ..base import Error
 
 POWER = "luna://com.webos.service.tvpower/power2/"
 SAM = "luna://com.webos.applicationManager/"

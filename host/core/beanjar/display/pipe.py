@@ -40,7 +40,7 @@ import threading
 import time
 
 from . import dbus, framing
-from .base import Error
+from ..base import Error
 from .dbus import SCREENSHOT_NAME, SCREENSHOT_PATH
 
 CHUNK = 1 << 16
@@ -50,9 +50,9 @@ PRESS_HOLD = 0.1  # seconds a `remote press` holds each key: a short press
 def vm_layout(vm):
     """The layout the GTK viewer would show for vm: its firmware's remote, the Japanese one on an
     ARIB board (tuner.vm_broadcast, as the launch writes it to vm-info.toml)."""
-    from . import targets
-    from .tuner import antenna
-    from .devices import remote_layouts as lib
+    from .. import targets
+    from ..tuner import antenna
+    from ..devices import remote_layouts as lib
 
     try:
         target = vm.target()
@@ -182,7 +182,7 @@ class Remote(FrontEnd):
     def code(self, word):
         """A key's IR code: a number (0x7c, 124; a Japanese remote's extended code 0xdb30) or a name of
         the VM's layout (HOME)."""
-        from .devices import remote_layouts
+        from ..devices import remote_layouts
 
         try:
             code = int(word, 0)
@@ -323,7 +323,7 @@ def rotation_reported(vm):
 def watch_rotation(vm, say, stop):
     """remote pipe's "rotation N" lines: the guest's rotation setting as it reports it (run/rotation,
     rotation.py; 0 before its first report), once at the start and at each change, until stop."""
-    from .devices import rotation
+    from ..devices import rotation
 
     last = None
     while True:

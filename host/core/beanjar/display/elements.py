@@ -12,7 +12,7 @@ import struct
 import subprocess
 import tempfile
 
-from .base import Error
+from ..base import Error
 
 INSTALL_HINT = "Install it with: go install github.com/devcell-sh/go-textshot/cmd/textshot@latest"
 
@@ -137,7 +137,7 @@ def serve_executable():
     found = shutil.which("textshot-serve")
     if found:
         return os.path.abspath(found)
-    from .paths import TREE
+    from ..paths import TREE
 
     built = TREE.build("textshot-serve")
     return built if os.path.isfile(built) and os.access(built, os.X_OK) else None

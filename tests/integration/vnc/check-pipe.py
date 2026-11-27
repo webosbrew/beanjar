@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The manager's stdio pipes (host/core/beanjar/pipe.py) against beanjar-vnc and the stand-in QEMU
+"""The manager's stdio pipes (host/core/beanjar/display/pipe.py) against beanjar-vnc and the stand-in QEMU
 display (tests/fakes/fake-qemu.py), no VM, no window.
 
     check-pipe.py BEANJAR_VNC
@@ -36,7 +36,8 @@ import time
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, pipe  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.display import pipe  # noqa: E402
 from beanjar.devices import remote_layouts  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))

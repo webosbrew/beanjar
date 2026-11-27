@@ -143,7 +143,7 @@ def guest_range(version, identity):
 def host_dependencies(version, libs, identity):
     """The beanjar package's Depends; libs: its shared libraries' packages (dpkg-shlibdeps). Any
     beanjar-guest of the host's contract will do, whatever its patch version. python3-gi is Gio,
-    for the VMs' bus (beanjar/dbus.py); GTK is beanjar-ui's. mesa-utils is eglinfo, with which the
+    for the VMs' bus (beanjar/display/dbus.py); GTK is beanjar-ui's. mesa-utils is eglinfo, with which the
     launch names the GL renderer of a VM's virgl display (qemu.gl_renderer_line)."""
     return (
         f"{guest_range(version, identity)}, python3 (>= 3.13), python3 (<< 3.14), python3-gi, "

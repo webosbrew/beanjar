@@ -50,7 +50,6 @@ from beanjar import (
     capacity,
     core,
     firmware,
-    gpu,
     hostprocs,
     lifecycle,
     newvm,
@@ -61,6 +60,7 @@ from beanjar import (
     vmsettings,
     vmunits,
 )  # noqa: E402
+from beanjar.display import gpu  # noqa: E402
 from beanjar.devices import rotation  # noqa: E402
 from beanjar.core import Library  # noqa: E402
 from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402

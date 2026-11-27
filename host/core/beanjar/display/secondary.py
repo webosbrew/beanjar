@@ -28,7 +28,7 @@ def prepare(
     clock=time.monotonic,
     sleep=time.sleep,
 ):
-    from .launch import qmp
+    from ..launch import qmp
 
     command = command or qmp
     alive = alive or (lambda: os.getppid() == parent)
@@ -67,7 +67,7 @@ def main():
         prepare(address, sock, parent, resume=not args.keep_paused)
     except Exception as exc:
         print(f"display setup failed: {exc}; stopping paused QEMU", file=sys.stderr, flush=True)
-        from .launch import qmp
+        from ..launch import qmp
 
         try:
             reply = qmp(sock, '{"execute":"quit"}', timeout=1.0)

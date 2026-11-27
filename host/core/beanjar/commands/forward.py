@@ -14,7 +14,8 @@ import struct
 import sys
 import tempfile
 
-from .. import framing, remote
+from ..display import framing
+from .. import remote
 from ..base import Error
 from .common import Usage, emit, kv_lines, parse_size, read_new_password, version_info, warn
 from .devices import gamepad_controls, plug_usb, remote_tuner, usb_attach_usage
@@ -92,7 +93,7 @@ def run_remote(a, host, words, stdin=None, timeout=None):
 
 
 def remote_info(a, host, name):
-    from .. import gpu
+    from ..display import gpu
 
     rc, out, err = remote.call(host, remote.hosts()[host], ["show", remote.own(name), "--json"])
     if rc:

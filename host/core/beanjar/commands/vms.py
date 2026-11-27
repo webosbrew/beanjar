@@ -187,7 +187,7 @@ def unit_row(name, props):
 
 
 def local_rows(lib, a):
-    from .. import gpu
+    from ..display import gpu
 
     rows = [vm_row(vm) for vm in lib.vms()]
     if a.all:
@@ -220,7 +220,7 @@ def list_sources(a):
 def cmd_list(lib, a):
     from concurrent.futures import ThreadPoolExecutor
 
-    from .. import gpu
+    from ..display import gpu
 
     targets = list_sources(a)
     with_local = not a.host or a.host == remote.LOCAL
@@ -463,7 +463,7 @@ def cmd_rename(lib, a):
 
 def show_data(vm):
     """One VM as `show` shows it."""
-    from .. import gpu
+    from ..display import gpu
 
     state, detail = vm.state(qmp=True)
     pid = vm.pid()
@@ -505,7 +505,7 @@ def mem_cell(row):
 
 
 def cmd_show(lib, a):
-    from .. import gpu
+    from ..display import gpu
 
     data = show_data(lib.vm(a.name))
     text = dict(data, gpu=gpu.label(data["gpu"]))

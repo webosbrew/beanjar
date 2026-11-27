@@ -51,16 +51,13 @@ import time
 
 from . import (
     base,
-    capture_relay,
     countries,
     cpus,
-    dbus,
     nvm,
     targets,
     paths,
     vmconfig,
     capacity,
-    framing,
     hostconfig,
     hostprocs,
     poweroff,
@@ -69,6 +66,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .display import capture_relay, dbus, framing
 from .base import (
     OFF,
     RUNNING,
@@ -82,7 +80,7 @@ from .base import (
     read_toml,
     slot_domain,
 )
-from .dbus import SCREENSHOT_NAME
+from .display.dbus import SCREENSHOT_NAME
 from .firmware import OWN_FW, vm_firmware
 
 

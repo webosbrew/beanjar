@@ -7,7 +7,8 @@ import os
 import sys
 import tempfile
 
-from .. import framing, keys, remote
+from ..display import framing
+from .. import keys, remote
 from ..core import Library
 from .common import (
     DURATION_HELP,
@@ -84,7 +85,7 @@ def cmd_screenshot(lib, a):
 
 
 def cmd_elements(_lib, a):
-    from .. import elements
+    from ..display import elements
 
     if bool(a.name) == bool(a.from_png):
         raise Usage("elements takes NAME or --from-png PNG, exactly one")
@@ -161,25 +162,25 @@ def cmd_vnc_stop(lib, a):
 
 
 def cmd_vnc_pipe(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     return pipe.vnc_pipe(lib.vm(a.name))
 
 
 def cmd_vnc_audio_pipe(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     return pipe.audio_pipe(lib.vm(a.name))
 
 
 def cmd_vnc_video_pipe(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     return pipe.video_pipe(lib.vm(a.name))
 
 
 def cmd_screensaver(lib, a):
-    from .. import screensaver
+    from ..display import screensaver
 
     data = screensaver.control(lib.vm(a.name), a.verb_group, a.timeout)
     status = "started" if a.verb_group == "start" else "stopped"
@@ -247,7 +248,7 @@ def register_pictures(cli):
 
 def timeout_duration(text):
     """screensaver's --timeout: a duration (common.duration), 5 to 300 seconds."""
-    from .. import screensaver
+    from ..display import screensaver
 
     seconds = duration(text)
     try:
@@ -258,7 +259,7 @@ def timeout_duration(text):
 
 def register(cli):
     command, group, vm_name = cli.command, cli.group, cli.vm_name
-    from .. import screensaver
+    from ..display import screensaver
 
     g = group("viewer", "the viewer window (display dbus)")
     s = command(g, "open", "open the viewer", cmd_viewer_open)

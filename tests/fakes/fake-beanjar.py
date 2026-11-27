@@ -4,7 +4,7 @@
 """A stand-in for the manager's CLI in check-web.py: the commands beanjar-web runs, for one VM,
 local/tv, whose display is tests/fakes/fake-qemu.py's in $FAKE_DIR, with the beanjar-vnc that
 check-web.py runs there ($FAKE_VNC_PID). The pipes and the layout are the manager's own code
-(beanjar/pipe.py), on a stand-in VM. Each call is appended to $FAKE_DIR/calls.log; a file
+(beanjar/display/pipe.py), on a stand-in VM. Each call is appended to $FAKE_DIR/calls.log; a file
 $FAKE_DIR/refuse makes vnc start fail with its text, as the manager refuses beside the viewer;
 $FAKE_DIR/no-vms makes the list empty. Start/stop change state files only, never VMs;
 action-hold delays completion, refuse-start/refuse-stop contain a refusal, and stop-message
@@ -20,7 +20,8 @@ import time
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, core, framing, pipe  # noqa: E402
+from beanjar import base, core  # noqa: E402
+from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.devices import remote_layouts  # noqa: E402
 
 D = os.environ["FAKE_DIR"]

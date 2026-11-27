@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The VM's GPU process: QEMU's vhost-user-gpu backend on the launcher's socket.
 
-    python3 -m beanjar.gpu_backend PID LISTEN_FD BACKEND [ARG...]
+    python3 -m beanjar.display.gpu_backend PID LISTEN_FD BACKEND [ARG...]
 
 The launcher listens on the vhost-user socket (qemu.Plan.gpu_socket) before it starts this and QEMU,
 so QEMU's connect at realize never races the backend's own listen. This takes the one connection

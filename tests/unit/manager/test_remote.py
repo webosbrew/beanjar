@@ -23,7 +23,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import ares, base, cli, commands, core, framing, hostconfig, pipe, remote  # noqa: E402
+from beanjar import ares, base, cli, commands, core, hostconfig, remote  # noqa: E402
+from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.network import inspector  # noqa: E402
 from beanjar.commands import vms as vm_commands  # noqa: E402
 import subprocess  # noqa: E402
@@ -1420,8 +1421,8 @@ class LightTest(Base):
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); from beanjar import cli\n"
             "rc = cli.main(sys.argv[2:])\n"
-            "heavy = ('argparse', 'concurrent.futures', 'beanjar.gpu', 'beanjar.elements',\n"
-            "         'beanjar.screensaver')\n"
+            "heavy = ('argparse', 'concurrent.futures', 'beanjar.display.gpu', 'beanjar.display.elements',\n"
+            "         'beanjar.display.screensaver')\n"
             "print(rc, [m for m in heavy if m in sys.modules])\n"
         )
         manager = os.path.join(TOP, "host", "core")

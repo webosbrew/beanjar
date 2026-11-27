@@ -817,7 +817,7 @@ from the PATH; from the checkout, `host/web/bin/beanjar-web` runs the checkout's
   and `Display1.Ir` (edges in fake-qemu's IR log, a code over 255 refused, a held button released
   when its client leaves the bus).
 - `check-vnc-pipe` (`tests/integration/vnc/check-pipe.py`): `vnc_pipe`, `audio_pipe` (both formats, fake-qemu's
-  tone decoded), `remote_pipe`, `press` and the layout (`host/core/beanjar/pipe.py`) on a
+  tone decoded), `remote_pipe`, `press` and the layout (`host/core/beanjar/display/pipe.py`) on a
   stand-in VM over fake-qemu and beanjar-vnc.
 - `test_remote.py`'s `test_pipes`: `vnc pipe`, `vnc audio-pipe` and `remote pipe` of `HOST/NAME`
   run there with this process's stdio; `remote press` and `remote layout` are forwarded.

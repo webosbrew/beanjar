@@ -33,7 +33,7 @@ Run the last command in the host desktop session (Wayland or X11). The VM itself
 headless. The guest needs the updated initramfs and soc layer and the shared launcher
 arguments, which attach a virtio keyboard, an absolute tablet and the remote's `webos.ir` port. `beanjar-viewer` runs `viewer-headless` in its place for
 `--headless`, `--replay`, `--screenshot`, `--screenshot-every`, `--osd-alpha`, `--no-osd` and
-`--capture-sink` (the capture relay's on-demand viewer, `host/core/beanjar/capture_relay.py`)
+`--capture-sink` (the capture relay's on-demand viewer, `host/core/beanjar/display/capture_relay.py`)
 (below), before anything imports GTK, so hosts without GTK run every test.
 
 The window is a libadwaita window in the dark style: a compact header bar with the VM's name and
@@ -120,7 +120,7 @@ is none:
   the tooltip has the vCPU count (the launchers name QEMU's threads, `-name debug-threads=on`).
 - **GPU**: a meter beside the CPU's, the busiest engine of the VM's host GL (a gl-layer guest on
   `-display dbus,gl=on` or `egl-headless` with a render node), from the kernel's DRM fdinfo of the
-  processes in the VM's unit (`host/core/beanjar/gpu.py`); the tooltip has every engine and the
+  processes in the VM's unit (`host/core/beanjar/display/gpu.py`); the tooltip has every engine and the
   resident memory. A driver without engine counters (WSL's d3d12 through `/dev/dxg`) leaves it on,
   usage unavailable.
 - **Memory**: one meter of the guest's own memory: a bar for its RAM in use (MemTotal less
@@ -633,7 +633,7 @@ picture's corner with the number of elements, the measured reading rate and the 
 shown. `--elements` switches it on at start. It is the window's own: beanjar-vnc and VNC clients
 never show it, and it is not in Save Screenshot or `beanjar screenshot`.
 
-The reading is `beanjar elements`'s own (`host/core/beanjar/elements.py`, `read_screen`: the
+The reading is `beanjar elements`'s own (`host/core/beanjar/display/elements.py`, `read_screen`: the
 user-installed go-textshot CLI, host/core/README.md "Reading screen elements"), on the frame that
 command reads, the picture at 1280x720 (the core's screenshot, as PNG), so the boxes are the
 elements a test gets from `beanjar elements NAME --json`. It runs in a thread

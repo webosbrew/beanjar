@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""beanjar.elements through the recognition server (host/tools/textshot-serve), against a stand-in
+"""beanjar.display.elements through the recognition server (host/tools/textshot-serve), against a stand-in
 server: started once and shared, its errors passed on, the CLI when it cannot start or is turned
 off, and the CUDA wheel's libraries on the loader path. No models, VM or network."""
 
@@ -19,7 +19,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import elements
+from beanjar.display import elements
 
 TOP = Path(__file__).resolve().parents[3]
 # A 640 x 240 PNG header: the stand-in server never decodes the picture, only elements.read() checks

@@ -4,7 +4,7 @@
 guest's captures of the TV picture (include/webos-capture.h), relayed to QEMU's webos.capture
 port, with an on-demand render sink for when no front end is there.
 
-    python3 -m beanjar.capture_relay PID LISTEN_FD QEMU_SOCK RUN_DIR [VIEWER BUS_ADDRESS]
+    python3 -m beanjar.display.capture_relay PID LISTEN_FD QEMU_SOCK RUN_DIR [VIEWER BUS_ADDRESS]
 
 The composed picture (the UI, the host-decoded video windows, LG's cursor) exists only in a display
 front end: the GTK viewer, beanjar-vnc, a headless viewer. Each connects to capture.sock as before
@@ -42,7 +42,7 @@ import subprocess
 import sys
 import time
 
-from . import base
+from .. import base
 
 QEMU_NAME = "capture-qemu.sock"
 SINK_PIDFILE = "capture-sink.pid"

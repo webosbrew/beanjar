@@ -40,7 +40,6 @@ from beanjar import (
     capacity,
     core,
     firmware,
-    framing,
     hostconfig,
     hostprocs,
     keys,
@@ -53,6 +52,7 @@ from beanjar import (
     vmsettings,
     vmunits,
 )  # noqa: E402
+from beanjar.display import framing  # noqa: E402
 import testunits  # noqa: E402
 
 SYSTEMD = unit.available()

@@ -14,7 +14,8 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, pipe  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.display import pipe  # noqa: E402
 from beanjar.devices import remote_layouts as rl  # noqa: E402
 
 

@@ -7,13 +7,13 @@ from .common import DURATION_HELP, Usage, duration, emit, parse_size
 
 
 def cmd_remote_pipe(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     return pipe.remote_pipe(lib.vm(a.name))
 
 
 def cmd_remote_press(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     codes = pipe.press(lib.vm(a.name), a.keys, a.hold)
     return emit(
@@ -37,7 +37,7 @@ def coordinate(text):
 
 
 def cmd_remote_pointer(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     frame = parse_size(a.frame)
     if not (1 <= frame[0] <= 16384 and 1 <= frame[1] <= 16384):
@@ -60,7 +60,7 @@ def cmd_remote_pointer(lib, a):
 
 
 def cmd_remote_touch(lib, a):
-    from .. import pipe
+    from ..display import pipe
 
     frame = parse_size(a.frame)
     if not (1 <= frame[0] <= 16384 and 1 <= frame[1] <= 16384):
@@ -88,7 +88,7 @@ def cmd_remote_touch(lib, a):
 
 
 def cmd_remote_layout(lib, a):
-    from .. import pipe
+    from ..display import pipe
     from ..devices import remote_layouts
 
     layout = pipe.vm_layout(lib.vm(a.name))

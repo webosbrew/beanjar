@@ -21,7 +21,8 @@ from unittest import mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import base, cli, commands, core, poweroff, remote, screensaver as ss
+from beanjar import base, cli, commands, core, poweroff, remote
+from beanjar.display import screensaver as ss
 from beanjar.commands import forward
 
 

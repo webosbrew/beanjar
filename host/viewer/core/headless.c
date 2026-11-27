@@ -7,9 +7,9 @@
  * (core.h). The desktop viewer is the GTK front end (beanjar_ui.viewer); beanjar-viewer runs this
  * program for the options above.
  * --capture-sink: the on-demand render sink of a VM with no front end (beanjar's capture relay,
- * host/core/beanjar/capture_relay.py, starts and stops it): it serves the guest's captures on the
- * capture socket and nothing else. Idle (wv_idle: QEMU's updates are only noted, a capture brings
- * the picture up to date), no output drawn, no audio heard, no IR socket. */
+ * host/core/beanjar/display/capture_relay.py, starts and stops it): it serves the guest's captures
+ * on the capture socket and nothing else. Idle (wv_idle: QEMU's updates are only noted, a capture
+ * brings the picture up to date), no output drawn, no audio heard, no IR socket. */
 #include "core.h"
 #include "ir.h"
 #include <SDL.h>

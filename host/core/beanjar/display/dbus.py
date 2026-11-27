@@ -9,12 +9,12 @@ PyGObject until it touches a VM's bus (tests/unit/manager/test_core_no_gtk.py).
   display_size(bus)            QEMU's console 0: the guest display's (width, height)
   screenshot(path, ...)        org.beanjar.Display1.Screenshot of the front end that owns the display
   set_ui_info(address, ...)    SetUIInfo on QEMU's console 1, the stock secondary display
-                               (display_setup.py)
+                               (secondary.py)
 
 Errors are base.Error with the remote error's name stripped from the message (CallError for a
 call, which also carries that name), worded by the caller."""
 
-from .base import Error
+from ..base import Error
 
 SCREENSHOT_NAME = "org.beanjar.Display1"  # on the VM's bus: the viewer's or beanjar-vnc's (core.c)
 SCREENSHOT_PATH = "/org/beanjar/Display1"

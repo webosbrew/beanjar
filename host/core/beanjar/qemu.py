@@ -196,8 +196,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .display import capture_relay
 from . import (
-    capture_relay,
     fwcache,
     lz4p,
     guestshell,
@@ -385,7 +385,7 @@ class Plan:
         # (passed as --pool-fd) and QEMU; None without the pool
         self.pool_socket = None
         # the GPU's own process (GPU_DEVICE, vhost-user-gpu): its command, to which the launcher
-        # adds --fd (beanjar.gpu_backend), and the vhost-user socket it listens on before QEMU starts;
+        # adds --fd (beanjar.display.gpu_backend), and the vhost-user socket it listens on before QEMU starts;
         # both None with virtio-gpu-gl
         self.gpu_backend_argv = None
         self.gpu_socket = None

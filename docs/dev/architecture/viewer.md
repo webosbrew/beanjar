@@ -258,7 +258,7 @@ viewer-headless (C, SDL offscreen): core/headless.c (+ SDL scancode names for --
   thread and return bounded RGBA pixels, excluding GTK controls. The guest
   converts these to its mapped capture format. Disconnects and timeouts fail
   capture; no screenshot file or retained-frame fallback is used. `capture.sock` is the capture
-  relay's (`host/core/beanjar/capture_relay.py`), which holds QEMU's port and passes each request
+  relay's (`host/core/beanjar/display/capture_relay.py`), which holds QEMU's port and passes each request
   to the front end that is there. With none, it starts a headless viewer for the captures alone
   (`viewer-headless --capture-sink`: idle, no output drawn, no audio, no IR) and stops it 10 s
   after the last request, or as soon as the GTK viewer or beanjar-vnc connects; `beanjar view`,

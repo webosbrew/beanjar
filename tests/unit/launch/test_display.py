@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The display set-up (display_setup.py) and qemu.py's GPU backend and GPU process."""
+"""The display set-up (secondary.py) and qemu.py's GPU backend and GPU process."""
 
 import io
 import json
@@ -16,7 +16,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import display_setup, launch, qemu
+from beanjar.display import secondary
+from beanjar import launch, qemu
 from beanjar.network import netns
 
 from launchkit import TOP
@@ -43,7 +44,7 @@ class DisplaySetupTest(unittest.TestCase):
                 )
             },
         ):
-            display_setup.set_ui_info("unix:path=bus", 1)
+            secondary.set_ui_info("unix:path=bus", 1)
         call = connection.call_sync.call_args.args
         self.assertEqual(
             call[:4],
@@ -77,7 +78,7 @@ class DisplaySetupTest(unittest.TestCase):
 
     def test_explicit_pause_never_resumes(self):
         command = mock.Mock()
-        display_setup.prepare(
+        secondary.prepare(
             "bus",
             "qmp",
             1,
@@ -100,7 +101,7 @@ class DisplaySetupTest(unittest.TestCase):
             events.append(("qmp", json.loads(cmd)["execute"]))
             return {"return": {}}
 
-        display_setup.prepare(
+        secondary.prepare(
             "bus",
             "qmp",
             1,
@@ -114,8 +115,8 @@ class DisplaySetupTest(unittest.TestCase):
     def test_timeout_never_resumes(self):
         command = mock.Mock()
         ticks = iter((0, 0, 1, 2, 3))
-        with self.assertRaises(display_setup.Error):
-            display_setup.prepare(
+        with self.assertRaises(secondary.Error):
+            secondary.prepare(
                 "bus",
                 "qmp",
                 1,
@@ -130,8 +131,8 @@ class DisplaySetupTest(unittest.TestCase):
 
     def test_parent_exit_never_resumes(self):
         command = mock.Mock()
-        with self.assertRaises(display_setup.Error):
-            display_setup.prepare("bus", "qmp", 1, command=command, alive=lambda: False)
+        with self.assertRaises(secondary.Error):
+            secondary.prepare("bus", "qmp", 1, command=command, alive=lambda: False)
         command.assert_not_called()
 
     def test_main_pause(self):
@@ -139,34 +140,34 @@ class DisplaySetupTest(unittest.TestCase):
             with (
                 self.subTest(options=options),
                 mock.patch.object(sys, "argv", ["helper", "1", "bus", "qmp", *options]),
-                mock.patch.object(display_setup, "prepare") as prepare,
+                mock.patch.object(secondary, "prepare") as prepare,
             ):
-                self.assertEqual(display_setup.main(), 0)
+                self.assertEqual(secondary.main(), 0)
                 prepare.assert_called_once_with("bus", "qmp", 1, resume=resume)
 
     def test_failure_quits_paused_vm(self):
         with (
             mock.patch.object(sys, "argv", ["helper", "1", "bus", "qmp"]),
-            mock.patch.object(display_setup, "prepare", side_effect=display_setup.Error("failed")),
+            mock.patch.object(secondary, "prepare", side_effect=secondary.Error("failed")),
             mock.patch.object(launch, "qmp", return_value={"return": {}}) as command,
         ):
-            self.assertEqual(display_setup.main(), 1)
+            self.assertEqual(secondary.main(), 1)
         self.assertEqual(json.loads(command.call_args.args[1]), {"execute": "quit"})
 
     def test_failed_quit_terminates_original_parent(self):
         with (
             mock.patch.object(sys, "argv", ["helper", "123", "bus", "qmp"]),
-            mock.patch.object(display_setup, "prepare", side_effect=display_setup.Error("failed")),
+            mock.patch.object(secondary, "prepare", side_effect=secondary.Error("failed")),
             mock.patch.object(launch, "qmp", side_effect=OSError()),
             mock.patch.object(os, "getppid", return_value=123),
             mock.patch.object(os, "kill") as kill,
         ):
-            self.assertEqual(display_setup.main(), 1)
+            self.assertEqual(secondary.main(), 1)
         kill.assert_called_once_with(123, signal.SIGTERM)
 
 
 class GpuBackendTest(unittest.TestCase):
-    """beanjar.gpu_backend: the launcher's listening vhost-user socket, QEMU's one connection
+    """beanjar.display.gpu_backend: the launcher's listening vhost-user socket, QEMU's one connection
     handed to the backend as --fd, and no wait past the VM's PID."""
 
     def setUp(self):
@@ -196,7 +197,7 @@ class GpuBackendTest(unittest.TestCase):
             [
                 sys.executable,
                 "-m",
-                "beanjar.gpu_backend",
+                "beanjar.display.gpu_backend",
                 str(pid),
                 str(listener.fileno()),
                 self.backend,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The capture relay on capture.sock (host/core/beanjar/capture_relay.py): the guest's requests go
+"""The capture relay on capture.sock (host/core/beanjar/display/capture_relay.py): the guest's requests go
 to the front end that is there, else to an on-demand sink, which warms up, stops when idle and
 gives way to a front end. A fake QEMU socket, fake front ends and a fake sink (a Python process
 that answers like the headless viewer); no VM. `pytest tests/unit/manager/test_capture_relay.py`."""
@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from beanjar import capture_relay as cr
+from beanjar.display import capture_relay as cr
 
 H = struct.Struct("<6Iii")
 W, HT = 4, 2

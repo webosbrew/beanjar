@@ -1816,7 +1816,7 @@ def steps(win, pane):
         planes_ok &= a.get_state().get_boolean() and core.planes() == 0
     check(planes_ok, "More's UI, Video and Cursor items hide and show their planes in the core")
 
-    # 9c. More's Elements layer: screen recognition (beanjar.elements, here a stand-in textshot that
+    # 9c. More's Elements layer: screen recognition (beanjar.display.elements, here a stand-in textshot that
     # prints one button in the middle of the 1280x720 frame) boxed over the picture; off again, the
     # layer is hidden and stops reading; without textshot it stays off and says why
     from gi.repository import GdkPixbuf
@@ -1850,7 +1850,7 @@ def steps(win, pane):
         ea.get_state().get_boolean() and layer.get_visible() and not layer.get_can_target()
         and shown is not None and shown["data"]["elements"][0]["text"] == "OK"
         and shown["data"]["width"] == 1280 and shown["png"].startswith(b"\x89PNG"),
-        "Elements on: the layer reads a 1280x720 frame through beanjar.elements, takes no input",
+        "Elements on: the layer reads a 1280x720 frame through beanjar.display.elements, takes no input",
     )  # fmt: skip
     grabbed = os.path.join(tmp, "elements.png")
     ok = mainlib.grab(pane, grabbed)
