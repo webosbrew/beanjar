@@ -1155,7 +1155,7 @@ sudo apt install ./build/packages/beanjar-build-deps-host_*_all.deb
   (`test_device_id.py`); `xvfb` and the X Test library for the GTK checks (`check-gtk.py`,
   `check-gui.py`); Qt 5's public and private (QPA) headers for `test_native_input_qt.py`.
 - Running: `dbus-daemon` (the D-Bus display's private bus), and for `NET_MODE=mitm` the network
-  namespace's `slirp4netns` and `ip` (`host/core/beanjar/netns.py`),
+  namespace's `slirp4netns` and `ip` (`host/core/beanjar/network/netns.py`),
   plus `python3-dnspython` for LAN SSDP/mDNS discovery independently of the optional proxy,
   `ssh`/`ssh-keygen` and `openssl` (the VMs' keys and the proxy CA). `squashfs-tools` for
   firmware inspection and extracting files used to prepare a VM. The optional
@@ -1216,7 +1216,7 @@ What is not a package, and why:
 - **mitmproxy** (`mode = "mitm"`) is the developer's or user's own, 12.0.1 or newer, neither
   built nor vendored: Debian 13 has no mitmproxy package (`apt-cache policy mitmproxy` shows no
   candidate on either machine), so it is `pipx install mitmproxy` (12.3.1 on 2026-11-13).
-  `host/core/beanjar/mitmtool.py` finds it and checks the version; mitmweb runs in its own venv's
+  `host/core/beanjar/network/mitmtool.py` finds it and checks the version; mitmweb runs in its own venv's
   interpreter, never mixed with Debian's packages. Without it a mitm VM goes out directly, and the
   tests that need it skip ([testing](testing.md)).
 - **QEMU** 10.0.2, for its patches (below), **FFmpeg** 7.1.5, for the V4L2 Request API

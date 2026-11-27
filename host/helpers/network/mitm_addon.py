@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """mitmproxy addon for NET=mitm: live capture of the guest's HTTP(S), with no host treated specially.
 
-The NET=mitm namespace (host/core/beanjar/netns.py) loads it into mitmweb, which runs in tun mode
-(`--mode tun:mitm0`, the user's own mitmproxy 12.0.1 or newer: host/core/beanjar/mitmtool.py). Every
+The NET=mitm namespace (host/core/beanjar/network/netns.py) loads it into mitmweb, which runs in tun mode
+(`--mode tun:mitm0`, the user's own mitmproxy 12.0.1 or newer: host/core/beanjar/network/mitmtool.py). Every
 TCP and UDP packet of the guest is routed into mitmweb's TUN device, which reads each connection's
 real destination from its packets, and mitmproxy forwards it there itself. There is no host list,
 no stub response and no relay. This addon only adds generic behaviours:
@@ -147,7 +147,7 @@ class Capture:
 
 
 class WebPassword:
-    """The inspector's password: NETSTUB_WEB_PASSWORD_FILE (host/core/beanjar/netns.py writes it,
+    """The inspector's password: NETSTUB_WEB_PASSWORD_FILE (host/core/beanjar/network/netns.py writes it,
     owner-only) becomes mitmweb's web_password, as an argon2 hash, so the password is never on the
     command line, in the environment or in mitmweb's own log. mitmweb then answers 403 to anything
     without it, a login page in a browser; ?token=PASSWORD or Authorization: Bearer PASSWORD logs in

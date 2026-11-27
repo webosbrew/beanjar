@@ -23,7 +23,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import ares, base, cli, commands, core, framing, hostconfig, inspector, pipe, remote  # noqa: E402
+from beanjar import ares, base, cli, commands, core, framing, hostconfig, pipe, remote  # noqa: E402
+from beanjar.network import inspector  # noqa: E402
 from beanjar.commands import vms as vm_commands  # noqa: E402
 import subprocess  # noqa: E402
 
@@ -1348,7 +1349,7 @@ class MitmConnectTest(AresRemoteTest):
         """A mitm connect killed outright leaves its forward; the next remote run cancels it."""
         code = (
             "import os, signal, sys, tempfile; sys.path.insert(0, sys.argv[1])\n"
-            "from beanjar import ares, inspector\n"
+            "from beanjar import ares; from beanjar.network import inspector\n"
             "home = tempfile.mkdtemp(prefix=f'{inspector.MITM_PREFIX}{os.getpid()}-',\n"
             "                        dir=sys.argv[2])\n"
             "with ares.Forward('pi', sys.argv[3], '127.0.1.5', 18083,\n"

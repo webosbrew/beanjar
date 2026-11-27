@@ -495,7 +495,7 @@ class NetworkTest(unittest.TestCase):
     def test_network_is_the_namespaces(self):
         """The expectations are link=nat's namespace (netns.py): its lease, router, the mock's DNS
         and the TAP's address, where the suite's server runs."""
-        from beanjar import netns
+        from beanjar.network import netns
 
         self.assertEqual(tvsuite.NET_GUEST, netns.GUEST)
         self.assertEqual(tvsuite.NET_ROUTER, netns.ROUTER)

@@ -7,7 +7,7 @@ end in tests/integration/network/netns_lan_cases.py (LanDirect)."""
 import socket
 import struct
 
-from beanjar import netns
+from beanjar.network import netns
 
 MAC = "a8:23:fe:12:34:56"
 

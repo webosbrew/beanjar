@@ -1484,7 +1484,7 @@ def main():
         m.select("tv1")
         m.refresh()
         # a running inspector with its password (inspector.snapshot reads it from netns.py's file)
-        from beanjar import inspector
+        from beanjar.network import inspector
 
         locked = inspector.State(
             "mitm",

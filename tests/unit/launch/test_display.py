@@ -16,12 +16,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import (
-    display_setup,
-    netns,
-    launch,
-    qemu,
-)
+from beanjar import display_setup, launch, qemu
+from beanjar.network import netns
 
 from launchkit import TOP
 

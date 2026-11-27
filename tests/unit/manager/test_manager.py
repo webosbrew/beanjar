@@ -4168,7 +4168,7 @@ class LanHostnameTest(unittest.TestCase):
                 self.assertEqual(vmsettings.dns_label(name), label)
 
     def test_udhcpc(self):
-        from beanjar import netns
+        from beanjar.network import netns
 
         off = netns.dhcp_argv({}, "/s.py")
         self.assertNotIn("-x", off)

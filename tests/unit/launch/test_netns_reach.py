@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import netns
+from beanjar.network import netns
 
 
 def nets(lan):

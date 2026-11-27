@@ -495,7 +495,7 @@ class VM:
         out = {"pid": pid, "url": url}
         lan = where.get("lan") and self.lan_address()
         if lan:
-            from . import netns
+            from .network import netns
 
             out = {"pid": pid, "url": f"vnc://{lan}:{netns.VNC_PORT}", "local_url": url}
         out["password_file"] = (
@@ -685,7 +685,7 @@ class VM:
         """Its address on the LAN while it runs with link lan (the lease netns.lan wrote), else None."""
         if self.config.get("link") != "lan" or not self.pid():
             return None
-        from . import netns
+        from .network import netns
 
         info = netns.lan_info(self.run_dir)
         return info and info["address"]
@@ -1604,7 +1604,7 @@ class Library:
         own clients (vnc_pipe, the web viewer): the file's permissions are the access control. Its
         mixed audio is on VM.audio_local_sock, owner-only too (audio_pipe), and its picture as
         H.264 on VM.video_local_sock (video_pipe), unless beanjar-vnc is built without it."""
-        from . import netns
+        from .network import netns
 
         vm = self._frontend_check(name, "beanjar-vnc")
         env = hostprocs.proc_env(vm.pid())

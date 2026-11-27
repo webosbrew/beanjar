@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
-from beanjar import mitmtool, netns
+from beanjar.network import mitmtool, netns
 
 
 class Tree:

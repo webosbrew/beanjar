@@ -107,7 +107,8 @@ def vm_row(vm):
 def unit_row(name, props):
     """A VM's unit in beanjar.slice that is no library's VM (a regress target's, one of another
     RUN_DIR): what its unit and its main process's environment (the launcher's) tell."""
-    from .. import keys, netns, nvm, qemu, targets, paths
+    from .. import keys, nvm, qemu, targets, paths
+    from ..network import netns
 
     tag, vm_name = vmunits.unit_tag(name)
     env = hostprocs.proc_env(int(props.get("MainPID") or 0) or None)
@@ -551,7 +552,7 @@ def inspector_info(vm):
     with its password. The password itself stays in that owner-only file: status output gets
     pasted into logs and issues, and the manager's inspector panel shows the password where it is
     needed."""
-    from .. import inspector
+    from ..network import inspector
 
     state = inspector.snapshot(vm)
     if not state.url:

@@ -18,7 +18,8 @@ import time
 
 from gi.repository import Gio, GLib, Gtk, Pango
 
-from beanjar import base, inspector, mitmtool, vmsettings
+from beanjar import base, vmsettings
+from beanjar.network import inspector, mitmtool
 
 DESCRIPTION = (
     "This VM's own mitmweb, on its own port and with its own password, while it runs. "

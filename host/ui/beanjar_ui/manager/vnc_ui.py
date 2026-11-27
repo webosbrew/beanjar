@@ -9,7 +9,7 @@ run/vnc.password) with Copy Password."""
 
 from gi.repository import Gio, GLib, Gtk, Pango
 
-from beanjar import inspector
+from beanjar.network import inspector
 
 from .inspector_ui import detail_row, value_label
 

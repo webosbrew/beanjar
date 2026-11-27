@@ -26,7 +26,6 @@ from unittest import mock
 
 from beanjar import (
     hostswap,
-    netns,
     keys,
     lls,
     nvm,
@@ -38,6 +37,7 @@ from beanjar import (
     tomlfile,
     vmsettings,
 )
+from beanjar.network import netns
 
 from launchkit import (
     fake_partmap_build,

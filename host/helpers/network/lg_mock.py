@@ -4,7 +4,7 @@
 """The guest's name server, LG's online check and LG's SDP and web hosts, for lg_services = "mock"
 (the default).
 
-host/core/beanjar/netns.py runs this inside the VM's network namespace, on --listen (the TAP's own
+host/core/beanjar/network/netns.py runs this inside the VM's network namespace, on --listen (the TAP's own
 address, netns.MOCK_DNS, which its DHCP server then hands out as the guest's name server), in
 mode=mitm and mode=direct alike and whether mitmweb runs or not:
 

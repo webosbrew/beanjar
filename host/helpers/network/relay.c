@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* A stream relay: each LISTEN=CONNECT pair accepts connections on LISTEN and joins each one to a
  * new connection to CONNECT, both ways, until both sides are done. mode=mitm's port bridges
- * (host/core/beanjar/netns.py): one relay on the host for the inspector and the forwarded ports
- * (tcp -> the namespace's unix sockets), one in link=lan's LAN namespace, one inside the inner
- * namespace for the other end of each (unix -> tcp).
+ * (host/core/beanjar/network/netns.py): one relay on the host for the inspector and the forwarded
+ * ports (tcp -> the namespace's unix sockets), one in link=lan's LAN namespace, one inside the
+ * inner namespace for the other end of each (unix -> tcp).
  *
  *   beanjar-relay LISTEN=CONNECT...      each side tcp:HOST:PORT or unix:PATH
  *

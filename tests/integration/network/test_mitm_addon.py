@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Unit tests for host/helpers/network/mitm_addon.py (mode=mitm). No network requests. They need
-mitmproxy, the user's own (host/core/beanjar/mitmtool.py): Meson runs them with the Python of the
+mitmproxy, the user's own (host/core/beanjar/network/mitmtool.py): Meson runs them with the Python of the
 mitmweb it finds (tests/meson.build); under another Python they are skipped."""
 
 import os

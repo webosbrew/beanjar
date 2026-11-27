@@ -80,7 +80,7 @@ STEPS = (
     "decode",
     "smp",
 )
-# The guest's network, link=nat's namespace (host/core/beanjar/netns.py, which a unit test holds these
+# The guest's network, link=nat's namespace (host/core/beanjar/network/netns.py, which a unit test holds these
 # to): the lease (GUEST), slirp4netns's router (ROUTER), the name server DHCP hands out (NET_DNS:
 # lg_mock.py at the TAP's own address, MOCK_DNS, with LG's services mocked, the default), and the
 # suite's test server (TEST_SERVER: tests/regress/http-token.py in the VM's own namespace at the

@@ -6,20 +6,20 @@ from .common import emit
 
 
 def cmd_mitm_show(lib, a):
-    from .. import inspector
+    from ..network import inspector
 
     data = inspector.show(lib.vm(a.name), a.password)
     return emit(a, data)
 
 
 def cmd_mitm_connect(lib, a):
-    from .. import inspector
+    from ..network import inspector
 
     return inspector.connect_local(lib.vm(a.name))
 
 
 def cmd_mitm_clear(lib, a):
-    from .. import inspector
+    from ..network import inspector
 
     return mitm_cleared(a, inspector.clear_local(lib.vm(a.name)))
 

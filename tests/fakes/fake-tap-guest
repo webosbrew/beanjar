@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """A stand-in for QEMU under mode=mitm (tests/integration/network/test_netns.py): a "guest" on the TAP, without
-a VM. Run by beanjar.netns inner in QEMU's place, it attaches to the TAP (NETNS_TAP) as QEMU does,
+a VM. Run by beanjar.network.netns inner in QEMU's place, it attaches to the TAP (NETNS_TAP) as QEMU does,
 then moves itself into a network namespace of its own with a TAP of its own, eth0, and copies
 frames between the two, so eth0 is the guest's NIC on the other end of the namespace's tap0.
 

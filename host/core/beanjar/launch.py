@@ -143,7 +143,6 @@ from . import (
     hostswap,
     keys,
     mediasandbox,
-    netns,
     nvm,
     paths,
     poweroff,
@@ -158,6 +157,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .network import netns
 from .tuner import antenna
 
 TREE = paths.TREE

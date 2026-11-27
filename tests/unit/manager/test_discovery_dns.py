@@ -10,7 +10,7 @@ import dns.message
 import dns.rrset
 import pytest
 
-from beanjar.discovery_dns import _classes, endpoint_ttls, guest_hosts, rewrite
+from beanjar.network.discovery_dns import _classes, endpoint_ttls, guest_hosts, rewrite
 
 GUEST = "10.0.2.15"
 LAN = "192.0.2.42"

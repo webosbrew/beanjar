@@ -5,7 +5,7 @@
 import os
 from unittest import mock
 
-from beanjar import mitmtool
+from beanjar.network import mitmtool
 
 
 def script(path, text="#!/bin/sh\n"):

@@ -32,7 +32,7 @@ try:
 except ImportError:
     print("python3-aiohttp is not installed: skipped")
     sys.exit(77)
-from beanjar import mitmtool  # noqa: E402
+from beanjar.network import mitmtool  # noqa: E402
 from beanjar_web import access, server  # noqa: E402
 
 TOOL = mitmtool.check()

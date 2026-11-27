@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The mode=mitm namespace (host/core/beanjar/netns.py) end to end, with a fake guest in QEMU's
+"""The mode=mitm namespace (host/core/beanjar/network/netns.py) end to end, with a fake guest in QEMU's
 place (fake-tap-guest: a network namespace of its own on the other end of the TAP) and servers on
 this host as the internet. Without a VM, and without internet access.
 
 One netns.run() run with mode=mitm, as the launcher makes it: the relays, `unshare -rn`, slirp4netns, the
-proxy-ARP routing, DHCP and mitmweb in tun mode (the user's own, host/core/beanjar/mitmtool.py),
+proxy-ARP routing, DHCP and mitmweb in tun mode (the user's own, host/core/beanjar/network/mitmtool.py),
 every TCP and UDP port of the guest routed into its TUN device. The guest checks its lease (router
 and DNS slirp's, the server identifier the TAP's own address) and a unicast renewal; a
 server-first and a client-first TCP service on this host carried unchanged (eager connections);
@@ -42,7 +42,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 PKG = os.path.join(TOP, "host", "core")
 sys.path.insert(0, PKG)
-from beanjar import mitmtool, netns  # noqa: E402
+from beanjar.network import mitmtool, netns  # noqa: E402
 
 MITMWEB = mitmtool.check()
 PASSWORD = "test-netns-inspector-pw"
@@ -292,7 +292,7 @@ class Run:
                 [
                     sys.executable,
                     "-c",
-                    "import os, sys; from beanjar import netns; "
+                    "import os, sys; from beanjar.network import netns; "
                     "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
@@ -531,7 +531,7 @@ class ReachRun:
                 [
                     sys.executable,
                     "-c",
-                    "import os, sys; from beanjar import netns; "
+                    "import os, sys; from beanjar.network import netns; "
                     "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
@@ -569,7 +569,7 @@ class ReachRun:
                     argv = f.read().split(b"\0")
             except OSError:
                 continue
-            if b"beanjar.netns" not in argv or b"inner" not in argv:
+            if b"beanjar.network.netns" not in argv or b"inner" not in argv:
                 continue
             r = subprocess.run(
                 ["nsenter", "-t", pid, "-U", "-n", "--preserve-credentials", "ip", "rule"],

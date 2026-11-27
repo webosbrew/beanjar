@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""busybox udhcpc's event script for link = "lan" (host/core/beanjar/netns.py, lan()).
+"""busybox udhcpc's event script for link = "lan" (host/core/beanjar/network/netns.py, lan()).
 
 udhcpc runs it inside the VM's rootless LAN namespace with the event as its argument and the lease
 in its environment ($interface, $ip, $mask, $router, $dns, $lease). On bound and renew it puts the

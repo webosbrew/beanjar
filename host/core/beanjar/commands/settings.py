@@ -125,7 +125,7 @@ def settings_help():
 
 def warn_mitm(vm):
     """Say so when a mode=mitm VM will start without its traffic inspector (mitmtool.py)."""
-    from .. import mitmtool
+    from ..network import mitmtool
 
     if vmsettings.guest_net(vm.config.get("link"), vm.config.get("mode")) == "mitm":
         tool = mitmtool.check()

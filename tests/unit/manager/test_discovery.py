@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, Mock, patch
 import dns.message
 import pytest
 
-from beanjar import discovery
+from beanjar.network import discovery
 
 
 class Admission(discovery.Outer):

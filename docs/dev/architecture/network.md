@@ -268,7 +268,7 @@ going to LG's server (which refused the synthetic key: 406 and 400), as before t
 
 ## The proxy's start
 
-mitmweb is the user's own mitmproxy, 12.0.1 or newer (`host/core/beanjar/mitmtool.py`:
+mitmweb is the user's own mitmproxy, 12.0.1 or newer (`host/core/beanjar/network/mitmtool.py`:
 `NETNS_MITMWEB`, else `mitmweb` on `PATH`, else `~/.local/bin/mitmweb`, pipx's default; the version
 from the package metadata beside it, else `mitmweb --version`, once per start). It runs as
 `mitmweb --mode tun:mitm0` with `connection_strategy=eager` and `mitm_addon.py`, and makes the TUN
@@ -458,7 +458,7 @@ the stop. `tests/unit/launch/test_netns_lan_direct.py` covers the tc commands an
 
 ## Ownership and interception
 
-`host/core/beanjar/netns.py` owns the namespace and networking helpers. The `mitm` path
+`host/core/beanjar/network/netns.py` owns the namespace and networking helpers. The `mitm` path
 uses routing rather than netfilter, and mitmweb's own tun mode rather than any mitmproxy
 internals. The proxy's inspector is available at the configured
 host port (normally the VM's address, `127.0.1.<slot>:18083`, and with `link = "lan"` the VM's LAN

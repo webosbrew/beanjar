@@ -221,11 +221,11 @@ def remote_command(a, words, host, name):
             host, remote.hosts()[host], remote.rewrite(words, nwords, a.name, name)
         )
     if kind == "mitm-connect":
-        from .. import inspector
+        from ..network import inspector
 
         return inspector.connect_remote(host, name)
     if kind == "mitm-clear":
-        from .. import inspector
+        from ..network import inspector
 
         return mitm_cleared(a, inspector.clear_remote(host, name))
     if kind == "screenshot":

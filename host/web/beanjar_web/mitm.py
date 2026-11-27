@@ -22,7 +22,7 @@ first request, shared by the next ones, ended IDLE seconds after the last one fi
 shutdown, and when the inspector stops answering (a VM restarted: a new password; a shared
 connection that ended: no forward), after which the request is tried once more with a new one.
 
-mitmweb (the user's own, 12.0.1 or newer: host/core/beanjar/mitmtool.py; 12.2.3 and 12.3.1 read
+mitmweb (the user's own, 12.0.1 or newer: host/core/beanjar/network/mitmtool.py; 12.2.3 and 12.3.1 read
 for what follows, and the same) has no base path option and needs none: its page asks for everything relative to itself (./static/..., its API
 through a helper that makes /flows ./flows, the WebSocket at the page's path + /updates), so the
 requests are passed on as they are, below the prefix. The exceptions are File > Save and Save

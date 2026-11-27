@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """link = "lan" with mode = "mitm", and with mode = "direct" (LanDirect, its own docstring), in
-host/core/beanjar/netns.py's lan(), end to end, without a VM
+host/core/beanjar/network/netns.py's lan(), end to end, without a VM
 and without a real LAN: test_netns_lan.py runs these cases under `unshare -rn`, where a veth pair is the LAN
 (lanp, the "wired interface", and lanpeer, the rest of the LAN: a DHCP server of the test's own on
 192.0.2.1, and a TCP server there). A stand-in for the CAP_NET_ADMIN helper (BEANJAR_LAN_HELPER)
@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 PKG = os.path.join(TOP, "host", "core")
 sys.path.insert(0, PKG)
-from beanjar import mitmtool  # noqa: E402
+from beanjar.network import mitmtool  # noqa: E402
 
 MITMWEB = mitmtool.check()
 SBIN = os.environ.get("PATH", os.defpath) + ":/usr/sbin:/sbin"
@@ -189,7 +189,7 @@ class Lan(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    "import os, sys; from beanjar import netns; "
+                    "import os, sys; from beanjar.network import netns; "
                     "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
@@ -444,7 +444,7 @@ class LanDirect(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    "import os, sys; from beanjar import netns; "
+                    "import os, sys; from beanjar.network import netns; "
                     "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),
@@ -500,7 +500,7 @@ class LanDirect(unittest.TestCase):
                     mine = cls.tmp.encode() in f.read()
             except OSError:
                 continue
-            if mine and b"beanjar.netns" in cmd and b"lan" in cmd:
+            if mine and b"beanjar.network.netns" in cmd and b"lan" in cmd:
                 return pid
         return 0
 
@@ -620,7 +620,7 @@ class LanCrash(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    "import os, sys; from beanjar import netns; "
+                    "import os, sys; from beanjar.network import netns; "
                     "sys.exit(netns.run(sys.argv[1:], os.environ))",
                     sys.executable,
                     os.path.join(TOP, "tests", "fakes", "fake-tap-guest"),

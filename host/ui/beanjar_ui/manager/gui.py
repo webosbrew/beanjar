@@ -1412,7 +1412,7 @@ class Manager:
 
     def warn_mitm(self, name):
         """Say so when a mode=mitm VM will start without its traffic inspector (mitmtool.py)."""
-        from beanjar import mitmtool
+        from beanjar.network import mitmtool
 
         c = self.lib.vm(name).config
         if vmsettings.guest_net(c.get("link"), c.get("mode")) == "mitm":

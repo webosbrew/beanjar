@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Minimal DHCP server for the mode=mitm network namespace.
 
-host/core/beanjar/netns.py runs this inside the rootless namespace that holds QEMU's
+host/core/beanjar/network/netns.py runs this inside the rootless namespace that holds QEMU's
 TAP. It hands the guest one fixed lease (--lease, default 10.0.2.15) with --router (default
 10.0.2.2) as its router and --dns (default 10.0.2.3) as its name server: slirp4netns's, on the
 guest's own network, which the namespace reaches by proxy ARP. The server's identifier and the

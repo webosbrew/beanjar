@@ -10,7 +10,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import inspector
+from beanjar.network import inspector
 
 
 def test_runtime_endpoint_overrides_edited_config_and_wildcard_binding(tmp_path):

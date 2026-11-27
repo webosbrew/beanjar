@@ -14,8 +14,8 @@ namespace its uplink to the internet with slirp4netns. inner() sets up the TAP, 
 the guest's TCP and UDP into mitmweb and DHCP, then runs QEMU. When QEMU exits the namespace is gone; the
 helpers are killed and the socket dir removed.
 
-  python3 -m beanjar.netns inner QEMU-ARGV...     (what run() runs under unshare -rn)
-  python3 -m beanjar.netns lan QEMU-ARGV...       (link=lan: what run() runs under unshare -rnm)
+  python3 -m beanjar.network.netns inner QEMU-ARGV...     (what run() runs under unshare -rn)
+  python3 -m beanjar.network.netns lan QEMU-ARGV...       (link=lan: what run() runs under unshare -rnm)
 
 What the guest may not reach (the host's loopback, always; without NET_LAN_ACCESS=on the LAN and
 the host's own addresses) is refused by policy rules in the inner namespace (BLOCK_PREF below), the
@@ -94,7 +94,8 @@ import tempfile
 import threading
 import time
 
-from . import base, hostswap, mitmtool, paths, vmsettings
+from .. import base, hostswap, paths, vmsettings
+from . import mitmtool
 
 
 class Error(Exception):
@@ -748,7 +749,7 @@ def run(argv, env, tree=paths.TREE):
                 *(["-m", "--propagation", "private"] if lan else []),
                 sys.executable,
                 "-m",
-                "beanjar.netns",
+                "beanjar.network.netns",
                 "lan" if lan else "inner",
                 *argv,
             ],
@@ -1266,7 +1267,7 @@ def _discovery(env, mode, logdir):
     log_path = os.path.join(logdir, "netns-discovery-" + mode + ".log")
     with open(log_path, "w") as log:
         helper = subprocess.Popen(
-            ["/usr/bin/python3", "-m", "beanjar.discovery", mode],
+            ["/usr/bin/python3", "-m", "beanjar.network.discovery", mode],
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -1705,7 +1706,7 @@ def lan(argv, tree=paths.TREE):
         env["NETNS_LAN_ADDRESS"] = lease["address"]
         env["NET_LAN_ACCESS"] = "on"  # on the LAN by definition; the loopback rules stay
         child = subprocess.Popen(
-            ["unshare", "-rn", sys.executable, "-m", "beanjar.netns", "inner", *argv],
+            ["unshare", "-rn", sys.executable, "-m", "beanjar.network.netns", "inner", *argv],
             env=env,
             preexec_fn=_die_with_parent,
         )
@@ -1836,7 +1837,7 @@ def off(argv, env, before_cont=None):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) < 2 or argv[0] not in ("inner", "lan"):
-        print("usage: python3 -m beanjar.netns inner|lan QEMU-ARGV...", file=sys.stderr)
+        print("usage: python3 -m beanjar.network.netns inner|lan QEMU-ARGV...", file=sys.stderr)
         return 2
     try:
         return (inner if argv[0] == "inner" else lan)(argv[1:])
