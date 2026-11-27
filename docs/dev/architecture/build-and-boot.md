@@ -243,7 +243,7 @@ not trusted to say whether the two work together; the launcher checks what the p
 has (`beanjar/guestside/compat.py`):
 
 - **Components.** At VM create and start, before LLS, disk creation, EEPROM or key
-  synchronisation, or any helper starts (`launch.py`, `newvm.py`), the payload must have every
+  synchronisation, or any helper starts (`launch.py`, `create.py`), the payload must have every
   always-used component (`soc`, `webos`, `common`, ...) of the firmware's target. An `.epk` import
   checks once its target is known, before keys are made.
 - **Module parameters.** Before boot, every parameter the host passes to a guest module (boot.conf's

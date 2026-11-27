@@ -94,7 +94,8 @@ import tempfile
 import threading
 import time
 
-from .. import base, paths, vmsettings
+from .. import base, paths
+from ..vm import settings
 from ..runtime import hostswap
 from . import mitmtool
 
@@ -410,7 +411,7 @@ def lan_info(run_dir):
 
 def lan_direct(env):
     """Whether env is link=lan with mode=direct: the guest's TAP joined to lan0, nothing between."""
-    return vmsettings.lan_direct(env.get("NET_LINK"), env.get("NET_MODE"))
+    return settings.lan_direct(env.get("NET_LINK"), env.get("NET_MODE"))
 
 
 def join_commands(lan_if, tap):
@@ -943,7 +944,7 @@ def mitmweb_argv(mitmweb, tree, env, confdir, web_port):
         "--set",
         "flow_detail=0",
         "--set",
-        f"max_flows={env.get('MITM_FLOWS') or vmsettings.MITM_FLOWS}",  # mitm_addon.py's FlowLimit
+        f"max_flows={env.get('MITM_FLOWS') or settings.MITM_FLOWS}",  # mitm_addon.py's FlowLimit
         "--set",
         f"max_flow_bytes={env.get('MITM_FLOW_BYTES') or 0}",
         "-s",

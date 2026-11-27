@@ -18,7 +18,8 @@ import unittest
 
 import pytest
 import testunits
-from beanjar import base, core, paths
+from beanjar import base, paths
+from beanjar.vm import library
 from beanjar.runtime import capacity, launch, unit, vmunits
 from beanjar.guestside import compat
 from launchkit import FW_NAME, H13_AFRO, TOP, TRUST_PAK, VM
@@ -54,7 +55,7 @@ class LaunchTest(unittest.TestCase):
         )  # an external fw: used in place, never written
         os.makedirs(fw)
         shutil.copyfile(TRUST_PAK, os.path.join(fw, "rootfs.pak"))
-        core.vmconfig.write(
+        library.vm_config.write(
             os.path.join(self.dir, "vm.toml"),
             # the fake QEMU's FAKE_VM_DIR: a vm.toml key, which the unit's environment takes
             {
@@ -103,7 +104,7 @@ class LaunchTest(unittest.TestCase):
         self.assertTrue(testunits.OURS.match(unit_name))
         out = self.vm("start", "--dir", self.dir, "w=1").stdout
         # a vm.toml without the TV's identity gets one (outside a library: the default prefix)
-        cfg = core.vmconfig.read(os.path.join(self.dir, "vm.toml"))
+        cfg = library.vm_config.read(os.path.join(self.dir, "vm.toml"))
         self.assertRegex(cfg.get("mac", ""), r"^a8:23:fe(:[0-9a-f]{2}){3}$")
         self.assertRegex(cfg.get("serial", ""), r"^[0-9]{3}[A-Z]{4}[0-9]{5}$")
         self.assertIn("warning:", out)
@@ -152,9 +153,9 @@ class LaunchTest(unittest.TestCase):
             self.assertIn(f"/beanjar.slice/beanjar-{tag}.slice/{unit_name}.service", props)
             self.assertIn(unit_name, vmunits.vm_units())
             # a directory without config.toml is no library (unit_vm makes none); with one, its VM
-            self.assertIsNone(core.unit_vm(vmunits.vm_units()[unit_name]))
-            core.Library(self.lib, repo=TOP)
-            self.assertEqual(core.unit_vm(vmunits.vm_units()[unit_name]).dir, self.dir)
+            self.assertIsNone(library.unit_vm(vmunits.vm_units()[unit_name]))
+            library.Library(self.lib, repo=TOP)
+            self.assertEqual(library.unit_vm(vmunits.vm_units()[unit_name]).dir, self.dir)
             # its resources: a lower CPU weight, and memory held to the VM's RAM and the headroom
             rc, props = vmunits.systemctl(
                 "show", "--property=CPUWeight", "--property=MemoryHigh", f"{unit_name}.service"
@@ -247,7 +248,7 @@ class LaunchTest(unittest.TestCase):
         self.vm("start", "--dir", self.dir)
         pid = int(self.vm("status", "--dir", self.dir).stdout.split()[1])
         p = self.vm("stop", "--dir", self.dir, "--power-off", "1", ok=False)
-        self.assertEqual(p.returncode, core.STOP_REFUSED)
+        self.assertEqual(p.returncode, library.STOP_REFUSED)
         self.assertIn("power-off: no serial console", p.stdout)
         self.assertTrue(base.proc_alive(pid, "qemu-system"), "the VM is left running")
         self.vm("stop", "--dir", self.dir)

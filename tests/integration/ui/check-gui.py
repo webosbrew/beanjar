@@ -67,7 +67,8 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import base, core, vmsettings  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.vm import library, settings as vm_settings  # noqa: E402
 from beanjar.runtime import hostconfig, unit  # noqa: E402
 from beanjar.firmware import targets  # noqa: E402
 from beanjar_ui.manager import gui, ui  # noqa: E402
@@ -188,7 +189,7 @@ def main():
         PYTHONDONTWRITEBYTECODE="1",
         NETNS_MITMWEB=mitmweb,
     )
-    lib = core.Library(lib_dir, repo)
+    lib = library.Library(lib_dir, repo)
 
     def cleanup():
         for vm in lib.vms():
@@ -710,7 +711,7 @@ def main():
         )
         form.fields["mac"].set_text("02:00:00:ab:cd:ef")
         check(not form.error.get_revealed(), "editing the MAC clears the error")
-        form.fields["audio"].set_selected(vmsettings.AUDIOS.index("dbus"))
+        form.fields["audio"].set_selected(vm_settings.AUDIOS.index("dbus"))
         form.submit()
         check(
             not form.closed
@@ -726,7 +727,7 @@ def main():
         form.move_layer(form.layer_row("normal"), -1)
         form.move_layer(form.layer_row("normal"), -1)
         form.show_page("display")
-        form.fields["audio"].set_selected(vmsettings.AUDIOS.index("none"))
+        form.fields["audio"].set_selected(vm_settings.AUDIOS.index("none"))
         check(not form.error.get_revealed(), "fixing it clears the error")
         form.submit()
         check(
@@ -828,7 +829,7 @@ def main():
             and form.mode.get_sensitive(),
             "nat: the listen address, no LAN address",
         )
-        form.fields["link"].set_selected(vmsettings.LINKS.index("lan"))
+        form.fields["link"].set_selected(vm_settings.LINKS.index("lan"))
         check(
             not form.listen_group.get_visible() and form.address_group.get_visible(),
             "lan: the LAN address, no listen",
@@ -842,7 +843,7 @@ def main():
             f"a LAN address without its prefix is refused ({form.error.get_title()})",
         )
         form.fields["address"].set_text("10.0.0.5/24,10.0.0.1")
-        form.fields["mode"].set_selected(vmsettings.MODES.index("direct"))
+        form.fields["mode"].set_selected(vm_settings.MODES.index("direct"))
         form.submit()
         yield lambda: form.closed
         cfg = lib.vm("tv2").config
@@ -859,13 +860,13 @@ def main():
         m.settings()
         form = m.dialog
         yield 0.3
-        form.fields["link"].set_selected(vmsettings.LINKS.index("off"))
+        form.fields["link"].set_selected(vm_settings.LINKS.index("off"))
         check(
             not form.mode.get_sensitive() and not form.address_group.get_visible(),
             "off: no mode, no address",
         )
-        form.fields["link"].set_selected(vmsettings.LINKS.index("nat"))
-        form.fields["mode"].set_selected(vmsettings.MODES.index("mitm"))
+        form.fields["link"].set_selected(vm_settings.LINKS.index("nat"))
+        form.fields["mode"].set_selected(vm_settings.MODES.index("mitm"))
         form.submit()
         yield lambda: form.closed
         cfg = lib.vm("tv2").config
@@ -881,13 +882,13 @@ def main():
         form.show_page("network")
         check(
             form.inspector_group.get_visible()
-            and form.fields["mitm_flows"].get_value() == vmsettings.MITM_FLOWS
+            and form.fields["mitm_flows"].get_value() == vm_settings.MITM_FLOWS
             and form.fields["mitm_flow_bytes"].get_text() == "",
             "mitm: the inspector's limits, the defaults",
         )
-        form.fields["mode"].set_selected(vmsettings.MODES.index("direct"))
+        form.fields["mode"].set_selected(vm_settings.MODES.index("direct"))
         check(not form.inspector_group.get_visible(), "direct: no inspector limits")
-        form.fields["mode"].set_selected(vmsettings.MODES.index("mitm"))
+        form.fields["mode"].set_selected(vm_settings.MODES.index("mitm"))
         form.fields["mitm_flows"].set_value(200)
         form.fields["mitm_flow_bytes"].set_text("lots")
         form.submit()
@@ -914,7 +915,7 @@ def main():
         m.settings()
         form = m.dialog
         yield 0.3
-        form.fields["mitm_flows"].set_value(vmsettings.MITM_FLOWS)
+        form.fields["mitm_flows"].set_value(vm_settings.MITM_FLOWS)
         form.fields["mitm_flow_bytes"].set_text("")
         form.submit()
         yield lambda: form.closed
@@ -926,7 +927,7 @@ def main():
 
         # 2c. the model key, in Settings (Network): never its value; installed and cleared at Save, a bad
         # file refused before anything is saved
-        from beanjar import sestore
+        from beanjar.vm import sestore
 
         key_path = os.path.join(lib_dir, "vms", "tv2", "identity", "sestore.toml")
         good = os.path.join(tmp, "model.key")
@@ -968,7 +969,7 @@ def main():
             os.path.isfile(key_path)
             and os.stat(key_path).st_mode & 0o777 == 0o600
             and sestore.load(os.path.dirname(key_path))[1][sestore.MODEL]
-            == core.read_model_key(good)
+            == library.read_model_key(good)
             and lib.vm("tv2").config["mem"] == 1792
             and m.messages[-1] == "tv2: settings saved, model key installed",
             "Save installed it (0600), as model-key does",
@@ -989,7 +990,7 @@ def main():
         check(
             form.model_key.get_subtitle() == "Installed (value not shown)"
             and form.model_key_clear.get_sensitive()
-            and core.read_model_key(good).decode() not in form.model_key.get_subtitle(),
+            and library.read_model_key(good).decode() not in form.model_key.get_subtitle(),
             "Settings: installed, the value not shown",
         )
         if a.shots:
@@ -1127,7 +1128,7 @@ def main():
             and view.values["address"] == address
             and shown("address")
             and not shown("lan_address")
-            and view.fields["mitm_flows"].get_text() == f"the last {vmsettings.MITM_FLOWS} flows"
+            and view.fields["mitm_flows"].get_text() == f"the last {vm_settings.MITM_FLOWS} flows"
             and view.fields["mitm_flow_bytes"].get_text() == "no limit"
             and shown("mitm_flows"),
             f"Network: the host address with its ports, copied without them, and the inspector's "
@@ -1636,7 +1637,7 @@ def main():
                 yield 0.5
         finally:
             os.unlink(secret)
-        m.vnc_panel.refresh(core.VM(lib, "tv1"))
+        m.vnc_panel.refresh(library.VM(lib, "tv1"))
         check(
             not m.vnc_panel.get_visible(),
             "the VNC group follows the VM: hidden again without beanjar vnc",
@@ -1695,14 +1696,14 @@ def main():
         m.disconnect()
         yield lambda: vm.viewer_pid() is None and "tv1" not in m.ops
         check("tv1" not in m.want_viewer, "a disconnected viewer is not reopened")
-        refusal = core.VM.power_off_refusal
-        core.VM.power_off_refusal = lambda self: None
+        refusal = library.VM.power_off_refusal
+        library.VM.power_off_refusal = lambda self: None
         try:
             form = m.shutdown()
             signal_row = form.fields["signal"].row
             check(signal_row.get_sensitive(), "the signal is available at once")
         finally:
-            core.VM.power_off_refusal = refusal
+            library.VM.power_off_refusal = refusal
         check(
             "webOS powers the TV off" in signal_row.get_subtitle()
             and form.fields["signal"].get_active(),

@@ -42,7 +42,7 @@ def test_last_run(tmp_path):
 
 
 def test_hardware_defaults():
-    # vmconfig.py's: audio follows the display, free page reporting off
+    # config.py's: audio follows the display, free page reporting off
     assert f.audio_default("dbus") == "dbus" and f.audio_default("egl-headless") == "none"
     assert f.shown_hardware({}, "dbus") == {"audio": False, "free_page_reporting": False}
     assert f.shown_hardware({"audio": "dbus", "free_page_reporting": "off"}, "dbus") == {

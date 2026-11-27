@@ -6,7 +6,7 @@ none, the files their secrets live in, and the address rules.
 - token (the default): a random token, kept in web.token in the user's beanjar config directory
   (the manager's, $XDG_CONFIG_HOME/beanjar, beside config.toml), so the URL stays the same across
   restarts and `beanjar-web status` can print it. The URL carries it once; it becomes the cookie.
-- password: web.password beside it, made as beanjar-vnc's vnc.password is (beanjar/keys.py: 20
+- password: web.password beside it, made as beanjar-vnc's vnc.password is (beanjar/vm/keys.py: 20
   characters of an alphabet without look-alikes) when it is missing; the login page checks it, and
   the cookie is an HMAC of it, so a restart keeps the session and a new password ends it.
 - none: only on a loopback address given as a number (127.0.0.0/8, ::1), beanjar-vnc's rule for a
@@ -23,7 +23,7 @@ import os
 import secrets
 import tempfile
 
-# beanjar/keys.py's VNC_ALPHABET and VNC_LENGTH: about 99 bits, typed easily off the screen
+# beanjar/vm/keys.py's VNC_ALPHABET and VNC_LENGTH: about 99 bits, typed easily off the screen
 PASSWORD_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"  # gitleaks:allow (an alphabet, not a key)
 PASSWORD_LENGTH = 20
 MODES = ("token", "password", "none")

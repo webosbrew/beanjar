@@ -12,7 +12,7 @@ import tempfile
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import sestore
+from beanjar.vm import sestore
 
 
 def main():

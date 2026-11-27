@@ -22,7 +22,7 @@ only after a hello) and a capture needs no front end:
   asked again every RETRY_S.
 - The sink is stopped IDLE_S after the last request, and at once when another front end connects
   (it takes over: the sink holds the display's one-client sockets, cursor and the media hub's).
-  beanjar view, vnc start and screenshot stop it too (core.py, SINK_PIDFILE). Nothing but this
+  beanjar view, vnc start and screenshot stop it too (library.py, SINK_PIDFILE). Nothing but this
   relay, idle in select, runs while nobody captures.
 - A request no provider answers within REPLY_S (below the guest's 3 s) is answered with an error:
   -ENODEV without a provider, -ETIMEDOUT with one; a late answer is dropped.
@@ -46,7 +46,7 @@ from .. import base
 
 QEMU_NAME = "capture-qemu.sock"
 SINK_PIDFILE = "capture-sink.pid"
-# a front end on its way (core.py): the pid of the beanjar command that starts it; while that runs,
+# a front end on its way (library.py): the pid of the beanjar command that starts it; while that runs,
 # no sink is started, so that the front end finds the display's sockets free
 SINK_HOLD = "capture-sink.hold"
 SINK_LOG = "capture-sink.log"
@@ -394,7 +394,7 @@ class Relay:
                 self.stop_sink(f"idle {IDLE_S:g} s")
             return
         if self.sink_stopping or not code:
-            # by the relay, or by a beanjar command for a front end (core.py), on SIGTERM
+            # by the relay, or by a beanjar command for a front end (library.py), on SIGTERM
             say(f"sink stopped (status {code})")
         else:
             say(f"the sink failed (status {code})")

@@ -14,7 +14,7 @@ import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import sestore
+from beanjar.vm import sestore
 
 SCHEMA_PATH = TOP / "docs/user/sestore.schema.json"
 GUIDE = TOP / "docs/user/sestore.md"

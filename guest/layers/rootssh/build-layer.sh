@@ -11,7 +11,7 @@
 #      BIN   the SSH programs (default build/ssh/bin, published by the guest build)
 #
 # The layer is the same for every VM: it holds no key. The host key and root's authorized_keys are
-# the VM's own (<vm>/identity, the checkout VM's local/; beanjar/keys.py), and the launcher puts
+# the VM's own (<vm>/identity, the checkout VM's local/; beanjar/vm/keys.py), and the launcher puts
 # them into the per-VM layer at /etc/emulator/rootssh/{dropbear_ed25519_host_key,authorized_keys}
 # and /home/root/.ssh/authorized_keys.
 #

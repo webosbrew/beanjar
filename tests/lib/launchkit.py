@@ -20,7 +20,7 @@ TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 VM = os.path.join(TOP, "host", "scripts", "vm-launcher")
 # fake-epk2extract's rootfs.pak, an afro rootfs
 TRUST_PAK = os.path.join(TOP, "tests", "fakes", "trust-rootfs.pak")
-# a model key of the right shape (host/core/beanjar/modelkey.py)
+# a model key of the right shape (host/core/beanjar/vm/modelkey.py)
 KEY = base64.b64encode(bytes(range(32)))
 FW_NAME = paths.FW_NAME  # a firmware name the launcher resolves to (h13, afro)
 H13_AFRO = ("h13", "afro")
@@ -50,7 +50,7 @@ def fake_tree(root):
     for f in ("build/Image", "build/initramfs.cpio.gz"):
         open(os.path.join(top, f), "w").close()
     os.makedirs(os.path.join(top, "identity"))  # a VM's identity directory with a model key
-    from beanjar import sestore
+    from beanjar.vm import sestore
 
     sestore.set_model(os.path.join(top, "identity"), KEY)
     for f in (

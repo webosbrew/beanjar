@@ -8,7 +8,8 @@ import json
 from unittest import mock
 
 import pytest
-from beanjar import base, core, vmconfig, vmsettings
+from beanjar import base
+from beanjar.vm import library, config, settings
 from beanjar.board import countries, lls
 
 # a firmware's RMM tables as W22O 13.30's have them, cut down: two blocks, grpCode per record
@@ -140,14 +141,14 @@ def test_vmconfig_country(tmp_path):
     """firmware.country: an upper-case alpha-3 string, the launcher's COUNTRY; not checked against
     the firmware on read (every read stays cheap: configure and the launcher check it)."""
     base_doc = {"firmware": {"directory": "firmware"}}
-    assert "country" not in vmconfig.decode(base_doc)
-    cfg = vmconfig.decode({"firmware": {"directory": "firmware", "country": "CAN"}})
+    assert "country" not in config.decode(base_doc)
+    cfg = config.decode({"firmware": {"directory": "firmware", "country": "CAN"}})
     assert cfg["country"] == "CAN"
-    assert vmsettings.launcher_env(cfg)["COUNTRY"] == "CAN"
+    assert settings.launcher_env(cfg)["COUNTRY"] == "CAN"
     for bad, why in (("can", "alpha-3 code in upper case"), (5, "must be a string")):
         with pytest.raises(base.Error, match=why):
-            vmconfig.decode({"firmware": {"directory": "firmware", "country": bad}})
-    assert "country" in vmsettings.SETTING_HELP and vmsettings.SETTING_HELP["country"][3]
+            config.decode({"firmware": {"directory": "firmware", "country": bad}})
+    assert "country" in settings.SETTING_HELP and settings.SETTING_HELP["country"][3]
 
 
 @pytest.fixture
@@ -156,7 +157,7 @@ def vm(tmp_path):
     fw.mkdir()
     (fw / "rootfs.pak").touch()
     (fw / "manifest.toml").write_text('name = "x"\nchip = "o22"\nrelease = "number1"\n')
-    lib = core.Library(str(tmp_path / "lib"), repo=str(tmp_path))
+    lib = library.Library(str(tmp_path / "lib"), repo=str(tmp_path))
     vm_dir = tmp_path / "lib" / "vms" / "tv"
     vm_dir.mkdir(parents=True)
     toml = vm_dir / "vm.toml"

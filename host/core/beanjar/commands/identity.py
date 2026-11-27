@@ -22,7 +22,7 @@ def cmd_identity_reset(lib, a):
 
 
 def cmd_clone(lib, a):
-    from .. import clone
+    from ..vm import clone
 
     r = clone.clone(lib, a.source, a.dest, out=progress, warn=warn, pinned=a.library is not None)
     return emit(
@@ -37,7 +37,7 @@ def cmd_clone(lib, a):
 def cmd_authorized_keys(lib, a):
     """Root SSH's authorized_keys of a VM (keys.py): show what the guest gets, reset it to a new
     VM's (no key but the VM's own), or add the user's own keys, explicitly."""
-    from .. import keys
+    from ..vm import keys
 
     vm = lib.vm(a.name)
     d = vm.identity_dir
@@ -79,7 +79,7 @@ def cmd_key_model(lib, a):
     else:
         vm = lib.vm(a.name)
     has = vm.has_model_key()
-    from .. import sestore
+    from ..vm import sestore
 
     try:
         missing, items = sestore.load(vm.identity_dir)
@@ -108,7 +108,7 @@ def cmd_key_model(lib, a):
 
 def cmd_key_list(lib, a):
     """The item names in a VM's identity/sestore.toml, never their values."""
-    from .. import sestore
+    from ..vm import sestore
 
     vm = lib.vm(a.name)
     try:

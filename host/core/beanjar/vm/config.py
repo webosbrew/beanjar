@@ -59,7 +59,7 @@ ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 
 
 def _fail(message, key=None):
-    from .base import Error
+    from ..base import Error
 
     raise Error(message, key)
 
@@ -141,14 +141,14 @@ def decode(doc):
         if key in cfg and not isinstance(cfg[key], str):
             section, field = FIELDS[key]
             _fail(f"{section}.{field} must be a string", key)
-    from .firmware.targets import BROADCASTS
+    from ..firmware.targets import BROADCASTS
 
     if "broadcast" in cfg and cfg["broadcast"] not in BROADCASTS:
         _fail(
             f"firmware.broadcast {cfg['broadcast']!r}: one of {', '.join(BROADCASTS)}", "broadcast"
         )
     if "country" in cfg:
-        from .board.countries import CODE
+        from ..board.countries import CODE
 
         if not CODE.fullmatch(cfg["country"]):
             _fail(
@@ -159,7 +159,7 @@ def decode(doc):
     env = doc.get("advanced", {}).get("env", {})
     if not isinstance(env, Mapping):
         _fail("advanced.env must be a table")
-    from .vmsettings import CHECKOUT_ONLY, LAUNCHER_OWN, SETTINGS, validate
+    from .settings import CHECKOUT_ONLY, LAUNCHER_OWN, SETTINGS, validate
 
     for key, value in env.items():
         if not isinstance(key, str) or not ENV_NAME.fullmatch(key):
@@ -176,7 +176,7 @@ def decode(doc):
     try:
         validate(cfg, saved=True)
     except Exception as exc:
-        from .base import Error
+        from ..base import Error
 
         if not isinstance(exc, Error):
             raise
@@ -190,11 +190,11 @@ def decode(doc):
 def peek(path, names):
     """{name: value} of the settings names of the vm.toml at path as read() gives them, defaults
     applied (advanced.env's entries by their names), without read()'s checks, which need the
-    library module (core.py): for a query that reads a few settings and must start quickly (the
+    library module (library.py): for a query that reads a few settings and must start quickly (the
     `_ares` answer, cli.ares_query). A setting the file does not give and that has no default is
     left out. None if there is no file, or if its tables are not vm.toml's (read() tells why); a
     file that is not TOML is read()'s Error."""
-    from .base import Error
+    from ..base import Error
 
     doc = _load(path)
     if doc is None:
@@ -230,7 +230,7 @@ def read(path, default=None, check_broadcast=True):
             _check_broadcast(path, cfg)
         return cfg
     except Exception as exc:
-        from .base import Error
+        from ..base import Error
 
         if isinstance(exc, Error):
             _fail(f"{path}: {exc}", exc.key)
@@ -238,7 +238,7 @@ def read(path, default=None, check_broadcast=True):
 
 
 def _check_broadcast(path, cfg):
-    from .firmware.install import vm_firmware
+    from ..firmware.install import vm_firmware
 
     fw = vm_firmware(os.path.dirname(os.path.abspath(path)), cfg.get("fw"))[0]
     check_firmware_broadcast(fw, cfg.get("broadcast"), cfg.get("model"))
@@ -250,8 +250,8 @@ def check_firmware_broadcast(fw, broadcast, model=None):
     model its chip has a board of (Soc.model_boards) of that standard, and the firmware's own
     standard where it names one (its model_id.json). A firmware whose target its manifest does not
     tell is left to the launcher, which checks the same."""
-    from .firmware import targets
-    from . import paths
+    from ..firmware import targets
+    from .. import paths
 
     if not os.path.isfile(os.path.join(fw, paths.MANIFEST)):
         return  # telling the target would read the rootfs: every read of vm.toml must stay cheap

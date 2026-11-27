@@ -6,13 +6,11 @@ a whole configuration (validate), and the launcher environment they make (launch
 import os
 import re
 
-from .board import nvm
-from .firmware import targets
-from . import vmconfig
-from .base import (
-    Error,
-)
-from . import vmidentity
+from ..board import nvm
+from ..firmware import targets
+from . import config
+from ..base import Error
+from . import identity
 
 
 DISPLAYS = ("dbus", "egl-headless", "none")
@@ -378,7 +376,7 @@ SETTING_HELP = {
         "qemu-user's own memory",
         None,
     ),
-    "smp": ("N", str(vmconfig.DEFAULTS["smp"]), "CPUs", None),
+    "smp": ("N", str(config.DEFAULTS["smp"]), "CPUs", None),
     "free_page_reporting": (
         "|".join(ONOFF),
         "off",
@@ -434,7 +432,7 @@ SETTING_HELP = {
     ),
     "layers": (
         "NAME[@VERSION],...",
-        ",".join(vmconfig.DEFAULTS["layers"]),
+        ",".join(config.DEFAULTS["layers"]),
         (
             "guest layers, highest priority first; empty for none. NAME@VERSION picks a versioned "
             "layer's version (hbchannel@0.7.3), plain NAME its default; a newer Homebrew Channel "
@@ -442,16 +440,16 @@ SETTING_HELP = {
         ),
         None,
     ),
-    "link": ("|".join(LINKS), vmconfig.DEFAULTS["link"], "where the NIC is attached", None),
+    "link": ("|".join(LINKS), config.DEFAULTS["link"], "where the NIC is attached", None),
     "mode": (
         "|".join(MODES),
-        vmconfig.DEFAULTS["mode"],
+        config.DEFAULTS["mode"],
         "the traffic inspector or none; ignored with link=off. link=lan with direct puts the "
         "guest itself on the LAN (its own lease, no relays, unreachable from this host) and "
         "needs lg_services=real",
         None,
     ),
-    "display": ("|".join(DISPLAYS), vmconfig.DEFAULTS["display"], "the display backend", None),
+    "display": ("|".join(DISPLAYS), config.DEFAULTS["display"], "the display backend", None),
     "gpu": (
         "|".join(GPUS),
         "auto",
@@ -710,9 +708,9 @@ def validate(cfg, saved=False):
                 f"slot {cfg['slot']!r}: a number from {keys.SLOTS[0]} to {keys.SLOTS[-1]}", "slot"
             )
     if "mac" in cfg:
-        vmidentity.parse_mac(cfg["mac"])
+        identity.parse_mac(cfg["mac"])
     if "serial" in cfg:
-        vmidentity.parse_serial(cfg["serial"])
+        identity.parse_serial(cfg["serial"])
     if "tags" in cfg:
         tags = cfg["tags"]
         if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
@@ -732,7 +730,7 @@ def validate(cfg, saved=False):
         except keys.Error as e:
             raise Error(str(e), "listen") from None
     if "forward" in cfg:
-        from .guestside import layermeta
+        from ..guestside import layermeta
 
         if not isinstance(cfg["forward"], str):
             raise Error("forward must be a string of ports, e.g. 8080,8081:80", "forward")
@@ -775,7 +773,7 @@ def validate(cfg, saved=False):
             "layers is a list of layer names (a-z, 0-9, '_', '-'), each NAME or NAME@VERSION",
             "layers",
         )
-    from .guestside import layermeta
+    from ..guestside import layermeta
 
     try:
         layermeta.check(layers, unknown_ok=saved)

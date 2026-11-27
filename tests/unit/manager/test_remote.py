@@ -24,7 +24,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar.access import ares, remote  # noqa: E402
-from beanjar import base, cli, commands, core  # noqa: E402
+from beanjar import base, cli, commands  # noqa: E402
+from beanjar.vm import library as vm_library  # noqa: E402
 from beanjar.runtime import hostconfig  # noqa: E402
 from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.network import inspector  # noqa: E402
@@ -547,7 +548,7 @@ class WorkerScreenshotTest(Base):
                 f.write(PNG)
             return path, (1280, 720), "headless"
 
-        with mock.patch.object(core.Library, "screenshot", shot):
+        with mock.patch.object(vm_library.Library, "screenshot", shot):
             rc, out, err = self.beanjar("screenshot", "tv", "-")
             self.assertEqual((rc, out), (0, PNG.decode("latin-1")))
             self.assertEqual(err, "running a headless viewer once\n")
@@ -1459,14 +1460,14 @@ class LightTest(Base):
 
     def test_query_imports(self):
         """The query answers from base.py and the one VM's vm.toml: neither the library module
-        (core.py) nor the commands, ares, keys or remote modules are imported, with --root (which
+        (library.py) nor the commands, ares, keys or remote modules are imported, with --root (which
         reads the layers' metadata) or without."""
         lib = os.path.join(self.tmp, "lib")
         write_vm(lib, "tv", '[layers]\nenabled = ["normal", "devmode", "rootssh"]\n')
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); from beanjar import cli\n"
             "rc = cli.main(sys.argv[2:])\n"
-            "heavy = ('beanjar.core', 'beanjar.commands', 'beanjar.access.ares', 'beanjar.keys',\n"
+            "heavy = ('beanjar.vm.library', 'beanjar.commands', 'beanjar.access.ares', 'beanjar.vm.keys',\n"
             "         'beanjar.access.remote', 'beanjar.firmware.targets', 'argparse', 'shutil', 'subprocess')\n"
             "print(rc, [m for m in heavy if m in sys.modules])\n"
         )
@@ -1516,7 +1517,7 @@ class QueryTest(Base):
     def library(self, name, root):
         """The query's output as the library gives it: (status, stdout, stderr)."""
         try:
-            vm = core.Library(self.lib).vm(name)
+            vm = vm_library.Library(self.lib).vm(name)
             return 0, json.dumps(ares.target(vm, root)) + "\n", ""
         except base.Error as e:
             error = {"error": str(e), **({"key": e.key} if e.key else {})}

@@ -18,7 +18,8 @@ import time
 
 from gi.repository import Gio, GLib, Gtk, Pango
 
-from beanjar import base, vmsettings
+from beanjar import base
+from beanjar.vm import settings
 from beanjar.network import inspector, mitmtool
 
 DESCRIPTION = (
@@ -190,7 +191,7 @@ class Panel(Gtk.Box):
         try:
             mitm_vm = (
                 vm is not None
-                and vmsettings.guest_net(vm.config.get("link"), vm.config.get("mode")) == "mitm"
+                and settings.guest_net(vm.config.get("link"), vm.config.get("mode")) == "mitm"
             )
         except base.Error:
             mitm_vm = False

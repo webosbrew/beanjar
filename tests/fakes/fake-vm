@@ -15,7 +15,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "host", "core"))
-from beanjar import base, core  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.vm import library  # noqa: E402
 from beanjar.runtime import unit, vmunits  # noqa: E402
 
 p = argparse.ArgumentParser()
@@ -56,7 +57,7 @@ if a.cmd == "prepare":
         print("fake-vm: prepare failing on purpose")
         sys.exit(1)
     time.sleep(float(os.environ.get("FAKE_PREPARE_DELAY", "0")))  # a slow one (RK3399: ~17 s)
-    serial = (core.vmconfig.read(os.path.join(d, "vm.toml")) or {}).get("serial", "")
+    serial = (library.vm_config.read(os.path.join(d, "vm.toml")) or {}).get("serial", "")
     with open(os.path.join(d, "prepared.calls"), "a") as f:
         f.write(f"{'force' if a.force else 'ensure'} {serial}\n")
     print(f"fake-vm: prepare {d}", flush=True)

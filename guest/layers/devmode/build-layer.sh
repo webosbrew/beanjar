@@ -12,7 +12,7 @@
 #      BIN   the SSH programs (default build/ssh/bin)
 #
 # The layer is the same for every VM: it holds no key. The developer key (unencrypted) and the
-# host key are the VM's own (<vm>/identity, the checkout VM's local/; beanjar/keys.py), and the
+# host key are the VM's own (<vm>/identity, the checkout VM's local/; beanjar/vm/keys.py), and the
 # launcher puts them into the per-VM layer at /etc/emulator/devmode/{developer_rsa,
 # developer_rsa.pub,ssh_host_rsa_key}. start-devmode.sh encrypts the developer key at boot with
 # the guest's own passphrase (its NDUID's first six characters, upper case: getPassphrase's

@@ -52,7 +52,8 @@ import subprocess
 import sys
 
 from ..firmware import install, cache, targets
-from .. import paths, vmidentity
+from .. import paths
+from ..vm import identity
 from . import lls, macadr, nvm, partmap
 from ..base import identity_dir
 
@@ -162,7 +163,7 @@ class Job:
 
     def lgudid_inputs(self):
         """The macadr partition's inputs: the MAC and the identity's LGUDID ("" while it has none)."""
-        ids = vmidentity.read_lgudid(self.identity_dir)
+        ids = identity.read_lgudid(self.identity_dir)
         return {"mac": self.mac, "lgudid": ":".join(ids) if ids else ""}
 
     def kernel_certs(self):
@@ -438,7 +439,7 @@ def macadr_image(job, partinfo, out, say=print):
     has none, said). Error if the map has the partition at a node the firmware does not open."""
     lgudid = targets.release(job.target).lgudid
     try:
-        ids = vmidentity.ensure_lgudid(job.identity_dir, job.mac, say)
+        ids = identity.ensure_lgudid(job.identity_dir, job.mac, say)
         entry = partmap.first(partmap.read(partinfo), lgudid.partition)
         if entry is None:
             raise macadr.Error(f"the partition map has no {lgudid.partition} partition")
@@ -470,10 +471,11 @@ def ensure(job, say=print, why=None):
 def vm_env(vm_dir):
     """The environment a library VM's preparation needs (its vm.toml's FW, FW_CACHE, SERIAL,
     BROADCAST, MODEL, DEBUG_MODE, and its RUN_DIR)."""
-    from .. import base, core
+    from .. import base
+    from ..vm import library
 
     try:
-        env = core.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
+        env = library.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
     except base.Error as e:
         raise Error(str(e)) from None
     env["RUN_DIR"] = os.path.join(os.path.abspath(vm_dir), "run")

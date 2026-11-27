@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The macadr partition (macadr.py): the LGUDID record and MAC image a set's factory writes, the
-VM's LGUDID in its identity (vmidentity.py), the prepared image (prepare.py) and its disk and node
+VM's LGUDID in its identity (identity.py), the prepared image (prepare.py) and its disk and node
 (targets.py, partmap.py, qemu.py)."""
 
 import hashlib
@@ -14,7 +14,7 @@ import uuid
 
 from beanjar.board import macadr, partmap, prepare
 from beanjar.firmware import targets
-from beanjar import vmidentity
+from beanjar.vm import identity
 
 from launchkit import fake_map
 
@@ -91,24 +91,24 @@ class IdentityTest(unittest.TestCase):
         clone leaves the old one out of its copy (renewed)."""
         with tempfile.TemporaryDirectory() as d:
             said = []
-            ids = vmidentity.ensure_lgudid(d, MAC, said.append)
+            ids = identity.ensure_lgudid(d, MAC, said.append)
             self.assertIn("made a new LGUDID", said[0])
-            self.assertEqual(os.stat(os.path.join(d, vmidentity.LGUDID)).st_mode & 0o777, 0o600)
-            self.assertEqual(vmidentity.ensure_lgudid(d, "02:00:00:00:00:01", said.append), ids)
-            self.assertEqual(vmidentity.read_lgudid(d), ids)
+            self.assertEqual(os.stat(os.path.join(d, identity.LGUDID)).st_mode & 0o777, 0o600)
+            self.assertEqual(identity.ensure_lgudid(d, "02:00:00:00:00:01", said.append), ids)
+            self.assertEqual(identity.read_lgudid(d), ids)
             self.assertEqual(len(said), 1)
             self.assertEqual(ids[0], str(uuid.uuid5(uuid.UUID(ids[1]), "A8:23:FE:12:34:56")))
-            self.assertIn(vmidentity.LGUDID, vmidentity.renewed())
-            new = vmidentity.write_lgudid(d, MAC)
+            self.assertIn(identity.LGUDID, identity.renewed())
+            new = identity.write_lgudid(d, MAC)
             self.assertNotEqual(new, ids)
-            self.assertEqual(vmidentity.read_lgudid(d), new)
-            with open(os.path.join(d, vmidentity.LGUDID), "w") as f:
+            self.assertEqual(identity.read_lgudid(d), new)
+            with open(os.path.join(d, identity.LGUDID), "w") as f:
                 f.write("lgudid = 'not one'\n")
-            self.assertIsNone(vmidentity.read_lgudid(d))
-            with open(os.path.join(d, vmidentity.LGUDID), "w") as f:
+            self.assertIsNone(identity.read_lgudid(d))
+            with open(os.path.join(d, identity.LGUDID), "w") as f:
                 f.write("not toml [")
-            self.assertIsNone(vmidentity.read_lgudid(d))
-            self.assertNotEqual(vmidentity.ensure_lgudid(d, MAC), new)
+            self.assertIsNone(identity.read_lgudid(d))
+            self.assertNotEqual(identity.ensure_lgudid(d, MAC), new)
 
 
 class TargetsTest(unittest.TestCase):
@@ -151,7 +151,7 @@ class PrepareTest(unittest.TestCase):
             out = os.path.join(top, "macadr.img")
             said = []
             prepare.macadr_image(self.job(top, ident), info, out, said.append)
-            lgudid, ns = vmidentity.read_lgudid(ident)
+            lgudid, ns = identity.read_lgudid(ident)
             with open(out, "rb") as f:
                 data = f.read()
             self.assertEqual(data, macadr.image(0x40000, lgudid, ns, MAC))

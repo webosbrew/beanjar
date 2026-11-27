@@ -53,7 +53,8 @@ import sys
 import tempfile
 import termios
 
-from .. import base, keys, vmsettings
+from .. import base
+from ..vm import keys, settings
 from ..guestside import layermeta
 from . import remote
 from ..base import Error
@@ -204,7 +205,7 @@ def lan_direct_refusal(name, spec):
 
 
 def check_vm(vm, root=False):
-    if vmsettings.lan_direct(vm.config.get("link"), vm.config.get("mode")):
+    if settings.lan_direct(vm.config.get("link"), vm.config.get("mode")):
         raise lan_direct_refusal(vm.name, f"HOST/{vm.name}")
     layers = vm.config.get("layers")
     check(

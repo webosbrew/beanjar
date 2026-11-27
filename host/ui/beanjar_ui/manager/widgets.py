@@ -603,7 +603,7 @@ class VMForm(_Submit, Adw.Dialog):
 
 @ui.template("progress")
 class ProgressDialog(Adw.Dialog):
-    """A New VM's progress (ui/progress.blp). operation: the running python3 -m beanjar.newvm (a
+    """A New VM's progress (ui/progress.blp). operation: the running python3 -m beanjar.vm.create (a
     gui.Operation), None once it has ended (finished()): until then Cancel and closing the dialog
     cancel it."""
 

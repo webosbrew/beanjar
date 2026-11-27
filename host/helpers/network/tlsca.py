@@ -6,7 +6,7 @@
     host/helpers/network/tlsca.py [DIR]     create the CA in DIR once and print its certificate's path
 
 DIR is explicit or supplied by NETSTUB_CA; there is no checkout-local default. The VMs of a library share one,
-<library>/ca (host/core/beanjar/keys.py ensure_ca, at the first create and at a start that finds it missing). DIR is mitmproxy's confdir as well (host/core/beanjar/network/netns.py),
+<library>/ca (host/core/beanjar/vm/keys.py ensure_ca, at the first create and at a start that finds it missing). DIR is mitmproxy's confdir as well (host/core/beanjar/network/netns.py),
 which terminates the guest's HTTPS and mints a leaf per server from this CA:
     ca.key, ca.pem          the CA: RSA 2048, SHA-256, X.509v3 (the guest's OpenSSL is 1.0.1h)
     mitmproxy-ca.pem        key and certificate together, the file mitmproxy loads as its CA

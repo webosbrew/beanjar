@@ -10,7 +10,7 @@ JSON object on stderr, {"error": message, "key": setting or absent, "usage": tru
 import json
 import sys
 
-from .. import core
+from ..vm import library
 from ..cli import json_error
 from ..base import Error
 
@@ -200,5 +200,5 @@ def duration(text):
 def fail(e, as_json, code):
     if as_json:
         return json_error(e, code)
-    core.main_error(e)
+    library.main_error(e)
     return code

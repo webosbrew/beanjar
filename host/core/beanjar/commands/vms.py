@@ -8,10 +8,11 @@ import shlex
 import stat
 import sys
 
-from .. import base, core, keys, vmsettings
+from .. import base
+from ..vm import library, keys, settings
 from ..runtime import hostprocs, poweroff, vmunits
 from ..access import remote
-from ..core import fmt_duration
+from ..vm.library import fmt_duration
 from ..base import Error
 from .common import Usage, emit, kv_lines, layer_versions, progress, table, warn
 from .forward import bare_new_name
@@ -91,7 +92,7 @@ def vm_row(vm):
         "guest_ram": fw["guest_ram"],  # QEMU's -m: under qemu-user more (VM.guest_ram)
         "smp": c.get("smp"),
         "display": c.get("display", ""),
-        "network": vmsettings.network_label(c.get("link"), c.get("mode")),
+        "network": settings.network_label(c.get("link"), c.get("mode")),
         "address": vm.address(),
         "lan_address": vm.lan_address(),
         "pid": vm.pid(),
@@ -109,7 +110,8 @@ def vm_row(vm):
 def unit_row(name, props):
     """A VM's unit in beanjar.slice that is no library's VM (a regress target's, one of another
     RUN_DIR): what its unit and its main process's environment (the launcher's) tell."""
-    from .. import keys, paths
+    from ..vm import keys
+    from .. import paths
     from ..runtime import qemu
     from ..firmware import targets
     from ..board import nvm
@@ -169,13 +171,11 @@ def unit_row(name, props):
         "fw_external": False,
         "mem": int(mem) if str(mem or "").isdigit() else None,
         "guest_ram": (
-            vmsettings.guest_ram_mib(mem, qemu.vm_userland(env))
-            if str(mem or "").isdigit()
-            else None
+            settings.guest_ram_mib(mem, qemu.vm_userland(env)) if str(mem or "").isdigit() else None
         ),
         "smp": env.get("SMP"),
         "display": env.get("DISPLAY_BACKEND", ""),
-        "network": vmsettings.network_label(env.get("NET_LINK"), env.get("NET_MODE")),
+        "network": settings.network_label(env.get("NET_LINK"), env.get("NET_MODE")),
         "address": keys.address(int(slot), env.get("ADDRESS_PREFIX"))
         if str(slot or "").isdigit()
         else None,
@@ -202,7 +202,7 @@ def local_rows(lib, a):
         for name, props in sorted(vmunits.vm_units().items()):
             if name in shown or props.get("Description") in shown:
                 continue
-            vm = core.unit_vm(props)
+            vm = library.unit_vm(props)
             rows.append(vm_row(vm) if vm else unit_row(name, props))
     for r, status in zip(rows, gpu.measure([(r["pid"], r["layers"]) for r in rows])):
         r["gpu"] = status
@@ -254,7 +254,7 @@ def cmd_list(lib, a):
     if targets:
         none = "no VMs on this machine or the hosts" if with_local else f"no VMs on {a.host}"
     if a.tag:
-        want = vmsettings.as_tags(a.tag)
+        want = settings.as_tags(a.tag)
         rows = [r for r in rows if set(want) <= set(r.get("tags") or ())]
         none = f"{none} tagged {', '.join(want)}" if none.startswith("no VMs") else none
     if a.json or not rows:
@@ -341,7 +341,7 @@ def cmd_start(lib, a):
 def cmd_stop(lib, a):
     lib.stop(
         a.name,
-        core.UNPLUG if a.unplug else core.POWER_OFF,
+        library.UNPLUG if a.unplug else library.POWER_OFF,
         fallback=not a.no_fallback,
         out=progress,
         force=a.force,
@@ -570,7 +570,7 @@ def inspector_info(vm):
 
 
 def create_arguments(p):
-    """create's arguments (the CLI's, and newvm.py's: the GUI's New VM)."""
+    """create's arguments (the CLI's, and create.py's: the GUI's New VM)."""
     p.add_argument("name", metavar="NAME", help="the new VM's name (local/NAME: the same)")
     p.add_argument(
         "--firmware",
@@ -594,15 +594,15 @@ def create_arguments(p):
     p.add_argument("--layers", help="comma-separated, highest priority first (default normal,gl)")
     p.add_argument(
         "--link",
-        choices=vmsettings.LINKS,
+        choices=settings.LINKS,
         help="where the NIC is attached: nat (default), lan (mode mitm only for now) or off",
     )
     p.add_argument(
-        "--mode", choices=vmsettings.MODES, help="mitm (default) or direct; ignored with --link=off"
+        "--mode", choices=settings.MODES, help="mitm (default) or direct; ignored with --link=off"
     )
-    p.add_argument("--display", choices=vmsettings.DISPLAYS, help="default dbus")
+    p.add_argument("--display", choices=settings.DISPLAYS, help="default dbus")
     p.add_argument(
-        "--audio", choices=vmsettings.AUDIOS, help="default dbus with the dbus display, else none"
+        "--audio", choices=settings.AUDIOS, help="default dbus with the dbus display, else none"
     )
     p.add_argument(
         "--tag",

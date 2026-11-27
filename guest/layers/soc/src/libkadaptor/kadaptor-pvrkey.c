@@ -6,7 +6,7 @@
  * The board HAL reads the DVR's 16-byte key with MAdp_Secure_GetSecureDataEMMC("/tmp/dvr_key", ...)
  * (M3: "/tmp/96B14BF8"). On a set that read goes through MStar's TEE; the VM has no TEE, so the
  * stock read fails. This definition answers those two names from the VM's secure-store item
- * "dvr_key" (host/core/beanjar/sestore.py): TRUE, the 16 bytes and their length. Every other
+ * "dvr_key" (host/core/beanjar/vm/sestore.py): TRUE, the 16 bytes and their length. Every other
  * item is the stock function's, and so is every other symbol (on M2 but kadaptor-xc.c's). */
 #define _GNU_SOURCE
 #include <dlfcn.h>

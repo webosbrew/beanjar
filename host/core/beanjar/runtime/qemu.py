@@ -137,7 +137,7 @@ Environment (both):
             VM's own (vm.toml's mac and serial) on the kernel cmdline as webos.ethaddr= and
             webos.serial=; unset, board.cmdline's (a8:23:fe:12:34:56, 501RAXX00001) stand
   IDENTITY_DIR  the VM's own files (default: the managed development VM's identity/; a --dir VM's <vm>/identity):
-            its SSH keys (beanjar/keys.py) and sestore.toml, its secure-store items. At each launch guest_layer() assembles
+            its SSH keys (beanjar/vm/keys.py) and sestore.toml, its secure-store items. At each launch guest_layer() assembles
             RUN_DIR/share/vm from it, with only what the guest needs (the host keys, root's
             authorized_keys and the plain developer key for the layers in LAYERS; the store bundle;
             the CA's certificate with NET_MODE=mitm), which the guest mounts from the read-only 9p share
@@ -199,7 +199,8 @@ from pathlib import Path
 from ..display import capture_relay
 from ..firmware import cache as firmware_cache, lz4p, targets
 from . import hostswap
-from .. import keys, paths, vmsettings
+from ..vm import keys, settings
+from .. import paths
 from ..guestside import layerimage, layermeta, share
 from ..board import nvm, partmap, prepare
 from ..access import guestshell
@@ -256,7 +257,7 @@ class Error(Exception):
 KVM_DEVICE = "/dev/kvm"
 
 
-def default_accel(guest_kernel=vmsettings.DEFAULT_GUEST_KERNEL):
+def default_accel(guest_kernel=settings.DEFAULT_GUEST_KERNEL):
     """kvm on a host of the guest kernel's architecture (aarch64 for arm64, x86_64 for x86-64)
     whose /dev/kvm this user may open, else tcg."""
     machine = "x86_64" if guest_kernel == "x86-64" else "aarch64"
@@ -268,7 +269,7 @@ def default_accel(guest_kernel=vmsettings.DEFAULT_GUEST_KERNEL):
 def vm_accel(env):
     """The accelerator a launch with env gets, as plan picks it (ACCEL, else default_accel)."""
     return env.get("ACCEL") or default_accel(
-        env.get("GUEST_KERNEL") or vmsettings.DEFAULT_GUEST_KERNEL
+        env.get("GUEST_KERNEL") or settings.DEFAULT_GUEST_KERNEL
     )
 
 
@@ -357,7 +358,7 @@ class Plan:
         # qemu_arm the interpreter the guest gets; GUEST_KERNEL: "arm64" or "x86-64", whose
         # qemu-user guest also gets qemu_aarch64 for the 64-bit ARM programs
         self.userland, self.qemu_arm, self.qemu_aarch64 = "native", None, None
-        self.guest_kernel = vmsettings.DEFAULT_GUEST_KERNEL
+        self.guest_kernel = settings.DEFAULT_GUEST_KERNEL
         self.layers, self.ssh_port, self.partmap = [], keys.ROOTSSH_PORT, None
         self.guest_layers = []  # share.resolve_layers': each a read-only disk, layerimage.py
         self.service_host = None
@@ -428,16 +429,16 @@ def vm_userland(env):
     """The userland (native or qemu-user) a launch with env resolves to, as plan does on this host
     (vmsettings.resolve_userland, without the firmware's refusals); None for a setting that does
     not resolve."""
-    guest_kernel = env.get("GUEST_KERNEL") or vmsettings.DEFAULT_GUEST_KERNEL
+    guest_kernel = env.get("GUEST_KERNEL") or settings.DEFAULT_GUEST_KERNEL
     accel = vm_accel(env)
     try:
-        return vmsettings.resolve_userland(
-            env.get("USERLAND") or vmsettings.DEFAULT_USERLAND,
+        return settings.resolve_userland(
+            env.get("USERLAND") or settings.DEFAULT_USERLAND,
             guest_kernel,
             accel,
             host_aarch32_el0() if accel == "kvm" and guest_kernel == "arm64" else None,
         )[0]
-    except vmsettings.Error:
+    except settings.Error:
         return None
 
 
@@ -446,7 +447,7 @@ def vm_guest_ram(env, tree=paths.TREE):
     qemu-user's overhead on top when its userland resolves to qemu-user
     (vmsettings.guest_ram_mib); None if the TV's is not known."""
     mem = vm_mem(env, tree)
-    return None if mem is None else vmsettings.guest_ram_mib(mem, vm_userland(env))
+    return None if mem is None else settings.guest_ram_mib(mem, vm_userland(env))
 
 
 def vm_host_swap(env, tree=paths.TREE):
@@ -454,7 +455,7 @@ def vm_host_swap(env, tree=paths.TREE):
     qemu-user vmsettings.qemu_user_swap_mib of the TV's RAM (vm_mem), else 0; 0 too if the TV's
     is not known."""
     mem = vm_mem(env, tree)
-    return 0 if mem is None else vmsettings.qemu_user_swap_mib(mem, vm_userland(env))
+    return 0 if mem is None else settings.qemu_user_swap_mib(mem, vm_userland(env))
 
 
 def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
@@ -462,13 +463,13 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     say(line) gets the notes the launch prints (default: stderr). dry: build nothing (ROOTFS=
     uncompressed images are looked up, not built; the model key is not checked)."""
     say = say or (lambda line: print(line, file=sys.stderr, flush=True))
-    guest_kernel = env.get("GUEST_KERNEL") or vmsettings.DEFAULT_GUEST_KERNEL
-    if guest_kernel not in vmsettings.GUEST_KERNELS:
-        raise Error(f"GUEST_KERNEL={guest_kernel}: one of {', '.join(vmsettings.GUEST_KERNELS)}")
+    guest_kernel = env.get("GUEST_KERNEL") or settings.DEFAULT_GUEST_KERNEL
+    if guest_kernel not in settings.GUEST_KERNELS:
+        raise Error(f"GUEST_KERNEL={guest_kernel}: one of {', '.join(settings.GUEST_KERNELS)}")
     accel = accel or env.get("ACCEL") or default_accel(guest_kernel)
     if accel not in ("tcg", "kvm"):
         raise Error(f"unknown ACCEL={accel} (tcg or kvm)")
-    from .. import development
+    from ..vm import development
 
     explicit_ca = "NETSTUB_CA" in env
     env = development.environment(env, tree)
@@ -508,29 +509,29 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     p.guest_kernel = guest_kernel
     platform_name = targets.platform(p.target)
     if guest_kernel == "x86-64":
-        refusal = vmsettings.guest_kernel_host_refusal(guest_kernel, platform.machine())
+        refusal = settings.guest_kernel_host_refusal(guest_kernel, platform.machine())
         if refusal:
             raise Error(refusal)
-        refusal = vmsettings.guest_kernel_package_refusal(guest_kernel, tree)
+        refusal = settings.guest_kernel_package_refusal(guest_kernel, tree)
         if refusal:
             raise Error(refusal)
         say(
             "guest kernel: x86-64 (experimental): q35 under "
             f"{accel.upper()}, the ARM userland under qemu-arm"
         )
-    setting = env.get("USERLAND") or vmsettings.DEFAULT_USERLAND
-    refusal = vmsettings.userland_refusal(platform_name, setting, guest_kernel)
+    setting = env.get("USERLAND") or settings.DEFAULT_USERLAND
+    refusal = settings.userland_refusal(platform_name, setting, guest_kernel)
     if refusal:
         raise Error(refusal)
     try:
-        p.userland, why = vmsettings.resolve_userland(
+        p.userland, why = settings.resolve_userland(
             setting,
             guest_kernel,
             accel,
             host_aarch32_el0() if accel == "kvm" and guest_kernel == "arm64" else None,
             platform_name,
         )
-    except vmsettings.Error as e:
+    except settings.Error as e:
         raise Error(str(e)) from None
     say(why)
     if p.userland == "qemu-user":
@@ -564,8 +565,8 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         raise Error(str(e)) from None
     # -m: the TV's RAM, and qemu-user's own on top of it (vmsettings.guest_ram_mib). What webOS is
     # told the set has comes from the board's hwopt= (board.cmdline), not from -m.
-    mem = str(vmsettings.guest_ram_mib(tv_mem, p.userland))
-    note = vmsettings.memory_note(tv_mem, p.userland)
+    mem = str(settings.guest_ram_mib(tv_mem, p.userland))
+    note = settings.memory_note(tv_mem, p.userland)
     if note:
         say(note)
     smp = _get(env, "SMP", "4")
@@ -799,7 +800,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
             )
     # qemu-user's cold overhead: a swap disk on a memfd in host RAM, which the launcher makes when
     # QEMU starts (hostswap.py); a native VM has none
-    swap = vmsettings.qemu_user_swap_mib(tv_mem, p.userland)
+    swap = settings.qemu_user_swap_mib(tv_mem, p.userland)
     if swap:
         devices += hostswap.argv(swap)
 
@@ -819,18 +820,18 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # the LAN and the host's own addresses: link=lan is on the LAN; link=nat only with
     # NET_LAN_ACCESS=on. The host's loopback is out of reach either way (netns.py).
     lan_access = _get(env, "NET_LAN_ACCESS", "off")
-    if lan_access not in vmsettings.ONOFF:
+    if lan_access not in settings.ONOFF:
         raise Error(f"NET_LAN_ACCESS={lan_access}: on or off")
-    lg_services = _get(env, "NET_LG_SERVICES", vmsettings.DEFAULT_LG_SERVICES)
-    if lg_services not in vmsettings.LG_SERVICES:
-        raise Error(f"NET_LG_SERVICES={lg_services}: {' or '.join(vmsettings.LG_SERVICES)}")
-    lan_direct = vmsettings.lan_direct(link, net)
+    lg_services = _get(env, "NET_LG_SERVICES", settings.DEFAULT_LG_SERVICES)
+    if lg_services not in settings.LG_SERVICES:
+        raise Error(f"NET_LG_SERVICES={lg_services}: {' or '.join(settings.LG_SERVICES)}")
+    lan_direct = settings.lan_direct(link, net)
     if link == "lan":
         lan_access = "on"
         # mitm: the mitm namespace one level in, its uplink a macvlan on the library's lan_parent;
         # direct: the guest's TAP joined to that macvlan, nothing in between (netns.lan)
         if lan_direct and lg_services != "real":
-            raise Error(vmsettings.LAN_DIRECT_LG)
+            raise Error(settings.LAN_DIRECT_LG)
         parent = env.get("NET_LAN_PARENT")
         if not parent:
             raise Error(
@@ -873,12 +874,12 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         p.env["NET_LG_SERVICES"] = lg_services
         p.env["NETNS_TAP"] = _get(env, "NETNS_TAP", "tap0")
         if net == "mitm":
-            flows = _get(env, "MITM_FLOWS", str(vmsettings.MITM_FLOWS))
+            flows = _get(env, "MITM_FLOWS", str(settings.MITM_FLOWS))
             if not flows.isdigit():
                 raise Error(f"MITM_FLOWS={flows}: a number, 0 for no limit")
             p.env["MITM_FLOWS"] = str(int(flows))
             try:
-                p.env["MITM_FLOW_BYTES"] = str(vmsettings.byte_size(env.get("MITM_FLOW_BYTES", "")))
+                p.env["MITM_FLOW_BYTES"] = str(settings.byte_size(env.get("MITM_FLOW_BYTES", "")))
             except ValueError as e:
                 raise Error(f"MITM_FLOW_BYTES={e}") from None
             p.env["NETSTUB_LOG"] = _get(
@@ -931,7 +932,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # The VM's files: the identity directory (IDENTITY_DIR, a VM's
     # <vm>/identity; the development VM's identity/), from which guest_layer() assembles the per-VM layer
     # RUN_DIR/share/vm that the guest reads over the read-only share "vm" and stacks on top:
-    # the SSH keys of rootssh and devmode (beanjar/keys.py), plus sestore.toml items
+    # the SSH keys of rootssh and devmode (beanjar/vm/keys.py), plus sestore.toml items
     # compiled into the kernel-store snapshot, whatever the network is.
     p.identity_dir = os.path.join(top, env["IDENTITY_DIR"])
     p.tree = tree
@@ -1027,7 +1028,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         p.env["NETSTUB_CA"] = p.ca_dir
         p.ca = os.path.join(p.ca_dir, "ca.pem")
         say(f"proxy CA: {p.ca_dir}")
-    from .. import sestore
+    from ..vm import sestore
 
     if targets.platform(p.target) == "webOS":
         try:
@@ -1122,10 +1123,10 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     # with the media hub (host/helpers/media-helper), QEMU's video and media sockets are the hub's alone and
     # it serves the viewers at the usual names; the viewers' sockets are QEMU's without it
     hub = media_helper(top, env)
-    hwdec = env.get("MEDIA_HWDEC") or vmsettings.DEFAULT_HWDEC
-    if hwdec not in vmsettings.HWDECS:
-        raise Error(f"MEDIA_HWDEC={hwdec}: one of {', '.join(vmsettings.HWDECS)}")
-    refusal = vmsettings.hwdec_refusal(hwdec, env.get("MEDIA_SANDBOX"))
+    hwdec = env.get("MEDIA_HWDEC") or settings.DEFAULT_HWDEC
+    if hwdec not in settings.HWDECS:
+        raise Error(f"MEDIA_HWDEC={hwdec}: one of {', '.join(settings.HWDECS)}")
+    refusal = settings.hwdec_refusal(hwdec, env.get("MEDIA_SANDBOX"))
     if refusal:
         raise Error(refusal)
     media_dir = os.path.join(p.run_dir, MEDIA_DIR)
@@ -1751,8 +1752,8 @@ def gpu_process(env, node, qemu, tree=paths.TREE, say=print):
     backend (lifecycle.py; docs/dev/architecture/gpu-process.md). Error if vhost-user-gpu is asked for
     and cannot be run."""
     mode = env.get("GPU_DEVICE") or "auto"
-    if mode not in vmsettings.GPUS:
-        raise Error(f"unknown GPU_DEVICE={mode} ({', '.join(vmsettings.GPUS)})")
+    if mode not in settings.GPUS:
+        raise Error(f"unknown GPU_DEVICE={mode} ({', '.join(settings.GPUS)})")
     if mode == "virtio-gpu-gl":
         return False
     if mode == "auto" and platform.machine() != "aarch64":
@@ -1857,7 +1858,7 @@ def guest_layer(p):
                                                       guest encrypts it with its own passphrase
     The client key (id_ed25519) and the CA's key never go in. Also rewrites identity/known_hosts for
     the ports."""
-    from .. import sestore
+    from ..vm import sestore
 
     store = None
     compiled = None

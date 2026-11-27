@@ -458,11 +458,11 @@ class FlowLimit(unittest.TestCase):
     def test_default_is_vmsettings(self):
         # the addon runs in mitmproxy's own Python, without beanjar: its default repeats this one
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
-        from beanjar import vmsettings
+        from beanjar.vm import settings
 
         with taddons.context(mitm_addon.FlowLimit()) as tctx:
             try:
-                self.assertEqual(tctx.options.max_flows, vmsettings.MITM_FLOWS)
+                self.assertEqual(tctx.options.max_flows, settings.MITM_FLOWS)
             finally:
                 tctx.master.event_loop.run_until_complete(tctx.master.done())
 

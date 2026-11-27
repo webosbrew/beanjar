@@ -79,10 +79,10 @@ def test_argv():
 
 
 def test_argv_default_flows():
-    from beanjar import vmsettings
+    from beanjar.vm import settings
 
     u = netns.mitmweb_argv("/m", Tree(), {}, "/ca", "1")
-    assert f"max_flows={vmsettings.MITM_FLOWS}" in u and vmsettings.MITM_FLOWS == 5000
+    assert f"max_flows={settings.MITM_FLOWS}" in u and settings.MITM_FLOWS == 5000
 
 
 def test_info_file(tmp_path):

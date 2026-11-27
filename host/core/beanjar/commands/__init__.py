@@ -26,7 +26,7 @@ import sys
 
 from ..access import remote
 from ..cli import command_index, global_options
-from ..core import Library
+from ..vm.library import Library
 from ..base import Error
 from .common import Parser, Usage, fail, warn
 

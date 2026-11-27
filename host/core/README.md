@@ -248,7 +248,7 @@ Migration preserves the legacy board MAC and serial; new development VMs get
 the same generated identity treatment as other managed VMs.
 
 A VM's files are in `identity/`, not in `vm.toml`: plain files, private keys 0600 and the rest
-0644 (docs/dev/architecture/identity.md; `beanjar/keys.py`).
+0644 (docs/dev/architecture/identity.md; `beanjar/vm/keys.py`).
 
 - **SSH keys**, made with `ssh-keygen` at `create` (and New VM); one that is missing is made again
   at the next start, with a warning:
@@ -289,7 +289,7 @@ A VM's files are in `identity/`, not in `vm.toml`: plain files, private keys 060
   `identity/sestore.toml`: exact names map to text, hex bytes or files. The root `missing` policy
   chooses existing fallback behavior or a missing-item error.
 - **The SDP model key**, `identity/sestore.toml`: `beanjar key model
-  set tv1 FILE` sets one (44 characters of base64 for 32 bytes, as `host/core/beanjar/modelkey.py`
+  set tv1 FILE` sets one (44 characters of base64 for 32 bytes, as `host/core/beanjar/vm/modelkey.py`
   checks; the value is never printed), `beanjar key model unset tv1` removes it and `beanjar
   key model show tv1` says whether there is one; set and unset while the VM is off. The GUI's Settings has the
   same on its Network page (Model Key: install from a file, clear; done at Save, a bad file
@@ -1600,7 +1600,7 @@ General's Firmware group picks the source, each with a chooser button: in New VM
 in Settings the VM's own firmware or a directory used in place (an explicit `fw`). The group says
 what the choice costs (the `.epk`'s or the paks' size, whether they are hard links or a copy, the
 space free in the library). A New VM that extracts or copies runs in the
-background with its progress over the dialog (`python3 -m beanjar.newvm`, the GUI's own; Cancel,
+background with its progress over the dialog (`python3 -m beanjar.vm.create`, the GUI's own; Cancel,
 or closing the progress, cancels it); once done both close. After a failure or a cancel nothing is
 left, and Close goes back to New VM, with the refusal in its banner.
 

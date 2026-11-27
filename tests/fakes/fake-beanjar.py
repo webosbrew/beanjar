@@ -20,7 +20,8 @@ import time
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, core  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.vm import library  # noqa: E402
 from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.devices import remote_layouts  # noqa: E402
 
@@ -176,7 +177,7 @@ try:
                 fail("thumbnail capture refused")
         with tempfile.TemporaryDirectory() as tmp:
             ppm = os.path.join(tmp, "shot.ppm")
-            core.Library._screenshot_ask(VM.dbus_sock, ppm, width, height, 10)
+            library.Library._screenshot_ask(VM.dbus_sock, ppm, width, height, 10)
             sys.stdout.buffer.write(framing.ppm_to_png(open(ppm, "rb").read()))
     else:
         fail(f"fake-beanjar: unexpected {args}")

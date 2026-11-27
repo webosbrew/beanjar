@@ -25,7 +25,8 @@ from unittest import mock
 
 
 from beanjar.runtime import hostswap, qemu
-from beanjar import keys, paths, tomlfile, vmsettings
+from beanjar.vm import keys, settings
+from beanjar import paths, tomlfile
 from beanjar.guestside import share
 from beanjar.firmware import targets
 from beanjar.board import lls, nvm, partmap
@@ -1031,19 +1032,19 @@ class ArgvTest(unittest.TestCase):
         qemu-user's own, whatever the TV's, when the userland resolves to qemu-user, whatever made it so; native
         starts get the TV's alone. vm_userland and vm_guest_ram, which the host's memory check and
         the unit's MemoryHigh use, resolve it as plan does."""
-        self.assertEqual(vmsettings.guest_ram_mib(2048, "qemu-user"), 3584)
-        self.assertEqual(vmsettings.guest_ram_mib(1537, "qemu-user"), 1537 + 1536)
-        self.assertEqual(vmsettings.guest_ram_mib(2048, "native"), 2048)
-        self.assertEqual(vmsettings.guest_ram_mib(2048, None), 2048)
+        self.assertEqual(settings.guest_ram_mib(2048, "qemu-user"), 3584)
+        self.assertEqual(settings.guest_ram_mib(1537, "qemu-user"), 1537 + 1536)
+        self.assertEqual(settings.guest_ram_mib(2048, "native"), 2048)
+        self.assertEqual(settings.guest_ram_mib(2048, None), 2048)
         self.assertEqual(
-            vmsettings.memory_note(2048, "qemu-user"),
+            settings.memory_note(2048, "qemu-user"),
             "memory: 2048 MB for the TV + 1536 MB RAM and 1536 MB host-RAM swap for qemu-user's "
             "overhead",
         )
-        self.assertIsNone(vmsettings.memory_note(2048, "native"))
-        self.assertEqual(vmsettings.qemu_user_swap_mib(2048, "qemu-user"), 1536)
-        self.assertEqual(vmsettings.qemu_user_swap_mib(1280, "qemu-user"), 1536)
-        self.assertEqual(vmsettings.qemu_user_swap_mib(2048, "native"), 0)
+        self.assertIsNone(settings.memory_note(2048, "native"))
+        self.assertEqual(settings.qemu_user_swap_mib(2048, "qemu-user"), 1536)
+        self.assertEqual(settings.qemu_user_swap_mib(1280, "qemu-user"), 1536)
+        self.assertEqual(settings.qemu_user_swap_mib(2048, "native"), 0)
 
         def resolved(aarch32=None, **env):
             with mock.patch.object(qemu, "host_aarch32_el0", return_value=aarch32):
@@ -1548,7 +1549,7 @@ class ArgvTest(unittest.TestCase):
             self.assertNotIn("scope-test", str(e.exception))
 
     def test_sestore_configuration(self):
-        from beanjar import sestore
+        from beanjar.vm import sestore
 
         """TOML is authoritative; archived legacy inputs are never runtime fallback."""
         ident = Path(self.tmp) / "configured/identity"
@@ -1728,7 +1729,7 @@ class ArgvTest(unittest.TestCase):
             ),
         )
         self.assertEqual(mode("."), 0o755)
-        from beanjar import sestore
+        from beanjar.vm import sestore
 
         sestore.set_model(ident, KEY)
         open(os.path.join(ident, "other"), "w").close()  # only what the layer is made of goes in

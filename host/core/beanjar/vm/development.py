@@ -12,8 +12,9 @@ import shutil
 import subprocess
 import tempfile
 
-from . import base, core, paths, vmconfig, vmidentity, vmsettings
-from .runtime import vmunits
+from .. import base, paths
+from . import library as vm_library, config as vm_config, identity as vm_identity, settings
+from ..runtime import vmunits
 
 
 class Error(Exception):
@@ -77,7 +78,7 @@ def _offline(run, directory):
     for path in (run / "qemu.pid", Path(directory) / "run/qemu.pid"):
         if base.proc_alive(base.read_pid(str(path)), "qemu-system"):
             raise Error("stop the development VM before migration")
-    from .runtime import unit
+    from ..runtime import unit
 
     for props in vmunits.vm_units().values():
         if props.get("ActiveState") in unit.UP and props.get("Description") in (
@@ -88,13 +89,13 @@ def _offline(run, directory):
 
 
 def _config(env, tree, preserve_identity=False):
-    from .runtime import qemu
+    from ..runtime import qemu
 
     firmware, _ = tree.firmware(env.get("FW"))
     # vm.toml resolves a relative fw against the VM's folder (firmware.vm_firmware), not the caller's
     firmware = os.path.abspath(firmware)
     target = paths.firmware_target(firmware)
-    from .firmware import targets
+    from ..firmware import targets
 
     display = env.get("DISPLAY_BACKEND") or (
         "egl-headless" if (env.get("ACCEL") or qemu.default_accel()) == "kvm" else "none"
@@ -114,7 +115,7 @@ def _config(env, tree, preserve_identity=False):
     mac = env.get("MAC") or (qemu.guest_mac(target, tree) if preserve_identity else None)
     serial = env.get("SERIAL")
     if not serial and preserve_identity:
-        from .firmware import targets
+        from ..firmware import targets
 
         text = Path(
             tree.src(targets.board_cmdline_src(target, targets.board_broadcast(target, firmware)))
@@ -125,7 +126,7 @@ def _config(env, tree, preserve_identity=False):
         config["mac"] = mac
     if serial:
         config["serial"] = serial
-    for key, variable in vmsettings.SETTINGS.items():
+    for key, variable in settings.SETTINGS.items():
         # empty is "the launcher's default" (scripts/regress gives every setting a lane leaves alone empty)
         if key == "fw" or not env.get(variable):
             continue
@@ -133,7 +134,7 @@ def _config(env, tree, preserve_identity=False):
         config[key] = (
             int(value)
             if key in ("mem", "smp")
-            else vmsettings.as_layers(value)
+            else settings.as_layers(value)
             if key == "layers"
             else value
         )
@@ -144,15 +145,15 @@ def configured_environment(env, tree=paths.TREE):
     """Read existing development settings without creating a VM (for argv)."""
     library, directory = locations(env, tree)
     config = Path(directory) / "vm.toml"
-    stored = core.vm_launcher_env(str(config)) if config.is_file() else {}
+    stored = vm_library.vm_launcher_env(str(config)) if config.is_file() else {}
     # the VM's slot, or the one it would be made with
-    slot = stored.get("SLOT") or str(vmidentity.free_slot(library))
+    slot = stored.get("SLOT") or str(vm_identity.free_slot(library))
     return environment(
         dict(stored, **env)
         | {
             "SLOT": slot,
             "ADDRESS_PREFIX": base.addresses_of(library),
-            "NET_LAN_PARENT": vmidentity.lan_parent_of(library) or "",
+            "NET_LAN_PARENT": vm_identity.lan_parent_of(library) or "",
         },
         tree,
     )
@@ -160,7 +161,7 @@ def configured_environment(env, tree=paths.TREE):
 
 def _checkout(library, tree):
     """A development library keeps the checkout it belongs to (its own library, not the shared one)."""
-    lib = core.Library(library)
+    lib = vm_library.Library(library)
     if lib.config.get("repo") != tree.top:
         lib.set_option("repo", tree.top)
 
@@ -186,26 +187,26 @@ def prepare(env, tree=paths.TREE):
             if not config.exists():
                 # its slot, taken with the rename that makes it (vmidentity.ensure_slot)
                 with (
-                    vmidentity.slot_lock(library),
+                    vm_identity.slot_lock(library),
                     tempfile.TemporaryDirectory(prefix=".new-dev-", dir=library) as temporary,
                 ):
-                    cfg["slot"] = vmidentity.free_slot(library)
-                    vmconfig.write(str(Path(temporary) / "vm.toml"), cfg)
+                    cfg["slot"] = vm_identity.free_slot(library)
+                    vm_config.write(str(Path(temporary) / "vm.toml"), cfg)
                     os.rename(temporary, directory)
-    stored = core.vm_launcher_env(str(config))
+    stored = vm_library.vm_launcher_env(str(config))
     if env.get("FW") and os.path.realpath(env["FW"]) != os.path.realpath(stored["FW"]):
         resolved, _ = tree.firmware(env["FW"])
         if os.path.realpath(resolved) != os.path.realpath(stored["FW"]):
             raise Error("development VM uses another firmware; select a different INSTANCE")
     out = dict(stored, **env)
-    vmidentity.ensure_identity(directory, lambda _: None)
+    vm_identity.ensure_identity(directory, lambda _: None)
     # Persisted identity is supplied when the environment does not override it.
-    stored = core.vm_launcher_env(str(config))
+    stored = vm_library.vm_launcher_env(str(config))
     for key in ("MAC", "SERIAL"):
         out[key] = env.get(key) or stored.get(key, "")
     out["SLOT"] = stored["SLOT"]  # the VM's own, never the caller's
     out["ADDRESS_PREFIX"] = base.addresses_of(library)  # its library's, never the caller's
-    out["NET_LAN_PARENT"] = vmidentity.lan_parent_of(library) or ""
+    out["NET_LAN_PARENT"] = vm_identity.lan_parent_of(library) or ""
     return environment(out, tree)
 
 
@@ -252,10 +253,10 @@ def migrate(env, tree=paths.TREE):
             raise Error("migration destination changed; nothing overwritten")
         new_ca = source_ca.exists() and not ca.exists()
         with (
-            vmidentity.slot_lock(library),
+            vm_identity.slot_lock(library),
             tempfile.TemporaryDirectory(prefix=".migration-", dir=library) as temporary,
         ):
-            cfg["slot"] = vmidentity.free_slot(library)
+            cfg["slot"] = vm_identity.free_slot(library)
             staged = Path(temporary) / "vm"
             (staged / "identity").mkdir(parents=True, mode=0o700)
             for path in source.iterdir():
@@ -285,8 +286,8 @@ def migrate(env, tree=paths.TREE):
             for name in ("state", "run", "logs"):
                 (staged / name).mkdir(exist_ok=True)
             (staged / ".migrated-local").write_text("Legacy originals retained in the checkout.\n")
-            vmconfig.write(str(staged / "vm.toml"), cfg)
-            vmidentity.ensure_identity(str(staged), lambda _: None)
+            vm_config.write(str(staged / "vm.toml"), cfg)
+            vm_identity.ensure_identity(str(staged), lambda _: None)
             if new_ca:
                 shutil.copytree(
                     source_ca, Path(temporary) / "ca", ignore=shutil.ignore_patterns(".lock")

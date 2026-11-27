@@ -92,7 +92,7 @@ snapshot, `etc/emulator/sestore.bin`, in the per-VM layer at mode `0600`. TOML a
 paths remain on the host. The standalone compiler uses the same implementation:
 
 ```sh
-PYTHONPATH=host/core python3 -m beanjar.sestore IDENTITY_DIR OUTPUT.bin
+PYTHONPATH=host/core python3 -m beanjar.vm.sestore IDENTITY_DIR OUTPUT.bin
 ```
 
 The initramfs loads the snapshot into `lgemu` through `/dev/lg/beanjar-sestore` before webOS

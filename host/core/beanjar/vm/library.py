@@ -17,7 +17,7 @@ are beanjar_ui's (host/ui). Layout:
                                  install.py), or, with fw an external directory, firmware-cache/ (its map);
                                  start.lock, {"pid": the starting process}: the VM is started once
                                  snapshots/, its saved states (snapshot.py)
-  <library>/vms/.new-*           scratch of a New VM being made (newvm.py)
+  <library>/vms/.new-*           scratch of a New VM being made (create.py)
   <library>/vms/.clone-*         a clone being assembled here, or staged here for a host (clone.py)
 
 The machine's settings, every library's: $XDG_CONFIG_HOME/beanjar/config.toml, max_running (how many
@@ -49,12 +49,13 @@ import sys
 import tempfile
 import time
 
-from . import base, paths, vmconfig, tomlfile, vmidentity, vmsettings
-from .runtime import cpus, capacity, hostconfig, hostprocs, poweroff, vmunits
-from .firmware import targets
-from .board import countries, nvm
-from .display import capture_relay, dbus, framing
-from .base import (
+from .. import base, paths, tomlfile
+from . import config as vm_config, identity, settings
+from ..runtime import cpus, capacity, hostconfig, hostprocs, poweroff, vmunits
+from ..firmware import targets
+from ..board import countries, nvm
+from ..display import capture_relay, dbus, framing
+from ..base import (
     OFF,
     RUNNING,
     STARTING,
@@ -67,8 +68,8 @@ from .base import (
     read_toml,
     slot_domain,
 )
-from .display.dbus import SCREENSHOT_NAME
-from .firmware.install import OWN_FW, vm_firmware
+from ..display.dbus import SCREENSHOT_NAME
+from ..firmware.install import OWN_FW, vm_firmware
 
 
 def default_repo():
@@ -94,11 +95,11 @@ def prepare_board_data(lib, vm_dir, out=None, force=False):
 def vm_launcher_env(path):
     """The launcher's environment of the VM whose vm.toml is at path (launch.py, --dir): FW and
     FW_CACHE as vm_firmware has them."""
-    cfg = vmconfig.read(path)
+    cfg = vm_config.read(path)
     if cfg is None:
         raise Error(f"{path}: no such file")
     try:
-        env = vmsettings.launcher_env(cfg)
+        env = settings.launcher_env(cfg)
     except Error as e:
         raise Error(f"{path}: {e}", e.key) from None
     vm_dir = os.path.dirname(os.path.abspath(path))
@@ -212,7 +213,7 @@ def fmt_duration(seconds):
 
 
 def read_model_key(source):
-    """The model key in the file source, checked as host/core/beanjar/modelkey.py does (44 characters of
+    """The model key in the file source, checked as host/core/beanjar/vm/modelkey.py does (44 characters of
     canonical base64 for 32 bytes): its bytes, or an Error (key model_key) that never has the value."""
     from . import modelkey
 
@@ -299,17 +300,17 @@ class VM:
             sig = None
         cached = getattr(self, "_config", None)
         if sig is None or cached is None or cached[0] != sig:
-            cached = self._config = (sig, vmconfig.read(self.config_path, {}))
+            cached = self._config = (sig, vm_config.read(self.config_path, {}))
         return copy.deepcopy(cached[1])
 
     @property
     def config_unchecked(self):
         """vm.toml's settings as config reads them, but without the check of broadcast against the
         firmware: for the commands that fix a bad value (configure, settings show). Not cached."""
-        return vmconfig.read(self.config_path, {}, check_broadcast=False)
+        return vm_config.read(self.config_path, {}, check_broadcast=False)
 
     def save_config(self, cfg):
-        vmconfig.write(self.config_path, cfg, tomlfile.VM_HEADER)
+        vm_config.write(self.config_path, cfg, tomlfile.VM_HEADER)
 
     @property
     def display(self):
@@ -334,7 +335,7 @@ class VM:
     def launch_env(self):
         """The environment a launch of it sees: the manager's, with vm.toml's settings (ACCEL, MEM, ...)."""
         try:
-            return dict(os.environ, **vmsettings.launcher_env(self.config))
+            return dict(os.environ, **settings.launcher_env(self.config))
         except Error:
             return dict(os.environ)
 
@@ -357,7 +358,7 @@ class VM:
     def userland(self):
         """The userland (native or qemu-user) its next start resolves to on this host
         (qemu.vm_userland), None for one that does not resolve."""
-        from .runtime import qemu
+        from ..runtime import qemu
 
         return qemu.vm_userland(self.launch_env())
 
@@ -366,14 +367,14 @@ class VM:
         when its userland resolves to qemu-user (vmsettings.guest_ram_mib); None if mem is not
         known. What the host must have for it (capacity) is this."""
         mem = self.mem()
-        return None if mem is None else vmsettings.guest_ram_mib(mem, self.userland())
+        return None if mem is None else settings.guest_ram_mib(mem, self.userland())
 
     def host_swap(self):
         """The size in MiB of its swap disk in host RAM (hostswap.py): under qemu-user
         vmsettings.qemu_user_swap_mib of its TV's RAM, else 0; 0 too if mem is not known. Not
         counted by the admission (capacity), only by its unit's MemoryHigh."""
         mem = self.mem()
-        return 0 if mem is None else vmsettings.qemu_user_swap_mib(mem, self.userland())
+        return 0 if mem is None else settings.qemu_user_swap_mib(mem, self.userland())
 
     def platform_title(self):
         """Its platform with its version as the viewer's title shows it ("webOS 4.5": its target's,
@@ -480,7 +481,7 @@ class VM:
         out = {"pid": pid, "url": url}
         lan = where.get("lan") and self.lan_address()
         if lan:
-            from .network import netns
+            from ..network import netns
 
             out = {"pid": pid, "url": f"vnc://{lan}:{netns.VNC_PORT}", "local_url": url}
         out["password_file"] = (
@@ -494,7 +495,7 @@ class VM:
         from . import keys
 
         try:
-            return keys.ensure_vnc_password(vmidentity.make_identity_dir(self.dir))
+            return keys.ensure_vnc_password(identity.make_identity_dir(self.dir))
         except (keys.Error, OSError) as e:
             raise Error(f"{self.name}: VNC password: {e}") from None
 
@@ -624,7 +625,7 @@ class VM:
         SSH_PORT, developer mode 9922 and 9991), then its own forward= ones; Error (key forward) if
         one of those clashes with the others or with beanjar's own ports. cfg: settings to use in
         place of its vm.toml's (configure's, before they are saved)."""
-        from .guestside import layermeta
+        from ..guestside import layermeta
 
         cfg = self.config if cfg is None else cfg
         try:
@@ -653,7 +654,7 @@ class VM:
         guest's own ports on its own LAN address, nothing on this host)."""
         addr = self.address()
         link = self.config.get("link", "nat")
-        if addr is None or link == "off" or vmsettings.lan_direct(link, self.config.get("mode")):
+        if addr is None or link == "off" or settings.lan_direct(link, self.config.get("mode")):
             return []
         listen = (self.config.get("listen") if link == "nat" else None) or addr
         ports = []
@@ -664,21 +665,21 @@ class VM:
 
     def lan_hostname(self):
         """The hostname it sends in DHCP with link lan (its name as a DNS label), else None."""
-        return vmsettings.dns_label(self.name) if self.config.get("link") == "lan" else None
+        return settings.dns_label(self.name) if self.config.get("link") == "lan" else None
 
     def lan_address(self):
         """Its address on the LAN while it runs with link lan (the lease netns.lan wrote), else None."""
         if self.config.get("link") != "lan" or not self.pid():
             return None
-        from .network import netns
+        from ..network import netns
 
         info = netns.lan_info(self.run_dir)
         return info and info["address"]
 
     def summary(self):
         c = self.config
-        result = {k: c.get(k) for k in vmsettings.SETTINGS}
-        result["mitm_flows"] = c.get("mitm_flows", vmsettings.MITM_FLOWS)
+        result = {k: c.get(k) for k in settings.SETTINGS}
+        result["mitm_flows"] = c.get("mitm_flows", settings.MITM_FLOWS)
         result["mitm_flow_bytes"] = c.get("mitm_flow_bytes", "0")
         result["tags"] = c.get("tags", [])
         result["slot"], result["address"] = c.get("slot"), self.address()
@@ -705,10 +706,10 @@ class Library:
         for name in self.names():
             try:
                 if (
-                    vmconfig.read(os.path.join(self.vms_dir, name, "vm.toml"), {}).get("slot")
+                    vm_config.read(os.path.join(self.vms_dir, name, "vm.toml"), {}).get("slot")
                     is None
                 ):
-                    vmidentity.ensure_slot(os.path.join(self.vms_dir, name))
+                    identity.ensure_slot(os.path.join(self.vms_dir, name))
             except Error:
                 pass
 
@@ -740,24 +741,22 @@ class Library:
 
     @property
     def mac_prefix(self):
-        return vmidentity.parse_mac_prefix(
-            self.config.get("mac_prefix") or vmidentity.DEFAULT_MAC_PREFIX
+        return identity.parse_mac_prefix(
+            self.config.get("mac_prefix") or identity.DEFAULT_MAC_PREFIX
         )
 
     def new_identity(self, skip=None):
         """A new VM's (mac, serial): the library's mac_prefix and random octets, a random serial,
         neither one another VM of the library has (skip: a VM's name, not counted)."""
-        macs, serials = vmidentity.identities(self.vms_dir, skip)
-        return vmidentity.new_mac(self.mac_prefix, macs), vmidentity.new_serial(serials)
+        macs, serials = identity.identities(self.vms_dir, skip)
+        return identity.new_mac(self.mac_prefix, macs), identity.new_serial(serials)
 
     def set_option(self, key, value):
         """One setting of config.toml (e.g. the GUI's auto_reconnect, the CLI's library config)."""
-        if key not in vmsettings.CONFIG_KEYS:
-            raise Error(
-                f"unknown library setting {key} (one of {', '.join(vmsettings.CONFIG_KEYS)})"
-            )
+        if key not in settings.CONFIG_KEYS:
+            raise Error(f"unknown library setting {key} (one of {', '.join(settings.CONFIG_KEYS)})")
         if key == "mac_prefix":
-            value = vmidentity.parse_mac_prefix(value)
+            value = identity.parse_mac_prefix(value)
         elif key == "auto_reconnect" and not isinstance(value, bool):
             if str(value).lower() not in ("true", "false"):
                 raise Error("auto_reconnect is true or false", key)
@@ -767,7 +766,7 @@ class Library:
         elif key == "lan_parent":
             value = str(value).strip()
             if value:
-                value = vmidentity.parse_lan_parent(value)
+                value = identity.parse_lan_parent(value)
         elif key == "addresses":
             from . import keys
 
@@ -800,7 +799,7 @@ class Library:
             self.config.pop(key, None)
         else:
             self.config[key] = value
-        tomlfile.write_toml(self.config_path, cfg, tomlfile.CONFIG_HEADER, vmsettings.CONFIG_KEYS)
+        tomlfile.write_toml(self.config_path, cfg, tomlfile.CONFIG_HEADER, settings.CONFIG_KEYS)
 
     # -- tools --
     def launcher(self):
@@ -861,7 +860,7 @@ class Library:
         layer.toml names (conflicts declared on either side), "versions", "default_version": a
         versioned layer's (layermeta.Versions; (), None for a layer built once; "built" and "path"
         are its default's)}; the layers a VM always gets included."""
-        from .guestside import components, layermeta, share
+        from ..guestside import components, layermeta, share
 
         meta = layermeta.load()
 
@@ -950,25 +949,23 @@ class Library:
         cfg = {
             **({"mem": int(mem)} if mem else {}),
             "smp": int(smp or 4),
-            "layers": vmsettings.as_layers(
-                layers if layers is not None else vmsettings.DEFAULT_LAYERS
-            ),
+            "layers": settings.as_layers(layers if layers is not None else settings.DEFAULT_LAYERS),
             "link": link or "nat",
             "mode": mode or "mitm",
             "display": display or "dbus",
         }
         cfg["audio"] = audio or ("dbus" if cfg["display"] == "dbus" else "none")
         if tags:
-            cfg["tags"] = vmsettings.as_tags(tags)
-        vmsettings.validate(cfg)
+            cfg["tags"] = settings.as_tags(tags)
+        settings.validate(cfg)
         return cfg
 
     def set_tags(self, name, tags):
         """Make tags (as_tags; none: no tags) the tags of VM name, whether it runs or not: they are
         labels, not settings its launch reads. Its tags."""
         vm = self.vm(name)
-        tags = vmsettings.as_tags(tags)
-        with vmidentity.slot_lock(self.root):  # with another change of vm.toml at once
+        tags = settings.as_tags(tags)
+        with identity.slot_lock(self.root):  # with another change of vm.toml at once
             cfg = vm.config
             if tags != cfg.get("tags", []):
                 if tags:
@@ -980,9 +977,9 @@ class Library:
 
     def create(self, name, **kw):
         """A new VM: newvm.create (fw, the settings; out)."""
-        from . import newvm
+        from . import create as vm_create
 
-        return newvm.create(self, name, **kw)
+        return vm_create.create(self, name, **kw)
 
     def prepare(self, name, out=None, force=False):
         """Work out the VM's board data from its firmware again if what it has is missing or stale
@@ -1005,8 +1002,8 @@ class Library:
         for k, v in values.items():
             if v is None:
                 continue
-            if k not in vmsettings.SETTINGS:
-                raise Error(f"unknown setting {k} (one of {', '.join(vmsettings.SETTINGS)})")
+            if k not in settings.SETTINGS:
+                raise Error(f"unknown setting {k} (one of {', '.join(settings.SETTINGS)})")
             if k == "fw":
                 # an external directory, used in place; "" (or the VM's own firmware/) is its own
                 v = str(v).strip() and os.path.abspath(os.path.expanduser(str(v).strip()))
@@ -1021,15 +1018,15 @@ class Library:
             if k == "mitm_flows":
                 try:
                     # empty: unset, the default
-                    v = int(v) if str(v).strip() else vmsettings.MITM_FLOWS
+                    v = int(v) if str(v).strip() else settings.MITM_FLOWS
                 except ValueError:
                     raise Error("mitm_flows must be a number, 0 for no limit", k) from None
-                if v == vmsettings.MITM_FLOWS:
+                if v == settings.MITM_FLOWS:
                     cfg.pop(k, None)  # the default, not written out
                     continue
             if k == "mitm_flow_bytes":
                 try:
-                    n = vmsettings.byte_size(v)
+                    n = settings.byte_size(v)
                 except ValueError as e:
                     raise Error(f"mitm_flow_bytes={e}", k) from None
                 if not n:
@@ -1037,16 +1034,16 @@ class Library:
                     continue
                 v = str(v).strip().upper()
             if k == "mac":
-                v = vmidentity.parse_mac(v)
+                v = identity.parse_mac(v)
             elif k == "serial":
-                v = vmidentity.parse_serial(v)
-            elif k == "userland" and v == vmsettings.DEFAULT_USERLAND:
+                v = identity.parse_serial(v)
+            elif k == "userland" and v == settings.DEFAULT_USERLAND:
                 cfg.pop(k, None)  # auto is the default, not written out
                 continue
-            elif k == "guest_kernel" and v == vmsettings.DEFAULT_GUEST_KERNEL:
+            elif k == "guest_kernel" and v == settings.DEFAULT_GUEST_KERNEL:
                 cfg.pop(k, None)  # arm64 is the default, not written out
                 continue
-            elif k == "hwdec" and v in ("", vmsettings.DEFAULT_HWDEC):
+            elif k == "hwdec" and v in ("", settings.DEFAULT_HWDEC):
                 cfg.pop(k, None)  # auto is the default, not written out
                 continue
             elif k == "free_page_reporting" and v == "off":
@@ -1058,7 +1055,7 @@ class Library:
             elif k == "lan_access" and v in ("", "off"):
                 cfg.pop(k, None)  # off is the default, not written out
                 continue
-            elif k == "lg_services" and v in ("", vmsettings.DEFAULT_LG_SERVICES):
+            elif k == "lg_services" and v in ("", settings.DEFAULT_LG_SERVICES):
                 cfg.pop(k, None)  # mock is the default, not written out
                 continue
             elif k == "gpu" and v in ("", "auto"):
@@ -1080,11 +1077,11 @@ class Library:
                     v = countries.parse(v)
                 except countries.Error as e:
                     raise Error(str(e), k) from None
-            elif k == "debug_mode" and v in ("", vmsettings.DEFAULT_DEBUG_MODE):
+            elif k == "debug_mode" and v in ("", settings.DEFAULT_DEBUG_MODE):
                 cfg.pop(k, None)  # debug is the default, not written out
                 continue
             elif k == "forward":
-                from .guestside import layermeta
+                from ..guestside import layermeta
 
                 try:
                     v = layermeta.forward_text(layermeta.parse_forward(v))
@@ -1104,8 +1101,8 @@ class Library:
                     v = keys.listen_address(v) if k == "listen" else keys.lan_address(v)
                 except keys.Error as e:
                     raise Error(str(e), k) from None
-            cfg[k] = vmsettings.as_layers(v) if k == "layers" else v
-        vmsettings.validate(cfg)
+            cfg[k] = settings.as_layers(v) if k == "layers" else v
+        settings.validate(cfg)
         if cfg.get("forward"):
             vm.forwards(cfg)  # its own ports against its layers' and beanjar's (layermeta.forwards)
         d, _cache = vm_firmware(vm.dir, cfg.get("fw"))
@@ -1113,7 +1110,7 @@ class Library:
             raise Error(f"firmware {d}: no rootfs.pak or root.pak", "fw")
         if cfg.get("broadcast") or cfg.get("model"):
             # before anything is saved
-            vmconfig.check_firmware_broadcast(d, cfg.get("broadcast"), cfg.get("model"))
+            vm_config.check_firmware_broadcast(d, cfg.get("broadcast"), cfg.get("model"))
         if cfg.get("country") and any(
             values.get(k) is not None for k in ("country", "fw", "broadcast", "model")
         ):
@@ -1138,22 +1135,22 @@ class Library:
                 paths.firmware_target(d)
             except ValueError as e:
                 raise Error(str(e), "fw") from None
-        userland = cfg.get("userland", vmsettings.DEFAULT_USERLAND)
-        guest_kernel = cfg.get("guest_kernel", vmsettings.DEFAULT_GUEST_KERNEL)
-        if guest_kernel != vmsettings.DEFAULT_GUEST_KERNEL:
-            refusal = vmsettings.guest_kernel_host_refusal(guest_kernel, platform_module.machine())
+        userland = cfg.get("userland", settings.DEFAULT_USERLAND)
+        guest_kernel = cfg.get("guest_kernel", settings.DEFAULT_GUEST_KERNEL)
+        if guest_kernel != settings.DEFAULT_GUEST_KERNEL:
+            refusal = settings.guest_kernel_host_refusal(guest_kernel, platform_module.machine())
             if refusal:
                 raise Error(refusal, "guest_kernel")
-            refusal = vmsettings.guest_kernel_package_refusal(guest_kernel, paths.Tree(self.repo))
+            refusal = settings.guest_kernel_package_refusal(guest_kernel, paths.Tree(self.repo))
             if refusal:
                 raise Error(refusal, "guest_kernel")
-        if userland == "qemu-user" or guest_kernel != vmsettings.DEFAULT_GUEST_KERNEL:
+        if userland == "qemu-user" or guest_kernel != settings.DEFAULT_GUEST_KERNEL:
             # refused on some platforms (vmsettings.NATIVE_ONLY)
             try:
                 platform = targets.platform(paths.firmware_target(d))
             except ValueError as e:
                 raise Error(str(e), "fw") from None
-            refusal = vmsettings.userland_refusal(platform, userland, guest_kernel)
+            refusal = settings.userland_refusal(platform, userland, guest_kernel)
             if refusal:
                 raise Error(refusal, refusal.split("=", 1)[0])
         vm.save_config(cfg)
@@ -1163,13 +1160,13 @@ class Library:
 
     def set_model_key(self, name, source):
         """The VM's model key in sestore.toml from the file source, checked as
-        host/core/beanjar/modelkey.py does (44 characters of canonical base64 for 32 bytes), as the
+        host/core/beanjar/vm/modelkey.py does (44 characters of canonical base64 for 32 bytes), as the
         item its firmware's readers ask for (VM.model_key_item); source None removes all model
         items (the guest follows its missing policy). The VM must be off."""
         vm = self.vm(name)
         if vm.alive():
             raise Error(f"VM {name} is not off; its model key changes only while it is off")
-        vmidentity.make_identity_dir(vm.dir)
+        identity.make_identity_dir(vm.dir)
         from . import sestore
 
         value = None if source is None else read_model_key(source)
@@ -1193,7 +1190,7 @@ class Library:
         reason = vmunits.reason_text(reason)
         if reason:
             vmunits.reason_text(by, "label", vmunits.REASON_BY_MAX)
-            from .runtime import runner
+            from ..runtime import runner
 
             if runner.choose() != runner.SYSTEMD:
                 raise Error(
@@ -1207,18 +1204,18 @@ class Library:
             raise Error(why)
 
         if vm.config.get("link", "nat") == "lan":
-            if vmsettings.lan_direct("lan", vm.config.get("mode")) and (
-                vm.config.get("lg_services", vmsettings.DEFAULT_LG_SERVICES) != "real"
+            if settings.lan_direct("lan", vm.config.get("mode")) and (
+                vm.config.get("lg_services", settings.DEFAULT_LG_SERVICES) != "real"
             ):
-                raise Error(vmsettings.LAN_DIRECT_LG, "lg_services")
-            parent = vmidentity.lan_parent_of(self.root)
+                raise Error(settings.LAN_DIRECT_LG, "lg_services")
+            parent = identity.lan_parent_of(self.root)
             if not parent:
                 raise Error(
                     "link=lan needs the library's lan_parent, its wired interface "
                     "(beanjar library config set lan_parent=eth0)",
                     "link",
                 )
-            vmidentity.parse_lan_parent(parent)  # still there, and not wireless
+            identity.parse_lan_parent(parent)  # still there, and not wireless
         # a target that has never booted (targets.untested_warning) starts, with a warning
         try:
             warning = targets.untested_warning(vm.target())
@@ -1368,7 +1365,7 @@ class Library:
         if vm.alive():
             raise Error(f"VM {name} is not off; stop it before wiping")
         parts = list(parts or [])
-        from .runtime import qemu
+        from ..runtime import qemu
         from . import snapshot
 
         snapshot.finish_reset(vm.dir, out)  # a reset to a snapshot killed halfway, first
@@ -1386,7 +1383,7 @@ class Library:
     def renew_identity(self, name, out=None):
         """A new identity for a VM that is off: its state disks wiped (all of them, as wipe does,
         so no service keeps the old NDUID), then a new MAC (the library's prefix) and serial in
-        vm.toml, every key pair of identity/, its VNC password and LGUDID made anew (beanjar/keys.py,
+        vm.toml, every key pair of identity/, its VNC password and LGUDID made anew (beanjar/vm/keys.py,
         vmidentity.renew_keys), and its
         DVR key (sestore.toml) dropped for the next start to make anew. The model key, the user's
         authorized_keys and the library's CA are kept. Returns (vm, mac, serial)."""
@@ -1396,16 +1393,16 @@ class Library:
             raise Error(f"VM {name} is not off; stop it before giving it a new identity")
         self.wipe(name, out=out)
         cfg = vm.config
-        macs, serials = vmidentity.identities(self.vms_dir, name)
-        mac, serial = vmidentity.next_identity(self.mac_prefix, macs, serials, cfg)
+        macs, serials = identity.identities(self.vms_dir, name)
+        mac, serial = identity.next_identity(self.mac_prefix, macs, serials, cfg)
         cfg.update(mac=mac, serial=serial)
         vm.save_config(cfg)
         out(f"mac {mac}, serial {serial}")
         from . import keys, sestore
 
         try:
-            made = vmidentity.renew_keys(
-                vmidentity.make_identity_dir(vm.dir), name, mac, vm.service_host()
+            made = identity.renew_keys(
+                identity.make_identity_dir(vm.dir), name, mac, vm.service_host()
             )
             keys.ensure(
                 vm.identity_dir, address=vm.service_host()
@@ -1432,7 +1429,7 @@ class Library:
 
         vm = self.vm(name)
         try:
-            keys.set_vnc_password(vmidentity.make_identity_dir(vm.dir), password)
+            keys.set_vnc_password(identity.make_identity_dir(vm.dir), password)
         except (keys.Error, OSError) as e:
             raise Error(str(e)) from None
         pid = vm.vnc_pid()
@@ -1590,14 +1587,14 @@ class Library:
         own clients (vnc_pipe, the web viewer): the file's permissions are the access control. Its
         mixed audio is on VM.audio_local_sock, owner-only too (audio_pipe), and its picture as
         H.264 on VM.video_local_sock (video_pipe), unless beanjar-vnc is built without it."""
-        from .network import netns
+        from ..network import netns
 
         vm = self._frontend_check(name, "beanjar-vnc")
         env = hostprocs.proc_env(vm.pid())
         lan = (env.get("NET_LINK") or vm.config.get("link")) == "lan"
         # link lan with mode direct has no LAN namespace relay to serve it there (the guest alone
         # is on the LAN): this host's listener only, as with nat
-        lan = lan and not vmsettings.lan_direct("lan", env.get("NET_MODE") or vm.config.get("mode"))
+        lan = lan and not settings.lan_direct("lan", env.get("NET_MODE") or vm.config.get("mode"))
         if lan and listen:
             raise Error(
                 f"VM {name} has link lan: VNC is on its own addresses (the LAN one and "
@@ -1794,7 +1791,7 @@ class Library:
         are made to name NEW (keys.relabel; cosmetic, and put back if the rename fails). Interrupted
         before the rename, it is still NAME, whole; after it, NEW, whole; a start lock left by a
         killed run names a dead process and is removed as stale by the next command."""
-        from . import keys, newvm
+        from . import keys, create as vm_create
 
         vm = self.vm(name)
         if os.path.basename(self.root).startswith("development-"):
@@ -1804,7 +1801,7 @@ class Library:
             )
         if new == name:
             raise Error(f"VM {name} is called {new} already", "name")
-        newvm.check_name(self, new)
+        vm_create.check_name(self, new)
         st = vm.state()[0]
         if st != OFF:
             raise Error(f"VM {name} is {st.lower()}; stop it before renaming it")
@@ -1831,7 +1828,7 @@ class Library:
                         f"unit {unit} is still {active}: stop it before renaming {name} "
                         f"(systemctl --user stop {unit})"
                     )
-            with vmidentity.slot_lock(self.root):
+            with identity.slot_lock(self.root):
                 if os.path.lexists(dest.dir):
                     raise Error(f"VM {new} exists", "name")
                 try:

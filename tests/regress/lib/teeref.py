@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """rtk.ko's stand-in secure-store TA (guest/kernel/modules/rtk/tee-ta.c) in Python: the reference the tee
 step (tvsuite.judge_tee) checks the guest's answers against, from the VM's hardware-unique key
-(identity/tee-huk, beanjar.keys.ensure_tee_huk). Every key is HMAC-SHA256(HUK, label); a keystream
+(identity/tee-huk, beanjar.vm.keys.ensure_tee_huk). Every key is HMAC-SHA256(HUK, label); a keystream
 block is HMAC-SHA256(key, nonce || le32(block)), XORed over the data. Nothing here knows a key of a
 set or a firmware: what the guest answers either follows from the VM's own HUK or the check fails."""
 

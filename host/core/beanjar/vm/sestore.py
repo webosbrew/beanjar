@@ -251,7 +251,7 @@ def export(path, items, missing="error"):
 
 
 def _write(identity, data):
-    from .tomlfile import toml_value
+    from ..tomlfile import toml_value
 
     quote = toml_value
     text = "# Secure-store inputs. Edit while the VM is off.\n"

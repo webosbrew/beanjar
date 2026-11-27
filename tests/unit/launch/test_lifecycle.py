@@ -23,7 +23,8 @@ import warnings
 from unittest import mock
 
 
-from beanjar import base, core
+from beanjar import base
+from beanjar.vm import library
 from beanjar.runtime import launch, lifecycle, poweroff, unit, vmunits
 from beanjar.access import console
 
@@ -293,7 +294,7 @@ class BgPowerOffTest(unittest.TestCase):
     def test_no_console(self):
         """QEMU runs but has no serial console: nothing is sent, and the signal is refused."""
         ok, send, out, err = self.power_off(5, [True])
-        self.assertEqual(ok, core.STOP_REFUSED)
+        self.assertEqual(ok, library.STOP_REFUSED)
         send.assert_not_called()
         self.assertEqual(err, "power-off: no serial console\n")
         self.assertFalse(os.path.exists(self.sent), "no call: no sentinel")
@@ -323,7 +324,7 @@ class BgPowerOffTest(unittest.TestCase):
         srv.bind(self.bg.sock)
         srv.close()
         ok, send, _out, _err = self.power_off(0, lambda *_: True)
-        self.assertEqual(ok, core.STOP_TIMED_OUT)
+        self.assertEqual(ok, library.STOP_TIMED_OUT)
         send.assert_called_once()
         with open(self.sent) as f:
             self.assertEqual(f.read(), "123\n")
@@ -342,7 +343,7 @@ class BgPowerOffTest(unittest.TestCase):
         ):
             with self.subTest(reply):
                 ok, send, out, err = self.power_off(90, lambda *_: True, reply)
-                self.assertEqual(ok, core.STOP_REFUSED)
+                self.assertEqual(ok, library.STOP_REFUSED)
                 send.assert_called_once()
                 self.assertIn("power-off: webOS refused the call", err)
                 self.assertFalse(os.path.exists(self.sent))
@@ -362,7 +363,7 @@ class BgPowerOffTest(unittest.TestCase):
                 self.assertTrue(os.path.exists(self.sent), "the signal is pending")
                 os.unlink(self.sent)
         ok, send, out, _err = self.power_off(0, lambda *_: True, "")
-        self.assertEqual(ok, core.STOP_TIMED_OUT, "no reply and QEMU stays: the timeout")
+        self.assertEqual(ok, library.STOP_TIMED_OUT, "no reply and QEMU stays: the timeout")
 
 
 class ConsoleTest(unittest.TestCase):

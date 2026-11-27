@@ -8,16 +8,9 @@ import re
 import secrets
 import sys
 
-from . import vmconfig
-from .base import (
-    Error,
-    addresses_of,
-    identity_dir,
-    library_of,
-    read_toml,
-    slot_domain,
-)
-from . import tomlfile
+from . import config
+from ..base import Error, addresses_of, identity_dir, library_of, read_toml, slot_domain
+from .. import tomlfile
 
 
 # The TV's identity: the board MAC and serial number, one of each per
@@ -144,7 +137,7 @@ def read_lgudid(d):
 
 def write_lgudid(d, mac):
     """New ids in d (macadr.new_ids of mac), owner-only; returns (lgudid, namespace)."""
-    from .board import macadr
+    from ..board import macadr
 
     namespace, lgudid = macadr.new_ids(mac)
     path = os.path.join(d, LGUDID)
@@ -192,7 +185,7 @@ def identities(vms_dir, skip=None):
         if n == skip or n.startswith("."):
             continue
         try:
-            c = vmconfig.read(os.path.join(vms_dir, n, "vm.toml"), {}) or {}
+            c = config.read(os.path.join(vms_dir, n, "vm.toml"), {}) or {}
         except Error:
             continue
         macs.add(str(c.get("mac", "")).lower())
@@ -240,7 +233,7 @@ def ensure_identity(vm_dir, say=None):
     path = os.path.join(vm_dir, "vm.toml")
     if os.path.isfile(path):
         ensure_slot(vm_dir, say)
-    cfg = vmconfig.read(path)
+    cfg = config.read(path)
     if cfg is None or (cfg.get("mac") and cfg.get("serial")):
         return cfg
     root = library_of(vm_dir)
@@ -256,7 +249,7 @@ def ensure_identity(vm_dir, say=None):
     if not cfg.get("serial"):
         cfg["serial"] = new_serial(serials)
         made.append(f"serial {cfg['serial']}")
-    vmconfig.write(path, cfg, tomlfile.VM_HEADER)
+    config.write(path, cfg, tomlfile.VM_HEADER)
     (say or (lambda line: print(line, file=sys.stderr, flush=True)))(
         f"warning: {path} had no {' or '.join(m.split()[0] for m in made)}; made {', '.join(made)}. "
         "The TV's NDUID follows the MAC: state made before may hold another one"
@@ -287,7 +280,7 @@ def slots_taken(root, skip=None):
             if n.startswith(".") or d == skip:
                 continue
             try:
-                slot = (vmconfig.read(os.path.join(d, "vm.toml"), {}) or {}).get("slot")
+                slot = (config.read(os.path.join(d, "vm.toml"), {}) or {}).get("slot")
             except Error:
                 continue
             if slot is not None:
@@ -332,7 +325,7 @@ def ensure_slot(vm_dir, say=None):
     the lowest free one of its slot domain (a folder outside a library is alone in its domain: slot
     1). Returns its slot."""
     path = os.path.join(vm_dir, "vm.toml")
-    cfg = vmconfig.read(path)
+    cfg = config.read(path)
     if cfg is None:
         raise Error(f"{path}: no such file")
     if cfg.get("slot") is not None:
@@ -342,14 +335,14 @@ def ensure_slot(vm_dir, say=None):
     root = library_of(vm_dir)
     if root is None:
         cfg["slot"] = keys.SLOTS[0]
-        vmconfig.write(path, cfg, tomlfile.VM_HEADER)
+        config.write(path, cfg, tomlfile.VM_HEADER)
     else:
         with slot_lock(root):
-            cfg = vmconfig.read(path)
+            cfg = config.read(path)
             if cfg.get("slot") is not None:
                 return cfg["slot"]
             cfg["slot"] = free_slot(root, skip=vm_dir)
-            vmconfig.write(path, cfg, tomlfile.VM_HEADER)
+            config.write(path, cfg, tomlfile.VM_HEADER)
     (say or (lambda line: print(line, file=sys.stderr, flush=True)))(
         f"note: {path} had no slot; it has slot {cfg['slot']} now, its ports on {keys.address(cfg['slot'], addresses_of(root))}"
     )
@@ -358,7 +351,7 @@ def ensure_slot(vm_dir, say=None):
 
 def ca_dir(vm_dir):
     """The mode=mitm proxy's CA of the VM in vm_dir: its library's <library>/ca, shared by the
-    library's VMs (beanjar/keys.py ensure_ca); a VM folder outside a
+    library's VMs (beanjar/vm/keys.py ensure_ca); a VM folder outside a
     library has its own, <vm>/identity/ca."""
     lib = library_of(vm_dir)
     return os.path.join(lib, "ca") if lib else os.path.join(identity_dir(vm_dir), "ca")

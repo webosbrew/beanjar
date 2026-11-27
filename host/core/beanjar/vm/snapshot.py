@@ -37,8 +37,9 @@ import sys
 import tempfile
 import time
 
-from . import base, sestore, tomlfile
-from .base import NAME_RE, Error, read_toml
+from .. import base, tomlfile
+from . import sestore
+from ..base import NAME_RE, Error, read_toml
 
 SNAPSHOTS = "snapshots"
 RECORD = "snapshot.toml"
@@ -464,7 +465,7 @@ def reset(lib, name, snap, out=print):
     """The VM name, which is off, put back to its snapshot snap: its state/ replaced by the
     snapshot's, its identity/sestore.toml by the snapshot's with its current model key. Returns
     info() and the seconds it took."""
-    from .runtime import qemu
+    from ..runtime import qemu
 
     vm = lib.vm(name)
     d = snapshot_dir(vm, snap)

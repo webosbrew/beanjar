@@ -37,7 +37,7 @@
 # after ares-install of the pinned IPK and elevate-service (capture.sh); nothing here writes them.
 #
 # The layer is the same for every VM: it holds no key. The host key and root's authorized_keys are
-# the VM's own (the rootssh ones, beanjar/keys.py); the launcher puts them into the per-VM layer at
+# the VM's own (the rootssh ones, beanjar/vm/keys.py); the launcher puts them into the per-VM layer at
 # /etc/emulator/hbchannel/{dropbear_ed25519_host_key,authorized_keys}, and
 # usr/libexec/beanjar/hbchannel-start puts them where HBC's Dropbear reads them before it runs
 # HBC's startup.sh, as a rooted TV's boot hook does.

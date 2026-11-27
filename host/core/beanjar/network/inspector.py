@@ -12,7 +12,8 @@ import sys
 from dataclasses import dataclass
 from urllib.parse import quote, urlsplit
 
-from .. import base, vmsettings
+from .. import base
+from ..vm import settings
 from ..runtime import hostprocs
 
 
@@ -62,7 +63,7 @@ def snapshot(vm):
         return State("mitm", "Not running")
     pid = vm.pid()
     env = hostprocs.proc_env(pid) if pid else {}
-    mode = vmsettings.guest_net(
+    mode = settings.guest_net(
         env.get("NET_LINK") or vm.config.get("link"), env.get("NET_MODE") or vm.config.get("mode")
     )
     if mode != "mitm":

@@ -6,7 +6,7 @@ or run directly.
 
 Each test gets a temporary library, a temporary, empty "checkout" and a stand-in for the host's
 free memory (BEANJAR_MEMINFO, which the start's admission reads). A .epk comes in as --firmware,
-through the CLI's create or the GUI's New VM worker, python3 -m beanjar.newvm (newvm()).
+through the CLI's create or the GUI's New VM worker, python3 -m beanjar.vm.create (newvm()).
 
 The fake launcher runs the fake QEMU through the real beanjar.runtime.unit: where a user systemd runs,
 as real transient units (beanjar-vm-test<pid>-<vm>) with a real private dbus-daemon in each, so the
@@ -35,7 +35,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, core, keys, paths, tomlfile, vmidentity, vmsettings  # noqa: E402
+from beanjar import base, paths, tomlfile  # noqa: E402
+from beanjar.vm import library as vm_library, keys, identity as vm_identity, settings as vm_settings  # noqa: E402
 from beanjar.runtime import capacity, hostconfig, hostprocs, poweroff, unit, vmunits  # noqa: E402
 from beanjar.firmware import install, targets  # noqa: E402
 from beanjar.display import framing  # noqa: E402
@@ -66,7 +67,7 @@ def jload(path):
 
 def tload(path):
     if os.path.basename(path) == "vm.toml":
-        return core.vmconfig.read(path)
+        return vm_library.vm_config.read(path)
     with open(path, "rb") as f:
         return tomllib.load(f)
 
@@ -111,7 +112,7 @@ def _units():
     testunits.install(lambda: [cleanup(t) for t in list(ACTIVE)])
 
 
-# What identity/ has after create (beanjar/keys.py).
+# What identity/ has after create (beanjar/vm/keys.py).
 KEY_FILES = sorted(
     [
         "authorized_keys",
@@ -231,9 +232,9 @@ class ManagerTest(unittest.TestCase):
         return p.stdout
 
     def newvm(self, *args, ok=True, env=None):
-        """The GUI's New VM worker (python3 -m beanjar.newvm): create's options."""
+        """The GUI's New VM worker (python3 -m beanjar.vm.create): create's options."""
         p = subprocess.run(
-            [sys.executable, "-m", "beanjar.newvm", "--repo", self.repo, *args],
+            [sys.executable, "-m", "beanjar.vm.create", "--repo", self.repo, *args],
             env=env or self.env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -244,7 +245,7 @@ class ManagerTest(unittest.TestCase):
             self.assertEqual(
                 p.returncode == 0,
                 ok,
-                f"beanjar.newvm {' '.join(args)}: rc={p.returncode}\n{p.stdout}",
+                f"beanjar.vm.create {' '.join(args)}: rc={p.returncode}\n{p.stdout}",
             )
         return p.stdout
 
@@ -271,7 +272,7 @@ class ManagerTest(unittest.TestCase):
         return self.cli_json("show", name)
 
     def lib(self):
-        return core.Library(self.lib_dir, self.repo)
+        return vm_library.Library(self.lib_dir, self.repo)
 
     # ---------------------------------------------------------------- create, settings, delete
     def test_create_defaults_and_refusals(self):
@@ -459,19 +460,19 @@ class ManagerTest(unittest.TestCase):
         cfg = tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))
         self.assertEqual((cfg["link"], cfg["mode"], "address" in cfg), ("nat", "mitm", False))
         # the inspector's flow history: vmsettings.MITM_FLOWS by default, in status, the default not written out
-        self.assertEqual(self.info("tv1")["mitm_flows"], vmsettings.MITM_FLOWS)
+        self.assertEqual(self.info("tv1")["mitm_flows"], vm_settings.MITM_FLOWS)
         self.cli("config", "set", "tv1", "mitm_flows=200")
         self.assertEqual(
             tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml"))["mitm_flows"], 200
         )
         self.assertEqual(self.info("tv1")["mitm_flows"], 200)
         self.assertIn("0 for no limit", self.cli("config", "set", "tv1", "mitm_flows=-5", ok=False))
-        self.cli("config", "set", "tv1", f"mitm_flows={vmsettings.MITM_FLOWS}")
+        self.cli("config", "set", "tv1", f"mitm_flows={vm_settings.MITM_FLOWS}")
         self.assertNotIn("mitm_flows", tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml")))
         self.cli("config", "set", "tv1", "mitm_flows=50")
         self.cli("config", "unset", "tv1", "mitm_flows")
         self.assertNotIn("mitm_flows", tload(os.path.join(self.lib_dir, "vms", "tv1", "vm.toml")))
-        self.assertEqual(self.info("tv1")["mitm_flows"], vmsettings.MITM_FLOWS)
+        self.assertEqual(self.info("tv1")["mitm_flows"], vm_settings.MITM_FLOWS)
         self.assertIn(
             "unset tv1 mitm_flows", self.cli("config", "set", "tv1", "mitm_flows=", ok=False)
         )
@@ -514,22 +515,22 @@ class ManagerTest(unittest.TestCase):
         with open(config, "rb") as f:
             self.assertEqual(f.read(), before)
         self.assertNotIn("repo", tload(config))
-        self.assertEqual(core.Library(self.lib_dir, scratch).repo, scratch)
+        self.assertEqual(vm_library.Library(self.lib_dir, scratch).repo, scratch)
         with open(config, "rb") as f:
             self.assertEqual(f.read(), before)
         # first use from a checkout: the running tree, in memory only
-        self.assertEqual(core.Library(self.lib_dir).repo, core.default_repo())
+        self.assertEqual(vm_library.Library(self.lib_dir).repo, vm_library.default_repo())
         with open(config, "rb") as f:
             self.assertEqual(f.read(), before)
         # nothing known at all: the error names the command that stores a checkout
-        with mock.patch.object(core, "default_repo", return_value=None):
+        with mock.patch.object(vm_library, "default_repo", return_value=None):
             with self.assertRaises(base.Error) as e:
-                core.Library(self.lib_dir).repo
+                vm_library.Library(self.lib_dir).repo
         self.assertIn("beanjar library config set repo=DIR", str(e.exception))
         self.cli("library", "config", "set", f"repo={scratch}")
         self.assertEqual(tload(config)["repo"], scratch)
         self.assertIn(f"repo: {scratch}", self.cli("library", "config", "show"))
-        self.assertEqual(core.Library(self.lib_dir).repo, scratch)
+        self.assertEqual(vm_library.Library(self.lib_dir).repo, scratch)
 
     def test_identity(self):
         """Each VM is a TV of its own: a MAC of the library's mac_prefix and a serial, made at create,
@@ -623,11 +624,11 @@ class ManagerTest(unittest.TestCase):
         # missing: made at the start (the launcher, vmidentity.ensure_identity), written back, with a warning
         cfg = self.vm_toml("tv2")
         del cfg["mac"], cfg["serial"]
-        core.vmconfig.write(
+        vm_library.vm_config.write(
             os.path.join(self.lib_dir, "vms", "tv2", "vm.toml"), cfg, tomlfile.VM_HEADER
         )
         said = []
-        vmidentity.ensure_identity(os.path.join(self.lib_dir, "vms", "tv2"), said.append)
+        vm_identity.ensure_identity(os.path.join(self.lib_dir, "vms", "tv2"), said.append)
         c = self.vm_toml("tv2")
         self.assertRegex(c["mac"], r"^02:be:a0(:[0-9a-f]{2}){3}$")
         self.assertRegex(c["serial"], r"^[0-9]{3}[A-Z]{4}[0-9]{5}$")
@@ -635,9 +636,9 @@ class ManagerTest(unittest.TestCase):
             len(said) == 1 and said[0].startswith("warning:") and "NDUID" in said[0], said
         )
         said.clear()
-        vmidentity.ensure_identity(os.path.join(self.lib_dir, "vms", "tv2"), said.append)
+        vm_identity.ensure_identity(os.path.join(self.lib_dir, "vms", "tv2"), said.append)
         self.assertEqual((said, self.vm_toml("tv2")), ([], c), "kept once made")
-        env = core.vm_launcher_env(os.path.join(self.lib_dir, "vms", "tv2", "vm.toml"))
+        env = vm_library.vm_launcher_env(os.path.join(self.lib_dir, "vms", "tv2", "vm.toml"))
         self.assertEqual((env["MAC"], env["SERIAL"]), (c["mac"], c["serial"]))
 
     def test_slots(self):
@@ -656,20 +657,22 @@ class ManagerTest(unittest.TestCase):
         # a development VM in the library's domain holds its slot too
         dev = os.path.join(self.lib_dir, "development-0123abcd", "vms", "dev-0")
         os.makedirs(dev)
-        core.vmconfig.write(os.path.join(dev, "vm.toml"), dict(fw="/x", slot=3), tomlfile.VM_HEADER)
+        vm_library.vm_config.write(
+            os.path.join(dev, "vm.toml"), dict(fw="/x", slot=3), tomlfile.VM_HEADER
+        )
         self.cli("create", "tv4", "--import", "--firmware", self.fw_src)
         self.assertEqual(self.vm_toml("tv4")["slot"], 4)
         self.assertEqual(
-            vmidentity.free_slot(os.path.dirname(os.path.dirname(dev))),
+            vm_identity.free_slot(os.path.dirname(os.path.dirname(dev))),
             5,
             "seen from the development library",
         )
-        self.assertEqual(vmidentity.slots_taken(self.lib_dir)[3], dev)
+        self.assertEqual(vm_identity.slots_taken(self.lib_dir)[3], dev)
         # not settable, and checked
         self.assertIn("KEY one of", self.cli("config", "set", "tv4", "slot=9", ok=False))
         for bad in (0, 255, True, "2"):
             with self.assertRaisesRegex(base.Error, "slot"):
-                vmsettings.validate({"slot": bad})
+                vm_settings.validate({"slot": bad})
         # conversion: a vm.toml without a slot gets the lowest free one when the library is opened
         path = os.path.join(self.lib_dir, "vms", "tv2", "vm.toml")
         text = slurp(path)
@@ -682,10 +685,10 @@ class ManagerTest(unittest.TestCase):
         with open(path, "w") as f:
             f.write(text.replace("slot = 2\n", ""))
         said = []
-        vmidentity.ensure_identity(os.path.dirname(path), said.append)
+        vm_identity.ensure_identity(os.path.dirname(path), said.append)
         self.assertEqual(tload(path)["slot"], 2)
         self.assertTrue(len(said) == 1 and "slot 2" in said[0] and "127.0.1.2" in said[0], said)
-        env = core.vm_launcher_env(path)
+        env = vm_library.vm_launcher_env(path)
         self.assertEqual(env["SLOT"], "2")
         # VMs made at once take different slots
         procs = [
@@ -919,7 +922,7 @@ class ManagerTest(unittest.TestCase):
 
     def test_model_key(self):
         """A VM's model key is its own: identity/sestore.toml (0600, in identity/ of mode 0700), set
-        from a file that host/core/beanjar/modelkey.py accepts, cleared, shown; never printed."""
+        from a file that host/core/beanjar/vm/modelkey.py accepts, cleared, shown; never printed."""
         self.cli("create", "tv1", "--import", "--firmware", self.fw_src)
         self.newvm("tv2", "--import", "--firmware", self.fw_src)
         for n in ("tv1", "tv2"):  # made at create, by the CLI and New VM alike
@@ -1034,7 +1037,7 @@ class ManagerTest(unittest.TestCase):
         for n in ("sestore.toml", "authorized_keys"):
             self.assertEqual(after[n], before[n], f"{n} kept")
         # a new LGUDID, of the new MAC (macadr.new_ids)
-        new_ids = core.vmidentity.read_lgudid(ident)
+        new_ids = vm_library.identity.read_lgudid(ident)
         self.assertNotEqual(after["lgudid.toml"], before["lgudid.toml"])
         self.assertEqual(
             new_ids[0],
@@ -1049,7 +1052,7 @@ class ManagerTest(unittest.TestCase):
         )
         self.assertIn("no VM named", self.cli("identity", "reset", "nope", ok=False))
         # the DVR key is the set's own: a new identity drops it, its next start makes another
-        from beanjar import sestore
+        from beanjar.vm import sestore
 
         sestore.ensure_dvr_key(ident)
         self.assertIn(sestore.DVR_KEY, sestore.load(ident)[1])
@@ -1069,7 +1072,7 @@ class ManagerTest(unittest.TestCase):
             f.write(model_key)
         self.cli("key", "model", "set", name, src)
         os.unlink(src)
-        from beanjar import sestore
+        from beanjar.vm import sestore
 
         sestore.ensure_dvr_key(os.path.join(vm_dir, "identity"))  # kept: the state's recordings
         state = os.path.join(vm_dir, "state")
@@ -1092,8 +1095,8 @@ class ManagerTest(unittest.TestCase):
             return {n: slurp(os.path.join(d, n), "rb") for n in os.listdir(d)}
 
         cfg, new = (
-            core.vmconfig.read(os.path.join(src_dir, "vm.toml")),
-            core.vmconfig.read(os.path.join(dst_dir, "vm.toml")),
+            vm_library.vm_config.read(os.path.join(src_dir, "vm.toml")),
+            vm_library.vm_config.read(os.path.join(dst_dir, "vm.toml")),
         )
         self.assertNotEqual(new["mac"], cfg["mac"])
         self.assertNotEqual(new["serial"], cfg["serial"])
@@ -1116,7 +1119,7 @@ class ManagerTest(unittest.TestCase):
             self.assertEqual(os.stat(os.path.join(dst_dir, "identity", n)).st_mode & 0o777, 0o600)
         self.assertNotIn("known_hosts", after, "written at its first start, for its own address")
         self.assertNotEqual(after["vnc.password"], before["vnc.password"])
-        lgudid, ns = core.vmidentity.read_lgudid(os.path.join(dst_dir, "identity"))
+        lgudid, ns = vm_library.identity.read_lgudid(os.path.join(dst_dir, "identity"))
         self.assertNotEqual(after["lgudid.toml"], before["lgudid.toml"], "a new LGUDID")
         self.assertEqual(lgudid, str(uuid.uuid5(uuid.UUID(ns), new["mac"].upper())))
         self.assertIn(f"beanjar {os.path.basename(dst_dir)}".encode(), after["id_ed25519.pub"])
@@ -1196,10 +1199,10 @@ class ManagerTest(unittest.TestCase):
     def test_clone_refusals(self):
         """clone refuses a DEST host without SRC's in-place firmware, and an interrupted copy leaves
         no DEST and no scratch."""
-        from beanjar import clone
+        from beanjar.vm import clone
 
         src_dir, _ = self.clone_source()
-        lib = core.Library(self.lib_dir, self.repo)
+        lib = vm_library.Library(self.lib_dir, self.repo)
         path = os.path.join(src_dir, "vm.toml")
         text = slurp(path)
         with open(path, "w") as f:
@@ -1225,13 +1228,13 @@ class ManagerTest(unittest.TestCase):
         self.assertIn("cancelled: no copy was made", lines)
         self.assertFalse(os.path.exists(os.path.join(self.lib_dir, "vms", "tv2")))
         self.assertEqual(self.leftovers(), [])
-        self.assertEqual(core.Library(self.lib_dir, self.repo).names(), ["tv1"])
+        self.assertEqual(vm_library.Library(self.lib_dir, self.repo).names(), ["tv1"])
 
     def test_clone_remote(self):
         """clone between hosts: SRC on one, DEST on another, and from this machine to a host; each host
         is a library of its own reached through its shell (remote.shell_argv) and its beanjar
         (remote.call_json), here stand-ins on this machine."""
-        from beanjar import clone
+        from beanjar.vm import clone
         from beanjar.access import remote as rem
 
         src_dir, model_key = self.clone_source()
@@ -1245,7 +1248,9 @@ class ManagerTest(unittest.TestCase):
             return ["env", f"BEANJAR_LIBRARY={libs[host]}", "sh", "-c", command]
 
         def call_json(host, uri, argv, timeout=None):
-            lib = core.Library(libs[host], self.repo)  # opening it gives a VM without a slot one
+            lib = vm_library.Library(
+                libs[host], self.repo
+            )  # opening it gives a VM without a slot one
             vm = lib.vm(argv[-1].removeprefix("local/"))
             if argv[0] == "show":
                 return {"dir": vm.dir, "state": vm.state()[0], "address": vm.address()}
@@ -1259,7 +1264,7 @@ class ManagerTest(unittest.TestCase):
             mock.patch.dict(os.environ, HOME=self.home),
         ):
             lines = []
-            pc = core.Library(os.path.join(self.tmp, "lib-pc"), self.repo)  # this machine's
+            pc = vm_library.Library(os.path.join(self.tmp, "lib-pc"), self.repo)  # this machine's
             r = clone.clone(pc, "h1/tv1", "h2/tv2", out=lines.append)
             self.assertEqual(os.listdir(pc.vms_dir), [], "nothing staged is left")
             self.assertEqual((r["host"], r["source"]), ("h2", "h1/tv1"))
@@ -1271,7 +1276,7 @@ class ManagerTest(unittest.TestCase):
             with self.assertRaisesRegex(base.Error, "exists"):
                 clone.clone(pc, "h1/tv1", "h2/tv2", out=lines.append)
             # this machine to a host
-            here = core.Library(os.path.join(self.tmp, "lib-here"), self.repo)
+            here = vm_library.Library(os.path.join(self.tmp, "lib-here"), self.repo)
             libs["h1"] = here.root
             src2 = os.path.join(here.vms_dir, "tv1")
             subprocess.run(["cp", "-a", "--sparse=always", src_dir, src2], check=True)
@@ -1399,7 +1404,7 @@ class ManagerTest(unittest.TestCase):
         ):
             with (
                 self.subTest(attr),
-                mock.patch.object(core.VM, attr, return_value=4321),
+                mock.patch.object(vm_library.VM, attr, return_value=4321),
                 self.assertRaisesRegex(base.Error, re.escape(text)),
             ):
                 lib.rename("tv1", "tv3")
@@ -1440,7 +1445,7 @@ class ManagerTest(unittest.TestCase):
 
         lib = self.lib()
         with (
-            mock.patch.object(core.os, "rename", interrupted),
+            mock.patch.object(vm_library.os, "rename", interrupted),
             self.assertRaises(KeyboardInterrupt),
         ):
             lib.rename("tv1", "tv9")
@@ -1648,7 +1653,7 @@ class ManagerTest(unittest.TestCase):
     def cancel(self, args, env, wait_for_line="sleeping"):
         """Run the New VM worker with args and SIGTERM it at wait_for_line: its output."""
         p = subprocess.Popen(
-            [sys.executable, "-m", "beanjar.newvm", "--repo", self.repo, *args],
+            [sys.executable, "-m", "beanjar.vm.create", "--repo", self.repo, *args],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1820,7 +1825,7 @@ class ManagerTest(unittest.TestCase):
         ext_before = self.tree(ext)
         self.cli("config", "set", "a", f"fw={ext}")
         self.assertEqual(self.vm_toml("a")["fw"], ext)
-        env = core.vm_launcher_env(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))
+        env = vm_library.vm_launcher_env(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))
         self.assertEqual(
             (env["FW"], env["FW_CACHE"], env.get("FIRMWARE_CA")),
             (ext, os.path.join(self.lib_dir, "vms", "a", "firmware-cache"), None),
@@ -2114,7 +2119,7 @@ class ManagerTest(unittest.TestCase):
         for k in ("name", "state", "pid", "vnc", "dir", "model_key", "identity", "ssh"):
             self.assertIn(k, info)
         settings = self.cli_json("config", "show", "a")
-        self.assertEqual(set(settings), {*vmsettings.SETTINGS, "tags"})
+        self.assertEqual(set(settings), {*vm_settings.SETTINGS, "tags"})
         self.assertIsNone(settings["mem"], "unset: the default")
         self.assertEqual(self.cli_json("config", "set", "a", "smp=2")["smp"], 2)
         self.assertIsNone(self.cli_json("config", "unset", "a", "listen")["listen"])
@@ -2340,7 +2345,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(self.listing()["c"]["state"], "Off")
         # restarting one that runs does not count it twice
         a = self.lib().vm("a")
-        self.assertIsNone(core.running_refusal("a", a.run_dir, vmunits.vm_unit_name(a.dir)))
+        self.assertIsNone(vm_library.running_refusal("a", a.run_dir, vmunits.vm_unit_name(a.dir)))
         # a slot freed: c starts
         self.cli("stop", "a")
         self.cli("start", "c")
@@ -2367,7 +2372,7 @@ class ManagerTest(unittest.TestCase):
         (ares.target of Library.vm), and fails as it does."""
         code = (
             "import json, sys\n"
-            "from beanjar.access import ares; from beanjar import core\n"
+            "from beanjar.access import ares; from beanjar.vm import library as core\n"
             "try:\n"
             "    vm = core.Library(sys.argv[1]).vm(sys.argv[2])\n"
             "    print(json.dumps(ares.target(vm, sys.argv[3] == 'root')))\n"
@@ -2606,7 +2611,7 @@ class ManagerTest(unittest.TestCase):
         self.cli("config", "set", "a", "listen= 127.0.1.201")
         path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
         self.assertIn('listen = "127.0.1.201"', slurp(path))
-        self.assertEqual(core.vm_launcher_env(path)["LISTEN_ADDRESS"], "127.0.1.201")
+        self.assertEqual(vm_library.vm_launcher_env(path)["LISTEN_ADDRESS"], "127.0.1.201")
         st = self.info("a")
         self.assertEqual((st["listen"], st["address"]), ("127.0.1.201", "127.0.1.1"))
         self.assertTrue(st["ssh"]["devmode"].endswith("prisoner@127.0.1.201"), st["ssh"])
@@ -2651,7 +2656,7 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn("lg_services", slurp(path))
         self.cli("config", "set", "a", "lg_services=real")
         self.assertIn('lg_services = "real"', slurp(path))
-        self.assertEqual(core.vm_launcher_env(path)["NET_LG_SERVICES"], "real")
+        self.assertEqual(vm_library.vm_launcher_env(path)["NET_LG_SERVICES"], "real")
         self.assertIn("lg_services", self.cli("config", "set", "a", "lg_services=on", ok=False))
         self.cli("config", "set", "a", "lg_services=mock")
         self.assertNotIn("lg_services", slurp(path))
@@ -2667,7 +2672,7 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn("lan_access", slurp(path))
         self.cli("config", "set", "a", "lan_access=on")
         self.assertIn('lan_access = "on"', slurp(path))
-        self.assertEqual(core.vm_launcher_env(path)["NET_LAN_ACCESS"], "on")
+        self.assertEqual(vm_library.vm_launcher_env(path)["NET_LAN_ACCESS"], "on")
         self.assertIn("lan_access", self.cli("config", "set", "a", "lan_access=yes", ok=False))
         self.cli("config", "set", "a", "lan_access=off")
         self.assertNotIn("lan_access", slurp(path))
@@ -2694,7 +2699,7 @@ class ManagerTest(unittest.TestCase):
             "8080,8081:80",
         )
         self.assertIn('forward = "8080,8081:80"', slurp(path))
-        self.assertEqual(core.vm_launcher_env(path)["FORWARD"], "8080,8081:80")
+        self.assertEqual(vm_library.vm_launcher_env(path)["FORWARD"], "8080,8081:80")
         self.assertEqual(
             self.lib().vm("a").listeners()[-2:], [("127.0.1.1", 8080), ("127.0.1.1", 8081)]
         )
@@ -2735,7 +2740,7 @@ class ManagerTest(unittest.TestCase):
             self.cli_json("config", "set", "a", "debug_mode=release")["debug_mode"], "release"
         )
         self.assertIn('debug_mode = "release"', slurp(path))
-        self.assertEqual(core.vm_launcher_env(path)["DEBUG_MODE"], "release")
+        self.assertEqual(vm_library.vm_launcher_env(path)["DEBUG_MODE"], "release")
         self.assertEqual(self.info("a")["debug_mode"], "release")
         self.assertIn("debug_mode", self.cli("config", "set", "a", "debug_mode=quiet", ok=False))
         self.assertIn("unset", self.cli("config", "set", "a", "debug_mode=", ok=False))
@@ -2995,7 +3000,9 @@ class ManagerTest(unittest.TestCase):
                 return f.read().split("\n")[:-1]
 
         self.cli("create", "a", "--import", "--firmware", self.fw_src)
-        serial = core.vmconfig.read(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))["serial"]
+        serial = vm_library.vm_config.read(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))[
+            "serial"
+        ]
         self.assertEqual(seen(), [f"force {serial}"])
         self.cli("config", "set", "a", "smp=2")
         self.assertEqual(len(seen()), 1)
@@ -3006,7 +3013,9 @@ class ManagerTest(unittest.TestCase):
         self.cli("prepare", "a")
         self.assertEqual(seen()[-1], "force NEW123")
         self.cli("identity", "reset", "a")
-        renewed = core.vmconfig.read(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))["serial"]
+        renewed = vm_library.vm_config.read(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))[
+            "serial"
+        ]
         self.assertEqual(seen()[-1], f"ensure {renewed}")
         open(os.path.join(self.lib_dir, "vms", "a", "fail-prepare"), "w").close()
         self.assertIn("could not be prepared", self.cli("prepare", "a", ok=False))
@@ -3321,7 +3330,7 @@ class LayersTest(unittest.TestCase):
         ):
             open(os.path.join(repo, d, "meson.build"), "w").close()
         open(os.path.join(repo, "guest", "layers", "binds.conf"), "w").close()
-        avail = core.Library(os.path.join(tmp, "lib"), repo).layers(("h13", "afro"))
+        avail = vm_library.Library(os.path.join(tmp, "lib"), repo).layers(("h13", "afro"))
         self.assertEqual(
             {n: i["built"] for n, i in avail.items()},
             {
@@ -3337,13 +3346,13 @@ class LayersTest(unittest.TestCase):
         self.assertEqual(avail["soc"]["path"], "build/layers/h13-afro/soc")
         # another target's build is not listed; without a target only the source layers
         self.assertEqual(
-            set(core.Library(os.path.join(tmp, "lib"), repo).layers(("m14", "beehive"))),
+            set(vm_library.Library(os.path.join(tmp, "lib"), repo).layers(("m14", "beehive"))),
             {"normal", "gl", "rootssh", "soc", "webos", "common", "devmode"},
         )
         self.assertEqual(
             {
                 n: i["built"]
-                for n, i in core.Library(os.path.join(tmp, "lib"), repo).layers(None).items()
+                for n, i in vm_library.Library(os.path.join(tmp, "lib"), repo).layers(None).items()
             },
             {
                 "normal": True,
@@ -3355,11 +3364,11 @@ class LayersTest(unittest.TestCase):
             },
         )
         self.assertEqual(
-            vmsettings.layer_list([], avail),
+            vm_settings.layer_list([], avail),
             [("normal", False), ("gl", False), ("rootssh", False), ("tcg-perf", False)],
         )
         self.assertEqual(
-            vmsettings.layer_list(["gl", "x", "normal", "gl", "soc"], avail),
+            vm_settings.layer_list(["gl", "x", "normal", "gl", "soc"], avail),
             [
                 ("gl", True),
                 ("x", True),
@@ -3373,7 +3382,7 @@ class LayersTest(unittest.TestCase):
     def test_error_keys(self):
         tmp = tempfile.mkdtemp(prefix="beanjar-layers-")
         self.addCleanup(shutil.rmtree, tmp)
-        lib = core.Library(os.path.join(tmp, "lib"), tmp)
+        lib = vm_library.Library(os.path.join(tmp, "lib"), tmp)
         for args, key in ((("",), "name"), (("tv1",), "fw")):
             with self.assertRaises(base.Error) as e:
                 lib.create(*args)
@@ -3394,12 +3403,12 @@ class LayersTest(unittest.TestCase):
             ({"audio": "dbus", "display": "none"}, "audio"),
         ):
             with self.assertRaises(base.Error) as e:
-                vmsettings.validate(cfg)
+                vm_settings.validate(cfg)
             self.assertEqual(e.exception.key, key)
         # a saved VM may name a layer this tree lacks (the dialogs keep it); the rules still hold
-        vmsettings.validate({"layers": ["normal", "mystery"]}, saved=True)
+        vm_settings.validate({"layers": ["normal", "mystery"]}, saved=True)
         with self.assertRaisesRegex(base.Error, "layer hbchannel requires devmode"):
-            vmsettings.validate({"layers": ["mystery", "hbchannel"]}, saved=True)
+            vm_settings.validate({"layers": ["mystery", "hbchannel"]}, saved=True)
         # a new VM with hbchannel and not devmode is refused
         with self.assertRaisesRegex(base.Error, "layer hbchannel requires devmode") as e:
             lib.vm_config(layers=["normal", "hbchannel"])
@@ -3530,7 +3539,7 @@ class TomlTest(unittest.TestCase):
             "PMLOG_DEBUG": "1",
         }
         self.assertEqual(
-            vmsettings.launcher_env(cfg),
+            vm_settings.launcher_env(cfg),
             {
                 "FW": "FW1",
                 "MEM": "2048",
@@ -3554,7 +3563,7 @@ class TomlTest(unittest.TestCase):
             {"FW_CACHE": "/x"},
         ):
             with self.assertRaises(base.Error):
-                vmsettings.launcher_env(bad)
+                vm_settings.launcher_env(bad)
         # as the launcher (launch.py --dir) resolves it: no fw, the VM's own firmware/ with its cache/
         # (the partition map); any other directory (absolute, or relative to the VM's folder; a bare
         # name is one too, not a lookup) in place, its map in firmware-cache/. No roots for the proxy.
@@ -3565,8 +3574,8 @@ class TomlTest(unittest.TestCase):
             c = dict(cfg, **kw)
             if c["fw"] is None:
                 del c["fw"]
-            core.vmconfig.write(os.path.join(vm_dir, "vm.toml"), c)
-            env = core.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
+            vm_library.vm_config.write(os.path.join(vm_dir, "vm.toml"), c)
+            env = vm_library.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
             self.assertFalse({"FIRMWARE_CA", "ROOTFS"} & set(env), env)
             return f"{env['FW']}|{env['FW_CACHE']}|{env['LAYERS']}|{env['DISPLAY_BACKEND']}"
 
@@ -3585,8 +3594,8 @@ class TomlTest(unittest.TestCase):
             launcher(vm, fw="FW1"), f"{vm}/FW1|{vm}/firmware-cache|normal,gl,rootssh|dbus"
         )
         with self.assertRaises(base.Error):
-            core.vmconfig.write(os.path.join(vm, "vm.toml"), dict(cfg, RUN_DIR="/x"))
-            core.vm_launcher_env(os.path.join(vm, "vm.toml"))
+            vm_library.vm_config.write(os.path.join(vm, "vm.toml"), dict(cfg, RUN_DIR="/x"))
+            vm_library.vm_launcher_env(os.path.join(vm, "vm.toml"))
         # Platform is derived from the selected firmware and absent from the document.
         self.assertEqual(
             launcher(vm, fw="FW1"), f"{vm}/FW1|{vm}/firmware-cache|normal,gl,rootssh|dbus"
@@ -3993,11 +4002,11 @@ class CliParseTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(p.returncode, 0, p.stderr)
-        for k in vmsettings.SETTINGS:
+        for k in vm_settings.SETTINGS:
             self.assertIn(f"\n  {k}=", p.stdout)
         self.assertIn("unset: dhcp", p.stdout)
         self.assertIn("\n  tags=TAG[,TAG...]", p.stdout)
-        self.assertEqual(set(vmsettings.SETTING_HELP), set(vmsettings.SETTINGS))
+        self.assertEqual(set(vm_settings.SETTING_HELP), set(vm_settings.SETTINGS))
 
 
 class ScreenshotTest(unittest.TestCase):
@@ -4044,7 +4053,7 @@ class ScreenshotTest(unittest.TestCase):
             self.addCleanup(daemon.wait)
             self.addCleanup(daemon.terminate)
             bus = os.path.join(d, "dbus.sock")
-            ask = lambda: core.Library._screenshot_ask(bus, "/x y/shot.ppm", 1280, 720, 5)
+            ask = lambda: vm_library.Library._screenshot_ask(bus, "/x y/shot.ppm", 1280, 720, 5)
             self.assertFalse(ask(), "no owner: the headless path")
             seen = []
             fail = []
@@ -4106,8 +4115,8 @@ class ThumbnailTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="beanjar-thumbnail-")
         self.addCleanup(shutil.rmtree, self.tmp)
-        self.lib = core.Library(os.path.join(self.tmp, "lib"), TOP)
-        self.vm = core.VM(self.lib, "a")
+        self.lib = vm_library.Library(os.path.join(self.tmp, "lib"), TOP)
+        self.vm = vm_library.VM(self.lib, "a")
         os.makedirs(self.vm.run_dir)
 
     def shot(self, size, grey):
@@ -4118,23 +4127,23 @@ class ThumbnailTest(unittest.TestCase):
 
         out = os.path.join(self.tmp, "out.png")
         with (
-            mock.patch.object(core.Library, "vm", return_value=self.vm),
-            mock.patch.object(core.VM, "display", "dbus", create=True),
-            mock.patch.object(core.VM, "pid", return_value=1),
-            mock.patch.object(core.VM, "viewer_pid", return_value=None),
-            mock.patch.object(core.VM, "vnc_pid", return_value=2),
-            mock.patch.object(core.Library, "_screenshot_ask", side_effect=ask),
+            mock.patch.object(vm_library.Library, "vm", return_value=self.vm),
+            mock.patch.object(vm_library.VM, "display", "dbus", create=True),
+            mock.patch.object(vm_library.VM, "pid", return_value=1),
+            mock.patch.object(vm_library.VM, "viewer_pid", return_value=None),
+            mock.patch.object(vm_library.VM, "vnc_pid", return_value=2),
+            mock.patch.object(vm_library.Library, "_screenshot_ask", side_effect=ask),
         ):
             self.lib.screenshot("a", out, size)
         return open(out, "rb").read()
 
     def test_kept(self):
-        with mock.patch.object(core.Library, "vm", return_value=self.vm):
+        with mock.patch.object(vm_library.Library, "vm", return_value=self.vm):
             with self.assertRaises(base.Error):
                 self.lib.last_thumbnail("a")
         small = self.shot((384, 216), 0x40)
         self.shot((1280, 720), 0x80)  # not a thumbnail: the kept one stays
-        with mock.patch.object(core.Library, "vm", return_value=self.vm):
+        with mock.patch.object(vm_library.Library, "vm", return_value=self.vm):
             self.assertEqual(self.lib.last_thumbnail("a"), small)
         self.assertNotIn("thumbnail.png.part", os.listdir(self.vm.dir))
 
@@ -4152,7 +4161,7 @@ class LanHostnameTest(unittest.TestCase):
             ("a" * 62 + ".b", "a" * 62),
         ):
             with self.subTest(name):
-                self.assertEqual(vmsettings.dns_label(name), label)
+                self.assertEqual(vm_settings.dns_label(name), label)
 
     def test_udhcpc(self):
         from beanjar.network import netns
@@ -4172,8 +4181,8 @@ class PowerOffTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="beanjar-poweroff-")
         self.addCleanup(shutil.rmtree, self.tmp)
-        self.lib = core.Library(os.path.join(self.tmp, "lib"), TOP)
-        self.vm = core.VM(self.lib, "a")
+        self.lib = vm_library.Library(os.path.join(self.tmp, "lib"), TOP)
+        self.vm = vm_library.VM(self.lib, "a")
         os.makedirs(self.vm.run_dir)
         os.makedirs(self.vm.logs_dir)
         with open(self.vm.console_log, "w") as f:
@@ -4189,8 +4198,8 @@ class PowerOffTest(unittest.TestCase):
         from beanjar.access import console
 
         with (
-            mock.patch.object(core.VM, "target", return_value=target),
-            mock.patch.object(core.VM, "pid", return_value=pid),
+            mock.patch.object(vm_library.VM, "target", return_value=target),
+            mock.patch.object(vm_library.VM, "pid", return_value=pid),
             mock.patch.object(poweroff, "qmp_status", return_value=qmp),
             mock.patch.object(console, "send") as send,
         ):
@@ -4300,8 +4309,8 @@ class PowerOffTest(unittest.TestCase):
         busy = '{"errorText":"power is busy","returnValue":false}'
         for replies, sends, code in (
             ([busy, '{"returnValue":true}'], 2, 0),
-            ([busy] * 9, core.POWER_OFF_TRIES, core.STOP_REFUSED),
-            (['{"returnValue":false,"errorText":"denied"}'], 1, core.STOP_REFUSED),
+            ([busy] * 9, vm_library.POWER_OFF_TRIES, vm_library.STOP_REFUSED),
+            (['{"returnValue":false,"errorText":"denied"}'], 1, vm_library.STOP_REFUSED),
         ):
             with self.subTest(replies[0]), tempfile.TemporaryDirectory() as d:
                 bg = launch.Bg.__new__(launch.Bg)
@@ -4324,7 +4333,9 @@ class PowerOffTest(unittest.TestCase):
                     self.assertEqual(bg.power_off(5), code)
                 self.assertEqual(send.call_count, sends)
 
-    def stop(self, how=core.POWER_OFF, fallback=True, why=None, powers_off=True, refused=False):
+    def stop(
+        self, how=vm_library.POWER_OFF, fallback=True, why=None, powers_off=True, refused=False
+    ):
         """Library.stop with the VM running (QEMU pid 123) and the launcher stubbed: its stop ends
         QEMU, its stop --power-off does if powers_off, and exits 5 if refused (webOS refused the
         call), else 4 when QEMU still runs. ([launcher calls], [what it said], Error)."""
@@ -4335,17 +4346,17 @@ class PowerOffTest(unittest.TestCase):
             if "--power-off" not in cmd or powers_off:
                 up["pid"] = None
                 return 0
-            return core.STOP_REFUSED if refused else core.STOP_TIMED_OUT
+            return vm_library.STOP_REFUSED if refused else vm_library.STOP_TIMED_OUT
 
         error = None
         with (
-            mock.patch.object(core.Library, "launcher", return_value=["vm-launcher"]),
+            mock.patch.object(vm_library.Library, "launcher", return_value=["vm-launcher"]),
             mock.patch.object(hostprocs, "run_streamed", side_effect=launcher),
-            mock.patch.object(core.VM, "pid", side_effect=lambda: up["pid"]),
-            mock.patch.object(core.VM, "unit_name", return_value=None),
-            mock.patch.object(core.VM, "unit_up", return_value=False),
-            mock.patch.object(core.VM, "power_off_refusal", return_value=why) as refusal,
-            mock.patch.object(core.Library, "vm", return_value=self.vm),
+            mock.patch.object(vm_library.VM, "pid", side_effect=lambda: up["pid"]),
+            mock.patch.object(vm_library.VM, "unit_name", return_value=None),
+            mock.patch.object(vm_library.VM, "unit_up", return_value=False),
+            mock.patch.object(vm_library.VM, "power_off_refusal", return_value=why) as refusal,
+            mock.patch.object(vm_library.Library, "vm", return_value=self.vm),
             mock.patch.object(os, "kill"),
             mock.patch.object(os, "getpgid", return_value=os.getpgid(0)),
         ):
@@ -4353,7 +4364,7 @@ class PowerOffTest(unittest.TestCase):
                 self.lib.stop("a", how, fallback=fallback, out=said.append)
             except base.Error as e:
                 error = str(e)
-        if how == core.POWER_OFF:
+        if how == vm_library.POWER_OFF:
             refusal.assert_called_once_with()
         else:
             refusal.assert_not_called()
@@ -4399,7 +4410,7 @@ class PowerOffTest(unittest.TestCase):
         self.assertEqual(calls, [power_off])
         self.assertEqual(error, "VM a: webOS refused the power-off signal; it still runs")
         # unplug: QEMU killed (os.kill, stubbed), then the launcher's stop without logs
-        calls, said, error = self.stop(core.UNPLUG)
+        calls, said, error = self.stop(vm_library.UNPLUG)
         self.assertEqual((calls, said, error), ([(sync_stop[0], "0")], [], None))
         with self.assertRaises(ValueError):
             self.lib.stop("a", "force")

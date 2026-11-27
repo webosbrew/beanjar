@@ -18,7 +18,8 @@ import pytest
 
 from beanjar.guestside import compat
 from beanjar.runtime import launch
-from beanjar import paths, vmconfig
+from beanjar import paths
+from beanjar.vm import config
 from beanjar.firmware import targets
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -325,7 +326,7 @@ def test_vm_without_any_record_starts(env):
     lib = os.path.join(env.tmp, "lib")
     vm = os.path.join(lib, "vms", "tv")
     os.makedirs(vm)
-    vmconfig.write(os.path.join(vm, "vm.toml"), {"platform": "webOS", "fw": env.tmp, "link": "off"})
+    config.write(os.path.join(vm, "vm.toml"), {"platform": "webOS", "fw": env.tmp, "link": "off"})
     err = io.StringIO()
     with (
         mock.patch.object(launch, "start_check"),

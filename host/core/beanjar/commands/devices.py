@@ -7,7 +7,7 @@ import json
 import os
 
 from ..access import remote
-from ..core import Library
+from ..vm.library import Library
 from .common import DURATION_HELP, Usage, duration, emit, progress, table, warn
 
 

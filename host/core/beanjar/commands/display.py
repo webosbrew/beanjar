@@ -8,9 +8,9 @@ import sys
 import tempfile
 
 from ..display import framing
-from .. import keys
+from ..vm import keys
 from ..access import remote
-from ..core import Library
+from ..vm.library import Library
 from .common import (
     DURATION_HELP,
     Usage,

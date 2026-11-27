@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""A VM's snapshots (host/core/beanjar/snapshot.py, `beanjar snapshot ...`): create, list, show,
+"""A VM's snapshots (host/core/beanjar/vm/snapshot.py, `beanjar snapshot ...`): create, list, show,
 delete and reset of a VM made by hand in a temporary library (no QEMU, no launcher); the refusals;
 the reflink and sparse-copy paths; and a reset interrupted before and after its commit."""
 
@@ -19,7 +19,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, clone, core, sestore, snapshot, vmconfig
+from beanjar import base
+from beanjar.vm import clone, library, sestore, snapshot, config
 
 FW = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
 SERIAL = "123ABCD45678"
@@ -59,7 +60,7 @@ class SnapshotTest(unittest.TestCase):
         os.makedirs(fw)
         with open(os.path.join(fw, "manifest.toml"), "w") as f:
             f.write(f'name = "{FW}"\nchip = "h13"\nrelease = "afro"\n')
-        vmconfig.write(
+        config.write(
             os.path.join(self.vm_dir, "vm.toml"), {"mac": MAC, "serial": SERIAL, "slot": 1}
         )
         self.state = os.path.join(self.vm_dir, "state")
@@ -84,7 +85,7 @@ class SnapshotTest(unittest.TestCase):
             BEANJAR_LIBRARY=self.lib_dir,
             XDG_CONFIG_HOME=os.path.join(self.tmp, "config"),
         )
-        self.lib = core.Library(self.lib_dir)
+        self.lib = library.Library(self.lib_dir)
 
     def cli(self, *args, ok=True):
         p = subprocess.run(
@@ -219,7 +220,7 @@ class SnapshotTest(unittest.TestCase):
 
         # running: create and reset refused with the step to take; delete and list allowed
         before = tree(self.state)
-        with mock.patch.object(core.VM, "state", return_value=(base.RUNNING, "")):
+        with mock.patch.object(library.VM, "state", return_value=(base.RUNNING, "")):
             for f in (snapshot.create, snapshot.reset):
                 with self.assertRaisesRegex(base.Error, "is running.*beanjar stop tv1"):
                     f(
@@ -239,18 +240,18 @@ class SnapshotTest(unittest.TestCase):
         with open(vm.lock_path, "w") as f:
             json.dump({"pid": os.getppid()}, f)
         with (
-            mock.patch.object(core.VM, "state", return_value=(base.OFF, "")),
+            mock.patch.object(library.VM, "state", return_value=(base.OFF, "")),
             self.assertRaisesRegex(base.Error, "another command"),
         ):
             snapshot.reset(self.lib, "tv1", "base", out=lambda _: None)
         os.unlink(vm.lock_path)
 
         # another serial (identity reset) or firmware
-        cfg = vmconfig.read(os.path.join(self.vm_dir, "vm.toml"))
-        vmconfig.write(os.path.join(self.vm_dir, "vm.toml"), dict(cfg, serial="999XXXX99999"))
+        cfg = config.read(os.path.join(self.vm_dir, "vm.toml"))
+        config.write(os.path.join(self.vm_dir, "vm.toml"), dict(cfg, serial="999XXXX99999"))
         p = self.cli("snapshot", "reset", "tv1", "base", ok=False)
         self.assertIn("of serial " + SERIAL, p.stderr)
-        vmconfig.write(os.path.join(self.vm_dir, "vm.toml"), cfg)
+        config.write(os.path.join(self.vm_dir, "vm.toml"), cfg)
         manifest = os.path.join(self.vm_dir, "firmware", "manifest.toml")
         with open(manifest, "w") as f:
             f.write('name = "other-fw"\nchip = "h13"\nrelease = "afro"\n')
@@ -409,10 +410,10 @@ class SnapshotTest(unittest.TestCase):
             return 1
 
         with (
-            mock.patch.object(core, "running_refusal", return_value=None),
-            mock.patch.object(core.capacity, "admit"),
-            mock.patch.object(core.capacity, "listen_conflict", return_value=None),
-            mock.patch.object(core.hostprocs, "run_streamed", launcher),
+            mock.patch.object(library, "running_refusal", return_value=None),
+            mock.patch.object(library.capacity, "admit"),
+            mock.patch.object(library.capacity, "listen_conflict", return_value=None),
+            mock.patch.object(library.hostprocs, "run_streamed", launcher),
             self.assertRaisesRegex(base.Error, "did not start"),
         ):
             self.lib.start("tv1", out=lambda _: None)
@@ -432,7 +433,7 @@ class SnapshotTest(unittest.TestCase):
     def test_interrupted_after_commit_finished_by_clone(self):
         before, dvr = self.killed_after_commit()
         lines = []
-        with mock.patch.object(core, "prepare_board_data"):  # the fixture's firmware is not real
+        with mock.patch.object(library, "prepare_board_data"):  # the fixture's firmware is not real
             clone.clone(self.lib, "tv1", "tv2", out=lines.append, warn=lines.append, pinned=True)
         self.assertIn("tv1: snapshot reset finished", lines)
         self.check_finished(before, dvr)

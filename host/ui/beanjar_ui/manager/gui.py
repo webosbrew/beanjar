@@ -19,7 +19,7 @@ whose vm.toml does not read is shown with the reason, and a refresh that fails i
 the timer always runs on.
 Operations that take time (start, shut down, unplug, wipe, disconnect) run the CLI (python3 -m
 beanjar) as a Gio.Subprocess and stream its output, so the main loop never blocks; so does a New VM
-that extracts a .epk or copies a firmware into the VM's folder (python3 -m beanjar.newvm, with a
+that extracts a .epk or copies a firmware into the VM's folder (python3 -m beanjar.vm.create, with a
 progress dialog over New VM; one that does neither is made at once).
 
 The viewer is a separate process (beanjar-viewer, run/viewer.pid), as with the CLI's `view`: the
@@ -45,20 +45,21 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from beanjar import base, core, newvm, paths, vmsettings  # noqa: E402
+from beanjar import base, paths  # noqa: E402
+from beanjar.vm import library as vm_library, create, settings as vm_settings  # noqa: E402
 from beanjar.runtime import capacity, hostprocs, lifecycle, poweroff, vmunits  # noqa: E402
 from beanjar.firmware import install, targets  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
 from beanjar.display import gpu  # noqa: E402
 from beanjar.devices import rotation  # noqa: E402
-from beanjar.core import Library  # noqa: E402
+from beanjar.vm.library import Library  # noqa: E402
 from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402
 from beanjar.firmware.install import fmt_size  # noqa: E402
 
 from .. import no_display  # noqa: E402
 from . import header, picture, summary_facts  # noqa: E402
 
-PKG_PARENT = os.path.dirname(os.path.dirname(os.path.abspath(core.__file__)))  # beanjar's
+PKG_PARENT = os.path.dirname(os.path.dirname(os.path.abspath(vm_library.__file__)))  # beanjar's
 TAIL_BYTES = 24 * 1024
 QMP_EVERY = 5  # ticks between QMP cross-checks
 CONSOLE_COALESCE_MS = 500  # a console monitor's events within this are one read (one redraw)
@@ -86,7 +87,7 @@ class VMItem(GObject.Object):
 
 
 class Operation:
-    """The CLI (or module, e.g. beanjar.newvm) as a Gio.Subprocess; on_line(line) per output line,
+    """The CLI (or module, e.g. beanjar.vm.create) as a Gio.Subprocess; on_line(line) per output line,
     on_done(exit status)."""
 
     def __init__(self, library, args, on_line, on_done, module="beanjar"):
@@ -190,7 +191,7 @@ def dropdown_value(d):
     return item.get_string() if item else None
 
 
-home_path = core.home_path
+home_path = vm_library.home_path
 
 
 def elsewhere_rows(lib, units):
@@ -208,7 +209,7 @@ def elsewhere_rows(lib, units):
     for unit, props in sorted(units.items()):
         if unit in shown or props.get("Description") in shown:
             continue
-        vm = core.unit_vm(props)
+        vm = vm_library.unit_vm(props)
         if vm is not None:
             try:
                 st, detail = vm.state(units=units)
@@ -289,7 +290,7 @@ class Manager:
         self.lib = library
         self.open_folders = open_folders
         self.ops = {}  # VM name -> Operation (start/stop/wipe/unview)
-        self.create_op = None  # the New VM being made (python3 -m beanjar.newvm)
+        self.create_op = None  # the New VM being made (python3 -m beanjar.vm.create)
         self.progress = None  # its widgets.ProgressDialog
         self.prepare_op = (
             None  # the board data being prepared after a Settings save (beanjar prepare)
@@ -625,7 +626,7 @@ class Manager:
                     try:
                         vm = lib.vm(name)
                         result["blocked"] = {
-                            name: core.running_refusal(
+                            name: vm_library.running_refusal(
                                 name, vm.run_dir, vmunits.vm_unit_name(vm.dir), units=units
                             )
                             or capacity.admission(vm)
@@ -682,7 +683,9 @@ class Manager:
         old, self.states, self.broken = self.states, {}, {}
         for i in range(self.store.get_n_items()):
             item = self.store.get_item(i)
-            vm = core.VM(self.lib, item.name)  # not lib.vm: its vm.toml may go while this runs
+            vm = vm_library.VM(
+                self.lib, item.name
+            )  # not lib.vm: its vm.toml may go while this runs
             self._watch(("vm", item.name), vm.dir)
             self._watch(("run", item.name), vm.run_dir)
             try:
@@ -737,7 +740,7 @@ class Manager:
         activity = [
             v
             for v in (
-                core.fmt_duration(hostprocs.uptime_of(pid)) if pid else "",
+                vm_library.fmt_duration(hostprocs.uptime_of(pid)) if pid else "",
                 cpu and f"{cpu} CPU",
                 headline is not None and f"{headline:.0f}% GPU",
             )
@@ -751,7 +754,7 @@ class Manager:
         mem = capacity.rss_mib(pid)
         self.summary_view.set_tiles(
             {
-                "time": ("Uptime", core.fmt_duration(hostprocs.uptime_of(pid)) or "—", ""),
+                "time": ("Uptime", vm_library.fmt_duration(hostprocs.uptime_of(pid)) or "—", ""),
                 "cpu": ("CPU", cpu or "—", ""),
                 "memory": (
                     "Memory",
@@ -867,7 +870,7 @@ class Manager:
         sampler = (
             current[1]
             if current and current[0] == pid
-            else gpu.Sampler(pid, core.VM(self.lib, name).config.get("layers"))
+            else gpu.Sampler(pid, vm_library.VM(self.lib, name).config.get("layers"))
         )
         value = sampler.sample()
         self.gpu[name] = (pid, sampler, value)
@@ -897,7 +900,7 @@ class Manager:
     def update_actions(self):
         name = self.selected()
         st, detail, pid, vpid = self.states.get(name, (OFF, "", None, None))
-        vm = core.VM(self.lib, name) if name else None
+        vm = vm_library.VM(self.lib, name) if name else None
         if name in self.broken:  # it does not read: only what does not need its settings
             vm = None
         busy = name in self.ops
@@ -974,13 +977,13 @@ class Manager:
         name = self.selected()
         try:  # the selected VM's traffic inspector, a card of its summary
             self.inspector.refresh(
-                core.VM(self.lib, name) if name and name not in self.broken else None
+                vm_library.VM(self.lib, name) if name and name not in self.broken else None
             )
         except Exception as e:  # noqa: BLE001
             self.log_error("the inspector", e)
         try:  # and its VNC server, while beanjar vnc serves it
             self.vnc_panel.refresh(
-                core.VM(self.lib, name) if name and name not in self.broken else None
+                vm_library.VM(self.lib, name) if name and name not in self.broken else None
             )
         except Exception as e:  # noqa: BLE001
             self.log_error("the VNC panel", e)
@@ -993,7 +996,7 @@ class Manager:
             self.update_picture()
             self._set_console(None)
             return
-        vm = core.VM(self.lib, name)
+        vm = vm_library.VM(self.lib, name)
         st, detail, pid, vpid = self.states.get(name, (OFF, "", None, None))
         if name in self.broken:
             self.summary_values = {"state": f"{BROKEN}: {self.broken[name]}", "directory": vm.dir}
@@ -1043,7 +1046,7 @@ class Manager:
         values["directory"] = vm.dir
         values["address"] = vm.address() or ""  # its ports' host address (its slot)
         link = c.get("link", "nat")
-        values["network"] = vmsettings.network_label(link, c.get("mode"))
+        values["network"] = vm_settings.network_label(link, c.get("mode"))
         # 3000, 3001, 6622, 9922, 9991: listen with link nat; the VM's own LAN address with lan
         lan = vm.lan_address()
         values["lan_address"] = (
@@ -1078,13 +1081,13 @@ class Manager:
         displayed["audio"] = {"dbus": "D-Bus", "none": "Off", "off": "Off"}.get(audio, audio)
         mode = {"mitm": "MITM", "direct": "Direct"}.get(c.get("mode", "mitm"), "—")
         displayed["network"] = "Off" if link == "off" else f"{link.upper()} · {mode}"
-        mitm = vmsettings.guest_net(link, c.get("mode")) == "mitm"
-        flows = c.get("mitm_flows", vmsettings.MITM_FLOWS)
+        mitm = vm_settings.guest_net(link, c.get("mode")) == "mitm"
+        flows = c.get("mitm_flows", vm_settings.MITM_FLOWS)
         values["mitm_flows"] = displayed["mitm_flows"] = (
             "—" if not mitm else "all flows" if flows == 0 else f"the last {flows} flows"
         )
         values["mitm_flow_bytes"] = displayed["mitm_flow_bytes"] = (
-            "—" if not mitm else vmsettings.flow_bytes_label(c.get("mitm_flow_bytes"))
+            "—" if not mitm else vm_settings.flow_bytes_label(c.get("mitm_flow_bytes"))
         )
         # the address its forwarded ports are on, with them (VM.forwards: what ares and ssh use)
         try:
@@ -1185,7 +1188,7 @@ class Manager:
         """How far VM name's picture turns (a worker thread's): a portrait model's guest's last
         rotation report while it runs (live), the angle its set was left at when it is off."""
         try:
-            vm = core.VM(self.lib, name)
+            vm = vm_library.VM(self.lib, name)
             if not vm.portrait():
                 return 0
             angle = rotation.status(vm).get("rotation" if live else "saved")
@@ -1404,7 +1407,7 @@ class Manager:
         from beanjar.network import mitmtool
 
         c = self.lib.vm(name).config
-        if vmsettings.guest_net(c.get("link"), c.get("mode")) == "mitm":
+        if vm_settings.guest_net(c.get("link"), c.get("mode")) == "mitm":
             tool = mitmtool.check()
             if not tool.usable:
                 self.say(f"{name}: the traffic inspector will be off: {tool.problem}")
@@ -1465,7 +1468,7 @@ class Manager:
         instead. A signal the VM has not powered off on in time, or that webOS refused, offers
         Unplug or waiting again (stop_timed_out). A VM running for a reason (VM.reason) has it in
         the dialog, which is the confirmation stop --force asks for."""
-        vm = core.VM(library, name)
+        vm = vm_library.VM(library, name)
         try:
             why = vm.power_off_refusal()
         except Exception as e:  # noqa: BLE001
@@ -1528,7 +1531,7 @@ class Manager:
         """A `stop --no-fallback` that did not stop the VM: one that has the signal and has not
         powered off in time can be waited for again, or unplugged; one that could not take it
         (it changed since the dialog asked) can be shut down as stop does without it."""
-        vm = core.VM(library, name)
+        vm = vm_library.VM(library, name)
         if not vm.pid():
             return None
         sent = base.read_pid(vm.power_off_file) == vm.pid()
@@ -1742,22 +1745,22 @@ class Manager:
         f["smp"].set_value(int(cfg.get("smp", 4)))
         form.free_page_reporting_group.set_visible(not new)  # a new VM has it off
         f["free_page_reporting"].set_active(cfg.get("free_page_reporting", "off") == "on")
-        dropdown(f["link"], vmsettings.LINKS, cfg.get("link", "nat"))
-        dropdown(f["mode"], vmsettings.MODES, cfg.get("mode", "mitm"))
+        dropdown(f["link"], vm_settings.LINKS, cfg.get("link", "nat"))
+        dropdown(f["mode"], vm_settings.MODES, cfg.get("mode", "mitm"))
         form.identity_group.set_visible(not new)  # a new VM's are made at create
         f["mac"].set_text(str(cfg.get("mac", "")))
         f["serial"].set_text(str(cfg.get("serial", "")))
         form.settings = not new
         f["listen"].set_text(str(cfg.get("listen", "")))
         f["address"].set_text(str(cfg.get("address", "")))
-        f["mitm_flows"].set_value(int(cfg.get("mitm_flows", vmsettings.MITM_FLOWS)))
+        f["mitm_flows"].set_value(int(cfg.get("mitm_flows", vm_settings.MITM_FLOWS)))
         f["mitm_flow_bytes"].set_text(str(cfg.get("mitm_flow_bytes", "")))
         form.link_changed()
         self._layer_rows(
-            form, cfg.get("layers", vmsettings.DEFAULT_LAYERS), None if new else cfg["name"]
+            form, cfg.get("layers", vm_settings.DEFAULT_LAYERS), None if new else cfg["name"]
         )
-        dropdown(f["display"], vmsettings.DISPLAYS, cfg.get("display", "dbus"))
-        dropdown(f["audio"], vmsettings.AUDIOS, cfg.get("audio", "dbus"))
+        dropdown(f["display"], vm_settings.DISPLAYS, cfg.get("display", "dbus"))
+        dropdown(f["audio"], vm_settings.AUDIOS, cfg.get("audio", "dbus"))
         if not new:
             form.show_model_key(self.lib.vm(cfg["name"]).has_model_key())
         form.on_browse = lambda row: self.browse(form, row)
@@ -1775,7 +1778,7 @@ class Manager:
         form.own_fw = None
         if new:
             sources = [
-                (fw_label(n) + untested_suffix(d), "place", d) for n, d in newvm.collection()
+                (fw_label(n) + untested_suffix(d), "place", d) for n, d in create.collection()
             ]
             sources += [("Firmware File (.epk)…", "epk", None), ("Directory…", "dir", None)]
         else:
@@ -1864,7 +1867,7 @@ class Manager:
             full if full and fw_label(full) != full else ""
         )  # the name the label shortens
         try:
-            sp = newvm.space(
+            sp = create.space(
                 self.lib,
                 fw=value,
                 vm_dir=form.vm_dir,
@@ -1967,7 +1970,7 @@ class Manager:
             return text if info["built"] else f"{text} (not built: scripts/build.sh guest)"
 
         auto = set(targets.ALWAYS_LAYERS)
-        for n, on in vmsettings.layer_list(layers, avail):
+        for n, on in vm_settings.layer_list(layers, avail):
             form.add_layer(
                 n, line(n) + (" (always used; here it takes this place)" if n in auto else ""), on
             )
@@ -2028,12 +2031,12 @@ class Manager:
     def new_vm(self):
         def ok(form):
             name = form.fields["name"].get_text().strip()
-            newvm.check_name(self.lib, name)
+            create.check_name(self.lib, name)
             v = self._form_values(form)
             if v["display"] != "dbus" and v["audio"] == "dbus":
                 v["audio"] = "none"
-            plan = newvm.check(self.lib, name, **v)
-            if newvm.slow(self.lib, plan):
+            plan = create.check(self.lib, name, **v)
+            if create.slow(self.lib, plan):
                 self.create_async(form, name, v, plan["epk"])
                 return self.widgets.STAY
             line = self.output_start(f"new VM {name}", show=False)
@@ -2049,7 +2052,7 @@ class Manager:
         self.warn_mitm(name)
 
     def create_async(self, form, name, v, epk=None):
-        """A New VM that takes time: python3 -m beanjar.newvm with a progress dialog over New VM.
+        """A New VM that takes time: python3 -m beanjar.vm.create with a progress dialog over New VM.
         Done, both close; cancelled or failed (nothing is left of it either way), Close goes back
         to New VM, whose banner has the refusal. epk: the .epk it extracts (newvm.check's plan)."""
         args = [
@@ -2098,7 +2101,7 @@ class Manager:
             self.refresh()
 
         self.create_op = win.operation = Operation(
-            self.lib, args, line, done, module="beanjar.newvm"
+            self.lib, args, line, done, module="beanjar.vm.create"
         )
         self.progress = win
         self.show(win)
@@ -2159,7 +2162,7 @@ class Manager:
             v = self._form_values(form)
             change, path = form.model_key_change or (None, None)
             if change == "install":
-                core.read_model_key(path)  # refused before anything is saved
+                vm_library.read_model_key(path)  # refused before anything is saved
             before = dict(self.lib.vm(name).config)
             self.lib.configure(name, prepare=False, **v)
             if change:
@@ -2170,7 +2173,7 @@ class Manager:
                 "clear": ", model key cleared",
             }.get(change, "")
             after = self.lib.vm(name).config
-            if any(before.get(k) != after.get(k) for k in core.BOARD_SETTINGS):
+            if any(before.get(k) != after.get(k) for k in vm_library.BOARD_SETTINGS):
                 # its board data comes from what changed: worked out in the background
                 self.prepare_async(form, name, saved)
                 return self.widgets.STAY
@@ -2264,7 +2267,7 @@ def main(argv=None):
     try:
         lib = Library(a.library, a.repo)
     except Error as e:
-        return core.main_error(e)
+        return vm_library.main_error(e)
     # The application ID names the icon and the desktop entry; NON_UNIQUE: each run is its own
     # window (a second one, e.g. with another --library, is not handed to the first).
     from . import ui

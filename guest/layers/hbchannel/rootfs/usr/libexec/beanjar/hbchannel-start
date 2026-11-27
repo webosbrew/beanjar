@@ -5,7 +5,7 @@
 # (mount-readwrite): what a rooted TV's boot hook does, with the VM's own keys.
 #
 # - root's authorized_keys and the Dropbear host key, from the per-VM layer (the VM's identity,
-#   beanjar/keys.py), every boot: the state may have been made without them or with others. With
+#   beanjar/vm/keys.py), every boot: the state may have been made without them or with others. With
 #   authorized_keys present HBC's startup.sh sets no placeholder password, as on a TV with keys.
 # - webosbrew_sshd_enabled: HBC's own switch for its SSH server, which owns the guest's port 22.
 # - HBC's startup.sh, run where its dev install has it (emulator-hbchannel-install; its SERVICE_DIR

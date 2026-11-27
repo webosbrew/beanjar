@@ -21,7 +21,7 @@ numbers and passes or fails:
 5. At the desktop's size, 1280x720: not a thumbnail, the core's own screenshot (no thumbnail
    made).
 6. beanjar-vnc gone: Display1 has no owner (the manager then runs the headless viewer once,
-   host/core/beanjar/core.py screenshot), and the headless viewer gives a 384x216 picture.
+   host/core/beanjar/vm/library.py screenshot), and the headless viewer gives a 384x216 picture.
 7. A GL guest (fake-qemu --dmabuf) that draws only after beanjar-vnc's first render, with no
    client, with memory frames and with GBM frames: its updates acknowledged without a copy, yet
    a Screenshot at 384x216 and at 1280x720 gives the picture, upright (the bar at the top).

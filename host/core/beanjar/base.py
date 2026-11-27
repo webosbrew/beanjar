@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The manager's light base: what a short-lived query needs without the library module (core.py),
+"""The manager's light base: what a short-lived query needs without the library module (library.py),
 which imports most of the manager. The `_ares` query another machine's remote ares-TOOL asks at
 every run (cli.ares_query, ares.remote_vm) is answered from here, and on a board every module
 imported costs tens of milliseconds, so this module imports only os and re (and ipaddress for a VM

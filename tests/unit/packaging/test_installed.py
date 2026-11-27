@@ -427,16 +427,16 @@ def test_vnc_takes_the_full_ffmpeg_over_from_an_older_beanjar(tmp_path):
 
 
 def test_x86_64_kernel_refused_when_installed_without_its_package(tmp_path):
-    from beanjar import vmsettings
+    from beanjar.vm import settings
 
     tree = paths.Tree(tmp_path)
-    assert vmsettings.guest_kernel_package_refusal("x86-64", tree) is None  # a checkout
+    assert settings.guest_kernel_package_refusal("x86-64", tree) is None  # a checkout
     (tmp_path / "installation.toml").write_text('version="test"\n')
-    refusal = vmsettings.guest_kernel_package_refusal("x86-64", tree)
+    refusal = settings.guest_kernel_package_refusal("x86-64", tree)
     assert "beanjar-guest-x86-64" in refusal
-    assert vmsettings.guest_kernel_package_refusal("arm64", tree) is None
+    assert settings.guest_kernel_package_refusal("arm64", tree) is None
     with mock.patch("os.path.isfile", return_value=True):
-        assert vmsettings.guest_kernel_package_refusal("x86-64", tree) is None
+        assert settings.guest_kernel_package_refusal("x86-64", tree) is None
 
 
 def test_board_definitions_ship_with_the_guest(tmp_path):

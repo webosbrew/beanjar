@@ -10,7 +10,7 @@ from unittest import mock
 import pytest
 
 from beanjar.runtime import capacity, qemu
-from beanjar import newvm
+from beanjar.vm import create
 from beanjar.board import nvm
 
 TARGET = ("x", "y")
@@ -27,12 +27,12 @@ def run_cap(tmp_path):
         with (
             mock.patch.dict(os.environ, {"BEANJAR_MEMINFO": str(meminfo)}),
             mock.patch.object(capacity, "memory_headroom_mib", return_value=headroom),
-            mock.patch.object(newvm.targets, "board_broadcast", return_value="atsc"),
+            mock.patch.object(create.targets, "board_broadcast", return_value="atsc"),
             mock.patch.object(nvm, "board_ram", return_value=board),
             mock.patch.object(qemu, "vm_accel", return_value=accel),
             mock.patch.object(qemu, "tcg_tb_mib", return_value=1024),
         ):
-            newvm.cap_memory(None, None, TARGET, "/fw", cfg, lines.append)
+            create.cap_memory(None, None, TARGET, "/fw", cfg, lines.append)
         return cfg, lines
 
     return run
@@ -77,5 +77,5 @@ def test_explicit_that_fits_is_silent(run_cap):
 def test_unknown_host_memory_does_nothing():
     with mock.patch.dict(os.environ, {"BEANJAR_MEMINFO": "/nonexistent"}):
         cfg = {}
-        newvm.cap_memory(None, None, TARGET, "/fw", cfg, lambda line: pytest.fail(line))
+        create.cap_memory(None, None, TARGET, "/fw", cfg, lambda line: pytest.fail(line))
     assert cfg == {}

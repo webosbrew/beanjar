@@ -33,7 +33,7 @@ Everything is made in a scratch directory of the library (vms/.new-<name>-*) and
 rename at the end, with SIGINT, SIGTERM and SIGHUP held back for it. Any failure or cancellation
 (Ctrl-C, SIGTERM or SIGHUP: the GUI's Cancel) kills epk2extract and removes the scratch: nothing is left behind, and nothing is written outside it.
 
-python3 -m beanjar.newvm is the GUI's New VM as a process of its own (gui.Operation, so that Cancel
+python3 -m beanjar.vm.create is the GUI's New VM as a process of its own (gui.Operation, so that Cancel
 is a SIGTERM): the CLI's create's options. It is not a command for users. A refusal ends with
 "beanjar: <message>" and, if it is about one setting, "beanjar-key: <vm.toml key>" (the dialog's
 page to show).
@@ -48,17 +48,18 @@ import tempfile
 import threading
 import time
 
-from .runtime import capacity
-from . import keys, paths, vmconfig, vmidentity
-from .guestside import compat
-from .firmware import install, targets
-from .board import nvm
-from .core import VM, Library, prepare_board_data
-from .base import NAME_RE, Error
-from .firmware.install import vm_firmware
-from .tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
-from .vmidentity import free_slot, make_identity_dir, slot_lock
-from .vmsettings import MANIFEST_KEYS
+from ..runtime import capacity
+from . import keys, config, identity
+from .. import paths
+from ..guestside import compat
+from ..firmware import install, targets
+from ..board import nvm
+from .library import VM, Library, prepare_board_data
+from ..base import NAME_RE, Error
+from ..firmware.install import vm_firmware
+from ..tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
+from .identity import free_slot, make_identity_dir, slot_lock
+from .settings import MANIFEST_KEYS
 
 SIGNALS = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
 
@@ -385,11 +386,11 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
             write_toml(os.path.join(own, "manifest.toml"), m, MANIFEST_HEADER, MANIFEST_KEYS)
         cap_memory(lib, tree, target, fw_dir if kind == "place" else own, cfg, out)
         cfg["created"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-        vmconfig.write(os.path.join(scratch, "vm.toml"), cfg, VM_HEADER)
+        config.write(os.path.join(scratch, "vm.toml"), cfg, VM_HEADER)
         try:
-            keys.ensure(make_identity_dir(scratch), label=name)  # its SSH keys (beanjar/keys.py)
+            keys.ensure(make_identity_dir(scratch), label=name)  # its SSH keys (beanjar/vm/keys.py)
             keys.ensure_tee_huk(make_identity_dir(scratch))  # its TEE's key, made here
-            vmidentity.ensure_lgudid(make_identity_dir(scratch), cfg["mac"])  # its LGUDID
+            identity.ensure_lgudid(make_identity_dir(scratch), cfg["mac"])  # its LGUDID
             # the library's CA (shared by its VMs), made with the first VM; again if it was lost
             keys.ensure_ca(os.path.join(lib.root, keys.CA), warn=out if lib.names() else None)
         except keys.Error as e:
@@ -402,7 +403,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
         # with the rename that makes the VM, so two made at once never share one
         with slot_lock(lib.root):
             cfg["slot"] = free_slot(lib.root)
-            vmconfig.write(os.path.join(scratch, "vm.toml"), cfg, VM_HEADER)
+            config.write(os.path.join(scratch, "vm.toml"), cfg, VM_HEADER)
             keys.known_hosts(make_identity_dir(scratch), keys.address(cfg["slot"], lib.addresses))
             if os.path.exists(vm.dir):
                 raise Error(f"VM {name} exists", "name")
@@ -425,11 +426,11 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
 
 
 def main(argv=None):
-    from .commands.settings import settings_of
-    from .commands.vms import create_arguments
+    from ..commands.settings import settings_of
+    from ..commands.vms import create_arguments
 
     p = argparse.ArgumentParser(
-        prog="beanjar.newvm", description="the GUI's New VM (not a user command)"
+        prog="beanjar.vm.create", description="the GUI's New VM (not a user command)"
     )
     p.add_argument("--library")
     p.add_argument("--repo")

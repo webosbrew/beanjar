@@ -15,7 +15,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import base, core, vmsettings
+from beanjar import base
+from beanjar.vm import library, settings
 from beanjar.runtime import capacity, hostconfig, launch, qemu, unit, vmunits
 
 import testunits
@@ -37,7 +38,7 @@ class LingerTest(unittest.TestCase):
 
         with (
             mock.patch.dict(os.environ, BEANJAR_LINGER=knob),
-            mock.patch.object(core.subprocess, "run", side_effect=run),
+            mock.patch.object(library.subprocess, "run", side_effect=run),
             contextlib.redirect_stderr(io.StringIO()) as err,
         ):
             ok = vmunits.linger()
@@ -75,7 +76,7 @@ class VmEnvTest(unittest.TestCase):
         """Every socket the launcher defaults under RUN_DIR follows the VM directory: a caller's value is
         dropped (two VMs started from one environment never share one) and vm.toml cannot set it."""
         with tempfile.TemporaryDirectory() as d:
-            core.vmconfig.write(
+            library.vm_config.write(
                 os.path.join(d, "vm.toml"), {"platform": "webOS", "fw": "/fw", "link": "off"}
             )
             env = launch.vm_env(d, {k: "/shared/" + k for k in self.SOCKS})
@@ -83,7 +84,7 @@ class VmEnvTest(unittest.TestCase):
             with self.subTest(k):
                 self.assertNotIn(k, env)
                 with self.assertRaisesRegex(base.Error, "set by the VM manager"):
-                    vmsettings.launcher_env({k: "/x"})
+                    settings.launcher_env({k: "/x"})
 
 
 class InspectorPasswordTest(unittest.TestCase):
@@ -254,7 +255,7 @@ class UnitEnvTest(unittest.TestCase):
         Bg keeps them for the unit."""
         vm_dir = os.path.join(self.tmp, "vm")
         os.makedirs(vm_dir)
-        core.vmconfig.write(
+        library.vm_config.write(
             os.path.join(vm_dir, "vm.toml"),
             {"platform": "webOS", "fw": "/fw", "link": "off", "SENTINEL_KNOB": "1"},
         )
@@ -327,7 +328,7 @@ class MaxRunningTest(unittest.TestCase):
         self.assertIn("the limit is 1 (max_running)", why)
         self.assertTrue(
             os.path.exists(
-                os.path.join(os.environ["XDG_CONFIG_HOME"], "beanjar", core.RUNNING_LOCK)
+                os.path.join(os.environ["XDG_CONFIG_HOME"], "beanjar", library.RUNNING_LOCK)
             )
         )
         # its own unit, still up (a restart), or another unit running its RUN_DIR: not counted

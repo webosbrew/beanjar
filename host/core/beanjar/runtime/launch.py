@@ -105,7 +105,7 @@ in firmware/cache (FW_CACHE). A fw in vm.toml names another directory instead (a
 relative to the VM directory), which is used in place and never written: its map goes into
 <vm-dir>/firmware-cache (firmware.vm_firmware). Everything else is
 in the VM directory: state/ (STATE), run/ (RUN_DIR), logs/ (LOG_DIR), logs/saved/ (SAVED_LOG_DIR) and
-identity/ (IDENTITY_DIR, mode 0700: the VM's own files, its SSH keys (beanjar/keys.py) and model key,
+identity/ (IDENTITY_DIR, mode 0700: the VM's own files, its SSH keys (beanjar/vm/keys.py) and model key,
 from which each launch assembles run/share/vm, the guest's read-only share "vm"; the checkout VM's
 is a managed development VM). A key missing there is made again at start, with a warning. The mode=mitm proxy's CA is
 the library's, <vm-dir>/../../ca (NETSTUB_CA; the development library's is ca/), made again at start,
@@ -133,7 +133,8 @@ import sys
 import time
 import tomllib
 
-from .. import base, core, keys, paths, vmidentity, vmsettings
+from .. import base, paths
+from ..vm import library, keys, identity, settings
 from . import hostswap, mediasandbox, poweroff, qemu, runner, unit, vmunits
 from ..guestside import compat, share
 from ..firmware import cache, facts, targets
@@ -187,7 +188,7 @@ def say(line):
 # ------------------------------------------------------------------ instances of the checkout VM
 def instance_env(env, tree=TREE):
     """Default runtime and identity paths of a managed development VM."""
-    from .. import development
+    from ..vm import development
 
     try:
         return development.environment(env, tree)
@@ -674,7 +675,7 @@ def settings_vars(vm_dir):
     if not os.path.isfile(path):
         return ()
     try:
-        return tuple(core.vm_launcher_env(path))
+        return tuple(library.vm_launcher_env(path))
     except base.Error:
         return ()
 
@@ -780,7 +781,7 @@ class Bg:
             print("power-off: sent before; waiting for QEMU to exit", flush=True)
         elif not unit.is_socket(self.sock):
             say("power-off: no serial console")
-            return core.STOP_REFUSED
+            return library.STOP_REFUSED
         else:
             # the platform this launch runs (its vm-info.toml): the test guest's call is its own
             try:
@@ -791,7 +792,7 @@ class Bg:
             call = poweroff.power_off_call(platform)
             with open(sent, "w") as f:
                 f.write(f"{pid}\n")
-            for attempt in range(1, core.POWER_OFF_TRIES + 1):
+            for attempt in range(1, library.POWER_OFF_TRIES + 1):
                 text = console.send(call, 10, self.sock, self.log)
                 reply = re.findall(r"\{[^{}]*returnValue[^{}]*\}", text)  # among the kernel's lines
                 if call == poweroff.POWER_OFF_CALL:
@@ -801,23 +802,23 @@ class Bg:
                     )
                 else:
                     print(f"power-off: sent ({call})", flush=True)
-                if not poweroff.power_off_busy(text) or attempt == core.POWER_OFF_TRIES:
+                if not poweroff.power_off_busy(text) or attempt == library.POWER_OFF_TRIES:
                     break
                 say(
-                    f"power-off: tvpowerd is busy; retrying in {core.POWER_OFF_RETRY_S:g} s "
-                    f"({attempt}/{core.POWER_OFF_TRIES - 1})"
+                    f"power-off: tvpowerd is busy; retrying in {library.POWER_OFF_RETRY_S:g} s "
+                    f"({attempt}/{library.POWER_OFF_TRIES - 1})"
                 )
-                time.sleep(core.POWER_OFF_RETRY_S)
+                time.sleep(library.POWER_OFF_RETRY_S)
             if poweroff.power_off_refused(text):
                 try:
                     os.unlink(sent)
                 except OSError:
                     pass
                 say("power-off: webOS refused the call" + (f": {reply[-1]}" if reply else ""))
-                return core.STOP_REFUSED
+                return library.STOP_REFUSED
         while unit.alive(pid) and unit.comm(pid).startswith("qemu-system"):
             if time.monotonic() - t0 >= timeout:
-                return core.STOP_TIMED_OUT
+                return library.STOP_TIMED_OUT
             time.sleep(0.5)
         print(f"power-off: QEMU exited {time.monotonic() - t0:.0f} s after the call", flush=True)
         return 0
@@ -854,7 +855,7 @@ class Bg:
 
     def refuse_beyond_limit(self, limit=None):
         """Error if the machine's max_running VMs run already, this one not counted (core.running_refusal)."""
-        why = core.running_refusal(
+        why = library.running_refusal(
             os.path.basename(os.path.dirname(self.run_dir)), self.run_dir, self.unit, limit=limit
         )
         if why:
@@ -930,7 +931,7 @@ class Bg:
         open(out, "w").close()
         # The machine's max_running, asked again (start_check asked before anything changed) under
         # its lock until the unit is up, where the next start's count sees it.
-        with core.running_lock() as lock:
+        with library.running_lock() as lock:
             self.refuse_beyond_limit(lock.limit)
             try:
                 how.start(self, env, words, mem=qemu.vm_guest_ram(env))
@@ -962,7 +963,7 @@ def start_check(env=None):
     env = dict(os.environ if env is None else env)
     run_dir = os.path.abspath(os.path.join(TREE.top, env.get("RUN_DIR") or "build"))
     unit_name = env.get("UNIT") or vmunits.vm_unit_name(os.path.dirname(run_dir))
-    why = core.running_refusal(os.path.basename(os.path.dirname(run_dir)), run_dir, unit_name)
+    why = library.running_refusal(os.path.basename(os.path.dirname(run_dir)), run_dir, unit_name)
     if why:
         raise Error(why)
 
@@ -998,7 +999,7 @@ def bg_stop(env=None, power_off=None):
     b.save_logs()
     if power_off is not None:
         rc = b.power_off(power_off)
-        if rc == core.STOP_TIMED_OUT:
+        if rc == library.STOP_TIMED_OUT:
             say(f"power-off: QEMU still runs {power_off:g} s after the call")
         if rc:
             return rc
@@ -1037,7 +1038,7 @@ def vm_env(vm_dir, env):
     the VM directory's paths."""
     env = {k: v for k, v in env.items() if k not in RUNTIME_VARS}
     try:
-        env.update(core.vm_launcher_env(os.path.join(vm_dir, "vm.toml")))
+        env.update(library.vm_launcher_env(os.path.join(vm_dir, "vm.toml")))
     except base.Error as e:
         raise Error(str(e)) from None
     run_dir, log_dir = os.path.join(vm_dir, "run"), os.path.join(vm_dir, "logs")
@@ -1047,10 +1048,10 @@ def vm_env(vm_dir, env):
         SAVED_LOG_DIR=os.path.join(log_dir, "saved"),
         UNIT=vmunits.vm_unit_name(vm_dir),
         IDENTITY_DIR=base.identity_dir(vm_dir),
-        NETSTUB_CA=vmidentity.ca_dir(vm_dir),
+        NETSTUB_CA=identity.ca_dir(vm_dir),
         ADDRESS_PREFIX=base.addresses_of(base.library_of(vm_dir)),
-        NET_LAN_PARENT=vmidentity.lan_parent_of(base.library_of(vm_dir)) or "",
-        NET_LAN_HOSTNAME=vmsettings.dns_label(os.path.basename(vm_dir)),
+        NET_LAN_PARENT=identity.lan_parent_of(base.library_of(vm_dir)) or "",
+        NET_LAN_HOSTNAME=settings.dns_label(os.path.basename(vm_dir)),
     )
     return env
 
@@ -1084,21 +1085,19 @@ def vm(cmd, vm_dir, words, env=None, power_off=None):
         raise Error(f"{vm_dir} is already running (pid {pid}); stop it first")
     start_check(dict(env, RUN_DIR=os.path.join(vm_dir, "run"), UNIT=vmunits.vm_unit_name(vm_dir)))
     try:
-        fw = core.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))["FW"]
+        fw = library.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))["FW"]
     except base.Error as e:
         raise Error(str(e)) from None
     guest_preflight(dict(env, FW=fw), os.path.basename(vm_dir))
     try:
-        vmidentity.ensure_identity(
-            vm_dir, say
-        )  # a vm.toml without mac, serial or slot gets them now
+        identity.ensure_identity(vm_dir, say)  # a vm.toml without mac, serial or slot gets them now
         address = base.vm_address(
-            vm_dir, core.vmconfig.read(os.path.join(vm_dir, "vm.toml"))["slot"]
+            vm_dir, library.vm_config.read(os.path.join(vm_dir, "vm.toml"))["slot"]
         )
         keys.ensure(
-            vmidentity.make_identity_dir(vm_dir), warn=say, address=address
+            identity.make_identity_dir(vm_dir), warn=say, address=address
         )  # a missing key is made again
-        keys.ensure_ca(vmidentity.ca_dir(vm_dir), warn=say)  # the library's CA
+        keys.ensure_ca(identity.ca_dir(vm_dir), warn=say)  # the library's CA
     except (base.Error, keys.Error) as e:
         raise Error(str(e)) from None
     env = vm_env(vm_dir, env)
@@ -1288,7 +1287,7 @@ def parser():
 def main(argv_=None):
     a = parser().parse_args(argv_)
     try:
-        from .. import development
+        from ..vm import development
 
         if a.cmd == "migrate-local":
             print("migrated development VM: " + development.migrate(dict(os.environ)))
@@ -1441,7 +1440,7 @@ def main(argv_=None):
         if a.cmd == "config" and a.var == "ADDRESS":
             if a.dir:
                 directory = os.path.abspath(a.dir)
-                vmidentity.ensure_slot(directory, say)
+                identity.ensure_slot(directory, say)
             else:
                 _library, directory = development.locations(os.environ)
                 if not os.path.isfile(os.path.join(directory, "vm.toml")):
@@ -1450,7 +1449,7 @@ def main(argv_=None):
                     )
             print(
                 base.vm_address(
-                    directory, core.vmconfig.read(os.path.join(directory, "vm.toml"))["slot"]
+                    directory, library.vm_config.read(os.path.join(directory, "vm.toml"))["slot"]
                 )
             )
             return 0
@@ -1458,7 +1457,7 @@ def main(argv_=None):
             # the guest's: the environment's, else the development VM's (INSTANCE's) vm.toml; empty
             # before its first start (the board's then)
             if a.dir:
-                env = core.vm_launcher_env(os.path.join(a.dir, "vm.toml"))
+                env = library.vm_launcher_env(os.path.join(a.dir, "vm.toml"))
             else:
                 env = development.configured_environment(dict(os.environ))
             print(os.environ.get(a.var) or env.get(a.var) or "")

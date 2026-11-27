@@ -37,7 +37,7 @@ VM is created and again, with a warning, at a start that finds one missing:
                                     across VNC and VM restarts, set or reset with `beanjar vnc
                                     password`, made anew with a new identity (renew_vnc_password)
   sestore.toml                      the second screen gateway's RSA-2048 PEM item is provisioned by
-                                    beanjar.sestore; generate_ssg_key() returns its bytes, and
+                                    beanjar.vm.sestore; generate_ssg_key() returns its bytes, and
                                     ssg_cert_data() makes the matching public certificate
 
 
@@ -60,7 +60,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import base, paths
+from .. import base, paths
 
 # keys' names for the base's (base.py: the `_ares` query reads them without this module)
 Error = base.KeysError

@@ -12,13 +12,13 @@ from collections import namedtuple
 # or None for none, and the tooltip (the full text when the title is shortened).
 Problem = namedtuple("Problem", "kind title button action tooltip", defaults=(None, None, None))
 
-# The hardware rows shown only when they differ from these (vmconfig.py fills audio from the
-# display, vmsettings.py: free page reporting is off by default).
+# The hardware rows shown only when they differ from these (config.py fills audio from the
+# display, settings.py: free page reporting is off by default).
 FREE_PAGE_REPORTING_DEFAULT = "off"
 
 
 def audio_default(display):
-    """The audio backend a VM gets without audio= in its vm.toml (vmconfig.py)."""
+    """The audio backend a VM gets without audio= in its vm.toml (config.py)."""
     return "dbus" if display == "dbus" else "none"
 
 
@@ -57,7 +57,7 @@ def relative_time(when, now=None):
     return datetime.datetime.fromtimestamp(when).strftime("%Y-%m-%d")
 
 
-# The logs a run writes to while it runs (core.py VM.console_log; the launcher's qemu.out): the
+# The logs a run writes to while it runs (library.py VM.console_log; the launcher's qemu.out): the
 # newer's time is when the VM last did something, which for a VM that is off is when it stopped.
 RUN_LOGS = ("console.log", "qemu.out")
 

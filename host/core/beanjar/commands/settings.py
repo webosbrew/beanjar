@@ -7,7 +7,8 @@ import argparse
 import os
 
 from ..runtime import capacity, hostconfig
-from .. import core, paths, vmsettings
+from ..vm import library, settings
+from .. import paths
 from ..access import remote
 from ..base import Error
 from .common import Usage, emit, layer_versions, progress, table, text_value
@@ -24,7 +25,7 @@ def settings_view(vm):
     default; and, with a versioned layer, layer_versions: {layer: the version it runs} (plain
     NAME's default named), which is no setting of its own."""
     c = vm.config_unchecked  # a bad broadcast still shows, to be fixed
-    out = {k: c.get(k) for k in vmsettings.SETTINGS}
+    out = {k: c.get(k) for k in settings.SETTINGS}
     out["tags"] = c.get("tags") or None
     versions = layer_versions(c.get("layers"))
     if versions:
@@ -74,13 +75,13 @@ def set_or_unset(a, group, keys, unsettable, apply, name=None):
     apply(values)
 
 
-CONFIG_KEYS = (*vmsettings.SETTINGS, "tags")
+CONFIG_KEYS = (*settings.SETTINGS, "tags")
 
 
 def cmd_config(lib, a):
     """A VM's config: shown, set or unset (back to the default); its settings while it is off, its
     tags whether it runs or not."""
-    unsettable = [k for k, h in vmsettings.SETTING_HELP.items() if h[3]] + ["tags"]
+    unsettable = [k for k, h in settings.SETTING_HELP.items() if h[3]] + ["tags"]
     changed = []
 
     def apply(values):
@@ -110,7 +111,7 @@ def settings_help():
         "values, its default, and what `unset` brings back where it has one:",
         "",
     ]
-    for k, (values, default, what, unset) in vmsettings.SETTING_HELP.items():
+    for k, (values, default, what, unset) in settings.SETTING_HELP.items():
         lines.append(f"  {k}={values}")
         lines.append(
             described(f"{what}; default {default}" + (f"; unset: {unset}" if unset else ""))
@@ -129,7 +130,7 @@ def warn_mitm(vm):
     """Say so when a mode=mitm VM will start without its traffic inspector (mitmtool.py)."""
     from ..network import mitmtool
 
-    if vmsettings.guest_net(vm.config.get("link"), vm.config.get("mode")) == "mitm":
+    if settings.guest_net(vm.config.get("link"), vm.config.get("mode")) == "mitm":
         tool = mitmtool.check()
         if not tool.usable:
             progress(
@@ -145,9 +146,9 @@ def config_command(a, group, keys, unsettable, setter):
 
 def cmd_library_config(lib, a):
     """The library's settings (config.toml): shown, set or unset."""
-    config_command(a, "library config", vmsettings.CONFIG_KEYS, ("lan_parent",), lib.set_option)
+    config_command(a, "library config", settings.CONFIG_KEYS, ("lan_parent",), lib.set_option)
     shown = dict(lib.config, mac_prefix=lib.mac_prefix, addresses=lib.addresses)
-    return emit(a, {k: shown[k] for k in vmsettings.CONFIG_KEYS if k in shown})
+    return emit(a, {k: shown[k] for k in settings.CONFIG_KEYS if k in shown})
 
 
 def cmd_host_config(lib, a):
@@ -232,7 +233,7 @@ def cmd_host_prune_layer_images(lib, a):
     from .. import base, paths
     from ..guestside import layerimage
 
-    libraries = [core.Library(r) for r in base.slot_domain(lib.root)[1] if os.path.isdir(r)]
+    libraries = [library.Library(r) for r in base.slot_domain(lib.root)[1] if os.path.isdir(r)]
     try:
         removed = layerimage.prune(
             paths.TREE,
@@ -298,7 +299,7 @@ def register_config(cli):
     g = group(
         "config",
         "the library's settings (config.toml): show them, set KEY=VALUE "
-        f"({', '.join(vmsettings.CONFIG_KEYS)}) or unset lan_parent",
+        f"({', '.join(settings.CONFIG_KEYS)}) or unset lan_parent",
         under=g,
         dest="verb",
     )
@@ -308,7 +309,7 @@ def register_config(cli):
         cmd_library_config,
         "the library's settings",
         "library config",
-        f" ({', '.join(vmsettings.CONFIG_KEYS)})",
+        f" ({', '.join(settings.CONFIG_KEYS)})",
     )
 
     host = group("host", "this machine's settings, every library's")

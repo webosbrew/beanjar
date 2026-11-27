@@ -11,7 +11,7 @@ For measured super.pak/dpmeta.pak firmware, import copies the described linear
 block ranges into owned named paks (superpak.py), without unpacking SquashFS.
 The supplied directory is never normalized in place.
 
-New VM (newvm.py) fills firmware/ from a directory of extracted paks, hard-linked where it is on
+New VM (create.py) fills firmware/ from a directory of extracted paks, hard-linked where it is on
 the filesystem of the library (nothing writes a pak), else copied, or from a .epk: epk2extract -c
 -n runs in a scratch directory inside the new VM's own scratch (so a rename moves the paks into
 firmware/) on a symlink to the .epk, so nothing is written next to the source. -n keeps it from

@@ -16,7 +16,8 @@ import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import core, paths
+from beanjar.vm import library as vm_library
+from beanjar import paths
 from beanjar.guestside import components, layermeta
 
 spec = importlib.util.spec_from_file_location("component_publish", TOP / "meson/components.py")
@@ -106,7 +107,7 @@ class TestComponentsTest:
             ),
             mock.patch("beanjar.paths.Tree", return_value=tree),
         ):
-            library = core.Library(str(self.top / "library"), repo=str(self.top))
+            library = vm_library.Library(str(self.top / "library"), repo=str(self.top))
             listed = library.layers(("k5lp", "goldilocks2"))
             assert listed["gl"]["built"]
             assert listed["soc"]["built"]

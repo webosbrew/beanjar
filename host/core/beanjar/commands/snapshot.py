@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""A VM's snapshots (beanjar/snapshot.py): snapshot create, list, show, delete and reset."""
+"""A VM's snapshots (beanjar/vm/snapshot.py): snapshot create, list, show, delete and reset."""
 
 from .common import emit, kv_lines, progress, table
 
@@ -13,7 +13,7 @@ def size_text(n):
 
 
 def cmd_create(lib, a):
-    from .. import snapshot
+    from ..vm import snapshot
 
     r, seconds = snapshot.create(lib, a.name, a.snapshot, out=progress)
     r = dict(r, seconds=round(seconds, 2))
@@ -26,7 +26,7 @@ def cmd_create(lib, a):
 
 
 def cmd_list(lib, a):
-    from .. import snapshot
+    from ..vm import snapshot
 
     rows = snapshot.list_snapshots(lib.vm(a.name))
     columns = [
@@ -39,14 +39,14 @@ def cmd_list(lib, a):
 
 
 def cmd_show(lib, a):
-    from .. import snapshot
+    from ..vm import snapshot
 
     r = snapshot.info(lib.vm(a.name), a.snapshot)
     return emit(a, r, "\n".join(kv_lines(dict(r, disks=", ".join(r["disks"]) or None))))
 
 
 def cmd_delete(lib, a):
-    from .. import snapshot
+    from ..vm import snapshot
 
     snapshot.delete(lib, a.name, a.snapshot)
     return emit(
@@ -57,7 +57,7 @@ def cmd_delete(lib, a):
 
 
 def cmd_reset(lib, a):
-    from .. import snapshot
+    from ..vm import snapshot
 
     r, seconds = snapshot.reset(lib, a.name, a.snapshot, out=progress)
     return emit(

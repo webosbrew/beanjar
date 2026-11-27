@@ -4,10 +4,10 @@
  *
  * The recording middleware reads the DVR's 16-byte key with HAL_PVR_CRYPTO_GetSecureKey(?, buf).
  * On a set that read goes through MStar's TEE; the VM has no TEE, so the stock read fails. This
- * definition answers it from the VM's secure-store item "dvr_key" (host/core/beanjar/sestore.py):
- * 0 and the 16 bytes, or -1, the stock failure, without the item. Every other symbol is the stock
- * library's, which this one NEEDs by its full name. On M2 and M3 the same key is given by
- * src/libkadaptor/kadaptor-pvrkey.c. */
+ * definition answers it from the VM's secure-store item "dvr_key"
+ * (host/core/beanjar/vm/sestore.py): 0 and the 16 bytes, or -1, the stock failure, without the
+ * item. Every other symbol is the stock library's, which this one NEEDs by its full name. On M2 and
+ * M3 the same key is given by src/libkadaptor/kadaptor-pvrkey.c. */
 #include <string.h>
 #include "../../../../../include/webos-sestore-items.h"
 #include "../sestore-item.h"

@@ -93,7 +93,7 @@ def test_statusfmt():
     )
     check(stats.reservation(["qemu"]) == (None, ""), "no -m, no reservation")
     with patch.object(
-        stats.capacity, "memory_headroom_mib", side_effect=stats.core.Error("bad config")
+        stats.capacity, "memory_headroom_mib", side_effect=stats.base.Error("bad config")
     ):
         check(
             stats.reservation(["qemu", "-accel", "kvm", "-m", "2560"]) == (None, ""),

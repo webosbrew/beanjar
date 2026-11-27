@@ -8,7 +8,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import development, paths, vmconfig
+from beanjar.vm import development, config
+from beanjar import paths
 from beanjar.runtime import qemu
 
 
@@ -82,7 +83,7 @@ def test_preserves_keys_ca_state_and_identity(dev):
     dest = Path(dev.directory)
     assert (dest / "identity/id_ed25519").read_bytes() == (local / "id_ed25519").read_bytes()
     assert (dest / "identity/model-secret").read_bytes() == (local / "model-secret").read_bytes()
-    from beanjar import sestore
+    from beanjar.vm import sestore
 
     assert sestore.load(dest / "identity")[1][sestore.MODEL] == (
         local / "model-secret"
@@ -91,7 +92,7 @@ def test_preserves_keys_ca_state_and_identity(dev):
     assert (Path(dev.library) / "ca/ca.key").read_bytes() == (local / "ca/ca.key").read_bytes()
     assert not ((Path(dev.library) / "ca/.lock").exists())
     assert (dest / "state/nvram.img").read_bytes() == (state / "nvram.img").read_bytes()
-    stored = vmconfig.read(dest / "vm.toml", {})
+    stored = config.read(dest / "vm.toml", {})
     assert {key: stored[key] for key in dev.config} == dev.config
     (dest / "state/nvram.img").write_bytes(b"changed")
     assert (state / "nvram.img").stat().st_size == 8 << 20
@@ -152,7 +153,7 @@ def test_real_config_preparation_and_reuse(dev):
     # the default display follows the host's accelerator (KVM: egl-headless); pinned to TCG's
     with mock.patch.object(qemu, "default_accel", return_value="tcg"):
         resolved = development.prepare(env, dev.tree)
-    cfg = vmconfig.read(Path(dev.directory) / "vm.toml", {})
+    cfg = config.read(Path(dev.directory) / "vm.toml", {})
     assert cfg["mac"] == dev.config["mac"]
     assert cfg["serial"] == dev.config["serial"]
     assert cfg["layers"] == ["headless"]
@@ -223,7 +224,7 @@ def test_migration_keeps_board_identity_and_absolute_firmware(dev, monkeypatch):
     monkeypatch.chdir(dev.root)
     with mock.patch.object(development, "_offline"):
         development.migrate(dict(dev.env, FW="./firmware"), dev.tree)
-    cfg = vmconfig.read(Path(dev.directory) / "vm.toml", {})
+    cfg = config.read(Path(dev.directory) / "vm.toml", {})
     assert cfg["mac"] == "a8:23:fe:12:34:56"
     assert cfg["serial"] == "000RAXX00001"
     assert cfg["fw"] == str(firmware)
@@ -241,14 +242,14 @@ def test_slots(dev):
     board.write_text("ethaddr=02:11:22:33:44:55 serialNum=TEST123\n")
     user = Path(dev.env["BEANJAR_LIBRARY"]) / "vms/tv1"  # a VM of the user's library
     user.mkdir(parents=True)
-    vmconfig.write(str(user / "vm.toml"), {"fw": "/x", "slot": 1})
+    config.write(str(user / "vm.toml"), {"fw": "/x", "slot": 1})
     env = dict(dev.env, FW=str(firmware), NET_LINK="nat", NET_MODE="direct")
     assert development.configured_environment(env, dev.tree)["SLOT"] == "2"
     assert development.prepare(dict(env, SLOT="9"), dev.tree)["SLOT"] == "2"
     other = development.prepare(dict(env, INSTANCE="other"), dev.tree)
     assert other["SLOT"] == "3"
     assert development.configured_environment(env, dev.tree)["SLOT"] == "2"
-    assert vmconfig.read(Path(dev.directory) / "vm.toml")["slot"] == 2
+    assert config.read(Path(dev.directory) / "vm.toml")["slot"] == 2
 
 
 def test_failed_sparse_copy_leaves_originals_and_destination_untouched(dev):

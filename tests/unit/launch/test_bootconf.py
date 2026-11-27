@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import base, keys, paths
+from beanjar import base, paths
+from beanjar.vm import keys
 from beanjar.runtime import qemu
 from beanjar.firmware import targets
 from beanjar.board import nvm
@@ -367,7 +368,7 @@ class BootConfTest(unittest.TestCase):
             "lm14-netcast45",
         ):
             self.assertNotIn(name, with_key)
-        from beanjar import sestore
+        from beanjar.vm import sestore
 
         with tempfile.TemporaryDirectory() as d:
             said = []

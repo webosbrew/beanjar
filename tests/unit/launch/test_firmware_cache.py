@@ -16,7 +16,8 @@ from unittest import mock
 
 
 from beanjar.firmware import cache as firmware_cache, targets
-from beanjar import keys, paths
+from beanjar.vm import keys
+from beanjar import paths
 from beanjar.runtime import qemu
 from beanjar.board import lls, nvm, partmap, prepare
 

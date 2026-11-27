@@ -17,7 +17,7 @@ import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import sestore
+from beanjar.vm import sestore
 
 
 class TestInputsTest:
@@ -286,7 +286,7 @@ class TestInputsTest:
         self.write('missing="error"\n[items]\n"item"={text="hello"}')
         output = self.identity / "snapshot.bin"
         subprocess.run(
-            [sys.executable, "-m", "beanjar.sestore", str(self.identity), str(output)],
+            [sys.executable, "-m", "beanjar.vm.sestore", str(self.identity), str(output)],
             env=dict(os.environ, PYTHONPATH=str(TOP / "host/core")),
             check=True,
             stdout=subprocess.PIPE,

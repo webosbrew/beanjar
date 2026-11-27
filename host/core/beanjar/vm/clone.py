@@ -31,10 +31,11 @@ import subprocess
 import tempfile
 import tomllib
 
-from . import base, core, keys, tomlfile, vmconfig, vmidentity
-from .board import nvm
-from .access import remote
-from .base import Error
+from .. import base, tomlfile
+from . import library as vm_library, keys, config, identity
+from ..board import nvm
+from ..access import remote
+from ..base import Error
 
 STAGE = ".clone-stage-"
 SCRATCH = ".clone-"
@@ -92,13 +93,13 @@ class End:
     def identities(self, root):
         """({mac}, {serial}, mac_prefix) of the library at root (its VMs, not the hidden scratch)."""
         if not self.host:
-            return *vmidentity.identities(os.path.join(root, "vms")), vmidentity.mac_prefix_of(root)
+            return *identity.identities(os.path.join(root, "vms")), identity.mac_prefix_of(root)
         text = self.sh(f"cat -- {q(root)}/config.toml 2>/dev/null; true")[1].decode()
         try:
             prefix = (tomllib.loads(text) or {}).get("mac_prefix")
         except tomllib.TOMLDecodeError as e:
             raise Error(f"{self.where}: {root}/config.toml: {e}") from None
-        prefix = vmidentity.parse_mac_prefix(prefix or vmidentity.DEFAULT_MAC_PREFIX)
+        prefix = identity.parse_mac_prefix(prefix or identity.DEFAULT_MAC_PREFIX)
         out = self.sh(
             "grep -h -E '^[[:space:]]*(mac|serial)[[:space:]]*=' "
             f"{q(root)}/vms/*/vm.toml 2>/dev/null; true"
@@ -145,7 +146,7 @@ def pipe(src_argv, dst_argv):
 def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
     """DEST (dest_spec: NAME here, local/NAME or HOST/NAME), a copy of the VM src_spec (NAME, looked
     up as other commands do, or HOST/NAME; pinned: a bare NAME is lib's, nobody is asked) that is off. Returns what the CLI prints."""
-    from .newvm import _hold
+    from .create import _hold
 
     src_host, src_name = remote.locate(src_spec, lambda n: n in lib.names(), warn, pinned)
     dst_host, dst_name = remote.split_spec(dest_spec)
@@ -180,7 +181,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
             snapshot.finish_reset(vm.dir, out)
     text = src.sh(f"cat -- {q(src_dir)}/vm.toml")[1].decode()
     try:
-        cfg = vmconfig.decode(tomllib.loads(text))
+        cfg = config.decode(tomllib.loads(text))
     except tomllib.TOMLDecodeError as e:
         raise Error(f"{src_label}: vm.toml: {e}") from None
     fw = cfg.get("fw") or "firmware"
@@ -203,7 +204,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
     if dst.sh(f"test -e {q(dest_dir)}", ok=(0, 1))[0] == 0:
         raise Error(f"VM {dst_label} exists (beanjar delete {dst_label} first)", "name")
     macs, serials, prefix = dst.identities(root)
-    mac, serial = vmidentity.next_identity(prefix, macs, serials, cfg)
+    mac, serial = identity.next_identity(prefix, macs, serials, cfg)
     present = (
         src.sh(
             f"cd {q(src_dir)} && for m in {' '.join(q(m) for m in members)}; do "
@@ -231,11 +232,11 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
             f.write(text)
         new_cfg = dict(cfg, mac=mac, serial=serial)
         new_cfg.pop("slot", None)  # DEST's library gives it its own
-        vmconfig.write(os.path.join(stage, "vm.toml"), new_cfg, tomlfile.VM_HEADER)
+        config.write(os.path.join(stage, "vm.toml"), new_cfg, tomlfile.VM_HEADER)
         ident = os.path.join(stage, "identity")
         os.mkdir(ident, 0o700)
         try:
-            made = vmidentity.renew_keys(ident, dst_name, mac)
+            made = identity.renew_keys(ident, dst_name, mac)
         except keys.Error as e:
             raise Error(str(e)) from None
         rc, image = src.sh(
@@ -259,7 +260,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
         )
         if not scratch.startswith(f"{root}/vms/{SCRATCH}"):
             raise Error(f"{dst.where}: mktemp gave {scratch!r}")
-        exclude = [f"identity/{n}" for n in vmidentity.renewed()] + [EEPROM]
+        exclude = [f"identity/{n}" for n in identity.renewed()] + [EEPROM]
         out(f"copying {', '.join(present) or 'nothing'} from {src_label} to {dst.where}")
         if present:
             pipe(
@@ -291,10 +292,10 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
             info = remote.call_json(dst.host, dst.uri, ["show", remote.own(dst_name)])
             address = info.get("address")
         else:
-            vmidentity.ensure_slot(dest_dir, say=lambda line: None)
-            address = core.VM(lib, dst_name).address()
+            identity.ensure_slot(dest_dir, say=lambda line: None)
+            address = vm_library.VM(lib, dst_name).address()
             # its board data, for its own serial (another host's is made at DEST's first start)
-            core.prepare_board_data(lib, dest_dir, out)
+            vm_library.prepare_board_data(lib, dest_dir, out)
         out(f"cloned {src_label} to {dst_label}")
         return {
             "name": dst_name,

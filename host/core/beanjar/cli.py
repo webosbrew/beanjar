@@ -5,7 +5,7 @@
 
 This front reads only where the command word is, so that the `_ares` query another machine's
 remote ares-TOOL asks at every run (ares.remote_vm) is answered without loading the commands or
-the library module (core.py), which import most of the manager: on a board every module imported
+the library module (library.py), which import most of the manager: on a board every module imported
 costs tens of milliseconds. The query reads the one VM's vm.toml and key (base.target)."""
 
 import os
@@ -104,16 +104,16 @@ def ares_query(argv, i):
             return json_error(base.Error(usage), 2)
         root = base.ROOT_OPTION in flags
         vm_dir = base.vm_dir(base.library_root(opts["library"]), name)
-        from . import vmconfig
+        from .vm import config
 
-        cfg = vmconfig.peek(os.path.join(vm_dir, base.CONFIG), base.TARGET_SETTINGS)
+        cfg = config.peek(os.path.join(vm_dir, base.CONFIG), base.TARGET_SETTINGS)
         if cfg is not None and plain(cfg):
             answer = base.target(name, vm_dir, cfg, root)
         else:
             from .access import ares
-            from . import core
+            from .vm import library
 
-            answer = ares.target(core.Library(opts["library"], opts["repo"]).vm(name), root)
+            answer = ares.target(library.Library(opts["library"], opts["repo"]).vm(name), root)
         import json
 
         print(json.dumps(answer))

@@ -40,7 +40,8 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import base, core  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.vm import library as vm_library  # noqa: E402
 from beanjar.runtime import unit  # noqa: E402
 from beanjar_ui.manager import gui  # noqa: E402
 import testunits  # noqa: E402
@@ -75,7 +76,7 @@ def main():
         + os.pathsep
         + os.environ.get("PYTHONPATH", ""),
     )
-    lib = core.Library(lib_dir, repo)
+    lib = vm_library.Library(lib_dir, repo)
 
     def cli(*args, library=lib_dir):
         """The CLI in a process of its own, as from a shell."""
@@ -93,7 +94,7 @@ def main():
     def cleanup():
         for root in (lib_dir, other_dir):
             if os.path.isdir(os.path.join(root, "vms")):
-                for vm in core.Library(root, repo).vms():
+                for vm in vm_library.Library(root, repo).vms():
                     if vm.pid():
                         testunits.end(vm.pid())
         testunits.stop_ours()
@@ -254,7 +255,7 @@ def main():
             yield (lambda: elsewhere("o") is None and r["key"] not in m.ops), 30
             # (the group itself may stay: another test's VMs, run at the same time, are elsewhere too)
             check(
-                core.Library(other_dir, repo).vm("o").pid() is None
+                vm_library.Library(other_dir, repo).vm("o").pid() is None
                 and m.win.elsewhere_group.get_visible() == bool(m.elsewhere),
                 "Shut Down stops it through its library; its row goes",
             )
