@@ -29,5 +29,6 @@ Depends: meson,
  pkgconf,
  libexpat1-dev,
  libelf-dev,
+ libssl-dev,
  squashfs-tools
 Description: Beanjar guest build tools for the x86_64 workstation
