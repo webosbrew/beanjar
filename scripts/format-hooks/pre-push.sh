@@ -7,6 +7,14 @@ hookdir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(git rev-parse --show-toplevel)
 export PRE_COMMIT_HOME="$root/build/pre-commit"
 input=$(cat)
+# the commit being pushed (the first ref that is not a deletion), for scripts/act-check
+while read -r _ sha _ remote_sha; do
+    case $sha in ''|0000000000000000000000000000000000000000) continue ;; esac
+    export ACT_CHECK_COMMIT=$sha ACT_CHECK_BASE=$remote_sha
+    break
+done <<EOF
+$input
+EOF
 if [ -x "$hookdir/pre-push.inherited" ]; then
     printf '%s\n' "$input" | "$hookdir/pre-push.inherited" "$@"
 fi

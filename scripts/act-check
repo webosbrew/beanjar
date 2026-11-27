@@ -8,23 +8,29 @@
 #   scripts/act-check [--guest | --no-guest]
 #
 # Always: tests.yml's lint and unit (amd64). The Test guest workflow (testguest.yml) runs too with
-# --guest, or by default when the commits being pushed (PRE_COMMIT_FROM_REF..PRE_COMMIT_TO_REF as the
-# pre-push hook sets them, else origin/main..HEAD) touch guest/, meson/ or
+# --guest, or by default when the commits being pushed touch guest/, meson/ or
 # packaging/debian/build-deps/. Not covered: the arm64 unit entry (this machine cannot run it).
 # Exit status: nonzero when a job fails. `git push --no-verify` skips the hook.
 #
+# What is checked: by hand, the working tree. Run by the pre-push hook (scripts/format-hooks/
+# pre-push.sh sets ACT_CHECK_COMMIT to the commit being pushed and ACT_CHECK_BASE to what the
+# remote has), a throwaway clone of that commit, so files that are not being pushed are not tested;
+# it is removed afterwards, also after a failure or an interrupt. The output says which.
+#
 # What act cannot do by itself in these jobs, and what is set here for it:
+# - The workflows name `container: debian:trixie`. Their node actions (actions/cache,
+#   upload-artifact) need `node` in the job container, which the real runner supplies and
+#   debian:trixie lacks: the jobs run a temporary copy of the workflow with only that image
+#   replaced by beanjar-act-node:trixie, the stock image plus this machine's node binary (built once
+#   per node binary). The stock debian:trixie is left alone. node is the only difference from CI.
 # - actions/checkout clones from github.com; a local stub action stands in, since act has already
-#   copied the working tree (tracked and untracked files, .git, not what .gitignore lists).
-# - node actions (actions/cache, upload-artifact) need `node` in the job container, which the real
-#   runner supplies and debian:trixie lacks: this machine's node binary is added in a layer on top of
-#   the local debian:trixie, which is the tag the workflows name (labelled, built once).
+#   copied the tree it runs on (with .git).
 # - actions/cache goes to act's own cache server; artifacts go to build/act/artifacts. act's artifact
 #   server does not understand upload-artifact v7's requests ("unknown field mime_type"), so a failed
 #   "Upload" step does not fail a job here (the files are not kept; the job's logs are in build/act).
-# - act mounts the workspace at the checkout's own path, which can make a Unix socket path longer
+# - act mounts the workspace at the tree's own path, which can make a Unix socket path longer
 #   than the 108 bytes the kernel allows (the guest check's media socket), where the CI's /__w/...
-#   is short: act runs on a short symlink to the checkout, in the runtime directory.
+#   is short: act runs on a short symlink, in the runtime directory.
 set -eu
 TOP=$(cd "$(dirname "$0")/.." && pwd)
 cd "$TOP"
@@ -43,8 +49,8 @@ need act "install nektos/act from https://github.com/nektos/act/releases into ~/
 need node "install Node.js (any version the actions run on)"
 
 if [ "$guest" = auto ]; then
-	to=${PRE_COMMIT_TO_REF:-HEAD}
-	from=${PRE_COMMIT_FROM_REF:-}
+	to=${ACT_CHECK_COMMIT:-HEAD}
+	from=${ACT_CHECK_BASE:-}
 	case $from in ''|0000000000000000000000000000000000000000) from=$(git merge-base origin/main "$to" 2>/dev/null || echo) ;; esac
 	guest=no
 	if [ -n "$from" ] && [ -n "$(git diff --name-only "$from" "$to" -- guest meson packaging/debian/build-deps 2>/dev/null)" ]; then
@@ -70,29 +76,46 @@ runs:
       shell: sh
 EOF
 
-# debian:trixie plus node, once per node binary
+# the stock debian:trixie plus node, once per node binary
 nodebin=$(readlink -f "$(command -v node)")
 nodeid=$(sha256sum "$nodebin" | cut -c1-16)
-if [ "$(docker image inspect -f '{{index .Config.Labels "beanjar.act-node"}}' debian:trixie 2>/dev/null)" != "$nodeid" ]; then
-	docker image inspect debian:trixie >/dev/null 2>&1 || docker pull debian:trixie
-	# the untouched debian:trixie, kept under its own tag as the build's base
-	if [ -z "$(docker image inspect -f '{{index .Config.Labels "beanjar.act-node"}}' debian:trixie)" ]; then
-		docker tag debian:trixie beanjar-act-base:trixie
-	fi
+image=beanjar-act-node:trixie
+if [ "$(docker image inspect -f '{{index .Config.Labels "beanjar.act-node"}}' $image 2>/dev/null)" != "$nodeid" ]; then
+	docker image inspect debian:trixie >/dev/null 2>&1 || docker pull -q debian:trixie
 	cp "$nodebin" "$work/image/node"
-	printf 'FROM %s\nCOPY node /usr/local/bin/node\nLABEL beanjar.act-node=%s\n' \
-		beanjar-act-base:trixie "$nodeid" >"$work/image/Dockerfile"
-	docker build -q -t debian:trixie "$work/image"
+	printf 'FROM debian:trixie\nCOPY node /usr/local/bin/node\nLABEL beanjar.act-node=%s\n' "$nodeid" \
+		>"$work/image/Dockerfile"
+	docker build -q -t $image "$work/image"
 fi
+# the workflows with only the container image replaced
+mkdir -p "$work/workflows"
+for wf in tests.yml testguest.yml; do
+	sed "s|^\( *container:\) debian:trixie\$|\1 $image|" ".github/workflows/$wf" >"$work/workflows/$wf"
+	grep -q "container: $image" "$work/workflows/$wf" || { echo "act-check: no container image to replace in $wf" >&2; exit 2; }
+done
 
 stub=actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1=$work/checkout-stub
 short=${XDG_RUNTIME_DIR:-/tmp}/act-$(printf '%s' "$TOP" | cksum | cut -d' ' -f1)
-ln -sfn "$TOP" "$short"
+tree=$TOP
+if [ -n "${ACT_CHECK_COMMIT:-}" ]; then
+	# a throwaway clone (hardlinked objects, a .git of its own that works inside the container)
+	tree=$work/clone
+	trap 'rm -rf "$tree"' EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM HUP
+	rm -rf "$tree"
+	git clone -q --no-checkout "$TOP" "$tree"
+	git -C "$tree" checkout -q --detach "$ACT_CHECK_COMMIT"
+	echo "act-check: checking commit $(git -C "$tree" rev-parse --short HEAD) in a clean clone"
+else
+	echo "act-check: checking the working tree (uncommitted changes included)"
+fi
+ln -sfn "$tree" "$short"
 act_run() { # workflow job [extra act args]
 	wf=$1 job=$2
 	shift 2
-	act -C "$short" workflow_dispatch -W ".github/workflows/$wf" -j "$job" "$@" \
-		-P ubuntu-24.04=debian:trixie --pull=false --rm --local-repository "$stub" \
+	act -C "$short" workflow_dispatch -W "$work/workflows/$wf" -j "$job" "$@" \
+		-P ubuntu-24.04=$image --pull=false --rm --local-repository "$stub" \
 		--artifact-server-path "$work/artifacts"
 }
 

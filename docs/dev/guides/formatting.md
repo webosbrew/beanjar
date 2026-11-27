@@ -56,5 +56,15 @@ commits being pushed touch `guest/`, `meson/` or `packaging/debian/build-deps/`,
 workflow, each in the CI's `debian:trixie` container through [nektos/act](https://github.com/nektos/act)
 (a release binary in `~/.local/bin`, with Docker and Node.js installed). It prints each job's
 result and time, and the push fails when a job fails. A run takes about 7 minutes without the
-guest build (about 16 with it). Skip it with `git push --no-verify`; `scripts/act-check --guest` runs everything by
-hand. It runs the working tree, not the pushed commit, and does not cover the arm64 unit entry.
+guest build (about 16 with it). Skip it with `git push --no-verify`.
+
+The hook checks the commit being pushed, in a throwaway clone that is removed afterwards, so
+uncommitted files in the working tree do not matter. `scripts/act-check` run by hand checks the
+working tree (`--guest` also runs the Test guest workflow); its output says which it checked.
+
+The jobs run on a temporary copy of each workflow with only the container image replaced, by
+`beanjar-act-node:trixie`: the stock `debian:trixie` plus this machine's `node`, which the node-based
+actions (cache, upload-artifact) need and the real runner supplies. That is the only difference
+from the CI's container; the stock `debian:trixie` image is not touched. The arm64 unit entry is
+not covered. act's artifact server cannot take the workflows' uploads, so a failed upload does not
+fail a job and no artifacts are kept.
