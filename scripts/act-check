@@ -1,0 +1,106 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Run the public workflows' jobs locally with nektos/act (docs/dev/guides/formatting.md, "Before a
+# push"), in the same debian:trixie container the CI uses, so a dependency this machine happens to
+# have is not mistaken for one the CI has.
+#
+#   scripts/act-check [--guest | --no-guest]
+#
+# Always: tests.yml's lint and unit (amd64). The Test guest workflow (testguest.yml) runs too with
+# --guest, or by default when the commits being pushed (PRE_COMMIT_FROM_REF..PRE_COMMIT_TO_REF as the
+# pre-push hook sets them, else origin/main..HEAD) touch guest/, meson/ or
+# packaging/debian/build-deps/. Not covered: the arm64 unit entry (this machine cannot run it).
+# Exit status: nonzero when a job fails. `git push --no-verify` skips the hook.
+#
+# What act cannot do by itself in these jobs, and what is set here for it:
+# - actions/checkout clones from github.com; a local stub action stands in, since act has already
+#   copied the working tree (tracked and untracked files, .git, not what .gitignore lists).
+# - node actions (actions/cache, upload-artifact) need `node` in the job container, which the real
+#   runner supplies and debian:trixie lacks: this machine's node binary is added in a layer on top of
+#   the local debian:trixie, which is the tag the workflows name (labelled, built once).
+# - actions/cache goes to act's own cache server; artifacts go to build/act/artifacts.
+set -eu
+TOP=$(cd "$(dirname "$0")/.." && pwd)
+cd "$TOP"
+guest=auto
+case ${1:-} in
+--guest) guest=yes ;;
+--no-guest) guest=no ;;
+'') ;;
+*) sed -n '7,8p' "$0" >&2; exit 2 ;;
+esac
+
+PATH=$HOME/.local/bin:$PATH
+need() { command -v "$1" >/dev/null 2>&1 || { echo "act-check: $1 not found: $2" >&2; exit 2; }; }
+need docker "install docker.io"
+need act "install nektos/act from https://github.com/nektos/act/releases into ~/.local/bin"
+need node "install Node.js (any version the actions run on)"
+
+if [ "$guest" = auto ]; then
+	to=${PRE_COMMIT_TO_REF:-HEAD}
+	from=${PRE_COMMIT_FROM_REF:-}
+	case $from in ''|0000000000000000000000000000000000000000) from=$(git merge-base origin/main "$to" 2>/dev/null || echo) ;; esac
+	guest=no
+	if [ -n "$from" ] && [ -n "$(git diff --name-only "$from" "$to" -- guest meson packaging/debian/build-deps 2>/dev/null)" ]; then
+		guest=yes
+	elif [ -z "$from" ]; then
+		guest=yes # no base to compare with: run it
+	fi
+fi
+
+work=$TOP/build/act
+mkdir -p "$work/artifacts" "$work/checkout-stub" "$work/image"
+cat >"$work/checkout-stub/action.yml" <<'EOF'
+name: checkout stub
+runs:
+  using: composite
+  steps:
+    - run: "true"
+      shell: sh
+EOF
+
+# debian:trixie plus node, once per node binary
+nodebin=$(readlink -f "$(command -v node)")
+nodeid=$(sha256sum "$nodebin" | cut -c1-16)
+if [ "$(docker image inspect -f '{{index .Config.Labels "beanjar.act-node"}}' debian:trixie 2>/dev/null)" != "$nodeid" ]; then
+	docker image inspect debian:trixie >/dev/null 2>&1 || docker pull debian:trixie
+	# the untouched debian:trixie, kept under its own tag as the build's base
+	if [ -z "$(docker image inspect -f '{{index .Config.Labels "beanjar.act-node"}}' debian:trixie)" ]; then
+		docker tag debian:trixie beanjar-act-base:trixie
+	fi
+	cp "$nodebin" "$work/image/node"
+	printf 'FROM %s\nCOPY node /usr/local/bin/node\nLABEL beanjar.act-node=%s\n' \
+		beanjar-act-base:trixie "$nodeid" >"$work/image/Dockerfile"
+	docker build -q -t debian:trixie "$work/image"
+fi
+
+stub=actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1=$work/checkout-stub
+act_run() { # workflow job [extra act args]
+	wf=$1 job=$2
+	shift 2
+	act workflow_dispatch -W ".github/workflows/$wf" -j "$job" "$@" \
+		-P ubuntu-24.04=debian:trixie --pull=false --local-repository "$stub" \
+		--artifact-server-path "$work/artifacts"
+}
+
+results=
+rc=0
+run() { # label workflow job [extra act args]
+	label=$1
+	shift
+	log=$work/${label}.log
+	t=$(date +%s)
+	if act_run "$@" >"$log" 2>&1; then r=passed; else r=FAILED; rc=1; tail -40 "$log"; fi
+	results="$results$(printf '  %-22s %-7s %4ss  (log %s)\n' "$label" "$r" "$(($(date +%s) - t))" "build/act/${label}.log")
+"
+	echo "act-check: $label $r"
+}
+t0=$(date +%s)
+run tests-lint tests.yml lint
+run tests-unit-amd64 tests.yml unit --matrix arch:amd64
+[ "$guest" = yes ] && run testguest testguest.yml check
+printf 'act-check results:\n%s' "$results"
+[ "$guest" = yes ] || echo "  testguest              skipped (no change under guest/, meson/ or packaging/debian/build-deps/; --guest forces it)"
+echo "act-check: $(($(date +%s) - t0))s in total; arm64 unit entry not covered"
+exit $rc
