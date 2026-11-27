@@ -27,7 +27,7 @@ fi
 RUN=${SECONDS_RUN:-40}
 OUT=${OUT:-$TOP/build/media-check}
 VIEWER=${VIEWER:-$TOP/build/viewer/beanjar-viewer}
-KEY=${KEY:-$TOP/local/devmode_rsa}
+KEY=${KEY:-$("$TOP/host/scripts/vm-launcher" config IDENTITY)/devmode_rsa}
 HELPER_LOG=${HELPER_LOG:-$TOP/build/media/media-helper.log}
 APP_ID=com.example.mediatest
 T=$(mktemp -d)

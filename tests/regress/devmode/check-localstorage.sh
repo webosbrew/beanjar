@@ -14,13 +14,13 @@
 # Across an app restart: install, launch 1, launch 2. Across a reboot: boot again with the same
 # persistent STATE, then launch 3. Reading the database uses the serial console as root
 # (host/scripts/vm-launcher console); SSH and Luna calls go through the jail as ares does.
-# Env: KEY (the VM's unencrypted developer key, default local/devmode_rsa: the checkout VM's;
+# Env: KEY (the VM's unencrypted developer key, default the development VM's, `host/scripts/vm-launcher config IDENTITY`/devmode_rsa;
 #      a library VM's is <vm>/identity/devmode_rsa), HOST (default the development VM's address,
 #      `host/scripts/vm-launcher config ADDRESS`; a library VM's: config ADDRESS --dir <vm>),
 #      GRAB (screenshot file, taken while the app shows its count)
 set -u
 TOP=$(cd "$(dirname "$0")/../../.." && pwd)
-KEY=${KEY:-$TOP/local/devmode_rsa}
+KEY=${KEY:-$("$TOP/host/scripts/vm-launcher" config IDENTITY)/devmode_rsa}
 if [ -z "${HOST:-}" ]; then
 	HOST=$("$TOP/host/scripts/vm-launcher" config ADDRESS) || exit 1
 fi

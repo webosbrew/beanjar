@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Check root SSH (guest/layers/rootssh) on a running VM from the QEMU host.
 #   tests/regress/rootssh/check-ssh.sh [IDENTITY_DIR [WAIT]]
-# IDENTITY_DIR is the VM's (<vm>/identity; default local/, the checkout VM's): its client key
+# IDENTITY_DIR is the VM's (<vm>/identity; default the development VM's, `host/scripts/vm-launcher config IDENTITY`): its client key
 # id_ed25519 logs in, and its known_hosts pins the host key (StrictHostKeyChecking=yes, so another
 # host key fails the check). KEY=... logs in with another key of its authorized_keys instead;
 # HOST is the VM's host address (default: `host/scripts/vm-launcher config ADDRESS`, of IDENTITY_DIR's VM)
@@ -15,7 +15,7 @@
 # (-O), and that password logins are refused. Prints the host key fingerprint.
 set -u
 TOP=$(cd "$(dirname "$0")/../../.." && pwd)
-IDENT=${1:-$TOP/local}
+IDENT=${1:-$("$TOP/host/scripts/vm-launcher" config IDENTITY)}
 WAIT=${2:-180}
 KEY=${KEY:-$IDENT/id_ed25519}
 PORT=${SSH_PORT:-6622}

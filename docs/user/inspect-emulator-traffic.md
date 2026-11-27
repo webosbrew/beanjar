@@ -122,7 +122,7 @@ interface's download (File, Save), which goes to the browser.
   Bypassing interception cannot repair an unreachable upstream server.
 - The proxy does not verify the servers' certificates (`ssl_insecure`), so LG's `*.lgtvsdp.com`
   (private root, CN-only) is decrypted like any other host.
-- The guest trusts our CA (the library's `ca/`, the checkout VM's `local/ca`), which it appends at
+- The guest trusts our CA (the library's `ca/`, or the development library's), which it appends at
   boot to the firmware's system bundle, sdx's `sdp-ca.pem` and the hashed `/etc/ssl/certs`.
   The firmware's hosts file and routes stay stock. With `lg_services = "mock"` (the default)
   the guest's name server is Beanjar's own at `10.0.2.254`: LG's telemetry names do not

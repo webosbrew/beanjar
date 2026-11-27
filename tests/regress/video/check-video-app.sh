@@ -21,7 +21,7 @@ if [ -z "${HOST:-}" ]; then
 fi
 WAIT=${WAIT:-8}
 OUT=${OUT:-$TOP/build/video-app}
-KEY=${KEY:-$TOP/local/devmode_rsa}
+KEY=${KEY:-$("$TOP/host/scripts/vm-launcher" config IDENTITY)/devmode_rsa}
 APP_ID=com.example.videotest
 RECT=320,180,960,540
 T=$(mktemp -d)
