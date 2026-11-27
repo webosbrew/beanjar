@@ -91,3 +91,16 @@ SPDX-FileCopyrightText = [
   "Big Buck Bunny (c) copyright 2008, Blender Foundation, www.bigbuckbunny.org",
 ]
 SPDX-License-Identifier = "GPL-2.0-or-later AND CC-BY-3.0"
+
+# The synthetic "Hey LG" (tests/regress/voice/make-hey-lg.sh) is speech that Festival's voice
+# cmu_us_slt_arctic_hts (Debian's festvox-us-slt-hts) made from a sentence of ours. The voice's licence
+# (EST-2003, "Permission to use, copy, modify, and licence this software and its documentation for
+# any purpose, is hereby granted without fee", Debian's copyright file for festvox-us-slt-hts) is
+# for the voice as software and conditions its copies and modifications; it says nothing of what the
+# voice says, and the voice's files are not in the recording. The recording is ours, with the voice
+# named here.
+[[annotations]]
+path = "tests/regress/voice/hey-lg-slt.flac"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Mariotaku <git@mariotaku.me> and the Beanjar contributors"
+SPDX-License-Identifier = "GPL-2.0-or-later"
