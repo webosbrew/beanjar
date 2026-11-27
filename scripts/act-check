@@ -92,7 +92,7 @@ act_run() { # workflow job [extra act args]
 	wf=$1 job=$2
 	shift 2
 	act -C "$short" workflow_dispatch -W ".github/workflows/$wf" -j "$job" "$@" \
-		-P ubuntu-24.04=debian:trixie --pull=false --local-repository "$stub" \
+		-P ubuntu-24.04=debian:trixie --pull=false --rm --local-repository "$stub" \
 		--artifact-server-path "$work/artifacts"
 }
 
