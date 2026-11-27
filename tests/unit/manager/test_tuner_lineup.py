@@ -22,9 +22,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
 from beanjar.access import remote
 from beanjar.cli import main
-from beanjar.tuner import antenna, band, lineup, user_stream
+from beanjar.tuner import antenna, band, lineup, mux, user_stream
 from beanjar.tuner import arib as arib
-from beanjar.tuner import atsc as tuner_atsc
 
 ATSC_MIN = """
 broadcast = "atsc"
@@ -276,7 +275,7 @@ class FormatTest(unittest.TestCase):
         self.assertIn('component_tag="0x10" stream_type="0x0F" main_component="true"', t["eit"])
         self.assertIn('component_tag="0x11" stream_type="0x0F" main_component="false"', t["eit"])
         self.assertIn('ISO_639_language_code="eng"', t["eit"])
-        keep, remap = tuner_atsc.ff_remap(
+        keep, remap = mux.ff_remap(
             rf["services"], lambda i, k: arib.video_pid(i) if k is None else arib.audio_pid(i, k)
         )
         self.assertEqual(remap, ["256=273", "257=274", "258=275"])
@@ -304,7 +303,7 @@ def ts_packet(pid, payload=b"", start=False, cc=0, tsc=0, pcr=None, disc=False):
 def psi(table_id, body):
     length = len(body) + 4
     sec = bytes([table_id, 0xB0 | (length >> 8), length & 0xFF]) + body
-    return sec + tuner_atsc.crc32_mpeg(sec).to_bytes(4, "big")
+    return sec + mux.crc32_mpeg(sec).to_bytes(4, "big")
 
 
 PAT = psi(0x00, b"\x00\x01\xc1\x00\x00" + b"\x00\x01\xe1\x00")  # program 1, PMT 0x100
@@ -398,7 +397,7 @@ class StreamCheckTest(unittest.TestCase):
     def test_standard_and_frequency(self):
         # ISDB-T delivery: area/guard/mode, then UHF 30 in 1/7 MHz
         isdbt = nit(0xFA, b"\x5a\x56" + round(band.jp_uhf_hz(30) * 7 / 1e6).to_bytes(2, "big"))
-        tot = bytes([0x70, 0x70, 0x05]) + arib.jst_time(1_800_000_000)
+        tot = bytes([0x70, 0x70, 0x05]) + mux.jst_time(1_800_000_000)
         extra = [ts_packet(0x10, isdbt, start=True), ts_packet(0x14, tot, start=True)]
         stream(self.path, extra=extra)
         self.assertEqual(self.check("arib", 30)["warnings"], [])
@@ -616,7 +615,7 @@ class VmTest(unittest.TestCase):
             self.assertEqual(data["lineup"], "own")
             lu = antenna.vm_lineup(self.vm.state_dir, "arib")
             self.assertEqual(lu.channels, ["30"])
-            with self.assertRaises(tuner_atsc.Error) as e:
+            with self.assertRaises(mux.Error) as e:
                 lu.make("/nonexistent", "30", 0)
             self.assertIn("machine that feeds this VM", str(e.exception))
 

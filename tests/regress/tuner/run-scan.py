@@ -35,7 +35,7 @@ TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
 from beanjar.tuner import arib as arib
-from beanjar.tuner import atsc, band
+from beanjar.tuner import band, mux
 from beanjar.tuner import dvb as dvb
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
@@ -97,7 +97,7 @@ def expected(channels, now, lineup):
                 on_air = dvb.present_following(s, now, lineup["timezone"])
                 out[label(str(s["lcn"]), cable)] = on_air[0][2] if on_air else None
             else:
-                on_air = atsc.events(s, now, now + 1, lineup["timezone"])
+                on_air = mux.events(s, now, now + 1, lineup["timezone"])
                 out[label(f"{s['major']}.{s['minor']}", cable)] = on_air[0][2] if on_air else None
     return out
 

@@ -34,25 +34,29 @@ import re
 import shutil
 import subprocess
 import zlib
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from xml.sax.saxutils import quoteattr
-from zoneinfo import ZoneInfo
 
-
-class Error(Exception):
-    pass
-
+from .mux import (
+    FF_PID0,
+    NULL_PID,
+    PACKET,
+    Error,
+    av_inputs,
+    channel,
+    crc32_mpeg,
+    events,
+    ff_programs,
+    ff_remap,
+)
 
 GPS_EPOCH = 315964800  # 1980-01-06 in Unix seconds
 GPS_UTC_OFFSET = 18  # leap seconds since then
 BASE_PID = 0x1FFB  # ATSC's PSIP base PID: MGT, TVCT, RRT, STT
-NULL_PID = 0x1FFF
 TABLE_STT = 0xCD
-PACKET = 188
 MUX_RATE = 5_000_000  # bits a second
 SECONDS = 20  # of a made stream, looped
 VERSION = 5  # of the generator: part of a stream's key
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # fonts-dejavu-core
 
 
 def eit_pid(k):
@@ -76,38 +80,6 @@ def audio_pid(i, k=0):
     return 0x34 + 4 * i if k == 0 else 0x31 + 4 * i + k
 
 
-FF_PID0 = 0x100  # ffmpeg's elementary PIDs, which tsp remaps
-
-
-def streams(services):
-    """ffmpeg's output streams, in order (its PIDs from FF_PID0 on): (service, None) for a
-    service's picture, (service, k) for its sound track k."""
-    out = []
-    for i, s in enumerate(services):
-        out += [(i, None)] + [(i, k) for k in range(len(s["sound"]))]
-    return out
-
-
-def ff_remap(services, pid_of):
-    """(the ffmpeg PIDs to keep, tsp remap's FROM=TO list) to pid_of(service, track or None)."""
-    keep, remap = [], []
-    for n, (i, k) in enumerate(streams(services)):
-        keep.append(FF_PID0 + n)
-        remap.append(f"{FF_PID0 + n}={pid_of(i, k)}")
-    return keep, remap
-
-
-def ff_programs(services, title=None):
-    """ffmpeg's -program options: one a service, with its picture and sound tracks."""
-    progs, at = [], 0
-    for i, s in enumerate(services):
-        n = 1 + len(s["sound"])
-        sts = ":".join(f"st={at + j}" for j in range(n))
-        progs += ["-program", (f"title={title(s)}:" if title else "") + sts]
-        at += n
-    return progs
-
-
 def caption_descriptor(c):
     """ATSC's caption_service_descriptor (A/65 6.9.2) of a service's captions: line 21 CC1."""
     return (
@@ -115,14 +87,6 @@ def caption_descriptor(c):
         'line21_field="false" caption_service_number="0" easy_reader="false" '
         'wide_aspect_ratio="false"/></caption_service_descriptor>'
     )
-
-
-def channel(lu, name):
-    """The lineup's physical channel named name ("7", "C78"); Error if it has none."""
-    for rf in lu["rf"]:
-        if rf["rf"] == name:
-            return rf
-    raise Error(f"the lineup has no RF {name} ({', '.join(r['rf'] for r in lu['rf'])})")
 
 
 def gps_seconds(unix):
@@ -137,27 +101,6 @@ def gps_naive(unix):
 def block0(now):
     """The Unix start of the 3-hour EIT-0 block that now is in."""
     return (gps_seconds(now) // 10800) * 10800 + GPS_EPOCH - GPS_UTC_OFFSET
-
-
-def events(svc, t_from, t_to, timezone="America/New_York"):
-    """(start, minutes, title, text) of the service's events overlapping [t_from, t_to), its cycle
-    repeated from midnight in the lineup's time zone."""
-    tz = ZoneInfo(timezone)
-    out = []
-    day = datetime.fromtimestamp(t_from, tz).replace(hour=0, minute=0, second=0, microsecond=0)
-    day -= timedelta(days=1)
-    for _ in range(4):
-        t, end = day.timestamp(), (day + timedelta(days=1)).timestamp()
-        while t < end:
-            for e in svc["events"]:
-                title, minutes, text = e["title"], e["minutes"], e["text"]
-                if t < t_to and t + minutes * 60 > t_from:
-                    out.append((int(t), minutes, title, text))
-                t += minutes * 60
-                if t >= end:
-                    break
-        day += timedelta(days=1)
-    return out
 
 
 def event_id(start):
@@ -298,64 +241,6 @@ def _write_tables(rf, d, now, timezone):
     for k in range(4):
         mgt += f'  <table type="ETT-{k}" PID="0x{ett_pid(k):X}" version_number="{versions[f"ett{k}"]}" number_bytes="{sizes[f"ett{k}"]}"/>\n'
     put("mgt", mgt + "</MGT>\n")
-
-
-def _label_text(text):
-    """text for drawtext inside single quotes: the characters the filter graph or drawtext would
-    take as their own made look-alikes."""
-    return text.replace("'", "\u2019").replace("\\", "/").replace("%", "\uff05")
-
-
-def av_inputs(services, v, dur, label_of):
-    """ffmpeg's inputs and maps of the services' pictures and sounds, dur seconds each: a test
-    pattern or a tone is a lavfi source; an image, or a video or audio file (looped), an input
-    whose picture is scaled into the size (letterboxed) at the rate. A service with label has
-    label_of(service) drawn in the middle. (args, maps): the maps a video stream and an audio
-    stream a sound track of each service, in order (streams())."""
-    args, maps, graphs = [], [], []
-    n = 0
-    for i, s in enumerate(services):
-        pic, snd = s["picture"], s["sound"]
-        draw = ""
-        if s["label"]:
-            draw = (
-                f",drawtext=fontfile={FONT}:text='{_label_text(label_of(s))}':"
-                "fontsize=44:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h/2-th"
-            )
-        if "pattern" in pic:
-            args += [
-                "-f",
-                "lavfi",
-                "-i",
-                f"{pic['pattern']}=s={v['size']}:r={v['fps']}:d={dur}{draw}",
-            ]
-            maps += ["-map", f"{n}:v"]
-        else:
-            if "image" in pic:
-                args += ["-loop", "1", "-framerate", v["fps"], "-t", str(dur), "-i", pic["image"]]
-            else:
-                args += ["-stream_loop", "-1", "-t", str(dur), "-i", pic["video"]]
-            w, h = v["size"].split("x")
-            graphs.append(
-                f"[{n}:v:0]scale={w}:{h}:force_original_aspect_ratio=decrease,"
-                f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={v['fps']},format=yuv420p{draw}[v{i}]"
-            )
-            maps += ["-map", f"[v{i}]"]
-        n += 1
-        for tr in snd:
-            if "tone" in tr:
-                args += [
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    f"sine=frequency={tr['tone']}:sample_rate=48000:duration={dur}",
-                ]
-                maps += ["-map", f"{n}:a"]
-            else:
-                args += ["-stream_loop", "-1", "-t", str(dur), "-i", tr["file"]]
-                maps += ["-map", f"{n}:a:0"]
-            n += 1
-    return args + (["-filter_complex", ";".join(graphs)] if graphs else []), maps
 
 
 def cc_pairs(scc, frames, fps):
@@ -628,19 +513,6 @@ def make(cache, lu, ch, now):
         if name.endswith(".ts") and full != path and name.startswith(stream_prefix(lu, ch)):
             os.unlink(full)
     return path
-
-
-def crc32_mpeg(data):
-    crc = 0xFFFFFFFF
-    for b in data:
-        crc ^= b << 24
-        for _ in range(8):
-            crc = (
-                ((crc << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
-                if crc & 0x80000000
-                else (crc << 1) & 0xFFFFFFFF
-            )
-    return crc
 
 
 NAMES = {

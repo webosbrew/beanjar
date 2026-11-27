@@ -59,7 +59,7 @@ import time
 
 from .. import base
 from ..base import Error
-from . import arib, atsc, band, dvb, user_stream
+from . import arib, atsc, band, dvb, mux, user_stream
 from . import lineup as tuner_lineup
 
 MAGIC = 0x4E555457
@@ -74,7 +74,7 @@ TOLERANCE_HZ = 1_000_000  # dtv_soc.c's LOCK_TOLERANCE_HZ
 SYS_ISDBT, SYS_ATSC = band.SYS_ISDBT, band.SYS_ATSC
 CHUNK_PACKETS = 512  # include/webos-tuner.h's WEBOS_TUNER_TS_MAX
 MAP_MAX = 128  # include/webos-tuner.h's WEBOS_TUNER_MAP_MAX
-LIMITS = {MAP: MAP_MAX * 8, TS: CHUNK_PACKETS * atsc.PACKET, TUNE: 64}  # payload bytes
+LIMITS = {MAP: MAP_MAX * 8, TS: CHUNK_PACKETS * mux.PACKET, TUNE: 64}  # payload bytes
 FEED_PREFIX = "beanjar-tuner-"  # a feed's record directory: beanjar-tuner-PID-RANDOM
 FEED_INFO = "feed.json"
 FEED_WAIT = 15.0  # seconds a feed waits for the feeder's first frame
@@ -101,7 +101,7 @@ def map_channels(payload):
 
 def ts_frames(freq, packets):
     """TS frames of the packets (bytes, a multiple of 188), at most CHUNK_PACKETS each."""
-    step = CHUNK_PACKETS * atsc.PACKET
+    step = CHUNK_PACKETS * mux.PACKET
     return b"".join(frame(TS, freq, packets[i : i + step]) for i in range(0, len(packets), step))
 
 
@@ -155,7 +155,7 @@ SYSTEMS = {
 
 
 def fed_make(cache, ch, now):
-    raise atsc.Error(
+    raise mux.Error(
         "the lineup's files are on the machine that feeds this VM: map the channel from there "
         "(beanjar io tuner map HOST/NAME RF...)"
     )
@@ -179,7 +179,7 @@ def from_spec(spec, own=False, fed=False):
             arib.MUX_RATE,
             _services(spec, lambda rf, s: f"{rf['remote_key']} {s['name']}"),
             fed_make if fed else lambda cache, ch, now: arib.make_cached(cache, spec, ch, now),
-            {arib.TOT_PID: lambda p, now: arib.time_rewrite(p, now)},
+            {mux.TOT_PID: lambda p, now: mux.time_rewrite(p, now)},
             spec,
             own,
         )
@@ -189,7 +189,7 @@ def from_spec(spec, own=False, fed=False):
             dvb.MUX_RATE,
             _services(spec, lambda rf, s: f"{s['lcn']} {s['name']}"),
             fed_make if fed else lambda cache, ch, now: dvb.make_cached(cache, spec, ch, now),
-            {dvb.TOT_PID: lambda p, now: dvb.time_rewrite(p, now)},
+            {mux.TOT_PID: lambda p, now: dvb.time_rewrite(p, now)},
             spec,
             own,
         )
@@ -356,22 +356,22 @@ class Stream:
         self.path = path
         with open(path, "rb") as f:
             self.data = f.read()
-        self.count = len(self.data) // atsc.PACKET
+        self.count = len(self.data) // mux.PACKET
         self.rate = rate
         self.clock = ATSC.clock if clock is None else clock
         self.at = 0
         self.owed = 0.0
 
     def next(self, seconds, now=None):
-        self.owed += seconds * self.rate / 8 / atsc.PACKET
+        self.owed += seconds * self.rate / 8 / mux.PACKET
         n = int(self.owed)
         self.owed -= n
         out = []
         for _ in range(n):
-            p = self.data[self.at * atsc.PACKET : (self.at + 1) * atsc.PACKET]
+            p = self.data[self.at * mux.PACKET : (self.at + 1) * mux.PACKET]
             self.at = (self.at + 1) % self.count
             pid = ((p[1] & 0x1F) << 8) | p[2]
-            if pid == atsc.NULL_PID:
+            if pid == mux.NULL_PID:
                 continue
             rewrite = self.clock.get(pid)
             if rewrite is not None:
@@ -393,7 +393,7 @@ class RecordedStream(Stream):
         self.path = path
         with open(path, "rb") as f:
             self.data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-        self.count = len(self.data) // atsc.PACKET
+        self.count = len(self.data) // mux.PACKET
         self.rate = rec["rate"]
         self.clock = ATSC.clock if clock is None else clock
         self.cuts = {int(pid): cut for pid, cut in rec.get("cuts", {}).items()}
@@ -405,11 +405,11 @@ class RecordedStream(Stream):
         self.loops = 0
 
     def next(self, seconds, now=None):
-        self.owed += seconds * self.rate / 8 / atsc.PACKET
+        self.owed += seconds * self.rate / 8 / mux.PACKET
         n = int(self.owed)
         self.owed -= n
         out = []
-        size = atsc.PACKET
+        size = mux.PACKET
         for _ in range(n):
             i = self.at
             p = self.data[i * size : (i + 1) * size]
@@ -418,7 +418,7 @@ class RecordedStream(Stream):
                 self.loops += 1
                 self.discontinuity = set(self.pcr_pids)
             pid = ((p[1] & 0x1F) << 8) | p[2]
-            if pid == atsc.NULL_PID:
+            if pid == mux.NULL_PID:
                 continue
             cut = self.cuts.get(pid)
             if cut is not None and not cut[0] <= i < cut[1]:
@@ -593,7 +593,7 @@ def make(cache, channels, hint="", lu=ATSC):
     for ch in channels:
         try:
             lu.make(cache, ch, now)
-        except (atsc.Error, Error, OSError) as e:
+        except (mux.Error, Error, OSError) as e:
             raise Error(f"tuner: {e}{hint}") from None
 
 
@@ -781,7 +781,7 @@ class Player:
                     s = RecordedStream(path, rec, lu.clock)
                 else:
                     s = Stream(path, lu.rate, lu.clock)
-            except (atsc.Error, Error, OSError, ValueError) as e:
+            except (mux.Error, Error, OSError, ValueError) as e:
                 if self.failed.get(ch) != str(e):
                     self.log(f"rf{ch}: {e}")
                 self.failed[ch] = str(e)
@@ -819,7 +819,7 @@ class Sender:
             packets = s.next(min(now - self.last, 0.2))
             if packets:
                 self.send(ts_frames(tuned, packets))
-                self.counted(len(packets) // atsc.PACKET)
+                self.counted(len(packets) // mux.PACKET)
         self.last = now
 
 
@@ -969,7 +969,7 @@ class Tuner:
                     if kind == MAP:
                         self.feed_map = f
                     else:
-                        self.count(len(payload) // atsc.PACKET)
+                        self.count(len(payload) // mux.PACKET)
                     try:
                         self.to_qemu(f)
                     except OSError:

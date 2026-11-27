@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 sys.path.insert(0, HERE)
 
-from beanjar.tuner import antenna, atsc, band, lineup, user_stream
+from beanjar.tuner import antenna, atsc, band, lineup, mux, user_stream
 from beanjar.tuner import arib as arib
 from beanjar.tuner import dvb as dvb
 
@@ -105,9 +105,9 @@ class BandTest(unittest.TestCase):
 class LineupTest(unittest.TestCase):
     def test_us_cable(self):
         lu = ATSC
-        rf = atsc.channel(lu, "C78")
+        rf = mux.channel(lu, "C78")
         self.assertEqual((rf["channel"], rf["medium"], rf["modulation"]), (78, "cable", "qam256"))
-        self.assertNotIn("modulation", atsc.channel(lu, "7"))
+        self.assertNotIn("modulation", mux.channel(lu, "7"))
         # air and cable side by side, the same virtual channel on each
         text = (
             ATSC["text"]
@@ -177,19 +177,19 @@ class TablesTest(unittest.TestCase):
     NOW = 1_800_000_000  # 2027-01-15 08:00:00 UTC: 09:00 in Berlin
 
     def test_cvct_on_cable(self):
-        t = atsc._tables(atsc.channel(ATSC, "C78"), self.NOW, ATSC["timezone"])
+        t = atsc._tables(mux.channel(ATSC, "C78"), self.NOW, ATSC["timezone"])
         self.assertTrue(t["tvct"].startswith('<CVCT version="0" transport_stream_id="1078">'))
         (ch,) = attrs(t["tvct"], "channel")
         self.assertEqual((ch["major_channel_number"], ch["modulation_mode"]), ("78", "256-QAM"))
-        air = atsc._tables(atsc.channel(ATSC, "7"), self.NOW, ATSC["timezone"])
+        air = atsc._tables(mux.channel(ATSC, "7"), self.NOW, ATSC["timezone"])
         self.assertTrue(air["tvct"].startswith("<TVCT "))
         self.assertEqual({c["modulation_mode"] for c in attrs(air["tvct"], "channel")}, {"8-VSB"})
-        qam64 = dict(atsc.channel(ATSC, "C78"), modulation="qam64")
+        qam64 = dict(mux.channel(ATSC, "C78"), modulation="qam64")
         t = atsc._tables(qam64, self.NOW, ATSC["timezone"])
         self.assertEqual(attrs(t["tvct"], "channel")[0]["modulation_mode"], "64-QAM")
 
     def test_dvb_t(self):
-        t = dvb._tables(DVB, atsc.channel(DVB, "21"), self.NOW)
+        t = dvb._tables(DVB, mux.channel(DVB, "21"), self.NOW)
         (d,) = attrs(t["nit"], "terrestrial_delivery_system_descriptor")
         self.assertEqual((d["centre_frequency"], d["bandwidth"]), ("474000000", "8MHz"))
         self.assertEqual(attrs(t["nit"], "private_data_specifier_descriptor")[0]["private_data_specifier"],
@@ -233,7 +233,7 @@ class TablesTest(unittest.TestCase):
         self.assertEqual(attrs(t["tdt"], "TDT")[0]["UTC_time"], "2027-01-15 08:00:00")
 
     def test_dvb_c(self):
-        t = dvb._tables(DVB, atsc.channel(DVB, "C38"), self.NOW)
+        t = dvb._tables(DVB, mux.channel(DVB, "C38"), self.NOW)
         (d,) = attrs(t["nit"], "cable_delivery_system_descriptor")
         self.assertEqual((d["frequency"], d["modulation"], d["symbol_rate"]),
                          ("346000000", "256-QAM", "6900000"))  # fmt: skip
@@ -243,13 +243,13 @@ class TablesTest(unittest.TestCase):
         self.assertEqual(dvb.local_offset("UTC", self.NOW), (0, self.NOW + 365 * 86400, 0))
 
     def test_time_rewrite_is_utc(self):
-        old = arib.jst_time(1_700_000_000, UTC)
+        old = mux.jst_time(1_700_000_000, UTC)
         p = bytes([0x47, 0x40, 0x14, 0x10, 0x00, 0x70, 0x70, 0x05]) + old
         p += b"\xff" * (188 - len(p))
         q = dvb.time_rewrite(p, self.NOW)
         self.assertEqual(q[8:13], bytes.fromhex("EFEC") + bytes([0x08, 0x00, 0x00]))  # 08:00 UTC
         lu = antenna.DVB
-        self.assertEqual(lu.clock[dvb.TOT_PID](p, self.NOW), q)
+        self.assertEqual(lu.clock[mux.TOT_PID](p, self.NOW), q)
 
     def test_stream_key_follows_the_present_event(self):
         a = dvb.stream_key(DVB, "21", self.NOW)
@@ -269,7 +269,7 @@ class CableDeliveryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "rec.ts")
             dvbc = nit(0x44, bytes.fromhex("03460000") + b"\xff\xf2\x05\x06\x90\x00\x0f")
-            tdt = bytes([0x70, 0x70, 0x05]) + arib.jst_time(1_800_000_000, UTC)
+            tdt = bytes([0x70, 0x70, 0x05]) + mux.jst_time(1_800_000_000, UTC)
             stream(
                 path, extra=[ts_packet(0x10, dvbc, start=True), ts_packet(0x14, tdt, start=True)]
             )

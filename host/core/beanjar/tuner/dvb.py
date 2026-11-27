@@ -28,17 +28,15 @@ from datetime import UTC, datetime
 from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
-from . import band
-from .arib import time_rewrite as _time_rewrite
-from .atsc import FF_PID0, NULL_PID, PACKET, Error, channel, crc32_mpeg, events, ff_remap
+from . import band, mux
+from .mux import FF_PID0, NULL_PID, PACKET, TOT_PID, Error, channel, crc32_mpeg, events, ff_remap
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 1  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 SCHEDULE_HOURS = 24  # of the EIT schedule, from now
 
-PAT_PID, NIT_PID, SDT_PID, EIT_PID, TOT_PID = 0x00, 0x10, 0x11, 0x12, 0x14
-TABLE_TDT, TABLE_TOT = 0x70, 0x73
+PAT_PID, NIT_PID, SDT_PID, EIT_PID = 0x00, 0x10, 0x11, 0x12
 PMT_PID, VIDEO_PID, AUDIO_PID = 0x1F0, 0x111, 0x112  # the first service's
 
 
@@ -203,7 +201,7 @@ def _run(cmd):
 def _make_loop(lu, rf, path):
     """The A/V loop: each service's picture and sound, MPEG-2 video and MPEG-1 layer II audio; a
     program each, so each video carries its own PCR."""
-    from .atsc import av_inputs, ff_programs
+    from .mux import av_inputs, ff_programs
 
     v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     vb = str(v["bitrate"])
@@ -354,4 +352,4 @@ def make_cached(cache, lu, ch, now):
 def time_rewrite(packet, now):
     """The packet with the UTC_time of each whole TDT and TOT section in it set to now (the TOT's
     CRC made again)."""
-    return _time_rewrite(packet, now, UTC)
+    return mux.time_rewrite(packet, now, UTC)

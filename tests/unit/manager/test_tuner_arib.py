@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
 from beanjar.tuner import arib as arib
-from beanjar.tuner import atsc, band, lineup
+from beanjar.tuner import band, lineup, mux
 
 LINEUP = lineup.default("arib")
 SERVICE = LINEUP["rf"][0]["services"][0]
@@ -298,7 +298,7 @@ class StreamTest(unittest.TestCase):
         dii = [s for s in self.data if s[0] == 0x3B]
         ddb = [s for s in self.data if s[0] == 0x3C]
         for s in dii + ddb:
-            self.assertEqual(atsc.crc32_mpeg(s), 0)
+            self.assertEqual(mux.crc32_mpeg(s), 0)
         # 10 s at DII 500 ms and DDB 250 ms
         self.assertGreaterEqual(len(dii), 15)
         self.assertGreaterEqual(len(ddb), 30)

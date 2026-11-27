@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
 from beanjar.access import ares, remote
 from beanjar.cli import main
-from beanjar.tuner import antenna, atsc, band, lineup
+from beanjar.tuner import antenna, atsc, band, lineup, mux
 from beanjar.tuner import arib as arib
 
 ATSC = lineup.default("atsc")
@@ -39,7 +39,7 @@ def section(table_id, body, long=True):
     length = len(body) + (4 if long else 0)
     head = bytes([table_id, (0xB0 if long else 0x30) | (length >> 8), length & 0xFF])
     sec = head + body
-    return sec + (atsc.crc32_mpeg(sec).to_bytes(4, "big") if long else b"")
+    return sec + (mux.crc32_mpeg(sec).to_bytes(4, "big") if long else b"")
 
 
 def packet(pid, payload=b"", start=True):
@@ -103,7 +103,7 @@ class StreamTest(unittest.TestCase):
             self.assertEqual(got[0], pkts[0])
             sec = got[1][5 : 5 + 20]
             self.assertEqual(int.from_bytes(sec[9:13], "big"), 5000)
-            self.assertEqual(atsc.crc32_mpeg(sec), 0)
+            self.assertEqual(mux.crc32_mpeg(sec), 0)
             self.assertEqual(s.next(0.005), b"")  # half a packet owed
             self.assertEqual(len(s.next(0.005)), 188)
 
@@ -146,7 +146,7 @@ class LineupTest(unittest.TestCase):
         """The built-in 7.1: two AC-3 tracks (English, Spanish) with their languages in the PMT's
         ISO 639 and AC-3 descriptors and the TVCT's service location, and line 21 captions named
         by the caption service descriptor on the video in the PMT and in each EIT event."""
-        rf = atsc.channel(ATSC, "7")
+        rf = mux.channel(ATSC, "7")
         t = atsc._tables(rf, 1_800_000_000, ATSC["timezone"])
         pmt = t["pmt0"]
         for pid, lang, mainid in ((0x34, "eng", 0), (0x32, "spa", 1)):
@@ -164,14 +164,14 @@ class LineupTest(unittest.TestCase):
         self.assertNotIn(cc, eit[2])
         # ffmpeg's streams in order and where tsp puts them
         self.assertEqual(
-            atsc.streams(rf["services"]), [(0, None), (0, 0), (0, 1), (1, None), (1, 0)]
+            mux.streams(rf["services"]), [(0, None), (0, 0), (0, 1), (1, None), (1, 0)]
         )
-        keep, remap = atsc.ff_remap(
+        keep, remap = mux.ff_remap(
             rf["services"],
             lambda i, k: atsc.video_pid(i) if k is None else atsc.audio_pid(i, k),
         )
         self.assertEqual(remap, ["256=49", "257=52", "258=50", "259=53", "260=56"])
-        self.assertEqual(atsc.ff_programs(rf["services"]),
+        self.assertEqual(mux.ff_programs(rf["services"]),
                          ["-program", "st=0:st=1:st=2", "-program", "st=3:st=4"])  # fmt: skip
         # no PID twice, in any lineup of 16 services of 3 tracks
         pids = [atsc.video_pid(i) for i in range(16)] + [
@@ -200,14 +200,14 @@ class LineupTest(unittest.TestCase):
         self.assertEqual(hz("atsc", "33"), 587000000)
         with self.assertRaises(band.Error):
             hz("atsc", "37")
-        with self.assertRaises(atsc.Error):
-            atsc.channel(ATSC, "8")
+        with self.assertRaises(mux.Error):
+            mux.channel(ATSC, "8")
 
     def test_events_cover_now(self):
-        svc = atsc.channel(ATSC, "7")["services"][0]
+        svc = mux.channel(ATSC, "7")["services"][0]
         now = 1_800_000_000
         for t in range(now, now + 86400, 1800):
-            on_air = atsc.events(svc, t, t + 1)
+            on_air = mux.events(svc, t, t + 1)
             self.assertEqual(len(on_air), 1, t)
             start, minutes, _title, _text = on_air[0]
             self.assertTrue(start <= t < start + minutes * 60)
@@ -224,7 +224,7 @@ def fake_make(cache, lu, ch, now):
     path = atsc.stream_path(cache, lu, ch, now)
     if os.path.exists(path):
         return path
-    raise atsc.Error("no tsp, tstabcomp, ffmpeg on this host: install TSDuck and ffmpeg")
+    raise mux.Error("no tsp, tstabcomp, ffmpeg on this host: install TSDuck and ffmpeg")
 
 
 def put_stream(cache, ch):
@@ -615,7 +615,7 @@ def tdt(field):
 
 def tot(field):
     sec = bytes([0x73, 0x70, 0x0B]) + field + b"\xf0\x00"  # no descriptors, then the CRC
-    return sec + atsc.crc32_mpeg(sec).to_bytes(4, "big")
+    return sec + mux.crc32_mpeg(sec).to_bytes(4, "big")
 
 
 class AribTest(unittest.TestCase):
@@ -690,30 +690,30 @@ class AribTest(unittest.TestCase):
             self.assertEqual(got, [("21", 474000000, 3), ("C38", 346000000, 1)])
 
     def test_tdt_and_tot_set_to_now(self):
-        old = arib.jst_time(1_700_000_000)
-        p = packet(arib.TOT_PID, tdt(old) + tot(old))
+        old = mux.jst_time(1_700_000_000)
+        p = packet(mux.TOT_PID, tdt(old) + tot(old))
         now = 1_800_000_123  # 2027-01-15 08:02:03 UTC: 17:02:03 JST
-        q = arib.time_rewrite(p, now)
+        q = mux.time_rewrite(p, now)
         self.assertEqual(len(q), 188)
         field = bytes.fromhex("EFEC") + bytes([0x17, 0x02, 0x03])  # MJD 61420, then BCD
         self.assertEqual(q[5:13], tdt(field))
         sec = q[13 : 13 + 14]
         self.assertEqual(sec[3:8], field)
-        self.assertEqual(atsc.crc32_mpeg(sec), 0)  # the CRC made again
+        self.assertEqual(mux.crc32_mpeg(sec), 0)  # the CRC made again
         self.assertEqual(q[27:], p[27:])
         other = packet(0x11, tdt(old))
-        self.assertEqual(arib.time_rewrite(other, now), other)  # only the TOT PID
+        self.assertEqual(mux.time_rewrite(other, now), other)  # only the TOT PID
 
     def test_stream_rewrites_the_lineups_time(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "s.ts")
-            old = arib.jst_time(1_700_000_000)
-            pkts = [packet(arib.TOT_PID, tdt(old)), packet(0x1FFB, stt(1000))]
+            old = mux.jst_time(1_700_000_000)
+            pkts = [packet(mux.TOT_PID, tdt(old)), packet(0x1FFB, stt(1000))]
             with open(path, "wb") as f:
                 f.write(b"".join(pkts))
             s = antenna.Stream(path, rate=188 * 8 * 100, clock=antenna.ARIB.clock)
             out = s.next(0.02, now=1_800_000_000)
-            self.assertEqual(out[5:13], tdt(arib.jst_time(1_800_000_000)))
+            self.assertEqual(out[5:13], tdt(mux.jst_time(1_800_000_000)))
             self.assertEqual(out[188:], pkts[1])  # no STT of ISDB's
 
     def test_sender_sends_to_an_isdbt_tune_only(self):

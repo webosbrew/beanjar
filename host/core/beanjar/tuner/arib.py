@@ -24,18 +24,17 @@ import json
 import os
 import shutil
 import subprocess
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime
 from xml.sax.saxutils import escape, quoteattr
 
-from .atsc import FF_PID0, PACKET, Error, crc32_mpeg, ff_remap
 from .band import jp_uhf_hz
+from .mux import FF_PID0, JST, TOT_PID, Error, crc32_mpeg, ff_remap
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 9  # of the generator: part of a stream's key (stream_key)
 SECONDS = 10  # of a made stream, looped
 
-PAT_PID, NIT_PID, SDT_PID, EIT_PID, TOT_PID = 0x00, 0x10, 0x11, 0x12, 0x14
-TABLE_TDT, TABLE_TOT = 0x70, 0x73
+PAT_PID, NIT_PID, SDT_PID, EIT_PID = 0x00, 0x10, 0x11, 0x12
 PMT_PID, VIDEO_PID, AUDIO_PID, DATA_PID = 0x1F0, 0x111, 0x112, 0x740  # the first service's
 
 
@@ -188,9 +187,6 @@ def ddb_messages(mod):
             + block
         )
     return out
-
-
-JST = timezone(timedelta(hours=9))
 
 
 def _jst(t, fmt="%Y-%m-%d %H:%M:%S"):
@@ -349,7 +345,7 @@ def _run(cmd):
 def _make_loop(lu, rf, path):
     """The A/V loop: each service's picture and sound, MPEG-2 video and AAC (ADTS) audio; with more
     than one service a program each, so each video carries its own PCR."""
-    from .atsc import av_inputs, ff_programs
+    from .mux import av_inputs, ff_programs
 
     v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     vb = str(v["bitrate"])
@@ -418,7 +414,7 @@ def tools():
 def make(path, lu, ch, now):
     """Makes the stream of the lineup's physical channel ch into path for the time now (EIT p/f,
     TOT, TDT); returns path."""
-    from .atsc import channel
+    from .mux import channel
 
     missing = tools()
     if missing:
@@ -451,7 +447,7 @@ def stream_key(lu, ch, now):
     """What the stream depends on: the generator, the lineup (its values and its files' content:
     its key) and the present and following events (EIT p/f) of the channel's services, so it is
     made again when a present event ends."""
-    from .atsc import channel
+    from .mux import channel
 
     rf = channel(lu, ch)
     text = json.dumps(
@@ -482,41 +478,3 @@ def make_cached(cache, lu, ch, now):
         ):
             os.unlink(os.path.join(cache, name))
     return path
-
-
-def jst_time(now, tz=JST):
-    """The 40-bit JST_time field of a TDT or TOT (ARIB STD-B10): the MJD, then hours, minutes and
-    seconds in BCD; with tz UTC, DVB's UTC_time (EN 300 468), the same layout."""
-    t = datetime.fromtimestamp(int(now), tz)
-    mjd = (t.date() - date(1858, 11, 17)).days
-
-    def bcd(n):
-        return ((n // 10) << 4) | (n % 10)
-
-    return mjd.to_bytes(2, "big") + bytes([bcd(t.hour), bcd(t.minute), bcd(t.second)])
-
-
-def time_rewrite(packet, now, tz=JST):
-    """The packet with the JST_time of each whole TDT and TOT section in it set to now (and the
-    TOT's CRC made again); the packet itself when it starts no section on the TOT PID. tz UTC:
-    DVB's TDT and TOT, whose UTC_time has the same place and layout."""
-    pid = ((packet[1] & 0x1F) << 8) | packet[2]
-    if pid != TOT_PID or not packet[1] & 0x40 or not packet[3] & 0x10:
-        return packet
-    at = 4 + (1 + packet[4] if packet[3] & 0x20 else 0)
-    if at >= PACKET:
-        return packet
-    at += 1 + packet[at]  # the pointer field
-    out = bytearray(packet)
-    stamp = jst_time(now, tz)
-    while at + 3 <= PACKET and out[at] != 0xFF:
-        n = 3 + (((out[at + 1] & 0xF) << 8) | out[at + 2])
-        if at + n > PACKET:
-            break
-        if out[at] == TABLE_TDT and n >= 8:
-            out[at + 3 : at + 8] = stamp
-        elif out[at] == TABLE_TOT and n >= 14:
-            out[at + 3 : at + 8] = stamp
-            out[at + n - 4 : at + n] = crc32_mpeg(bytes(out[at : at + n - 4])).to_bytes(4, "big")
-        at += n
-    return bytes(out)
