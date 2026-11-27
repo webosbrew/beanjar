@@ -41,9 +41,13 @@
  * deadline by the factor (now + (deadline - now) * N) when the call comes from the executable
  * itself: in every eula-service build the collection has (33.31.61, 33.31.68, 43.21.73, 43.22.76,
  * 02.68.80) its one call of that function is lsCallSync's wait, so each step is N seconds and the
- * call's limit N times its own. A wait again on the same deadline (a wake-up before the reply)
- * keeps the stretched one. Calls from the libraries, other clocks and other executables (sdx has
- * its own lsCallSync, in another class) go to libc unchanged.
+ * call's limit N times its own. sdx's own XpaLunaHandle::lsCallSyncImpl (5 s at nine callers, 10 s
+ * at getStringFromSettingCache, immediates in them) waits once on a std::condition_variable
+ * wait_until with an absolute deadline; its executable's one pthread_cond_clockwait call (W22O
+ * 33.31.68 and M23 33.31.61 alike) is that wait, so the same interposition stretches it when sdx
+ * exports lsCallSyncImpl. A wait again on the same deadline (a wake-up before the reply)
+ * keeps the stretched one. Calls from the libraries, other clocks and other executables go to libc
+ * unchanged.
  */
 #include "../scale-preload.h"
 
@@ -128,9 +132,17 @@ __attribute__((visibility("default"))) int curl_easy_setopt(void *curl, int opt,
     return next(curl, opt, p);
 }
 
-/* eula-service's lsCallSync, exported by its executable: where it is found, the executable's
- * CLOCK_MONOTONIC condition waits are stretched (main_map: the executable's link map). */
-#define LSCALLSYNC "_ZN10LunaCommon10lsCallSyncEPKcS1_RN7pbnjson6JValueEi"
+/* eula-service's lsCallSync and sdx's lsCallSyncImpl, exported by their executables: where one is
+ * found, the executable's CLOCK_MONOTONIC condition waits are stretched (main_map: the
+ * executable's link map). */
+static const struct {
+    const char *symbol, *daemon;
+} callsyncs[] = {
+    {"_ZN10LunaCommon10lsCallSyncEPKcS1_RN7pbnjson6JValueEi", "eula-service"},
+    {"_ZN3sdx8mainbody13XpaLunaHandle14lsCallSyncImplEPKcS3_RNSt7__cxx1112basic_stringIcSt11char_"
+     "traitsIcESaIcEEEi",
+     "sdx"},
+};
 static struct link_map *main_map;
 
 typedef int (*clockwait_fn)(pthread_cond_t *, pthread_mutex_t *, clockid_t,
@@ -178,13 +190,16 @@ __attribute__((constructor)) static void init(void)
     scale_init("LUNA_TIMEOUT_SCALE", SELF);
     if (scale <= 1)
         return;
-    if (dlsym(RTLD_DEFAULT, LSCALLSYNC)) {
+    for (i = 0; i < sizeof callsyncs / sizeof *callsyncs && !main_map; i++) {
         struct link_map *m = NULL;
-        void *self = dlopen(NULL, RTLD_NOW | RTLD_NOLOAD);
+        void *self;
+        if (!dlsym(RTLD_DEFAULT, callsyncs[i].symbol))
+            continue;
+        self = dlopen(NULL, RTLD_NOW | RTLD_NOLOAD);
         if (self && !dlinfo(self, RTLD_DI_LINKMAP, &m) && m) {
             main_map = m;
             found++;
-            scale_log("<6>libluna-scale: eula-service: lsCallSync waits x%lu\n", scale);
+            scale_log("<6>libluna-scale: %s: Luna call waits x%lu\n", callsyncs[i].daemon, scale);
         }
     }
     for (i = 0; i < sizeof timeouts / sizeof *timeouts; i++) {

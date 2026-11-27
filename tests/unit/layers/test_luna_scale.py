@@ -111,7 +111,11 @@ CALLER = r"""
 #include <time.h>
 #include <unistd.h>
 int lib_wait(pthread_cond_t *, pthread_mutex_t *, clockid_t, const struct timespec *);
-#ifndef NOSYM
+#ifdef SDXSYM
+__attribute__((visibility("default"))) int
+lsCallSyncImpl(void *t, const char *a, const char *b, void *c, int d) __asm__("_ZN3sdx8mainbody13XpaLunaHandle14lsCallSyncImplEPKcS3_RNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEi");
+int lsCallSyncImpl(void *t, const char *a, const char *b, void *c, int d) { (void)t, (void)a, (void)b, (void)c; return d; }
+#elif !defined(NOSYM)
 __attribute__((visibility("default"))) int
 lsCallSync(const char *a, const char *b, void *c, int d) __asm__("_ZN10LunaCommon10lsCallSyncEPKcS1_RN7pbnjson6JValueEi");
 int lsCallSync(const char *a, const char *b, void *c, int d) { (void)a, (void)b, (void)c; return d; }
@@ -174,7 +178,7 @@ def waiters(built):
     (d / "caller.c").write_text(CALLER)
     run = lambda *a: subprocess.run([cc, *a], check=True, cwd=d)  # noqa: E731
     run("-shared", "-fPIC", "-o", "libwaiter.so", "waiter.c", "-pthread")
-    for name, extra in (("eula", []), ("other", ["-DNOSYM"])):
+    for name, extra in (("eula", []), ("sdx", ["-DSDXSYM"]), ("other", ["-DNOSYM"])):
         run(
             "-o",
             name,
@@ -198,14 +202,17 @@ def waits(d, prog, scale):
     return {k: int(v) for k, v in (line.split() for line in out.splitlines())}
 
 
-def test_lscallsync_waits_scaled(waiters):
-    got = waits(waiters, "eula", 4)
+@pytest.mark.parametrize("prog", ["eula", "sdx"])
+def test_lscallsync_waits_scaled(waiters, prog):
+    got = waits(waiters, prog, 4)
     assert 390 <= got["monotonic"] < 600, got
     assert 390 <= got["woken"] < 600, got  # the second wait keeps the stretched deadline
     assert got["realtime"] < 300 and got["library"] < 300, got
 
 
-@pytest.mark.parametrize("prog,scale", [("other", 4), ("eula", None), ("eula", 1)])
+@pytest.mark.parametrize(
+    "prog,scale", [("other", 4), ("eula", None), ("eula", 1), ("sdx", None), ("sdx", 1)]
+)
 def test_lscallsync_waits_unchanged(waiters, prog, scale):
     got = waits(waiters, prog, scale)
     assert all(90 <= v < 300 for v in got.values()), got
