@@ -136,7 +136,6 @@ import tomllib
 from . import (
     base,
     compat,
-    console,
     core,
     fwcache,
     fwfacts,
@@ -156,6 +155,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .access import console
 from .devices import rotation
 from .network import netns
 from .tuner import antenna
@@ -404,7 +404,7 @@ def start_shell_relay(p):
                 [
                     sys.executable,
                     "-m",
-                    "beanjar.guestshell",
+                    "beanjar.access.guestshell",
                     str(os.getpid()),
                     str(sock.fileno()),
                     qemu_sock,

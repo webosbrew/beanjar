@@ -21,7 +21,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
-from beanjar import ares, base, cli, lifecycle, remote
+from beanjar.access import ares, remote
+from beanjar import base, cli, lifecycle
 from beanjar.devices import usb
 
 

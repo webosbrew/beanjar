@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 from ..display import framing
-from .. import remote
+from ..access import remote
 from ..base import Error
 from .common import Usage, emit, kv_lines, parse_size, read_new_password, version_info, warn
 from .devices import gamepad_controls, plug_usb, remote_tuner, usb_attach_usage

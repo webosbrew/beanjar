@@ -24,7 +24,7 @@ ares-TOOL run (on a board, every module imported costs tens of milliseconds)."""
 
 import sys
 
-from .. import remote
+from ..access import remote
 from ..cli import command_index, global_options
 from ..core import Library
 from ..base import Error
@@ -80,7 +80,7 @@ def main(argv):
 def ares_main(argv, i):
     """beanjar [GLOBAL...] ares-TOOL [--root] -d NAME [ARGS...] (ares.py): the tool's own status; ours on
     an error before it runs, as text (a --json among ARGS is the tool's)."""
-    from .. import ares
+    from ..access import ares
 
     tool = argv[i]
     Parser.json_errors = False

@@ -390,7 +390,8 @@ def read(vm, timeout=10.0):
     """The audio object of a running library VM: the guest's table and setting over its shell
     port, the media helper's streams from its run directory; with `error` when the guest did not
     answer (still starting, a beanjar without the shell relay)."""
-    from .. import guestshell, qemu
+    from ..access import guestshell
+    from .. import qemu
     from ..base import Error
 
     streams_text = None

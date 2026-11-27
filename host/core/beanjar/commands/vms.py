@@ -8,7 +8,8 @@ import shlex
 import stat
 import sys
 
-from .. import base, core, hostprocs, keys, poweroff, remote, vmsettings, vmunits
+from .. import base, core, hostprocs, keys, poweroff, vmsettings, vmunits
+from ..access import remote
 from ..core import fmt_duration
 from ..base import Error
 from .common import Usage, emit, kv_lines, layer_versions, progress, table, warn

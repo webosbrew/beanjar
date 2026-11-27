@@ -167,7 +167,7 @@ the system `ssh` running the host's own `beanjar COMMAND ... --json`, reusing on
 (ControlMaster/ControlPersist, a socket under `$XDG_RUNTIME_DIR`), with BatchMode and a connect
 timeout. No server, daemon or protocol: the remote CLI's JSON and exit status (0, 1, 2) are the
 interface, and a remote too old for a command fails with an "update beanjar there" message instead
-of a version negotiation. `beanjar/remote.py` holds the hosts, the ssh command line and the name
+of a version negotiation. `beanjar/access/remote.py` holds the hosts, the ssh command line and the name
 resolution; `transport` is the one function that touches the network, replaced in the tests.
 
 A host's packages drift from this machine's checkout between updates, and a forwarded command runs
@@ -188,7 +188,7 @@ a third without the third's VMs appearing twice. There is no remote viewer: the 
 `beanjar vnc start` and a VNC client, or `screenshot`, which makes the host print the PNG on stdout
 (`screenshot NAME -`) and writes it here. The GTK manager builds its `Library` directly and stays
 local. Commands that need a file or directory of the machine they run on (`create`, `key model
-install`, the viewer) stay local. The ares tools (`beanjar ares-TOOL -d NAME`, `beanjar/ares.py`)
+install`, the viewer) stay local. The ares tools (`beanjar ares-TOOL -d NAME`, `beanjar/access/ares.py`)
 always run on this machine, with `HOME` a private directory whose device lists name that VM alone;
 a remote VM is reached through an `ssh -L` forward of its developer-mode port, made for the one
 command, with its developer key read from the host, so only this machine needs the tools and path

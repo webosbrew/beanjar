@@ -169,7 +169,7 @@ def read(vm, timeout=10.0):
     """The lighting object of a running library VM, None where its board has no micom (has_micom);
     with `error` when the guest did not answer (still starting, a beanjar without the shell
     relay)."""
-    from .. import guestshell
+    from ..access import guestshell
     from ..base import Error
 
     if not has_micom(vm.dir):

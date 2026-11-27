@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* `beanjar shell`'s agent, webos.shell <-> commands inside webOS, in the arm64 initramfs.
  *
- * The host's relay (host/core/beanjar/guestshell.py) sends sessions over the webos.shell
+ * The host's relay (host/core/beanjar/access/guestshell.py) sends sessions over the webos.shell
  * virtio-serial port (include/webos-shell.h). Each one runs /bin/webos-enter with its words (none:
  * a login shell), as root in webOS's namespaces and chroot, as the debug console's webos-enter
  * does: on a terminal of its own (a pty of webOS's own devpts, so that it is /dev/pts/N in webOS

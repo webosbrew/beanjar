@@ -5,7 +5,7 @@ root, without SSH, developer mode or a network.
 
 The guest's agent (guest/initramfs/src/virtio-shell.c) runs each session's command with
 webos-enter, on a terminal or with pipes; the frames are include/webos-shell.h's. QEMU's socket
-for the port takes one client, so the relay (`python3 -m beanjar.guestshell PID LISTEN_FD
+for the port takes one client, so the relay (`python3 -m beanjar.access.guestshell PID LISTEN_FD
 QEMU_SOCK`, a child of the launcher like the IR relay) holds it and serves RUN_DIR/shell.sock to
 any number of clients, each with sessions numbered its own way, which it renumbers for the guest.
 It ends when PID (the launcher's, QEMU's after its exec) does. Whoever can open shell.sock (its
@@ -609,7 +609,7 @@ def want_tty(command, force, never, stdin_tty):
 
 def local_socket(vm):
     """A connection to the relay of VM vm (a library VM here)."""
-    from .base import Error
+    from ..base import Error
 
     if not vm.pid():
         raise Error(f"{vm.name} is not running")
@@ -633,7 +633,7 @@ def remote_path(info):
     VM is not running there."""
     import posixpath
 
-    from . import base
+    from .. import base
 
     if not info.get("pid") or not info.get("dir"):
         return None
@@ -647,7 +647,7 @@ def run_remote(host, name, argv, tty):
     import tempfile
 
     from . import ares, remote
-    from .base import Error
+    from ..base import Error
 
     uri = remote.hosts()[host]
     info = remote.call_json(host, uri, ["show", remote.own(name)])

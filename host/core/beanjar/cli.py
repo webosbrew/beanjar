@@ -110,7 +110,8 @@ def ares_query(argv, i):
         if cfg is not None and plain(cfg):
             answer = base.target(name, vm_dir, cfg, root)
         else:
-            from . import ares, core
+            from .access import ares
+            from . import core
 
             answer = ares.target(core.Library(opts["library"], opts["repo"]).vm(name), root)
         import json

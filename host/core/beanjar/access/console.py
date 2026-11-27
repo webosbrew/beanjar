@@ -6,7 +6,7 @@ LOG_DIR/console.log, both build/ by default):
 an echo of an end marker is typed after the line, and the reply is what the console shows until the
 marker (at most WAIT seconds), without the typed lines' echo and the shell's job notices.
 
-Input goes through one long-lived connection, the bridge (python3 -m beanjar.console bridge IN SOCK,
+Input goes through one long-lived connection, the bridge (python3 -m beanjar.access.console bridge IN SOCK,
 a session of its own, its pid in SOCK.in.pid): QEMU drops unread bytes when a client disconnects,
 and the guest UART only takes a few bytes at a time. The bridge sends what is appended to the file
 SOCK.in, and it drains the socket: QEMU blocks the guest UART (and so the kernel console) while it
@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-from . import paths
+from .. import paths
 
 
 def _alive(pid):
@@ -53,7 +53,7 @@ def ensure_bridge(sock, tree=paths.TREE):
         PYTHONPATH=os.pathsep.join(x for x in (tree.pkg_parent, os.environ.get("PYTHONPATH")) if x),
     )
     p = subprocess.Popen(
-        [sys.executable, "-m", "beanjar.console", "bridge", inp, sock],
+        [sys.executable, "-m", "beanjar.access.console", "bridge", inp, sock],
         env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -162,7 +162,7 @@ def main(argv=None):
         except OSError:
             return 1
     print(
-        "usage: python3 -m beanjar.console bridge IN SOCK (host/scripts/vm-launcher console types a line)",
+        "usage: python3 -m beanjar.access.console bridge IN SOCK (host/scripts/vm-launcher console types a line)",
         file=sys.stderr,
     )
     return 2

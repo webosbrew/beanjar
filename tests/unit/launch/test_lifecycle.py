@@ -23,7 +23,8 @@ import warnings
 from unittest import mock
 
 
-from beanjar import base, console, core, launch, lifecycle, poweroff, unit, vmunits
+from beanjar import base, core, launch, lifecycle, poweroff, unit, vmunits
+from beanjar.access import console
 
 import testunits
 
@@ -397,7 +398,7 @@ class ConsoleTest(unittest.TestCase):
             self.assertEqual(console.send("echo hi", 5, sock, log), "hi\n")
             self.assertLess(time.monotonic() - t0, 4, "returns at the end marker, not after WAIT")
             bridge = base.read_pid(sock + ".in.pid")
-            self.assertTrue(base.proc_alive(bridge, "beanjar.console"))
+            self.assertTrue(base.proc_alive(bridge, "beanjar.access.console"))
             self.assertEqual(console.send("second", 5, sock, log), "")
             self.assertEqual(base.read_pid(sock + ".in.pid"), bridge, "one bridge per console")
         finally:

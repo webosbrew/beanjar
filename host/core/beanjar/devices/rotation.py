@@ -204,7 +204,8 @@ def rotate(vm, angle, wait=WAIT, settle=SETTLE):
 def turn_sensor(vm, angle):
     """Sets the running VM's accelerometer to the set turned to angle, in the initramfs (lgemu's
     accel_mg), and keeps the angle for its next start."""
-    from .. import console, paths
+    from ..access import console
+    from .. import paths
 
     x, y, z = gravity(angle)
     try:

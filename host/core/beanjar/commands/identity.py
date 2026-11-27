@@ -5,7 +5,7 @@
 
 import os
 
-from .. import remote
+from ..access import remote
 from ..base import Error
 from .common import emit, progress, warn
 

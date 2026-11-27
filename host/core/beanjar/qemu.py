@@ -200,7 +200,6 @@ from .display import capture_relay
 from . import (
     fwcache,
     lz4p,
-    guestshell,
     hostswap,
     keys,
     layerimage,
@@ -213,6 +212,7 @@ from . import (
     share,
     vmsettings,
 )
+from .access import guestshell
 from .devices import ir_relay, mic
 from .tuner import antenna
 

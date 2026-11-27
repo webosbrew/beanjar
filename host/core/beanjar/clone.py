@@ -31,7 +31,8 @@ import subprocess
 import tempfile
 import tomllib
 
-from . import base, core, keys, nvm, remote, tomlfile, vmconfig, vmidentity
+from . import base, core, keys, nvm, tomlfile, vmconfig, vmidentity
+from .access import remote
 from .base import Error
 
 STAGE = ".clone-stage-"

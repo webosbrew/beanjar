@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The CLI's remote hosts (host/core/beanjar/remote.py, cli.py): the hosts table, URIs, name
+"""The CLI's remote hosts (host/core/beanjar/access/remote.py, cli.py): the hosts table, URIs, name
 resolution, the ssh command line, list merging and forwarding. The ssh runner (remote.transport)
 is replaced: no network. One test asks OpenSSH for its effective configuration with -G (no
 connection). `meson test -C build/host --suite manager`, or run directly."""
@@ -23,7 +23,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import ares, base, cli, commands, core, hostconfig, remote  # noqa: E402
+from beanjar.access import ares, remote  # noqa: E402
+from beanjar import base, cli, commands, core, hostconfig  # noqa: E402
 from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.network import inspector  # noqa: E402
 from beanjar.commands import vms as vm_commands  # noqa: E402
@@ -1154,7 +1155,7 @@ class AresRemoteTest(Base):
         next remote run cancels it, from the record in the HOME it removes."""
         code = (
             "import os, signal, sys, tempfile; sys.path.insert(0, sys.argv[1])\n"
-            "from beanjar import ares\n"
+            "from beanjar.access import ares\n"
             "home = tempfile.mkdtemp(prefix=f'beanjar-ares-{os.getpid()}-', dir=sys.argv[2])\n"
             "with ares.Forward('pi', sys.argv[3], '127.0.1.5', 9922,\n"
             "                  os.path.join(home, ares.FORWARD_RECORD)):\n"
@@ -1350,7 +1351,7 @@ class MitmConnectTest(AresRemoteTest):
         """A mitm connect killed outright leaves its forward; the next remote run cancels it."""
         code = (
             "import os, signal, sys, tempfile; sys.path.insert(0, sys.argv[1])\n"
-            "from beanjar import ares; from beanjar.network import inspector\n"
+            "from beanjar.access import ares; from beanjar.network import inspector\n"
             "home = tempfile.mkdtemp(prefix=f'{inspector.MITM_PREFIX}{os.getpid()}-',\n"
             "                        dir=sys.argv[2])\n"
             "with ares.Forward('pi', sys.argv[3], '127.0.1.5', 18083,\n"
@@ -1464,8 +1465,8 @@ class LightTest(Base):
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); from beanjar import cli\n"
             "rc = cli.main(sys.argv[2:])\n"
-            "heavy = ('beanjar.core', 'beanjar.commands', 'beanjar.ares', 'beanjar.keys',\n"
-            "         'beanjar.remote', 'beanjar.targets', 'argparse', 'shutil', 'subprocess')\n"
+            "heavy = ('beanjar.core', 'beanjar.commands', 'beanjar.access.ares', 'beanjar.keys',\n"
+            "         'beanjar.access.remote', 'beanjar.targets', 'argparse', 'shutil', 'subprocess')\n"
             "print(rc, [m for m in heavy if m in sys.modules])\n"
         )
         manager = os.path.join(TOP, "host", "core")

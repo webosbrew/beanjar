@@ -71,7 +71,7 @@ browser ── HTTP + WebSocket ── beanjar-web ── stdio ── beanjar v
   starting and stopping VMs, starting VNC, the three pipes, the remote's layout, screenshots, and
   where the traffic inspector is. It opens no VM socket and no
   tunnel of its own (the inspector's TCP connections go where `beanjar mitm connect` says, below); a VM on another host is reached the way every other command reaches it, the CLI
-  running that host's beanjar over its shared ssh connection (`host/core/beanjar/remote.py`;
+  running that host's beanjar over its shared ssh connection (`host/core/beanjar/access/remote.py`;
   the pipes use `remote.attach`, the process's own stdio, unbuffered). The pages always say
   `HOST/NAME`, `local/NAME` for this machine, so a bare name never makes the manager ask every
   host.

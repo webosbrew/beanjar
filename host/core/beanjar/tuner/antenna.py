@@ -1180,7 +1180,7 @@ def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT, content=None
 
 
 def feeds_parent():
-    from .. import ares
+    from ..access import ares
 
     return ares.home_parent() or tempfile.gettempdir()
 
@@ -1228,7 +1228,7 @@ def start_feed(host, uri, name, address, cache, spawn=subprocess.Popen, parent=N
     """A feed of VM name on host from this machine, started if none runs: its feed.json once it
     is connected. Error if it ends first or does not connect within wait seconds (its log's last
     lines)."""
-    from .. import ares
+    from ..access import ares
 
     running = find_feed(host, name, parent)
     if running:
@@ -1291,7 +1291,7 @@ def feed_main(argv, connect=socket.create_connection):
     the connection ended, 1 when it could not be made."""
     import shutil
 
-    from .. import ares
+    from ..access import ares
 
     host, uri, name, address, cache = argv[:5]
     content = argv[5] if len(argv) > 5 else None

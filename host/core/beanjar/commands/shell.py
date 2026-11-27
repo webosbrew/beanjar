@@ -38,7 +38,7 @@ def session_tty(a, words):
     if a.json:
         raise Usage("shell takes no --json: its output is the command's")
     try:
-        from ..guestshell import want_tty
+        from ..access.guestshell import want_tty
 
         return want_tty(words, a.tty, a.no_tty, os.isatty(0))
     except ValueError as e:
@@ -46,7 +46,7 @@ def session_tty(a, words):
 
 
 def cmd_shell(lib, a):
-    from .. import guestshell
+    from ..access import guestshell
 
     words = command_words(a)
     tty = session_tty(a, words)
@@ -56,7 +56,7 @@ def cmd_shell(lib, a):
 
 
 def remote_shell(a, host, name):
-    from .. import guestshell
+    from ..access import guestshell
 
     words = command_words(a)
     return guestshell.run_remote(host, name, words, session_tty(a, words))

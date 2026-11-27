@@ -8,7 +8,8 @@ import sys
 import tempfile
 
 from ..display import framing
-from .. import keys, remote
+from .. import keys
+from ..access import remote
 from ..core import Library
 from .common import (
     DURATION_HELP,

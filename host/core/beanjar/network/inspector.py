@@ -338,7 +338,7 @@ def connect_local(vm):
 
 def remote_show(host, uri, name):
     """`mitm show local/NAME --password --json` on host: one call over its shared connection."""
-    from .. import remote
+    from ..access import remote
 
     data = remote.call_json(host, uri, ["mitm", "show", remote.own(name), "--password"])
     if not isinstance(data, dict) or not all(
@@ -350,7 +350,7 @@ def remote_show(host, uri, name):
 
 def remote_target(host, data):
     """The inspector's address and port on host from its mitm show (local_url with link lan)."""
-    from .. import remote
+    from ..access import remote
 
     try:
         target = urlsplit(data.get("local_url") or data["url"])
@@ -372,7 +372,7 @@ class Remote:
         self.forward = self.port = None
 
     def __call__(self, data):
-        from .. import ares
+        from ..access import ares
 
         address, port = remote_target(self.host, data)
         if self.forward and (self.forward.address, self.forward.to_port) != (address, port):
@@ -388,7 +388,7 @@ class Remote:
     def restore(self):
         """The forward again on a new shared connection: whether it is back. If not (its port is
         taken here, the host is not reached) it is dropped, and the next link(data) makes one."""
-        from .. import remote
+        from ..access import remote
 
         if self.forward is None:
             return False
@@ -414,7 +414,7 @@ def remote_session(host, name, use):
     import signal
     import tempfile
 
-    from .. import ares, remote
+    from ..access import ares, remote
 
     uri = remote.hosts()[host]
     data = remote_show(host, uri, name)

@@ -729,7 +729,7 @@ class Remote:
         self.host, self.uri, self.name, self.record = host, uri, name, record
 
     def _call(self, *words):
-        from .. import remote
+        from ..access import remote
 
         return remote.call_json(
             self.host, self.uri, ["io", "usb", words[0], remote.own(self.name), *words[1:]]
@@ -760,7 +760,7 @@ class Remote:
         }
 
     def way(self, path):
-        from .. import ares
+        from ..access import ares
 
         return ares.Forward(self.host, self.uri, path, None, self.record)
 
@@ -875,7 +875,7 @@ def plug(target, name, client, id_=None, ready=None, out=None, spawn=subprocess.
 def plug_remote(host, name, client, id_=None, ready=None, out=None):
     """plug for VM name on host, its forward recorded for ares.sweep_homes should this process be
     killed outright."""
-    from .. import ares, remote
+    from ..access import ares, remote
 
     uri = remote.hosts()[host]
     old = {s: signal.signal(s, ares.raise_terminated) for s in (signal.SIGTERM, signal.SIGHUP)}
@@ -895,7 +895,7 @@ def plug_remote(host, name, client, id_=None, ready=None, out=None):
 
 
 def plug_local(vm, client, id_=None, ready=None, out=None):
-    from .. import ares
+    from ..access import ares
 
     old = {s: signal.signal(s, ares.raise_terminated) for s in (signal.SIGTERM, signal.SIGHUP)}
     try:

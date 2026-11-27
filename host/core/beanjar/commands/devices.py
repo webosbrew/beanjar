@@ -6,7 +6,7 @@ import argparse
 import json
 import os
 
-from .. import remote
+from ..access import remote
 from ..core import Library
 from .common import DURATION_HELP, Usage, duration, emit, progress, table, warn
 

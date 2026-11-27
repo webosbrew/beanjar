@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""`beanjar shell` (host/core/beanjar/guestshell.py, commands/shell.py): the frames of
+"""`beanjar shell` (host/core/beanjar/access/guestshell.py, commands/shell.py): the frames of
 include/webos-shell.h, the relay's sessions between clients and the guest, a client's session end
 to end against a fake guest agent, and the command line. No VM.
 `pytest tests/unit/manager/test_guestshell.py`."""
@@ -13,7 +13,7 @@ import threading
 
 import pytest
 
-from beanjar import guestshell as gs
+from beanjar.access import guestshell as gs
 from beanjar.commands import parser
 from beanjar.commands.shell import command_words
 
@@ -295,7 +295,7 @@ def test_remote_path():
 def test_run_remote_forwards_to_the_hosts_relay(monkeypatch, tmp_path):
     """HOST/NAME: the VM's run directory from the host's `info`, a forward of the shared ssh
     connection to its shell.sock, the session on the forward's port, the forward ended after."""
-    from beanjar import ares, remote
+    from beanjar.access import ares, remote
 
     server = socket.socket()
     server.bind(("127.0.0.1", 0))
@@ -334,7 +334,7 @@ def test_run_remote_forwards_to_the_hosts_relay(monkeypatch, tmp_path):
 
 
 def test_run_remote_not_running(monkeypatch):
-    from beanjar import remote
+    from beanjar.access import remote
     from beanjar.base import Error
 
     monkeypatch.setattr(remote, "hosts", lambda: {"pi": "ssh://pi"})

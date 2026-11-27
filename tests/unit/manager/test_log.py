@@ -17,7 +17,8 @@ from unittest import mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import cli, commands, remote
+from beanjar import cli, commands
+from beanjar.access import remote
 from beanjar.commands import forward
 
 

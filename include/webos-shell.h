@@ -4,8 +4,8 @@
 #define WEBOS_SHELL_H
 #include <stdint.h>
 /* `beanjar shell` on the webos.shell virtio-serial port: shells and commands inside webOS, between
- * the host's relay (host/core/beanjar/guestshell.py, which serves RUN_DIR/shell.sock to any number
- * of clients and renumbers their sessions) and the initramfs's agent
+ * the host's relay (host/core/beanjar/access/guestshell.py, which serves RUN_DIR/shell.sock to any
+ * number of clients and renumbers their sessions) and the initramfs's agent
  * (guest/initramfs/src/virtio-shell.c), which runs each session's command with webos-enter.
  * Clients speak the same frames to the relay.
  *

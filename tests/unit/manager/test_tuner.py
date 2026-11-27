@@ -26,7 +26,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import ares, cli, remote
+from beanjar.access import ares, remote
+from beanjar import cli
 from beanjar.tuner import antenna, band, lineup, atsc
 from beanjar.tuner import arib as arib
 

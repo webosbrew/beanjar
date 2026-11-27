@@ -125,7 +125,7 @@ vms/<name>/identity/   the VM's own files, mode 0700: its SSH keys and known_hos
                        lgudid.toml (its LGUDID; below)
 vms/<name>/run/        qemu.pid qmp.sock viewer-qmp.sock console.sock dbus.sock cursor.sock video.sock ir.sock
                        (the micom's IR receiver, beanjar/devices/ir_relay.py: ir-relay.log; QEMU's port is
-                       ir-qemu.sock) shell.sock (beanjar shell's relay, beanjar/guestshell.py:
+                       ir-qemu.sock) shell.sock (beanjar shell's relay, beanjar/access/guestshell.py:
                        shell-relay.log; QEMU's port is shell-qemu.sock) capture.sock (the guest's
                        captures, beanjar/display/capture_relay.py: capture-relay.log; QEMU's port is
                        capture-qemu.sock; its on-demand headless viewer capture-sink.pid,
@@ -1220,7 +1220,7 @@ tar c app | beanjar shell pi/tv1 -- tar x -C /tmp
   of the host's shared ssh connection to its `shell.sock` (`ssh -O forward`, as `ares-TOOL` and the
   tuner feed do), cancelled at the end.
 
-How it works: the launcher starts the relay (`python3 -m beanjar.guestshell`, a child that ends
+How it works: the launcher starts the relay (`python3 -m beanjar.access.guestshell`, a child that ends
 with the VM, log `run/shell-relay.log`), which holds QEMU's socket for the port
 (`run/shell-qemu.sock`, which takes one client) and serves `run/shell.sock` to any number of
 clients. The initramfs's agent (`guest/initramfs/src/virtio-shell.c`, log `/run/virtio-shell.log`

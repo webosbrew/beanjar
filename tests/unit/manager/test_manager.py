@@ -1245,7 +1245,8 @@ class ManagerTest(unittest.TestCase):
         """clone between hosts: SRC on one, DEST on another, and from this machine to a host; each host
         is a library of its own reached through its shell (remote.shell_argv) and its beanjar
         (remote.call_json), here stand-ins on this machine."""
-        from beanjar import clone, remote as rem
+        from beanjar import clone
+        from beanjar.access import remote as rem
 
         src_dir, model_key = self.clone_source()
         libs = {"h1": self.lib_dir, "h2": os.path.join(self.tmp, "lib-h2")}
@@ -2380,7 +2381,7 @@ class ManagerTest(unittest.TestCase):
         (ares.target of Library.vm), and fails as it does."""
         code = (
             "import json, sys\n"
-            "from beanjar import ares, core\n"
+            "from beanjar.access import ares; from beanjar import core\n"
             "try:\n"
             "    vm = core.Library(sys.argv[1]).vm(sys.argv[2])\n"
             "    print(json.dumps(ares.target(vm, sys.argv[3] == 'root')))\n"
@@ -3443,7 +3444,7 @@ class AresStdinTest(unittest.TestCase):
     DETACHED = f"exec </dev/null; {CMD}"
 
     def test_no_stdin_detached(self):
-        from beanjar import ares
+        from beanjar.access import ares
 
         with open(os.devnull) as null:
             self.assertTrue(ares.stdin_empty(null.fileno()))
@@ -3465,7 +3466,7 @@ class AresStdinTest(unittest.TestCase):
             self.assertFalse(ares.stdin_empty(f.fileno()), "a file is forwarded")
 
     def test_args(self):
-        from beanjar import ares
+        from beanjar.access import ares
 
         for args, want in (
             (["-r", self.CMD], ["-r", self.DETACHED]),
@@ -3484,7 +3485,7 @@ class AresStdinTest(unittest.TestCase):
                 self.assertEqual(ares.detach_stdin(tool, args, empty=True), args)
 
     def test_long_command(self):
-        from beanjar import ares
+        from beanjar.access import ares
         from beanjar.base import Error
 
         ok = "x" * (ares.MAX_COMMAND - 1 - len("exec </dev/null; "))
@@ -4199,7 +4200,7 @@ class PowerOffTest(unittest.TestCase):
 
     def refusal(self, target=H13_AFRO, pid=123, qmp="running", ready=True):
         self.micom("standby=0 power=3 ready=0\nstandby=0 power=3 ready=1\n" if ready else "")
-        from beanjar import console
+        from beanjar.access import console
 
         with (
             mock.patch.object(core.VM, "target", return_value=target),
@@ -4307,7 +4308,8 @@ class PowerOffTest(unittest.TestCase):
 
     def test_busy_retry(self):
         """Bg.power_off repeats a busy call, accepts a later answer, and gives up after the last."""
-        from beanjar import console, launch
+        from beanjar.access import console
+        from beanjar import launch
 
         busy = '{"errorText":"power is busy","returnValue":false}'
         for replies, sends, code in (

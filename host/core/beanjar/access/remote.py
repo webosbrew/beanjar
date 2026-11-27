@@ -18,9 +18,9 @@ import threading
 import time
 from typing import NamedTuple
 
-from . import base, hostconfig
-from .base import ARES_QUERY, LOCAL, split_spec  # noqa: F401 (remote's names for them)
-from .base import Error
+from .. import base, hostconfig
+from ..base import ARES_QUERY, LOCAL, split_spec  # noqa: F401 (remote's names for them)
+from ..base import Error
 
 HOST_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 _USER = r"[A-Za-z0-9_][A-Za-z0-9._-]*"

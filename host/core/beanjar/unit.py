@@ -52,7 +52,8 @@ import sys
 import threading
 import time
 
-from . import console, lifecycle, paths
+from .access import console
+from . import lifecycle, paths
 from .base import read_pid
 from .vmunits import linger, systemctl, unit_slice
 
