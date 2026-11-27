@@ -89,6 +89,9 @@ and so on. A test goes in the area of the code it tests, in the tier of what it 
 - A test module is `test_*.py`. Plain functions with `assert`, fixtures for the setup they share,
   `tmp_path` for files, `pytest.mark.parametrize` for tables. Older files keep `unittest.TestCase`
   classes, which pytest runs as they are.
+- Every unit test runs with an empty temporary `HOME` and XDG directories and without `BEANJAR_*`
+  variables (`tests/unit/conftest.py`), so the hosts, library and settings of the machine it runs on
+  cannot reach it; a test that needs a host or a library creates its own.
 - A unit test must pass from a fresh clone: it writes nothing into the checkout and needs nothing
   from `build/`. What it needs from the host (a C compiler, `unsquashfs`, the unpacked kernel
   source) it checks first and skips without.
