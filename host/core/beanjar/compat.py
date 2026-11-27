@@ -21,7 +21,8 @@ import os
 import re
 import tomllib
 
-from . import semver, targets
+from . import semver
+from .firmware import targets
 
 MODINFO_CACHE = "modinfo-params.json"
 

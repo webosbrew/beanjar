@@ -1,4 +1,4 @@
-# lm21u-ombre: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# lm21u-ombre: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts lm21u-ombre (from 23.22.86.01-HE_DTV_N21D_AFAAATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

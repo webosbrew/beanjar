@@ -518,7 +518,7 @@ def prune_cache(tree, library):
 
 def has_tuner(target):
     """Whether the target's board has our tuner: dtv_soc among its modules."""
-    from .. import targets
+    from ..firmware import targets
 
     return any(m.name == "dtv_soc" for m in targets.soc(target).modules)
 
@@ -526,7 +526,7 @@ def has_tuner(target):
 def vm_broadcast(vm):
     """The broadcast standard of the VM's board (targets.board_broadcast), None if it names none or
     cannot be worked out."""
-    from .. import targets
+    from ..firmware import targets
 
     try:
         return targets.board_broadcast(

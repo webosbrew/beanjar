@@ -1,7 +1,7 @@
 # Firmware targets and layers
 
 A firmware is resolved to a `(chip, release)` target. The supported model and release
-combinations live in `guest/targets/`, which `host/core/beanjar/targets.py` loads; a target file's
+combinations live in `guest/targets/`, which `host/core/beanjar/firmware/targets.py` loads; a target file's
 `models` lists the model codes it takes, and `tested = false` marks one that has never booted. The
 tables describe hardware and platform contracts, not a separate source tree for each firmware
 version.

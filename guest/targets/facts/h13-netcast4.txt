@@ -1,2 +1,2 @@
-# h13-netcast4: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# h13-netcast4: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts h13-netcast4 (from 04.28.15.01-HE_DTV_NC4H_AFAAABAA)

@@ -10,7 +10,7 @@ from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import targets
+from beanjar.firmware import targets
 
 spec = importlib.util.spec_from_file_location("debian_build", TOP / "packaging/debian/build.py")
 debian = importlib.util.module_from_spec(spec)

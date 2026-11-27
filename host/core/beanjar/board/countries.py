@@ -26,7 +26,8 @@ import json
 import re
 
 from . import lls
-from .. import paths, targets
+from .. import paths
+from ..firmware import targets
 
 RMM_GROUPS = "/etc/configd/data/rmmCountryGroup.json"
 RMM_RECORD = "/etc/configd/data/rmm/{group}/{country}/tv.rmm.json"

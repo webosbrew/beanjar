@@ -46,7 +46,7 @@ def decode_command(path):
 
 def need_mic(vm):
     """Error unless vm runs and its model has the microphone; the socket's path."""
-    from .. import targets
+    from ..firmware import targets
 
     if not targets.soc(vm.target()).mic:
         raise Error(

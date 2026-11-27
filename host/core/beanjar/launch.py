@@ -40,9 +40,9 @@ beanjar.launch with host/core on PYTHONPATH).
                                    firmware (prepare.py: partition map, new EEPROM chip, local key,
                                    the modules' parameters) if missing or stale; start does it too
   host/scripts/vm-launcher reset-state [STATE [partition...]]   wipe a state directory (qemu.reset_state)
-  host/scripts/vm-launcher firmware-cache [PAK...]    the checkout VM's ROOTFS=uncompressed images (fwcache.py)
+  host/scripts/vm-launcher firmware-cache [PAK...]    the checkout VM's ROOTFS=uncompressed images (cache.py)
   host/scripts/vm-launcher firmware-facts TARGET [--build DIR] [--check]   write (or check) the target's
-                                   guest/targets/facts/TARGET.txt from its firmware (fwfacts.py)
+                                   guest/targets/facts/TARGET.txt from its firmware (facts.py)
   host/scripts/vm-launcher config FW|FW_NAME     print the firmware directory or name (paths.Tree.firmware)
   host/scripts/vm-launcher config FW --target CHIP-RELEASE   the target's firmware instead, not FW's (paths.Tree.target_firmware;
                                    what firmware-facts reads)
@@ -137,8 +137,6 @@ from . import (
     base,
     compat,
     core,
-    fwcache,
-    fwfacts,
     hostswap,
     keys,
     mediasandbox,
@@ -147,12 +145,12 @@ from . import (
     qemu,
     runner,
     share,
-    targets,
     unit,
     vmidentity,
     vmsettings,
     vmunits,
 )
+from .firmware import cache, facts, targets
 from .board import nvm, prepare
 from .access import console
 from .devices import rotation
@@ -1265,9 +1263,9 @@ def parser():
     s.add_argument("paks", nargs="*")
     s = sub.add_parser(
         "firmware-facts",
-        help="write a target's firmware facts, what its guest build asks of its firmware (fwfacts.py)",
+        help="write a target's firmware facts, what its guest build asks of its firmware (facts.py)",
     )
-    fwfacts.add_arguments(s)
+    facts.add_arguments(s)
     s = sub.add_parser(
         "config",
         help="print FW, FW_NAME, TARGET, PAKS, TARGETS, RELEASES, FIRMWARE_DIRS, RENDERNODE, IDENTITY or ADDRESS",
@@ -1408,11 +1406,11 @@ def main(argv_=None):
             )
             return 0
         if a.cmd == "firmware-cache":
-            return fwcache.main(a.paks)
+            return cache.main(a.paks)
         if a.cmd == "firmware-facts":
             try:
-                return fwfacts.run(a)
-            except fwfacts.Error as e:
+                return facts.run(a)
+            except facts.Error as e:
                 raise Error(str(e)) from None
         if a.cmd == "config" and a.target:
             target = targets.by_name(a.target)

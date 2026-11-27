@@ -1,4 +1,4 @@
-# k2lp-dreadlocks: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k2lp-dreadlocks: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k2lp-dreadlocks (from 05.70.50.01-HE_DTV_W16P_AFADATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

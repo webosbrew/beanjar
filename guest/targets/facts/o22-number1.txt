@@ -1,4 +1,4 @@
-# o22-number1: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# o22-number1: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts o22-number1 (from 13.30.56.01-HE_DTV_W22O_AFABATPU)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

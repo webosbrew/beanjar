@@ -93,7 +93,7 @@ def _config(env, tree, preserve_identity=False):
     # vm.toml resolves a relative fw against the VM's folder (firmware.vm_firmware), not the caller's
     firmware = os.path.abspath(firmware)
     target = paths.firmware_target(firmware)
-    from . import targets
+    from .firmware import targets
 
     display = env.get("DISPLAY_BACKEND") or (
         "egl-headless" if (env.get("ACCEL") or qemu.default_accel()) == "kvm" else "none"
@@ -113,7 +113,7 @@ def _config(env, tree, preserve_identity=False):
     mac = env.get("MAC") or (qemu.guest_mac(target, tree) if preserve_identity else None)
     serial = env.get("SERIAL")
     if not serial and preserve_identity:
-        from . import targets
+        from .firmware import targets
 
         text = Path(
             tree.src(targets.board_cmdline_src(target, targets.board_broadcast(target, firmware)))

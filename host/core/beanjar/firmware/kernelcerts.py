@@ -115,13 +115,13 @@ def write(fw, out):
 
 
 def main(argv=None):
-    """python3 -m beanjar.kernelcerts FIRMWARE_DIR OUT: write a firmware directory's certificates,
+    """python3 -m beanjar.firmware.kernelcerts FIRMWARE_DIR OUT: write a firmware directory's certificates,
     for an entry of a collection that was imported without them."""
     import sys
 
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 2:
-        print("usage: python3 -m beanjar.kernelcerts FIRMWARE_DIR OUT", file=sys.stderr)
+        print("usage: python3 -m beanjar.firmware.kernelcerts FIRMWARE_DIR OUT", file=sys.stderr)
         return 2
     try:
         print(f"{write(*args)} certificates")

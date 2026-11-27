@@ -127,7 +127,7 @@ def default_candidates(target, fws):
     (targets.BRING_UP; W21Z on W21P's k7lp-kisscurl); of several, the one whose paks boot the chip's
     default board (targets.boots_default_board: K8HP's US -global firmware over its Japanese -arib
     one) where exactly one does. The others boot only when named (regress --fw, FW)."""
-    from . import targets
+    from .firmware import targets
 
     target = tuple(target)
     names = list(fws)
@@ -143,7 +143,7 @@ def default_candidates(target, fws):
 def manifest_target(manifest):
     """(chip, release) a manifest.toml (a dict) records; ValueError without them or for a target this
     tree does not boot."""
-    from . import targets
+    from .firmware import targets
 
     chip, release = manifest.get("chip"), manifest.get("release")
     if not isinstance(chip, str) or not isinstance(release, str):
@@ -215,7 +215,7 @@ def rootfs_entries(fw_dir, directories):
     build decides its shims by these (guest/layers/soc/meson.build). ValueError without an image
     unsquashfs can list."""
     import subprocess
-    from . import superpak
+    from .firmware import superpak
 
     wanted = {d.strip("/") for d in directories}
     root = expanded_image(fw_dir)
@@ -251,7 +251,7 @@ def rootfs_has(fw_dir, path):
     the root, with or without a leading "/"), by unsquashfs's listing of that one path. ValueError
     without an image unsquashfs can list."""
     import subprocess
-    from . import superpak
+    from .firmware import superpak
 
     root = expanded_image(fw_dir)
     if root:
@@ -284,7 +284,7 @@ def model_id(fw_dir):
     before jhericurl, a missing or unreadable rootfs). Kept per image while it is unchanged."""
     import json
 
-    from . import superpak
+    from .firmware import superpak
 
     if not fw_dir:
         return None
@@ -330,7 +330,7 @@ def firmware_release(fw_dir):
     root.pak (etc/inittab) and a model pak, mode.pak, whose RELEASE.cfg names the firmware's OTA ID
     (szOtaid), told apart by the vendor pak's graphics library, or NetCast 4's lglib pak's where it
     has no vendor pak."""
-    from . import targets, superpak
+    from .firmware import targets, superpak
 
     src = os.path.join(fw_dir, "rootfs.pak")
     offset = 0
@@ -389,7 +389,7 @@ def vm_info(target, fw_dir, fw_name):
     version left out where it is not known); board is the OTA model code (W21P) and firmware the
     version ("03.34.95.01") of the firmware's name ("<version>-HE_DTV_<model>_<id>": its manifest's
     name for a manager VM, else fw_name). A value the name does not carry is left out."""
-    from . import targets
+    from .firmware import targets
 
     name = fw_name
     try:
@@ -431,7 +431,7 @@ def firmware_target(fw_dir, name=None):
     (default: fw_dir's own name). ValueError for a firmware this tree does not boot."""
     import json
 
-    from . import targets, superpak
+    from .firmware import targets, superpak
 
     path = os.path.join(fw_dir, MANIFEST)
     try:
@@ -673,7 +673,7 @@ class Tree:
 
     def layer(self, target, *p):
         """A layer the guest build of target published: build/layers/<chip>-<release>/..."""
-        from . import targets
+        from .firmware import targets
 
         if p:
             from . import guestlayers
@@ -723,7 +723,7 @@ class Tree:
         that has one), leaving out a bring-up model's on a supported target and, of several, preferring
         the one that boots the chip's default board (default_candidates).
         ValueError for none or several."""
-        from . import targets
+        from .firmware import targets
 
         def of_target(fw, name):
             try:

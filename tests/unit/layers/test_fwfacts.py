@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The firmware facts (host/core/beanjar/fwfacts.py): the file format, what is read from readelf and
+"""The firmware facts (host/core/beanjar/firmware/facts.py): the file format, what is read from readelf and
 build.ninja, the answers from an extracted firmware, and the stub libraries the guest build links
 against instead of the firmware's own. With a host C compiler, a stub built from the facts of a
 versioned library must give a program the same NEEDED entries, dynamic symbols and version needs as
@@ -18,7 +18,8 @@ import unittest.mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import fwfacts, paths  # noqa: E402
+from beanjar.firmware import facts as firmware_facts  # noqa: E402
+from beanjar import paths  # noqa: E402
 
 FACTS = """# demo
 defines bsppart:bsp/usr/lib/libdemo.so:demo_f yes
@@ -60,7 +61,7 @@ build exe: c_LINKER exe.p/m.c.o
 
 class Format(unittest.TestCase):
     def test_parse_and_lines(self):
-        f = fwfacts.parse(FACTS)
+        f = firmware_facts.parse(FACTS)
         self.assertEqual(
             f["path"],
             {"usr/lib/nyx/modules/nyxDrm.module": False, "usr/lib/libsestore.so.0.1.0": True},
@@ -81,10 +82,10 @@ class Format(unittest.TestCase):
             {"demo_f": ("DEMO_2", "func", None), "demo_var": (None, "object", 8)},
         )
         body = [line for line in FACTS.splitlines() if not line.startswith("#")]
-        self.assertEqual(fwfacts.lines(f), sorted(body))
-        text = fwfacts.format_facts("h13-afro", f, "FW")
+        self.assertEqual(firmware_facts.lines(f), sorted(body))
+        text = firmware_facts.format_facts("h13-afro", f, "FW")
         self.assertTrue(text.startswith("# h13-afro: "))
-        self.assertEqual(fwfacts.parse(text), f)
+        self.assertEqual(firmware_facts.parse(text), f)
 
     def test_bad_lines(self):
         for bad in (
@@ -101,13 +102,13 @@ class Format(unittest.TestCase):
             "gbmformats bsppart:bsp/usr/lib/libmali.so.0 XB24,",
             "whatever",
         ):
-            with self.assertRaisesRegex(fwfacts.Error, "facts:1: not a fact"):
-                fwfacts.parse(bad + "\nlib usr/lib/libdemo.so.1 libdemo.so.1\n")
-        with self.assertRaisesRegex(fwfacts.Error, "no lib line"):
-            fwfacts.parse("sym usr/lib/libx.so.1 f func\n")
+            with self.assertRaisesRegex(firmware_facts.Error, "facts:1: not a fact"):
+                firmware_facts.parse(bad + "\nlib usr/lib/libdemo.so.1 libdemo.so.1\n")
+        with self.assertRaisesRegex(firmware_facts.Error, "no lib line"):
+            firmware_facts.parse("sym usr/lib/libx.so.1 f func\n")
 
     def test_questions(self):
-        q = fwfacts.parse_questions(
+        q = firmware_facts.parse_questions(
             "lib usr/lib/libdemo.so.1\npath a/b\npath a/b\nversion usr/lib/w.so.0\n"
             "defines rootfs:usr/lib/x.so:f\nexports etc/x.env:X=\n"
             "gbmformats bsppart:bsp/usr/lib/libmali.so.0\ngbmformats rootfs:usr/lib/libmali.so\n"
@@ -123,9 +124,9 @@ class Format(unittest.TestCase):
                 "gbmformats": ["bsppart:bsp/usr/lib/libmali.so.0", "rootfs:usr/lib/libmali.so"],
             },
         )
-        f = fwfacts.parse(FACTS)
+        f = firmware_facts.parse(FACTS)
         self.assertEqual(
-            fwfacts.unanswered(f, q),
+            firmware_facts.unanswered(f, q),
             [
                 "path a/b",
                 "version usr/lib/w.so.0",
@@ -134,14 +135,14 @@ class Format(unittest.TestCase):
                 "gbmformats rootfs:usr/lib/libmali.so",
             ],
         )
-        with self.assertRaises(fwfacts.Error):
-            fwfacts.parse_questions("sym x\n")
-        with self.assertRaises(fwfacts.Error):
-            fwfacts.parse_questions("defines usr/lib/x.so\n")
-        with self.assertRaises(fwfacts.Error):
-            fwfacts.parse_questions("exports etc/x.env\n")
-        with self.assertRaises(fwfacts.Error):
-            fwfacts.parse_questions("gbmformats usr/lib/libmali.so.0\n")
+        with self.assertRaises(firmware_facts.Error):
+            firmware_facts.parse_questions("sym x\n")
+        with self.assertRaises(firmware_facts.Error):
+            firmware_facts.parse_questions("defines usr/lib/x.so\n")
+        with self.assertRaises(firmware_facts.Error):
+            firmware_facts.parse_questions("exports etc/x.env\n")
+        with self.assertRaises(firmware_facts.Error):
+            firmware_facts.parse_questions("gbmformats usr/lib/libmali.so.0\n")
 
     def test_gbm_formats(self):
         """Mali's GBM window formats: the fourcc table right after gbm_get_configs' name, at the
@@ -150,22 +151,23 @@ class Format(unittest.TestCase):
         the formats in code)."""
         pad = b"\x7fELF" + b"x" * 13  # the name then starts off a 4-byte boundary
         r46 = pad + b"gbm_get_configs\0" + b"\0" * 3 + b"XB24AB24EGL_KHR_partial_update\0"
-        self.assertEqual(fwfacts.gbm_formats(r46), ["XB24", "AB24"])
+        self.assertEqual(firmware_facts.gbm_formats(r46), ["XB24", "AB24"])
         r51 = b"SurfaceLG\0\0\0gbm_get_configs\0XR24AB24RG16AR15AR12AYUVYUYV\0\0\0\0EGL_"
         self.assertEqual(
-            fwfacts.gbm_formats(r51), ["XR24", "AB24", "RG16", "AR15", "AR12", "AYUV", "YUYV"]
+            firmware_facts.gbm_formats(r51),
+            ["XR24", "AB24", "RG16", "AR15", "AR12", "AYUV", "YUYV"],
         )
         padded = b"Width\0\0\0gbm_get_configs\0\0\0\0\0XR24AR24RG16\0\0\0\0"
-        self.assertEqual(fwfacts.gbm_formats(padded), ["XR24", "AR24", "RG16"])
+        self.assertEqual(firmware_facts.gbm_formats(padded), ["XR24", "AR24", "RG16"])
         r28 = b"buffer\0\0gbm_get_configs\0\0\0\0\0EGL_KHR_partial_update\0"
-        self.assertEqual(fwfacts.gbm_formats(r28), [])
-        self.assertEqual(fwfacts.gbm_formats(b"\x7fELF no winsys"), [])
+        self.assertEqual(firmware_facts.gbm_formats(r28), [])
+        self.assertEqual(firmware_facts.gbm_formats(b"\x7fELF no winsys"), [])
 
 
 class Reading(unittest.TestCase):
     def test_exports(self):
         self.assertEqual(
-            fwfacts.exports(DYNSYMS),
+            firmware_facts.exports(DYNSYMS),
             {
                 "demo_f": ("DEMO_2", "func", None),  # the default version, not DEMO_1
                 "demo_var": (None, "object", 8),
@@ -176,20 +178,21 @@ class Reading(unittest.TestCase):
 
     def test_global_names(self):
         self.assertEqual(
-            fwfacts.global_names(DYNSYMS), {"malloc", "demo_f", "demo_var", "demo_old", "DEMO_2"}
+            firmware_facts.global_names(DYNSYMS),
+            {"malloc", "demo_f", "demo_var", "demo_old", "DEMO_2"},
         )
 
     def test_soname(self):
         self.assertEqual(
-            fwfacts.soname(
+            firmware_facts.soname(
                 " 0x0000000e (SONAME)                     Library soname: [libdemo.so.1]\n"
             ),
             "libdemo.so.1",
         )
-        self.assertIsNone(fwfacts.soname(""))
+        self.assertIsNone(firmware_facts.soname(""))
 
     def test_link_steps(self):
-        steps = fwfacts.link_steps(NINJA)
+        steps = firmware_facts.link_steps(NINJA)
         self.assertEqual(
             steps,
             [
@@ -205,17 +208,17 @@ class Reading(unittest.TestCase):
 
 class Stub(unittest.TestCase):
     def test_source(self):
-        syms = fwfacts.parse(FACTS)["sym"]["usr/lib/libdemo.so.1"]
-        src = fwfacts.stub_source(syms)
+        syms = firmware_facts.parse(FACTS)["sym"]["usr/lib/libdemo.so.1"]
+        src = firmware_facts.stub_source(syms)
         self.assertIn("\t.globl demo_f\n\t.type demo_f, %function\ndemo_f:", src)
         self.assertIn(
             "\t.data\n\t.globl demo_var\n\t.type demo_var, %object\n\t.size demo_var, 8\ndemo_var:\n\t.zero 8",
             src,
         )
         self.assertEqual(
-            fwfacts.stub_version_script(syms), "DEMO_2 {\n  global:\n    demo_f;\n};\n"
+            firmware_facts.stub_version_script(syms), "DEMO_2 {\n  global:\n    demo_f;\n};\n"
         )
-        self.assertIsNone(fwfacts.stub_version_script({"f": (None, "func", None)}))
+        self.assertIsNone(firmware_facts.stub_version_script({"f": (None, "func", None)}))
 
 
 CC = shutil.which("cc")
@@ -247,7 +250,7 @@ class Expanded(unittest.TestCase):
             raise AssertionError(f"ran {a[0]}")
 
         with unittest.mock.patch("subprocess.run", refuse):
-            f = fwfacts.answer(str(fw), self.questions(), {})
+            f = firmware_facts.answer(str(fw), self.questions(), {})
         self.assertEqual(f["path"], {"etc/demo.env": True, "etc/none": False})
         self.assertEqual(
             f["version"], {"usr/lib/libdemo.so.1": "2.3", "usr/lib/libnone.so.0": "none"}
@@ -282,8 +285,8 @@ class Expanded(unittest.TestCase):
             (fw / "bsppart.pak").write_bytes(b"")
             (fw / "bsppart/bsp").mkdir(parents=True)
             (fw / "bsppart/bsp/f").write_bytes(b"data")
-            self.assertEqual(fwfacts.image_file(tmp, "bsppart", "/bsp/f"), b"data")
-            self.assertIsNone(fwfacts.image_file(tmp, "bsppart", "/bsp/none"))
+            self.assertEqual(firmware_facts.image_file(tmp, "bsppart", "/bsp/f"), b"data")
+            self.assertIsNone(firmware_facts.image_file(tmp, "bsppart", "/bsp/none"))
 
 
 @unittest.skipUnless(CC and shutil.which("readelf"), "no host C compiler or readelf")
@@ -336,7 +339,7 @@ class Firmware(unittest.TestCase):
         (build / "build.ninja").write_text(
             f"build prog: c_LINKER prog.p/prog.c.o\n LINK_ARGS = -Wl,--as-needed {self.real}\n"
         )
-        (build / fwfacts.QUESTIONS).write_text(
+        (build / firmware_facts.QUESTIONS).write_text(
             "lib usr/lib/libdemo.so.1\nversion usr/lib/libdemo.so\nversion usr/lib/libnone.so.0\n"
         )
         (t / "fw").mkdir()
@@ -361,10 +364,10 @@ class Firmware(unittest.TestCase):
 
     def test_generate_and_stub(self):
         facts_file = self.t / "facts.txt"
-        text = fwfacts.generate(
+        text = firmware_facts.generate(
             str(TOP), "demo-target", str(self.t / "fw"), str(self.build), str(facts_file), "FW"
         )
-        facts = fwfacts.parse(text)
+        facts = firmware_facts.parse(text)
         self.assertEqual(facts["lib"], {"usr/lib/libdemo.so.1": "libdemo.so.1"})
         self.assertEqual(
             facts["sym"]["usr/lib/libdemo.so.1"],
@@ -381,7 +384,7 @@ class Firmware(unittest.TestCase):
         facts_file.write_text(text)
         # without the build: the facts file's own questions and symbols, the same answers
         self.assertEqual(
-            fwfacts.generate(
+            firmware_facts.generate(
                 str(TOP), "demo-target", str(self.t / "fw"), None, str(facts_file), "FW"
             ),
             text,
@@ -389,8 +392,10 @@ class Firmware(unittest.TestCase):
 
         stub = self.t / "stub/libdemo.so.1"
         stub.parent.mkdir()
-        fwfacts.build_stub(facts, "usr/lib/libdemo.so.1", [CC], str(stub), str(self.t / "stub-src"))
-        self.assertEqual(fwfacts.soname(self.readelf("-d", str(stub))), "libdemo.so.1")
+        firmware_facts.build_stub(
+            facts, "usr/lib/libdemo.so.1", [CC], str(stub), str(self.t / "stub-src")
+        )
+        self.assertEqual(firmware_facts.soname(self.readelf("-d", str(stub))), "libdemo.so.1")
         self.assertNotIn("NEEDED", self.readelf("-d", str(stub)))
         self.assertNotIn("demo_unused", self.readelf("--dyn-syms", str(stub)))
 
@@ -411,11 +416,11 @@ class Firmware(unittest.TestCase):
 
     def test_paths_and_missing(self):
         q = {"path": ["usr/lib/a", "usr/lib/b"], "version": [], "lib": []}
-        f = fwfacts.answer(str(self.t / "fw"), q, {}, entries=["usr/lib/a", "usr/lib/c"])
+        f = firmware_facts.answer(str(self.t / "fw"), q, {}, entries=["usr/lib/a", "usr/lib/c"])
         self.assertEqual(f["path"], {"usr/lib/a": True, "usr/lib/b": False})
         q = {"path": [], "version": [], "lib": ["usr/lib/libmissing.so.1"]}
-        with self.assertRaisesRegex(fwfacts.Error, "no usr/lib/libmissing.so.1"):
-            fwfacts.answer(str(self.t / "fw"), q, {})
+        with self.assertRaisesRegex(firmware_facts.Error, "no usr/lib/libmissing.so.1"):
+            firmware_facts.answer(str(self.t / "fw"), q, {})
 
     def test_defines(self):
         """A defines question is answered from the image itself (bsppart.pak here), through the
@@ -435,7 +440,7 @@ class Firmware(unittest.TestCase):
                 "bsppart:bsp/usr/lib/libnone.so:demo_f",
             ],
         }
-        f = fwfacts.answer(str(self.t / "fw"), q, {})
+        f = firmware_facts.answer(str(self.t / "fw"), q, {})
         self.assertEqual(
             f["defines"],
             {
@@ -446,11 +451,11 @@ class Firmware(unittest.TestCase):
         )
         q["defines"] = ["rootfs:usr/lib/libdemo.so:demo_f"]
         self.assertEqual(
-            fwfacts.answer(str(self.t / "fw"), q, {})["defines"], {q["defines"][0]: True}
+            firmware_facts.answer(str(self.t / "fw"), q, {})["defines"], {q["defines"][0]: True}
         )
         os.remove(self.t / "fw/rootfs.pak")
-        with self.assertRaisesRegex(fwfacts.Error, "no rootfs.pak or super.pak rootfs"):
-            fwfacts.answer(str(self.t / "fw"), q, {})
+        with self.assertRaisesRegex(firmware_facts.Error, "no rootfs.pak or super.pak rootfs"):
+            firmware_facts.answer(str(self.t / "fw"), q, {})
 
     def test_exports(self):
         """An exports question is answered from the rootfs image's shell file: an export of that
@@ -475,7 +480,7 @@ class Firmware(unittest.TestCase):
             "etc/none.env:DEMO_A=eglfs_demo": False,
         }
         q = {"path": [], "version": [], "lib": [], "exports": list(want)}
-        self.assertEqual(fwfacts.answer(str(self.t / "fw"), q, {})["exports"], want)
+        self.assertEqual(firmware_facts.answer(str(self.t / "fw"), q, {})["exports"], want)
 
     def test_gbmformats(self):
         """A gbmformats question is answered from the image's library itself, through its
@@ -491,15 +496,15 @@ class Firmware(unittest.TestCase):
             "rootfs:usr/lib/libdemo.so.1": [],
         }
         q = {"path": [], "version": [], "lib": [], "gbmformats": list(want)}
-        self.assertEqual(fwfacts.answer(str(self.t / "fw"), q, {})["gbmformats"], want)
+        self.assertEqual(firmware_facts.answer(str(self.t / "fw"), q, {})["gbmformats"], want)
 
     def test_mount_cleaned_up(self):
         """The rootfs image is mounted for the answers only: no mount or mount point is left, also
         when answering fails."""
         q = {"path": [], "version": ["usr/lib/libdemo.so"], "lib": ["usr/lib/libmissing.so.1"]}
         before = set(os.listdir(tempfile.gettempdir()))
-        with self.assertRaisesRegex(fwfacts.Error, "no usr/lib/libmissing.so.1"):
-            fwfacts.answer(str(self.t / "fw"), q, {})
+        with self.assertRaisesRegex(firmware_facts.Error, "no usr/lib/libmissing.so.1"):
+            firmware_facts.answer(str(self.t / "fw"), q, {})
         left = {
             n
             for n in set(os.listdir(tempfile.gettempdir())) - before
@@ -508,15 +513,15 @@ class Firmware(unittest.TestCase):
         self.assertEqual(left, set())
 
     def test_no_questions(self):
-        with self.assertRaisesRegex(fwfacts.Error, "no .* and no firmware-questions.txt"):
-            fwfacts.generate(
+        with self.assertRaisesRegex(firmware_facts.Error, "no .* and no firmware-questions.txt"):
+            firmware_facts.generate(
                 str(TOP), "demo-target", str(self.t / "fw"), None, str(self.t / "none.txt")
             )
 
     def test_not_compiled(self):
         os.remove(self.build / "prog.p/prog.c.o")
-        with self.assertRaisesRegex(fwfacts.Error, "not compiled yet"):
-            fwfacts.used_symbols(str(self.build), ["usr/lib/libdemo.so.1"])
+        with self.assertRaisesRegex(firmware_facts.Error, "not compiled yet"):
+            firmware_facts.used_symbols(str(self.build), ["usr/lib/libdemo.so.1"])
 
 
 if __name__ == "__main__":

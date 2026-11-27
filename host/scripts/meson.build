@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Uncompressed copies of the firmware paks for ROOTFS=uncompressed (option `firmware_cache`, auto:
-# when the firmware is present). `host/scripts/vm-launcher firmware-cache` (host/core/beanjar/fwcache.py) keeps
+# when the firmware is present). `host/scripts/vm-launcher firmware-cache` (host/core/beanjar/firmware/cache.py) keeps
 # its own content-keyed cache in build/firmware-cache (the launcher uses it too), so running it on
 # every build only stats the paks.
 # Conversion needs squashfs-tools 4.6 or later; firmware inspection also uses unsquashfs.

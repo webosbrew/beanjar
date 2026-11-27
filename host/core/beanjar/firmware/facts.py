@@ -33,7 +33,7 @@ One fact per line, the lines sorted; '#' starts a comment line:
                             no such table (a rule's question about what the TV's EGL offers first)
 
 Nothing else of the firmware: the build links against stub libraries generated from the lib and sym
-lines (stub_source; `python3 -m beanjar.fwfacts stub`, build_main), with the library's SONAME and only those symbols, so the
+lines (stub_source; `python3 -m beanjar.firmware.facts stub`, build_main), with the library's SONAME and only those symbols, so the
 binaries it makes record the same DT_NEEDED entries and symbol versions as linking the firmware's
 own files did.
 
@@ -133,7 +133,7 @@ def lines(facts):
 def format_facts(target, facts, firmware_name=None):
     """A facts file's text: a header naming the target (and the firmware it was read from), then lines()."""
     head = [
-        f"# {target}: what the guest build asks of its firmware (beanjar/fwfacts.py).",
+        f"# {target}: what the guest build asks of its firmware (beanjar/firmware/facts.py).",
         "# Generated: host/scripts/vm-launcher firmware-facts "
         + target
         + (f" (from {firmware_name})" if firmware_name else ""),
@@ -414,7 +414,8 @@ def used_symbols(build_dir, libs):
 def _image(fw_dir, image):
     """(path, offset) of fw_dir's stock image (rootfs or bsppart): <image>.pak (root.pak for
     SimpleSmart's rootfs), or super.pak's logical image. Error without it."""
-    from . import paths, superpak
+    from .. import paths
+    from . import superpak
 
     try:
         logical = superpak.images(fw_dir)
@@ -435,7 +436,7 @@ def mounted_root(fw_dir):
     facts' rootfs paths are read in place without extracting it; unmounted after. A fw_dir that
     already shows the image as files (an epkfs 0.3+ mount: paths.expanded_image) is read as it is,
     with no mount."""
-    from . import paths
+    from .. import paths
 
     root = paths.expanded_image(fw_dir)
     if root:
@@ -499,7 +500,7 @@ def image_file(fw_dir, image, path):
     logical image), its symlinks followed by unsquashfs; None where the image has no such file.
     Error without the image. Read as files where fw_dir already shows the image so
     (paths.expanded_image), without unsquashfs."""
-    from . import paths
+    from .. import paths
 
     root = paths.expanded_image(fw_dir, image)
     if root:
@@ -594,7 +595,7 @@ def answer(fw_dir, questions, symbols, entries=None):
         facts["gbmformats"][q] = answer_gbmformats(fw_dir, q)
     if questions["path"]:
         if entries is None:
-            from . import paths
+            from .. import paths
 
             dirs = sorted({os.path.dirname(p) for p in questions["path"]})
             try:
@@ -684,7 +685,8 @@ def add_arguments(p):
 
 
 def run(a):
-    from . import paths, targets
+    from .. import paths
+    from . import targets
 
     top = paths.TREE.top
     target = targets.by_name(a.target)
@@ -727,7 +729,7 @@ def run(a):
 
 
 def build_main(argv=None):
-    """python3 -m beanjar.fwfacts: stub FACTS LIB OUT -- CC...  |  questions OUT [QUESTION...]
+    """python3 -m beanjar.firmware.facts: stub FACTS LIB OUT -- CC...  |  questions OUT [QUESTION...]
 
     The guest build's command line (guest/targets/meson.build): the stub library of firmware library
     LIB (a lib line's path) compiled with CC to OUT, or the build's questions ("KIND PATH") written

@@ -1,4 +1,4 @@
-# k6hp-jhericurl: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k6hp-jhericurl: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k6hp-jhericurl (from 04.74.00.01-HE_DTV_W20H_AFADABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

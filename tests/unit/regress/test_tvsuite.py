@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(REGRESS), "..", "host", "core"))
 sys.path.insert(0, os.path.join(REGRESS, "lib"))
 import teeref  # noqa: E402
 import tvsuite  # noqa: E402
-from beanjar import targets  # noqa: E402
+from beanjar.firmware import targets  # noqa: E402
 
 loader = importlib.machinery.SourceFileLoader(
     "tv_expect_gen", os.path.join(REGRESS, "tv-expect-gen.py")

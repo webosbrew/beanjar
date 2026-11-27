@@ -1,4 +1,4 @@
-# o24-ombre: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# o24-ombre: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts o24-ombre (from 23.23.30.01-HE_DTV_W24O_AFABATAA)
 exports etc/surface-manager.d/product.env:QT_QPA_EGLFS_INTEGRATION=eglfs_starfish yes
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 XB24,AB24

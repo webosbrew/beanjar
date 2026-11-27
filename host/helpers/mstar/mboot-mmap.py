@@ -33,7 +33,7 @@ sys.path.insert(
         else Path(__file__).resolve().parents[3] / "host/core"
     ),
 )
-from beanjar.memory import binary_records
+from beanjar.firmware.memory import binary_records
 
 ROWS = 96  # MAX_MMAP_SIZE of tag_custom
 ROW = 20

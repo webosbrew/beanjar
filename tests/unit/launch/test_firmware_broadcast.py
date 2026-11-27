@@ -11,7 +11,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from beanjar import paths, targets
+from beanjar import paths
+from beanjar.firmware import targets
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which("mksquashfs") and shutil.which("unsquashfs")), reason="needs squashfs-tools"

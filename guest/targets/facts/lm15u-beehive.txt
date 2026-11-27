@@ -1,4 +1,4 @@
-# lm15u-beehive: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# lm15u-beehive: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts lm15u-beehive (from 04.06.25.01-HE_DTV_W15U_AFADABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

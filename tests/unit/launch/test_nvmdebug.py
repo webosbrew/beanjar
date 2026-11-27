@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 from beanjar.board import nvm, nvmdebug
-from beanjar import targets
+from beanjar.firmware import targets
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 

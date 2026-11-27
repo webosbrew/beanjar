@@ -1,4 +1,4 @@
-# k5lp-goldilocks2: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k5lp-goldilocks2: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k5lp-goldilocks2 (from 05.40.97.01-HE_DTV_W19P_AFADABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

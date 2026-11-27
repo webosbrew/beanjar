@@ -33,7 +33,8 @@ import subprocess
 import sys
 from collections import namedtuple
 
-from .. import fwcache, targets, paths
+from ..firmware import cache as firmware_cache, targets
+from .. import paths
 from . import nvm
 
 MAGIC = 0x20120716
@@ -248,9 +249,9 @@ def _key(fw, target, cache, updatable=False):
     h = hashlib.sha256(repr(src).encode())
     h.update(b"updatable" if updatable else b"")
     if isinstance(src, (targets.PartmapFile, targets.PartmapImage)):
-        h.update(fwcache.digest(fw, cache, src.pak).encode())
+        h.update(firmware_cache.digest(fw, cache, src.pak).encode())
     else:
-        h.update(fwcache.digest(fw, cache, src.header.pak).encode())
+        h.update(firmware_cache.digest(fw, cache, src.header.pak).encode())
         h.update(repr(targets.state_disks(target)).encode())
         for p in src.parts:
             if not isinstance(p.size, int) and p.size[0] == "pak":

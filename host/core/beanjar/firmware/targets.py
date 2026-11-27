@@ -29,7 +29,8 @@ import sys
 import tomllib
 from collections import namedtuple
 
-from . import base, memory, paths
+from .. import base, paths
+from . import memory
 
 # The firmwares this tree boots, by the model code in their name (epk2extract's "..._DTV_<model>_...")
 # -> {release: chip}, from the target files' models. One board can ship several release families, so a firmware's target is
@@ -2051,7 +2052,7 @@ def boot_conf(
         ),
     ]
     out = [
-        "# The boot manifest of this launch (host/core/beanjar/targets.py), sourced by guest/initramfs/rootfs/init.\n"
+        "# The boot manifest of this launch (host/core/beanjar/firmware/targets.py), sourced by guest/initramfs/rootfs/init.\n"
     ]
     for k, v, note in lines:
         out.append(f'# {note}\n{k}="{v}"\n')

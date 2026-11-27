@@ -16,7 +16,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import compat, launch, targets, paths, vmconfig
+from beanjar import compat, launch, paths, vmconfig
+from beanjar.firmware import targets
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))

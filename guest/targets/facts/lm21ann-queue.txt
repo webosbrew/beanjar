@@ -1,4 +1,4 @@
-# lm21ann-queue: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# lm21ann-queue: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts lm21ann-queue (from 43.22.80.01-HE_DTV_W23A_AFADATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 XR24,AB24,RG16,AR15,AR12,AYUV,YUYV,NV12,NV21,NV16,YU24
 gbmformats rootfs:usr/lib/libmali.so.0 none

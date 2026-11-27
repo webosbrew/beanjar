@@ -9,7 +9,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import base, firmware, paths, superpak
+from beanjar import base, paths
+from beanjar.firmware import install, superpak
 
 HERE = Path(__file__).resolve().parent
 
@@ -77,21 +78,21 @@ def test_release_read_from_offset(pak):
 def test_import_and_storage_estimate(pak):
     (pak.src / "license.pak").write_bytes(b"LICENSE")
     names = tuple(pak.payloads) + ("license",)
-    with mock.patch.object(firmware.targets, "pak_files", return_value=names):
-        firmware.check_paks(pak.src, ("test", "test"))
-        assert firmware.paks_size(pak.src, ("test", "test")) == (
+    with mock.patch.object(install.targets, "pak_files", return_value=names):
+        install.check_paks(pak.src, ("test", "test"))
+        assert install.paks_size(pak.src, ("test", "test")) == (
             sum(map(len, pak.payloads.values())) + 7
         )
-        assert firmware.copy_size(pak.src, ("test", "test"), pak.dest) == sum(
+        assert install.copy_size(pak.src, ("test", "test"), pak.dest) == sum(
             map(len, pak.payloads.values())
         )
-        firmware.place(pak.src, pak.dest, ("test", "test"), "link", lambda _: None)
+        install.place(pak.src, pak.dest, ("test", "test"), "link", lambda _: None)
         for name, payload in pak.payloads.items():
             assert (pak.dest / (name + ".pak")).read_bytes() == payload
         assert (pak.dest / "license.pak").read_bytes() == b"LICENSE"
         (pak.src / "license.pak").unlink()
         with pytest.raises(base.Error, match="lacks license.pak"):
-            firmware.check_paks(pak.src, ("test", "test"))
+            install.check_paks(pak.src, ("test", "test"))
 
 
 def test_refuses_invalid_maps(pak):

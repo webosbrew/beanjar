@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from beanjar import targets
+from beanjar.firmware import targets
 
 TOP = Path(__file__).resolve().parents[3]
 TARGETS = os.path.join(TOP, "guest", "targets")
@@ -268,7 +268,7 @@ def test_missing_definitions(tmp_path, installed):
     assert run("-m", "beanjar", "--help").returncode == 0
     r = run(
         "-c",
-        "from beanjar import base, targets\n"
+        "from beanjar import base; from beanjar.firmware.install import targets\n"
         "try:\n"
         "    targets.of_firmware('W22O', 'queue')\n"
         "except targets.Error as e:\n"
@@ -297,7 +297,11 @@ def test_empty_definitions_directory(tmp_path):
     env.pop("PYTHONDONTWRITEBYTECODE", None)
     (tmp_path / "guest/targets").mkdir(parents=True)
     r = subprocess.run(
-        [sys.executable, "-c", "from beanjar import targets\ntargets.of_firmware('W22O', 'queue')"],
+        [
+            sys.executable,
+            "-c",
+            "from beanjar.firmware.install import targets\ntargets.of_firmware('W22O', 'queue')",
+        ],
         env=env,
         cwd=tmp_path,
         capture_output=True,

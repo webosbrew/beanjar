@@ -1,4 +1,4 @@
-# k25lp-queue: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k25lp-queue: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k25lp-queue (from 43.22.74.01-HE_DTV_W25P_AFADATAA)
 defines bsppart:bsp/usr/lib/libkadaptor.so:RHAL_SE_Init yes
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none

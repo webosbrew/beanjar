@@ -30,7 +30,7 @@ spec.loader.exec_module(shippable)
 
 
 def targets_mod():
-    from beanjar import targets
+    from beanjar.firmware import targets
 
     return targets
 

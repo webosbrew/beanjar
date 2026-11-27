@@ -1,5 +1,5 @@
 # webos layer: webOS 4's stock job's script, with $PMLOG_PRELOAD appended to the LD_PRELOAD it
-# exports (libsystrim). PmLog mode "preload-env" (host/core/beanjar/targets.py): for
+# exports (libsystrim). PmLog mode "preload-env" (host/core/beanjar/firmware/targets.py): for
 # webos.pmlog=full guest/initramfs/rootfs/init appends `env PMLOG_PRELOAD=/usr/lib/libpmlog-keep-all.so` to this
 # file, which turns the daemon's whitelist off (guest/layers/webos/src/pmlogd); without it the job is stock.
 # The start (stopped mount-readonly-volatile, before the hubs) and the other stanzas are stock.

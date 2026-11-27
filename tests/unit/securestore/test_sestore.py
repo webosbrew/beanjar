@@ -233,7 +233,7 @@ class TestInputsTest:
         assert sestore.load(self.identity) == ("error", {"browser_secret": b"hello\x7f"})
 
     def test_model_key_goes_in_the_item_the_line_reads(self):
-        from beanjar import targets
+        from beanjar.firmware import targets
 
         value = base64.b64encode(bytes(range(32)))
         assert [

@@ -49,22 +49,21 @@ from beanjar import (
     base,
     capacity,
     core,
-    firmware,
     hostprocs,
     lifecycle,
     newvm,
     paths,
     poweroff,
-    targets,
     vmsettings,
     vmunits,
 )  # noqa: E402
+from beanjar.firmware import install, targets  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
 from beanjar.display import gpu  # noqa: E402
 from beanjar.devices import rotation  # noqa: E402
 from beanjar.core import Library  # noqa: E402
 from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402
-from beanjar.firmware import fmt_size  # noqa: E402
+from beanjar.firmware.install import fmt_size  # noqa: E402
 
 from .. import no_display  # noqa: E402
 from . import header, picture, summary_facts  # noqa: E402
@@ -1791,9 +1790,9 @@ class Manager:
             sources += [("Firmware File (.epk)…", "epk", None), ("Directory…", "dir", None)]
         else:
             sources = []
-            if paths.root_pak(os.path.join(vm_dir, firmware.OWN_FW)):
-                m = firmware.manifest(os.path.join(vm_dir, firmware.OWN_FW)) or {}
-                form.own_fw = m.get("name", firmware.OWN_FW)
+            if paths.root_pak(os.path.join(vm_dir, install.OWN_FW)):
+                m = install.manifest(os.path.join(vm_dir, install.OWN_FW)) or {}
+                form.own_fw = m.get("name", install.OWN_FW)
                 sources.append((f"In the VM's Folder: {fw_label(form.own_fw)}", "own", ""))
             sources.append(("Directory in Place…", "dir", None))
         form.sources = sources
@@ -1854,8 +1853,8 @@ class Manager:
             target = None
             if kind in ("dir", "place") and value:
                 try:
-                    if firmware.has_root(value):
-                        target = firmware.target_of(value)
+                    if install.has_root(value):
+                        target = install.target_of(value)
                 except Error:
                     pass
             self._model_mem(form, self._board_ram(target) if target else None)

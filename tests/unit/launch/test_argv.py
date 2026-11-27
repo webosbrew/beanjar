@@ -24,7 +24,8 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import hostswap, keys, targets, paths, qemu, share, tomlfile, vmsettings
+from beanjar import hostswap, keys, paths, qemu, share, tomlfile, vmsettings
+from beanjar.firmware import targets
 from beanjar.board import lls, nvm, partmap
 from beanjar.network import netns
 

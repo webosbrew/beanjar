@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from beanjar import firmware, kernelcerts, targets
+from beanjar.firmware import install, kernelcerts, targets
 from beanjar.board import prepare
 
 QUEUE = ("o22", "queue")
@@ -49,13 +49,13 @@ def test_import_and_manifest(tmp_path, adaptive):
     """The import (firmware.place) takes appackage.pak with the other paks, the manifest's paks
     (firmware.paks_in) list it, and a firmware without it is complete as it was."""
     src = queue_firmware(tmp_path, "src", adaptive)
-    firmware.check_paks(src, QUEUE)  # not required: no refusal either way
+    install.check_paks(src, QUEUE)  # not required: no refusal either way
     dest = tmp_path / "own"
     dest.mkdir()
-    firmware.place(src, str(dest), QUEUE, "link", lambda _: None)
+    install.place(src, str(dest), QUEUE, "link", lambda _: None)
     want = sorted(p + ".pak" for p in PAKS + (["appackage"] if adaptive else []))
     assert sorted(f.name for f in dest.iterdir()) == want
-    assert sorted(firmware.paks_in(str(dest), QUEUE)) == want
+    assert sorted(install.paks_in(str(dest), QUEUE)) == want
     assert (dest / "appackage.pak").exists() == adaptive
     if adaptive:
         assert (dest / "appackage.pak").samefile(Path(src) / "appackage.pak")
@@ -114,30 +114,30 @@ def test_import_keeps_certificates(tmp_path):
     dest = tmp_path / "own"
     dest.mkdir()
     said = []
-    assert firmware.place_kernel_certs(str(fw), str(dest), QUEUE, "link", said.append) == (
-        firmware.KERNEL_CERTS
+    assert install.place_kernel_certs(str(fw), str(dest), QUEUE, "link", said.append) == (
+        install.KERNEL_CERTS
     )
-    assert (dest / firmware.KERNEL_CERTS).read_bytes() == cert
+    assert (dest / install.KERNEL_CERTS).read_bytes() == cert
     # an entry: the stored file, kernel.pak not needed (a W22O one needs epk2extract)
     entry = Path(queue_firmware(tmp_path, "entry", True))
-    (entry / firmware.KERNEL_CERTS).write_bytes(cert)
+    (entry / install.KERNEL_CERTS).write_bytes(cert)
     (entry / "kernel.pak").write_bytes(lz4p_wrapped())
     use = tmp_path / "use"
     use.mkdir()
-    firmware.place_kernel_certs(str(entry), str(use), QUEUE, "link", said.append)
-    assert (use / firmware.KERNEL_CERTS).read_bytes() == cert
+    install.place_kernel_certs(str(entry), str(use), QUEUE, "link", said.append)
+    assert (use / install.KERNEL_CERTS).read_bytes() == cert
     # no adaptive partition: nothing kept
     plain = Path(queue_firmware(tmp_path, "plain", False))
-    assert firmware.place_kernel_certs(str(plain), str(use), QUEUE, "link", said.append) is None
+    assert install.place_kernel_certs(str(plain), str(use), QUEUE, "link", said.append) is None
     # adaptive, but neither the file nor a readable kernel.pak
     bare = Path(queue_firmware(tmp_path, "bare", True))
     (bare / "kernel.pak").unlink()
-    with pytest.raises(firmware.Error, match="no kernel.pak"):
-        firmware.place_kernel_certs(str(bare), str(use), QUEUE, "link", said.append)
+    with pytest.raises(install.Error, match="no kernel.pak"):
+        install.place_kernel_certs(str(bare), str(use), QUEUE, "link", said.append)
 
 
 def lz4p_wrapped():
-    from beanjar import lz4p
+    from beanjar.firmware import lz4p
 
     return lz4p.MAGIC + bytes(64)
 
@@ -157,8 +157,8 @@ def test_prepare_copies_stored_certificates(tmp_path):
     record = {"derived_files": {}}
     with pytest.raises(prepare.Error, match="import it again"):
         prepare._verity_certs(FakeJob(fw), str(new), record)
-    (fw / firmware.KERNEL_CERTS).write_bytes(b"DER")
-    (fw / "manifest.toml").write_text(f'kernel_certs = "{firmware.KERNEL_CERTS}"\n')
+    (fw / install.KERNEL_CERTS).write_bytes(b"DER")
+    (fw / "manifest.toml").write_text(f'kernel_certs = "{install.KERNEL_CERTS}"\n')
     prepare._verity_certs(FakeJob(fw), str(new), record)
     assert (new / prepare.VERITY_CERTS).read_bytes() == b"DER"
     assert record["derived_files"] == {prepare.VERITY_CERTS: prepare.VERITY_CERTS}

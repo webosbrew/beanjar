@@ -14,7 +14,7 @@ the set. Nothing of our own decodes or parses either format. The image is kept i
 cache (fwcache.default_cache or FW_CACHE) as <pak>-<first 16 hex of the source's sha256>.sqfs, made
 once per firmware; the scratch tree is removed.
 
-  python3 -m beanjar.lz4p PAK OUT    write PAK's SquashFS image to OUT
+  python3 -m beanjar.firmware.lz4p PAK OUT    write PAK's SquashFS image to OUT
 """
 
 import os
@@ -23,7 +23,8 @@ import subprocess
 import sys
 import tempfile
 
-from . import fwcache, paths
+from . import cache as firmware_cache
+from .. import paths
 
 MAGIC = b"LZ4P"
 
@@ -82,7 +83,7 @@ def convert(src, out, work, log=sys.stderr):
 
 def image_path(fw, cache, pak, record=True):
     """Where the SquashFS image of fw's LZ4P pak is (or goes) in cache."""
-    return os.path.join(cache, f"{pak}-{fwcache.digest(fw, cache, pak, record)[:16]}.sqfs")
+    return os.path.join(cache, f"{pak}-{firmware_cache.digest(fw, cache, pak, record)[:16]}.sqfs")
 
 
 def build(fw, cache, pak, log=sys.stderr):
@@ -113,7 +114,7 @@ def build(fw, cache, pak, log=sys.stderr):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) != 2:
-        print("usage: python3 -m beanjar.lz4p PAK OUT", file=sys.stderr)
+        print("usage: python3 -m beanjar.firmware.lz4p PAK OUT", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory(
         prefix="lz4p-", dir=os.path.dirname(os.path.abspath(argv[1]))

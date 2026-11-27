@@ -25,7 +25,7 @@ sys.path.insert(
         else Path(__file__).resolve().parents[3] / "host/core"
     ),
 )
-from beanjar.memory import binary_records
+from beanjar.firmware.memory import binary_records
 
 
 class Ambiguous(ValueError):

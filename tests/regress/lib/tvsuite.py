@@ -363,7 +363,8 @@ def context(target, fw, env, expect=None, tree=None):
 
     sys.path.insert(0, os.path.join(TOP, "host", "core"))
     from beanjar.board import nvm  # noqa: E402
-    from beanjar import targets, paths  # noqa: E402
+    from beanjar.firmware import targets  # noqa: E402
+    from beanjar import paths  # noqa: E402
     import checklist  # noqa: E402
 
     p = targets.by_name(target)
@@ -2034,7 +2035,7 @@ def tee_plan(row, target):
     import sys
 
     sys.path.insert(0, os.path.join(TOP, "host", "core"))
-    from beanjar import targets  # noqa: E402
+    from beanjar.firmware import targets  # noqa: E402
 
     tee = row.get("tee") or {}
     libs = [c for c in tee.get("clients", []) if TEE_LIB.search(c)]

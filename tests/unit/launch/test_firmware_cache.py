@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The firmware cache and the layer images (fwcache.py, prepare.py).
+"""The firmware cache and the layer images (cache.py, prepare.py).
 
 FwCacheTest builds a real uncompressed image with squashfs-tools (skipped without them)."""
 
@@ -15,7 +15,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import fwcache, keys, targets, paths, qemu
+from beanjar.firmware import cache as firmware_cache, targets
+from beanjar import keys, paths, qemu
 from beanjar.board import lls, nvm, partmap, prepare
 
 from launchkit import fake_partmap_build, fake_tree, FW_NAME, H13_AFRO, net, TRUST_PAK
@@ -131,10 +132,10 @@ class FwCacheTest(unittest.TestCase):
                 stdout=subprocess.DEVNULL,
             )
             with open(os.devnull, "w") as quiet:
-                img = fwcache.build(fw, cache, "rootfs", log=quiet)
+                img = firmware_cache.build(fw, cache, "rootfs", log=quiet)
             self.assertTrue(img.startswith(os.path.join(cache, "rootfs-")) and os.path.isfile(img))
             self.assertEqual(
-                fwcache.build(fw, cache, "rootfs", log=None), img
+                firmware_cache.build(fw, cache, "rootfs", log=None), img
             )  # cached: no rebuild
             self.assertEqual(
                 sorted(os.listdir(cache)),
@@ -345,10 +346,10 @@ class CacheLockTest(unittest.TestCase):
             return img
 
         with (
-            mock.patch.object(fwcache, "image_path", return_value=img),
-            mock.patch.object(fwcache, "_build", build),
+            mock.patch.object(firmware_cache, "image_path", return_value=img),
+            mock.patch.object(firmware_cache, "_build", build),
         ):
-            got = self.together(lambda: fwcache.build("fw", cache, "rootfs"))
+            got = self.together(lambda: firmware_cache.build("fw", cache, "rootfs"))
         self.assertEqual((got, calls), ([img] * 4, ["rootfs"]))
 
     def test_lls(self):

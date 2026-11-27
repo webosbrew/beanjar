@@ -1,4 +1,4 @@
-# o18k-goldilocks2: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# o18k-goldilocks2: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts o18k-goldilocks2 (from 05.50.00.01-HE_DTV_W19K_AFADATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

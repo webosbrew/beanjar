@@ -24,7 +24,7 @@ TOP = Path(__file__).resolve().parents[3]
 HERE = TOP / "guest/layers/hbchannel"  # the layer under test
 
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar.targets import WEBOS_ORDER  # noqa: E402
+from beanjar.firmware.targets import WEBOS_ORDER  # noqa: E402
 
 BUILD = HERE / "build-layer.sh"
 ROOT = HERE / "rootfs"

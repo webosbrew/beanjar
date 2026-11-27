@@ -1466,7 +1466,7 @@ class LightTest(Base):
             "import sys; sys.path.insert(0, sys.argv[1]); from beanjar import cli\n"
             "rc = cli.main(sys.argv[2:])\n"
             "heavy = ('beanjar.core', 'beanjar.commands', 'beanjar.access.ares', 'beanjar.keys',\n"
-            "         'beanjar.access.remote', 'beanjar.targets', 'argparse', 'shutil', 'subprocess')\n"
+            "         'beanjar.access.remote', 'beanjar.firmware.targets', 'argparse', 'shutil', 'subprocess')\n"
             "print(rc, [m for m in heavy if m in sys.modules])\n"
         )
         manager = os.path.join(TOP, "host", "core")

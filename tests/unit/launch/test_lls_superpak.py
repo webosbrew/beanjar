@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from beanjar.board import lls
-from beanjar import superpak
+from beanjar.firmware import superpak
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which("mksquashfs") and shutil.which("unsquashfs")), reason="needs squashfs-tools"

@@ -1,4 +1,4 @@
-# m2-simplesmart: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# m2-simplesmart: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts m2-simplesmart (from 04.10.06.01-HE_LCD_SS1A_AFAAAIAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

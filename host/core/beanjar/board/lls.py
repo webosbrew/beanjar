@@ -78,7 +78,8 @@ import sys
 import tempfile
 
 from . import nvm
-from .. import targets, paths, superpak
+from ..firmware import targets, superpak
+from .. import paths
 
 VERSION = 12
 SIZE = 0x8000
@@ -137,7 +138,7 @@ class Error(Exception):
 class Root:
     """The firmware's root as the VM stacks it: the release's pak lowers (targets.PakLower: the pak's
     subdirectory) above the rootfs pak, read-only. A pak is its file, or on a super.pak firmware
-    (W24 ombre on) the logical image of that name in super.pak (beanjar.superpak), which
+    (W24 ombre on) the logical image of that name in super.pak (beanjar.firmware.superpak), which
     unsquashfs reads at the image's offset."""
 
     def __init__(self, fw, target, tree=paths.TREE):

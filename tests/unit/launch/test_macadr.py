@@ -13,7 +13,8 @@ import unittest
 import uuid
 
 from beanjar.board import macadr, partmap, prepare
-from beanjar import targets, vmidentity
+from beanjar.firmware import targets
+from beanjar import vmidentity
 
 from launchkit import fake_map
 

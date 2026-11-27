@@ -11,7 +11,7 @@ import struct
 import unittest
 
 from beanjar.board import nvm, nvmfactory
-from beanjar import targets
+from beanjar.firmware import targets
 
 BASE = 0x10000
 READ, WRITE, FINISH, PRESERVE, DEBUG = (BASE, BASE + 4, BASE + 0x10, BASE + 0x100, BASE + 0x200)

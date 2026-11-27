@@ -39,19 +39,18 @@ from beanjar import (
     base,
     capacity,
     core,
-    firmware,
     hostconfig,
     hostprocs,
     keys,
     paths,
     poweroff,
-    targets,
     tomlfile,
     unit,
     vmidentity,
     vmsettings,
     vmunits,
 )  # noqa: E402
+from beanjar.firmware import install, targets  # noqa: E402
 from beanjar.display import framing  # noqa: E402
 import testunits  # noqa: E402
 
@@ -1772,7 +1771,7 @@ class ManagerTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(vm_dir, "firmware")))
         self.assertEqual(self.lib().vm("a").firmware_dir(), fw)
         self.assertEqual(
-            firmware.vm_firmware(vm_dir, fw), (fw, os.path.join(vm_dir, "firmware-cache"))
+            install.vm_firmware(vm_dir, fw), (fw, os.path.join(vm_dir, "firmware-cache"))
         )
         self.assertTrue(self.listing()["a"]["fw_external"])
         # a path (relative here: any value with a '/') is used as given, made absolute

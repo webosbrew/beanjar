@@ -1,4 +1,4 @@
-# m3-goldilocks: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# m3-goldilocks: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts m3-goldilocks (from 05.50.70.01-HE_DTV_W18R_AFAAABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

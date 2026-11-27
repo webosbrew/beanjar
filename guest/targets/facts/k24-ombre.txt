@@ -1,4 +1,4 @@
-# k24-ombre: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k24-ombre: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k24-ombre (from 23.23.30.01-HE_DTV_W24H_AFADATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

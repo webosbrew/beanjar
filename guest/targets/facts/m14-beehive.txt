@@ -1,4 +1,4 @@
-# m14-beehive: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# m14-beehive: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts m14-beehive (from 04.06.75.01-HE_DTV_W15M_AFAAABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

@@ -18,7 +18,7 @@
 # guest: beanjar-guest (architecture all), on amd64 only: the SDKs are x86_64. Role guest's build
 # dependencies and ccache installed; the two SDKs (pinned below) downloaded to OUT/sdk, checked and
 # unpacked in /opt, where the cross files look; then every target (guest/targets, the table
-# host/core/beanjar/targets.py loads) built in OUT/guest-<target>, published to OUT/guest-publish
+# host/core/beanjar/firmware/targets.py loads) built in OUT/guest-<target>, published to OUT/guest-publish
 # and its build directory removed, with ccache in OUT/ccache. What targets have alike (the kernel,
 # busybox, SSH, each Mesa configuration) is built once, in the checkout's build/<component>/<key>
 # (meson/shared.py), which the loop keeps; packaging/debian/build.py --guest-only into OUT/debs. The guest build reads no firmware:
@@ -103,7 +103,7 @@ guest() {
 	step "guest builds"
 	export CCACHE_DIR="$OUT/ccache"
 	targets=$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1])
-from beanjar import targets
+from beanjar.firmware.install import targets
 print(*(targets.name(t) for t in targets.all_targets()))' "$TOP/host/core")
 	for target in $targets; do
 		# the test guest is not packaged: its userland is beanjar-vendor's and its build CI's

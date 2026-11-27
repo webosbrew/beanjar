@@ -14,7 +14,7 @@
 # What is about one firmware - its paks and their mount points, the layers and their order, the
 # state disks, the paths below that it touches in the firmware - comes from the boot manifest
 # /host/boot.conf, which the launcher writes for the VM's firmware target
-# (host/core/beanjar/targets.py). Without it init stops at
+# (host/core/beanjar/firmware/targets.py). Without it init stops at
 # the debug shell.
 #
 # Kernel cmdline knobs (all optional):
@@ -107,7 +107,7 @@ if mount -t 9p -o ro,trans=virtio,version=9p2000.L,msize=1048576 host /host 2>/d
 		log "output share mounted at /host/out"
 	fi
 fi
-# --- the boot manifest (host/core/beanjar/targets.py): TARGET, INIT_SYSTEM, CAP_LAST_CAP, ROOTFS, PAKS, PAK_LOWERS, LAYERS,
+# --- the boot manifest (host/core/beanjar/firmware/targets.py): TARGET, INIT_SYSTEM, CAP_LAST_CAP, ROOTFS, PAKS, PAK_LOWERS, LAYERS,
 # STATE_DISKS, NVM_DISKS, NVM_EEPROM, PMLOG_MODE, PMLOG_JOB, TRUST_BUNDLES, TRUST_HASH_DIR,
 # PARTINFO_DISK, PART_NODES, BOARD_CMDLINE, SOC_MODULES, MODULE_PARAMS_<module> and PERIPHERAL_MODULES ---
 [ -n "$HOSTSHARE" ] || fail "no host share: the launcher (host/scripts/vm-launcher) provides /host and its boot.conf"
@@ -591,7 +591,7 @@ if [ -f /host/binds.conf ]; then
 fi
 
 # --- PmLog: keep every message (webos.pmlog=full, the default); boot.conf's PMLOG_MODE and
-# PMLOG_JOB (the release's, host/core/beanjar/targets.py) say how ---
+# PMLOG_JOB (the release's, host/core/beanjar/firmware/targets.py) say how ---
 # The release PmLogDaemon drops every message whose "CONTEXT/MSGID" is not in
 # /etc/PmLogDaemon/whitelist.txt: debug and freetext messages, plain syslog(), and the per-app
 # /var/log/*.log files all stay empty. The stock job only starts it at init-boot-done (15-45 s

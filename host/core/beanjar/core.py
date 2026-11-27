@@ -14,7 +14,7 @@ are beanjar_ui's (host/ui). Layout:
   <library>/vms/<name>/          vm.toml (SETTINGS), state/, run/, logs/ (launch.py --dir); identity/ (0700:
                                  the VM's SSH keys, keys.py; sestore.toml, its secure-store items); firmware/, the
                                  VM's firmware (its paks, manifest.toml and cache/, the partition map:
-                                 firmware.py), or, with fw an external directory, firmware-cache/ (its map);
+                                 install.py), or, with fw an external directory, firmware-cache/ (its map);
                                  start.lock, {"pid": the starting process}: the VM is started once
                                  snapshots/, its saved states (snapshot.py)
   <library>/vms/.new-*           scratch of a New VM being made (newvm.py)
@@ -52,7 +52,6 @@ import time
 from . import (
     base,
     cpus,
-    targets,
     paths,
     vmconfig,
     capacity,
@@ -64,6 +63,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .firmware import targets
 from .board import countries, nvm
 from .display import capture_relay, dbus, framing
 from .base import (
@@ -80,7 +80,7 @@ from .base import (
     slot_domain,
 )
 from .display.dbus import SCREENSHOT_NAME
-from .firmware import OWN_FW, vm_firmware
+from .firmware.install import OWN_FW, vm_firmware
 
 
 def default_repo():

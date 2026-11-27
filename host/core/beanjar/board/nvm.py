@@ -42,7 +42,8 @@ import re
 import struct
 import subprocess
 
-from .. import targets, paths
+from ..firmware import targets
+from .. import paths
 
 SIZE = 0x8000
 # webOS 3's ContinentOptionDB: 15 16-bit option words from +8 (continent_record)
@@ -626,16 +627,16 @@ def factory_chip(fw, nvm, mode, cache=None):
     (Nvm.factory: beanjar/board/nvmfactory.py) with the debug status of mode (DEBUG_MODES' number). The
     debug status's place and values it finds must be the release's (Nvm.debug_status_offset and
     debug_status_values), or Error. An LZ4P pak (NetCast 4's lgapp) is read from its SquashFS
-    image in the firmware cache cache (beanjar/lz4p.py: the one the VM's disk is), made if need be."""
-    from .. import fwcache, lz4p
+    image in the firmware cache cache (beanjar/firmware/lz4p.py: the one the VM's disk is), made if need be."""
+    from ..firmware import cache as firmware_cache, lz4p
     from . import nvmfactory
 
     pak, path = nvm.factory
     src = os.path.join(fw, pak + ".pak")
     if lz4p.is_lz4p(src):
         try:
-            src = lz4p.build(fw, cache or fwcache.default_cache(), pak)
-        except (lz4p.Error, fwcache.Error, subprocess.CalledProcessError, OSError) as e:
+            src = lz4p.build(fw, cache or firmware_cache.default_cache(), pak)
+        except (lz4p.Error, firmware_cache.Error, subprocess.CalledProcessError, OSError) as e:
             raise Error(f"{pak}.pak: {e}") from None
     r = subprocess.run(
         ["unsquashfs", "-cat", "-no-wildcards", src, path.lstrip("/")],

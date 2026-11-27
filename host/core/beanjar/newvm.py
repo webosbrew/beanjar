@@ -48,11 +48,12 @@ import tempfile
 import threading
 import time
 
-from . import capacity, compat, firmware, keys, targets, paths, vmconfig, vmidentity
+from . import capacity, compat, keys, paths, vmconfig, vmidentity
+from .firmware import install, targets
 from .board import nvm
 from .core import VM, Library, prepare_board_data
 from .base import NAME_RE, Error
-from .firmware import vm_firmware
+from .firmware.install import vm_firmware
 from .tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
 from .vmidentity import free_slot, make_identity_dir, slot_lock
 from .vmsettings import MANIFEST_KEYS
@@ -130,7 +131,7 @@ def check_in_place(fw_dir):
         raise Error(
             f"firmware {fw_dir}: no rootfs.pak or root.pak (a directory of extracted paks)", "fw"
         )
-    m = firmware.manifest(fw_dir)
+    m = install.manifest(fw_dir)
     if not m:
         raise Error(
             f"firmware {fw_dir}: no manifest.toml (name, chip, release), which a firmware used in "
@@ -143,13 +144,13 @@ def check_in_place(fw_dir):
         target = paths.manifest_target(m)
     except ValueError as e:
         raise Error(f"firmware {fw_dir}: manifest.toml: {e}", "fw") from None
-    firmware.check_paks(fw_dir, target)
+    install.check_paks(fw_dir, target)
     return target
 
 
 def logical_root(d):
     try:
-        return firmware.has_root(d)
+        return install.has_root(d)
     except Error:
         return False
 
@@ -176,7 +177,7 @@ def check(lib, name, fw=None, place=True, **settings):
     if is_epk(path):
         if not os.path.isfile(path):
             raise Error(f"no file {path}", "fw")
-        if not firmware.find_epk2extract(lib):
+        if not install.find_epk2extract(lib):
             raise Error("epk2extract not found (PATH, ~/.local/bin, or BEANJAR_EPK2EXTRACT)", "fw")
         kind, fw_dir, epk = "epk", None, path
     elif place:
@@ -185,17 +186,17 @@ def check(lib, name, fw=None, place=True, **settings):
         cfg["fw"] = fw_dir
     else:
         kind, fw_dir = "dir", path
-        if not firmware.has_root(fw_dir):
+        if not install.has_root(fw_dir):
             raise Error(
                 f"firmware {fw_dir}: no rootfs.pak, root.pak or mapped rootfs (a directory of extracted paks)",
                 "fw",
             )
-        firmware.target_of(fw_dir)
+        install.target_of(fw_dir)
     # the test guest (targets platform "Test") takes none of the webOS layers by default
     if (
         settings.get("layers") is None
         and fw_dir
-        and targets.platform(firmware.target_of(fw_dir)) == "Test"
+        and targets.platform(install.target_of(fw_dir)) == "Test"
     ):
         cfg["layers"] = []
     cfg["mac"], cfg["serial"] = lib.new_identity()  # the TV's own
@@ -229,15 +230,15 @@ def space(lib, fw=None, vm_dir=None, place=False):
             return out
     else:
         return out
-    if not os.path.isdir(d) or not firmware.has_root(d):
+    if not os.path.isdir(d) or not install.has_root(d):
         return out
     try:
-        target = firmware.target_of(d)
+        target = install.target_of(d)
     except Error:
         return out
-    out["paks"] = firmware.paks_size(d, target)
+    out["paks"] = install.paks_size(d, target)
     if not vm_dir:
-        out["copy"] = 0 if place else firmware.copy_size(d, target, lib.vms_dir)
+        out["copy"] = 0 if place else install.copy_size(d, target, lib.vms_dir)
     return out
 
 
@@ -299,7 +300,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
     # the guest has the components the target needs, before anything is made (compat.py; an .epk's
     # target is known after its extraction)
     tree = paths.Tree(lib.repo)
-    target = firmware.target_of(fw_dir) if kind in ("dir", "place") else None
+    target = install.target_of(fw_dir) if kind in ("dir", "place") else None
     if target:
         try:
             compat.components(tree, target, name)
@@ -320,19 +321,19 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
             except ValueError:  # not the main thread: the caller handles cancellation
                 pass
         scratch = tempfile.mkdtemp(prefix=f".new-{name}-", dir=lib.vms_dir)
-        own = os.path.join(scratch, firmware.OWN)
+        own = os.path.join(scratch, install.OWN)
         if kind == "epk":
             epk = plan["epk"]
             out(f"import: {epk}")
             out("hashing the .epk")
-            digest = firmware.sha256_file(epk, out)
+            digest = install.sha256_file(epk, out)
             work = os.path.join(scratch, ".import")
             os.mkdir(work)
-            src, fw_name = firmware.extract(lib, epk, work, out)
+            src, fw_name = install.extract(lib, epk, work, out)
             if not fw_name or fw_name.startswith("."):
                 raise Error("could not tell the firmware's name from epk2extract's output", "fw")
-            target = firmware.target_of(src, fw_name)
-            firmware.check_paks(src, target)
+            target = install.target_of(src, fw_name)
+            install.check_paks(src, target)
             try:
                 compat.components(tree, target, name)
             except compat.Error as e:
@@ -341,8 +342,8 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
             warn_untested(target, out)
             os.mkdir(own)
             # before the paks move out of src: the certificates are read from its kernel.pak
-            certs = firmware.place_kernel_certs(src, own, target, "move", out)
-            firmware.place(src, own, target, "move", out)
+            certs = install.place_kernel_certs(src, own, target, "move", out)
+            install.place(src, own, target, "move", out)
             shutil.rmtree(work)
             m = {
                 "name": fw_name,
@@ -351,7 +352,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
                 "epk": os.path.basename(epk),
                 "epk_size": os.path.getsize(epk),
                 "sha256": digest,
-                "paks": firmware.paks_in(own, target),
+                "paks": install.paks_in(own, target),
                 "kernel_certs": certs,
                 "imported": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             }
@@ -362,10 +363,10 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
             out(f"the firmware used in place: {fw_dir}")
         else:
             os.mkdir(own)
-            out(f"the firmware into the VM's folder: {os.path.join(vm.dir, firmware.OWN)}")
-            firmware.place(fw_dir, own, target, "link", out)
-            certs = firmware.place_kernel_certs(fw_dir, own, target, "link", out)
-            m = firmware.manifest(fw_dir) or {"name": os.path.basename(fw_dir.rstrip("/"))}
+            out(f"the firmware into the VM's folder: {os.path.join(vm.dir, install.OWN)}")
+            install.place(fw_dir, own, target, "link", out)
+            certs = install.place_kernel_certs(fw_dir, own, target, "link", out)
+            m = install.manifest(fw_dir) or {"name": os.path.basename(fw_dir.rstrip("/"))}
             m = {
                 k: v
                 for k, v in dict(
@@ -373,7 +374,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
                     chip=target[0],
                     release=target[1],
                     source=fw_dir,
-                    paks=firmware.paks_in(own, target),
+                    paks=install.paks_in(own, target),
                     kernel_certs=certs,
                 ).items()
                 if v is not None

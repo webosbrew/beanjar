@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import base, keys, paths, qemu, targets
+from beanjar import base, keys, paths, qemu
+from beanjar.firmware import targets
 from beanjar.board import nvm
 
 from launchkit import boot_conf, FW_NAME, H13_AFRO, store_snapshot, text, TOP, TRUST_PAK
@@ -1376,29 +1377,29 @@ class BootConfTest(unittest.TestCase):
             ('VERSION_ID="3.4.3"\n', None),
         ):
             self.assertEqual(targets.release_family(text), family)
-        from beanjar import firmware
+        from beanjar.firmware import install
 
         where = "rootfs.pak's etc/starfish-release"
         with tempfile.TemporaryDirectory(prefix="beanjar-release-") as tmp:
             fw = os.path.join(tmp, FW_NAME)
             os.mkdir(fw)
             with mock.patch.object(paths, "firmware_release", return_value=("afro", where)):
-                self.assertEqual(firmware.target_of(fw), H13_AFRO)
+                self.assertEqual(install.target_of(fw), H13_AFRO)
             with mock.patch.object(paths, "firmware_release", return_value=("jhericurl", where)):
                 with self.assertRaisesRegex(
                     base.Error, "WT1H jhericurl firmware might be unsupported"
                 ):
-                    firmware.target_of(fw)
+                    install.target_of(fw)
             with mock.patch.object(paths, "firmware_release", return_value=("beehive", where)):
                 with self.assertRaisesRegex(
                     base.Error, r"WT1H beehive firmware might be unsupported"
                 ):
-                    firmware.target_of(fw)
+                    install.target_of(fw)
             with mock.patch.object(paths, "firmware_release", return_value=(None, "no rootfs.pak")):
                 with self.assertRaisesRegex(
                     base.Error, "no rootfs.pak: its webOS release is unknown"
                 ):
-                    firmware.target_of(fw)
+                    install.target_of(fw)
             # the release is read from the rootfs itself
             self.assertEqual(paths.firmware_release(fw), (None, "no rootfs.pak"))
             shutil.copyfile(TRUST_PAK, os.path.join(fw, "rootfs.pak"))

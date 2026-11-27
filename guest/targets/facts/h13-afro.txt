@@ -1,4 +1,4 @@
-# h13-afro: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# h13-afro: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts h13-afro (from 05.06.10.01-HE_DTV_WT1H_AFAAABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

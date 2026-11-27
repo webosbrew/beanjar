@@ -53,7 +53,7 @@ sys.path.insert(0, os.path.join(HERE, "lib"))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 import tvsuite  # noqa: E402
 import checklist  # noqa: E402
-from beanjar import superpak, targets  # noqa: E402
+from beanjar.firmware import superpak, targets  # noqa: E402
 from beanjar.tomlfile import toml_key, toml_value  # noqa: E402
 
 OBJDUMP = "/opt/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-objdump"
@@ -70,7 +70,7 @@ def regress_module():
 
 class Firmware:
     """A firmware directory's paks, read with unsquashfs (the rootfs first). A super.pak firmware
-    keeps its rootfs, otncabi and the like as the logical images of super.pak (beanjar.superpak:
+    keeps its rootfs, otncabi and the like as the logical images of super.pak (beanjar.firmware.superpak:
     dpmeta.pak's linear map); each is a pak here under its own name (rootfs.pak, otncabi.pak, ...),
     read with unsquashfs -o at the image's offset."""
 

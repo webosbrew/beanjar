@@ -10,7 +10,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import targets, paths, qemu
+from beanjar.firmware import targets
+from beanjar import paths, qemu
 from beanjar.board import partmap
 
 import testunits

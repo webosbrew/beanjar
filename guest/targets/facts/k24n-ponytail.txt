@@ -1,4 +1,4 @@
-# k24n-ponytail: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k24n-ponytail: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k24n-ponytail (from 33.31.68.01-HE_DTV_W25H_AFADATAA)
 exports etc/surface-manager.d/product.env:QT_QPA_EGLFS_INTEGRATION=eglfs_starfish yes
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 XR24,AB24,RG16,AR15,AR12,AYUV,YUYV,NV12,NV21,NV16,YU24

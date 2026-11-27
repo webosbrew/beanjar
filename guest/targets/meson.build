@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 # What the guest build of a target asks of its firmware, answered by facts/<chip>-<release>.txt beside
-# the target's own file (host/core/beanjar/fwfacts.py has the format; docs/dev/guides/build.md,
+# the target's own file (host/core/beanjar/firmware/facts.py has the format; docs/dev/guides/build.md,
 # "Firmware facts"). The build reads no firmware: the facts are generated from one and checked in.
 #
 #   fw_path      {rootfs path: bool}: whether the firmware's rootfs image has it (the shim rules)
@@ -19,9 +19,9 @@
 #                answer (a missing one reads as no), and the top-level meson.build stops the setup
 #                when the file does not answer one
 #
-# fwfacts.py's own command line makes the stubs and writes the questions: fwfacts (the command) and
+# facts.py's own command line makes the stubs and writes the questions: fwfacts (the command) and
 # fwfacts_env (its package on the module path; -P keeps the working directory off it).
-fwfacts = [python, '-P', '-m', 'beanjar.fwfacts']
+fwfacts = [python, '-P', '-m', 'beanjar.firmware.facts']
 fwfacts_env = {'PYTHONPATH': top / 'host/core'}
 fw_facts = meson.current_source_dir() / 'facts' / guest_target + '.txt'
 fw_path = {}
@@ -57,5 +57,5 @@ foreach lib, soname : fw_lib
     output: fs.name(lib),
     command: fwfacts + ['stub', '@INPUT@', lib, '@OUTPUT@', '--'] + fw_stub_cc,
     env: fwfacts_env,
-    depend_files: files('../../host/core/beanjar/fwfacts.py'))}
+    depend_files: files('../../host/core/beanjar/firmware/facts.py'))}
 endforeach

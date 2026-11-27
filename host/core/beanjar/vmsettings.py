@@ -7,7 +7,8 @@ import os
 import re
 
 from .board import nvm
-from . import targets, vmconfig
+from .firmware import targets
+from . import vmconfig
 from .base import (
     Error,
 )
@@ -561,7 +562,7 @@ LAUNCHER_OWN = {
 
 
 # The launcher's variables that are the checkout VM's experiments (host/scripts/vm-launcher), not a VM's: the
-# uncompressed rootfs (fwcache.py), whose images a VM does not keep.
+# uncompressed rootfs (cache.py), whose images a VM does not keep.
 CHECKOUT_ONLY = {"ROOTFS", "UNCOMPRESSED_PAKS"}
 
 

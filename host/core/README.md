@@ -370,7 +370,7 @@ The launcher is part of this package (stdlib only), with `host/scripts/vm-launch
 | `console.py` | the serial console bridge |
 | `dbus.py` | the VM's private D-Bus through Gio, the core's only use of gi: QEMU's display size, the front end's `Screenshot`, `SetUIInfo` of the secondary display, and the connection the remote, pointer and touch pipes call through |
 | `screensaver.py` | native screensaver state and real-window verification over the console |
-| `fwcache.py` | the checkout VM's `ROOTFS=uncompressed` images (`host/scripts/vm-launcher firmware-cache`); the paks' digests that the partition map's cache is keyed by |
+| `cache.py` | the checkout VM's `ROOTFS=uncompressed` images (`host/scripts/vm-launcher firmware-cache`); the paks' digests that the partition map's cache is keyed by |
 | `keys.py` | a VM's SSH keys in its identity directory: made at create, again at a start that misses one, all anew for `identity reset` (`renew`); known_hosts; the VNC password (`ensure_vnc_password`, `set_vnc_password`); root's authorized_keys for the guest; the proxy's CA (`ensure_ca`) |
 | `paths.py` | where everything is: the checkout, its `build/`, the default firmware, the host's firmware collections (`firmware_dirs`). The one place to change for an install prefix |
 
@@ -383,7 +383,7 @@ A VM boots either a firmware used in place or one of its own.
   Directory… without "Import into the VM's Folder"): `vm.toml`'s `firmware.directory` names the
   directory, absolute. It is never written, so it may be a shared, read-only collection (an NFS
   export, the same path on every host); what the launcher derives from it (the partition map, the
-  paks' `.src` digest stamps: `beanjar/board/partmap.py`, `beanjar/fwcache.py`) goes into the VM's
+  paks' `.src` digest stamps: `beanjar/board/partmap.py`, `beanjar/firmware/cache.py`) goes into the VM's
   `firmware-cache/`. A value with a `/` is a path, used as given; a bare name is looked up in the
   host's `firmware_dirs` (This machine's settings). The firmware needs a `manifest.toml` with its
   `name`, `chip` and `release` (other keys, such as `paks`, are ignored), and the target's paks:

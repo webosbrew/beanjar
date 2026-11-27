@@ -485,7 +485,7 @@ def test_every_target_board_file_ships_where_the_installed_host_reads_it(tmp_pat
     """beanjar-guest's staging puts every target's board file (targets.board_cmdline_src, for its
     default board, each of its broadcast boards and each retail model's, whichever layer is its board source) where an
     installed paths.Tree.src finds it, each source's file at its own path."""
-    from beanjar import targets
+    from beanjar.firmware import targets
 
     build = _build_module()
     g = tmp_path / "beanjar-guest/usr/share/beanjar/guest"

@@ -57,8 +57,8 @@ firmware's Mali driver makes GBM window configs of, in its order
 against, its SONAME (`lib usr/lib/libglib-2.0.so.0 libglib-2.0.so.0`) and the symbols the guest code
 uses of it, with their default version where the library versions them, their type and a data
 symbol's size (`sym usr/lib/libgstreamer-1.0.so.0 _gst_debug_min object 4`). One fact per line,
-sorted; `host/core/beanjar/fwfacts.py` has the format. The build links against stub libraries made
-from the lib and sym lines (`guest/targets/meson.build` runs `python3 -m beanjar.fwfacts stub`): each has the library's
+sorted; `host/core/beanjar/firmware/facts.py` has the format. The build links against stub libraries made
+from the lib and sym lines (`guest/targets/meson.build` runs `python3 -m beanjar.firmware.facts stub`): each has the library's
 SONAME and those symbols only, so a plugin or program records the same `NEEDED` entries, dynamic
 symbols and version needs as a link against the firmware's own file did.
 
@@ -118,7 +118,7 @@ Meson reconfigures by itself when a `meson.build`, `meson.options` or wrap chang
 `guest/layers/soc/<chip>`, and the release family from `guest/layers/webos/<release>`: the codename of the
 firmware's `etc/starfish-release` (`afro`, `beehive`, `dreadlocks`, `dreadlocks2`).
 `-Dsoc` and `-Dwebos` choose it, and a guest build needs both: `host/scripts/vm-launcher config TARGET`
-prints the default firmware's target, from the one table that knows it (`guest/targets/`, loaded by `host/core/beanjar/targets.py` as `MODELS`: model code → {release: chip}, the release being the codename the firmware's own rootfs names). The
+prints the default firmware's target, from the one table that knows it (`guest/targets/`, loaded by `host/core/beanjar/firmware/targets.py` as `MODELS`: model code → {release: chip}, the release being the codename the firmware's own rootfs names). The
 target decides the glibc ceiling (afro: 2.14.1; beehive, dreadlocks and dreadlocks2: 2.19; goldilocks and goldilocks2: 2.24; jhericurl and kisscurl: 2.28; mullet: 2.31) and where the layers are published,
 `build/components/{common,soc/<chip>,release/<release>,gl,...}`, whose compatibility selectors the launcher resolves for a VM whose
 firmware is that target. The first five webOS targets are: `h13-afro` (WT1H, `build/guest-h13-afro`), `m14-beehive` (W15M,

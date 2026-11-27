@@ -1,4 +1,4 @@
-# k8hpp-queue: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k8hpp-queue: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k8hpp-queue (from 43.22.73.01-HE_DTV_W23H_AFADATAA)
 defines bsppart:bsp/usr/lib/libkadaptor.so:RHAL_SE_Init yes
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none

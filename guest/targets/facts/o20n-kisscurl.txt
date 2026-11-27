@@ -1,4 +1,4 @@
-# o20n-kisscurl: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# o20n-kisscurl: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts o20n-kisscurl (from 03.70.05.01-HE_DTV_W21O_AFABATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

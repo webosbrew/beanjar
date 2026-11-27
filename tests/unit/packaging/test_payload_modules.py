@@ -10,7 +10,7 @@ import sys
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import targets
+from beanjar.firmware import targets
 
 
 def test_every_targets_module_is_shipped():

@@ -1,4 +1,4 @@
-# k8ap-mullet: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# k8ap-mullet: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts k8ap-mullet (from 04.60.90.01-HE_DTV_W22L_AFAAATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

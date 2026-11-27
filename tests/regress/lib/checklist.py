@@ -33,7 +33,7 @@ sys.path.insert(
         "core",
     ),
 )
-from beanjar import targets  # noqa: E402
+from beanjar.firmware import targets  # noqa: E402
 
 ITEMS = ("first-app", "region", "mount-readwrite", "tvservice", "sysprops", "eeprom", "modules")
 ORDER = {"PASS": 0, "WARN": 1, "FAIL": 2}

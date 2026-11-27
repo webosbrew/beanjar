@@ -205,7 +205,7 @@ def test_cached_firmware_directory(tmp_path):
 
 
 def test_target_wiring():
-    from beanjar import targets
+    from beanjar.firmware import targets
 
     m = targets.SocModule("mstar-utopia", ("miu_interval=0x80000000", "miu_len=0x20000000"))
     m = m._replace(derived="mstar-mboot")

@@ -10,11 +10,8 @@ import tempfile
 import unittest
 
 
-from beanjar import (
-    targets,
-    paths,
-    share,
-)
+from beanjar.firmware import targets
+from beanjar import paths, share
 
 from launchkit import boot_conf, H13_AFRO, TOP, VM
 

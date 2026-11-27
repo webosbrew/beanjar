@@ -30,8 +30,9 @@ import signal
 import subprocess
 import time
 
-from . import kernelcerts, paths, superpak, targets
-from .base import Error, read_toml
+from . import kernelcerts, superpak, targets
+from .. import paths
+from ..base import Error, read_toml
 
 # epk2extract names its output directory "<version>-<otaID>", e.g. 05.06.10.01-HE_DTV_WT1H_AFAAABAA
 FW_DIR_RE = re.compile(r"\d\d\.\d\d\.\d\d(\.\d\d)?-[A-Za-z0-9_.-]+")

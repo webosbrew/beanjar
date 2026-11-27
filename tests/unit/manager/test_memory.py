@@ -13,7 +13,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import memory, targets
+from beanjar.firmware import memory, targets
 
 TOP = Path(__file__).resolve().parents[3]
 

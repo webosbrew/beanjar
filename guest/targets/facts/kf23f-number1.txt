@@ -1,4 +1,4 @@
-# kf23f-number1: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# kf23f-number1: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts kf23f-number1 (from 13.50.75.01-HE_DTV_W23L_AFAAATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

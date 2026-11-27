@@ -1,2 +1,2 @@
-# lm14-netcast45: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# lm14-netcast45: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts lm14-netcast45 (from 04.11.18.01-HE_LCD_NC5U_AAADAIAA)

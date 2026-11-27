@@ -1,4 +1,4 @@
-# m2r-dreadlocks2: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# m2r-dreadlocks2: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts m2r-dreadlocks2 (from 06.10.60.01-HE_DTV_W17R_AFAAATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

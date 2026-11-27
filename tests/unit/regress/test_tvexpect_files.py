@@ -11,7 +11,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import targets  # noqa: E402
+from beanjar.firmware import targets  # noqa: E402
 
 EXPECT_DIR = os.path.join(TOP, "tests", "regress", "tv-expect")
 

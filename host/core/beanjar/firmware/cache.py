@@ -7,7 +7,7 @@ still a SquashFS image on virtio-blk, mounted by the unchanged initramfs; only i
 blocks are stored uncompressed.
 
   host/scripts/vm-launcher firmware-cache [PAK...]     (default: rootfs); prints each image's path
-  python3 -m beanjar.fwcache [PAK...]    the same
+  python3 -m beanjar.firmware.cache [PAK...]    the same
 
 An experiment of the checkout's VM (host/scripts/vm-launcher with ROOTFS=uncompressed): the VM manager has no such
 option and keeps no image (the gain measured was about 1 s of a TCG boot).
@@ -34,7 +34,7 @@ import subprocess
 import sys
 import tempfile
 
-from . import paths
+from .. import paths
 
 
 class Error(Exception):
@@ -213,7 +213,7 @@ def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="beanjar.fwcache", description="uncompressed copies of the firmware's paks"
+        prog="beanjar.firmware.cache", description="uncompressed copies of the firmware's paks"
     )
     p.add_argument("paks", nargs="*", default=["rootfs"])
     a = p.parse_args(argv)

@@ -1,4 +1,4 @@
-# mtka5lr-beehive: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# mtka5lr-beehive: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts mtka5lr-beehive (from 03.31.00.01-HE_DTV_W15L_AFAAABAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

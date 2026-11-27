@@ -373,7 +373,7 @@ set, which skips it under suspend-to-idle without a cpuidle driver (docs/dev/arc
 metadata, FEC); the target reads the FEC header and LG's metadata, checks the table's PKCS#7
 signature against the keyring `.webos_verity` and hands the table, with the options LG's kernel
 adds, to the stock verity target, whose operations it shares. The keyring holds the firmware
-kernel's own built-in certificates (`host/core/beanjar/kernelcerts.py`, read once at the firmware's
+kernel's own built-in certificates (`host/core/beanjar/firmware/kernelcerts.py`, read once at the firmware's
 import and kept as the entry's `kernel-certs.der`; prepared board data's `webos-verity-certs` is a
 copy of it), which the initramfs writes to `/proc/webos_verity_certs` and seals before
 webOS starts; nothing is compiled in. A bad signature refuses the table, where LG's kernel restarts
@@ -789,7 +789,7 @@ The initramfs holds no layer and nothing of a firmware, a firmware target or an 
 same for every VM, and every target's guest build packs the same one (from the same kernel,
 busybox and `lgemu.ko`, built once for all of them: none of them takes `soc`, `webos` or the firmware). What is about one
 firmware comes at boot from the launcher: the layers, each a read-only disk (below, "Layer
-images"), and, in its host share, the boot manifest `/host/boot.conf` (`host/core/beanjar/targets.py`):
+images"), and, in its host share, the boot manifest `/host/boot.conf` (`host/core/beanjar/firmware/targets.py`):
 the target's paks and their mount points, the layers bottom to top, the state disks, the firmware's
 init (`INIT_SYSTEM`, upstart or systemd), and the firmware paths init touches (the PmLog job, the trust stores, `board.cmdline`). init stops at the
 debug shell without it.

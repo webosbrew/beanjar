@@ -38,7 +38,7 @@ partitions the firmware leaves absent):
   mounts as `lgapp_xip`, a filesystem of LG's kernel. Its RELEASE is stored uncompressed for the
   kernel to map in place and is 25027700 bytes, more than a cramfs inode's 24-bit size field says.
   The launcher unpacks the pak with epk2extract (LZ4P and LG's XIP cramfs) and packs the tree with
-  mksquashfs, once per firmware, into the VM's firmware cache (`host/core/beanjar/lz4p.py`); that
+  mksquashfs, once per firmware, into the VM's firmware cache (`host/core/beanjar/firmware/lz4p.py`); that
   image is the lgapp disk.
 - **base and patch** (`/mnt/nsu/base`, `/mnt/nsu/patch`) and their union: lginit mounts a `unionfs`
   (`dirs=/mnt/nsu/patch:/mnt/nsu/base=ro`) at `/mnt/nsu/union`, which our kernel has not, and then

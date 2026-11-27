@@ -13,7 +13,8 @@ from unittest import mock
 
 
 from beanjar.board import lls, nvm
-from beanjar import targets, paths
+from beanjar.firmware import targets
+from beanjar import paths
 
 from launchkit import H13_AFRO
 

@@ -23,7 +23,7 @@ import tomllib
 TOP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(TOP / "host/core"))
 from beanjar import paths as beanjar_paths  # noqa: E402
-from beanjar import targets as beanjar_targets  # noqa: E402
+from beanjar.firmware import targets as beanjar_targets  # noqa: E402
 
 PREFIX = Path("usr/lib/beanjar")
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")

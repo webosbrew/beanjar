@@ -12,7 +12,8 @@ import struct
 import subprocess
 from pathlib import Path
 
-from beanjar import fwcache, paths
+from beanjar.firmware import cache as firmware_cache
+from beanjar import paths
 from beanjar.board import partmap
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -73,7 +74,7 @@ def fake_tree(root):
         with open(os.path.join(fw, p + ".pak"), "w") as f:
             f.write("hsqs " + p)
     for p in ("rootfs", "fonts"):
-        img = fwcache.image_path(fw, os.path.join(fw, "cache"), p)  # records <pak>.src
+        img = firmware_cache.image_path(fw, os.path.join(fw, "cache"), p)  # records <pak>.src
         open(img, "w").close()
     return top, fw, state
 

@@ -25,7 +25,8 @@ turned as webOS turned its UI (picture_turn), its touches and clicks mapped back
 import os
 import time
 
-from .. import base, targets
+from .. import base
+from ..firmware import targets
 from ..base import Error
 
 ANGLES = (0, 90, 180, 270)

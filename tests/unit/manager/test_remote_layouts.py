@@ -99,10 +99,10 @@ def vm(broadcast):
 
 def test_vm_layout_arib():
     v, patch = vm("arib")
-    with patch, mock.patch("beanjar.targets.platform", return_value="webOS"):
+    with patch, mock.patch("beanjar.firmware.targets.platform", return_value="webOS"):
         assert pipe.vm_layout(v) is rl.JAPAN
     v, patch = vm("atsc")
-    with patch, mock.patch("beanjar.targets.platform", return_value="webOS"):
+    with patch, mock.patch("beanjar.firmware.targets.platform", return_value="webOS"):
         assert pipe.vm_layout(v) is rl.NORMAL
     v = mock.Mock(target=mock.Mock(side_effect=base.Error("none")))
     assert pipe.vm_layout(v) is rl.NORMAL

@@ -108,7 +108,8 @@ def vm_row(vm):
 def unit_row(name, props):
     """A VM's unit in beanjar.slice that is no library's VM (a regress target's, one of another
     RUN_DIR): what its unit and its main process's environment (the launcher's) tell."""
-    from .. import keys, qemu, targets, paths
+    from .. import keys, qemu, paths
+    from ..firmware import targets
     from ..board import nvm
     from ..network import netns
 

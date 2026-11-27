@@ -118,7 +118,7 @@ Environment (both):
             (vm.toml's network.mitm_flow_bytes: bytes or K, M, G, e.g. 200M; default 0, no limit);
             beyond it the oldest finished flows are dropped as well
             NET_DUMP=file.pcap records the guest's traffic.
-  ROOTFS    stock (default) or uncompressed: uncompressed SquashFS copies (fwcache.py, in FW_CACHE,
+  ROOTFS    stock (default) or uncompressed: uncompressed SquashFS copies (cache.py, in FW_CACHE,
             default build/firmware-cache) of the paks in UNCOMPRESSED_PAKS (default rootfs); a
             perf experiment of the checkout's VM, not a VM manager setting
   STATE     state directory with the persistent partition images (default RUN_DIR/state/default,
@@ -197,18 +197,8 @@ import sys
 from pathlib import Path
 
 from .display import capture_relay
-from . import (
-    fwcache,
-    lz4p,
-    hostswap,
-    keys,
-    layerimage,
-    layermeta,
-    targets,
-    paths,
-    share,
-    vmsettings,
-)
+from .firmware import cache as firmware_cache, lz4p, targets
+from . import hostswap, keys, layerimage, layermeta, paths, share, vmsettings
 from .board import nvm, partmap, prepare
 from .access import guestshell
 from .devices import ir_relay, mic
@@ -591,7 +581,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         uncompressed = _get(env, "UNCOMPRESSED_PAKS", "rootfs").split()
     else:
         raise Error(f"unknown ROOTFS={rootfs} (stock or uncompressed)")
-    cache = env.get("FW_CACHE") or fwcache.default_cache(tree)
+    cache = env.get("FW_CACHE") or firmware_cache.default_cache(tree)
     devices = []
     # A pak the firmware mounts itself from its /dev/mmcblk0pN (mount None, not a pak lower:
     # SimpleSmart's lginit_app) is a read-write disk whose writes QEMU discards (snapshot=on), as
@@ -605,11 +595,11 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         if file in uncompressed:
             try:
                 img = (
-                    fwcache.image_path(fw, cache, file, record=False)
+                    firmware_cache.image_path(fw, cache, file, record=False)
                     if dry
-                    else fwcache.build(fw, cache, file, tree)
+                    else firmware_cache.build(fw, cache, file, tree)
                 )
-            except (fwcache.Error, subprocess.CalledProcessError, OSError) as e:
+            except (firmware_cache.Error, subprocess.CalledProcessError, OSError) as e:
                 raise Error(str(e)) from None
             say(f"pak {file}: uncompressed copy {img}")
         elif mount and lz4p.is_lz4p(img):
@@ -621,7 +611,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
                     if dry
                     else lz4p.build(fw, cache, file)
                 )
-            except (lz4p.Error, fwcache.Error, subprocess.CalledProcessError, OSError) as e:
+            except (lz4p.Error, firmware_cache.Error, subprocess.CalledProcessError, OSError) as e:
                 raise Error(f"pak {file}: {e}") from None
             say(f"pak {file}: SquashFS image {img}")
         access = "snapshot=on" if mount is None and serial not in lowers else "readonly=on"

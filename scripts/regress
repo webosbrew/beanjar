@@ -271,7 +271,8 @@ IDENTITY_PY = os.path.join(TOP, "packaging", "identity.py")
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
 sys.path.insert(0, os.path.join(TOP, "scripts"))
-from beanjar import compat, guestlayers, launch, targets, paths, qemu, vmunits  # noqa: E402
+from beanjar import compat, guestlayers, launch, paths, qemu, vmunits  # noqa: E402
+from beanjar.firmware import targets  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
 import buildlock  # noqa: E402
 import checklist  # noqa: E402

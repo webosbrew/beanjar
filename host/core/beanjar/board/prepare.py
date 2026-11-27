@@ -51,7 +51,8 @@ import shutil
 import subprocess
 import sys
 
-from .. import firmware, fwcache, paths, targets, vmidentity
+from ..firmware import install, cache, targets
+from .. import paths, vmidentity
 from . import lls, macadr, nvm, partmap
 from ..base import identity_dir
 
@@ -98,7 +99,7 @@ class Job:
         self.serial = env.get("SERIAL") or ""
         # the VM's country (countries.py): a new LLS chip's factory countryName
         self.country = (env.get("COUNTRY") or "").strip().upper()
-        self.cache = env.get("FW_CACHE") or fwcache.default_cache(tree)
+        self.cache = env.get("FW_CACHE") or cache.default_cache(tree)
         run_dir = os.path.join(tree.top, env.get("RUN_DIR") or "build")
         self.vm_dir = os.path.dirname(os.path.abspath(run_dir))
         self.dir = os.path.join(self.vm_dir, DIR)
@@ -167,7 +168,7 @@ class Job:
     def kernel_certs(self):
         """The firmware's stored kernel certificates (its manifest's kernel_certs, a file name in
         its directory): the path, or None where it names none or the file is not there."""
-        name = (firmware.manifest(self.fw) or {}).get("kernel_certs")
+        name = (install.manifest(self.fw) or {}).get("kernel_certs")
         if not isinstance(name, str) or not name or os.path.basename(name) != name:
             return None
         path = os.path.join(self.fw, name)
@@ -309,7 +310,7 @@ def _verity_certs(job, new, record):
     if not src:
         raise Error(
             f"the firmware {job.fw_name} has an adaptive partition but keeps no kernel "
-            f"certificates ({firmware.KERNEL_CERTS}, named by its manifest's kernel_certs): "
+            f"certificates ({install.KERNEL_CERTS}, named by its manifest's kernel_certs): "
             "import it again where epk2extract is installed"
         )
     try:
@@ -331,7 +332,7 @@ def _make(job, new, say):
     try:
         src = partmap.build(job.fw, job.target, job.cache, job.tree)
         shutil.copyfile(src, os.path.join(new, PARTINFO))
-    except (partmap.Error, fwcache.Error, OSError) as e:
+    except (partmap.Error, cache.Error, OSError) as e:
         raise Error(f"partition map: {e}") from None
     chip = nvm.new_chip(
         job.fw,

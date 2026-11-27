@@ -1,4 +1,4 @@
-# e60n-kisscurl: what the guest build asks of its firmware (beanjar/fwfacts.py).
+# e60n-kisscurl: what the guest build asks of its firmware (beanjar/firmware/facts.py).
 # Generated: host/scripts/vm-launcher firmware-facts e60n-kisscurl (from 03.70.25.01-HE_DTV_W21K_AFADATAA)
 gbmformats bsppart:bsp/usr/lib/libmali.so.0 none
 gbmformats rootfs:usr/lib/libmali.so.0 none

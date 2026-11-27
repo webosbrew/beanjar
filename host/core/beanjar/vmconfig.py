@@ -141,7 +141,7 @@ def decode(doc):
         if key in cfg and not isinstance(cfg[key], str):
             section, field = FIELDS[key]
             _fail(f"{section}.{field} must be a string", key)
-    from .targets import BROADCASTS
+    from .firmware.targets import BROADCASTS
 
     if "broadcast" in cfg and cfg["broadcast"] not in BROADCASTS:
         _fail(
@@ -238,7 +238,7 @@ def read(path, default=None, check_broadcast=True):
 
 
 def _check_broadcast(path, cfg):
-    from .firmware import vm_firmware
+    from .firmware.install import vm_firmware
 
     fw = vm_firmware(os.path.dirname(os.path.abspath(path)), cfg.get("fw"))[0]
     check_firmware_broadcast(fw, cfg.get("broadcast"), cfg.get("model"))
@@ -250,7 +250,8 @@ def check_firmware_broadcast(fw, broadcast, model=None):
     model its chip has a board of (Soc.model_boards) of that standard, and the firmware's own
     standard where it names one (its model_id.json). A firmware whose target its manifest does not
     tell is left to the launcher, which checks the same."""
-    from . import targets, paths
+    from .firmware import targets
+    from . import paths
 
     if not os.path.isfile(os.path.join(fw, paths.MANIFEST)):
         return  # telling the target would read the rootfs: every read of vm.toml must stay cheap
