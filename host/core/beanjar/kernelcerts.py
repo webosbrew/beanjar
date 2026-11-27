@@ -7,7 +7,8 @@ LG builds the keys into the kernel's .builtin_trusted_keys, one per platform: W2
 kernel has a self-signed "LGE_TV" certificate whose key signs its appackage.pak's table, W22H
 43.22.73's another "LGE_TV" (and the "LG webOS TV Verity Root CA") whose key signs its own
 (docs/research/w22o-queue-no-signal-black.md). So nothing is kept in the tree: the certificates
-come from the VM's own firmware, its kernel.pak, and go to the guest as one DER list, which its
+come from the firmware, its kernel.pak, read once when it is imported (firmware.place_kernel_certs
+keeps them beside its paks), and go to the guest as one DER list, which its
 initramfs loads into the target's keyring before webOS starts.
 
 The kernel image is kernel.pak itself, gzip's (W22H) or LG's LZ4P wrapper (W22O), which
@@ -111,3 +112,24 @@ def write(fw, out):
     with open(out, "wb") as f:
         f.write(b"".join(certs))
     return len(certs)
+
+
+def main(argv=None):
+    """python3 -m beanjar.kernelcerts FIRMWARE_DIR OUT: write a firmware directory's certificates,
+    for an entry of a collection that was imported without them."""
+    import sys
+
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 2:
+        print("usage: python3 -m beanjar.kernelcerts FIRMWARE_DIR OUT", file=sys.stderr)
+        return 2
+    try:
+        print(f"{write(*args)} certificates")
+    except (Error, OSError) as e:
+        print(f"kernelcerts: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

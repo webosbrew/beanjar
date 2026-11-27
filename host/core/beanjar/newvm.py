@@ -337,23 +337,23 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
             out(f"firmware target: {target[0]}-{target[1]}")
             warn_untested(target, out)
             os.mkdir(own)
+            # before the paks move out of src: the certificates are read from its kernel.pak
+            certs = firmware.place_kernel_certs(src, own, target, "move", out)
             firmware.place(src, own, target, "move", out)
             shutil.rmtree(work)
-            write_toml(
-                os.path.join(own, "manifest.toml"),
-                {
-                    "name": fw_name,
-                    "chip": target[0],
-                    "release": target[1],
-                    "epk": os.path.basename(epk),
-                    "epk_size": os.path.getsize(epk),
-                    "sha256": digest,
-                    "paks": firmware.paks_in(own, target),
-                    "imported": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                },
-                MANIFEST_HEADER,
-                MANIFEST_KEYS,
-            )
+            m = {
+                "name": fw_name,
+                "chip": target[0],
+                "release": target[1],
+                "epk": os.path.basename(epk),
+                "epk_size": os.path.getsize(epk),
+                "sha256": digest,
+                "paks": firmware.paks_in(own, target),
+                "kernel_certs": certs,
+                "imported": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            }
+            m = {k: v for k, v in m.items() if v is not None}
+            write_toml(os.path.join(own, "manifest.toml"), m, MANIFEST_HEADER, MANIFEST_KEYS)
             out(f"extracted {fw_name} into the VM's folder")
         elif kind == "place":
             out(f"the firmware used in place: {fw_dir}")
@@ -361,6 +361,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
             os.mkdir(own)
             out(f"the firmware into the VM's folder: {os.path.join(vm.dir, firmware.OWN)}")
             firmware.place(fw_dir, own, target, "link", out)
+            certs = firmware.place_kernel_certs(fw_dir, own, target, "link", out)
             m = firmware.manifest(fw_dir) or {"name": os.path.basename(fw_dir.rstrip("/"))}
             m = {
                 k: v
@@ -370,6 +371,7 @@ def create(lib, name, fw=None, place=True, out=None, **settings):
                     release=target[1],
                     source=fw_dir,
                     paks=firmware.paks_in(own, target),
+                    kernel_certs=certs,
                 ).items()
                 if v is not None
             }

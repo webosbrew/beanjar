@@ -576,6 +576,7 @@ MANIFEST_KEYS = (
     "sha256",
     "source",
     "paks",
+    "kernel_certs",
     "imported",
 )
 

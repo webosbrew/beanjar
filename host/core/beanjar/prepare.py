@@ -23,7 +23,7 @@ development VMs and the regress instances have one too):
   macadr.img      the macadr partition as the factory leaves it (macadr.py: the MAC and the
                   identity's LGUDID), where the release's LG code reads the LGUDID (Release.lgudid);
                   the launcher attaches it with its writes discarded at power-off
-  webos-verity-certs  the firmware kernel's built-in X.509 certificates (kernelcerts.py), where
+  webos-verity-certs  the firmware kernel's built-in X.509 certificates (firmware.KERNEL_CERTS), where
                   the firmware has an adaptive partition: the share's /host/webos-verity-certs,
                   which the guest's webos-verity checks the partition's table against
 
@@ -51,7 +51,7 @@ import shutil
 import subprocess
 import sys
 
-from . import fwcache, kernelcerts, lls, macadr, nvm, partmap, paths, targets, vmidentity
+from . import firmware, fwcache, lls, macadr, nvm, partmap, paths, targets, vmidentity
 from .base import identity_dir
 
 VERSION = 8
@@ -63,7 +63,7 @@ PARTINFO = "partinfo.img"
 EEPROM = "eeprom.img"
 RECORDS = "records.txt"
 MACADR = "macadr.img"
-# the firmware kernel's built-in certificates (kernelcerts.py), /host/webos-verity-certs in the guest
+# the firmware kernel's built-in certificates (firmware.KERNEL_CERTS), /host/webos-verity-certs in the guest
 VERITY_CERTS = "webos-verity-certs"
 
 
@@ -163,9 +163,21 @@ class Job:
         ids = vmidentity.read_lgudid(self.identity_dir)
         return {"mac": self.mac, "lgudid": ":".join(ids) if ids else ""}
 
+    def kernel_certs(self):
+        """The firmware's stored kernel certificates (its manifest's kernel_certs, a file name in
+        its directory): the path, or None where it names none or the file is not there."""
+        name = (firmware.manifest(self.fw) or {}).get("kernel_certs")
+        if not isinstance(name, str) or not name or os.path.basename(name) != name:
+            return None
+        path = os.path.join(self.fw, name)
+        return path if os.path.isfile(path) else None
+
     def base_files(self):
-        """The files every record depends on: the firmware's paks and the board's board.cmdline."""
+        """The files every record depends on: the firmware's paks (and its kernel certificates)
+        and the board's board.cmdline."""
         out = [os.path.join(self.fw, n) for n in targets.firmware_paks(self.fw)]
+        if targets.adaptive_partition(self.target, self.fw) and self.kernel_certs():
+            out.append(self.kernel_certs())
         out.append(
             self.tree.src(targets.board_cmdline_src(self.target, self.broadcast, self.model))
         )
@@ -286,6 +298,26 @@ def make(job, say=print):
     return Prepared(job, record)
 
 
+def _verity_certs(job, new, record):
+    """The firmware kernel's built-in certificates, which its webos-verity checks the adaptive
+    partition's table against, into new: the file the firmware keeps (firmware.KERNEL_CERTS, read
+    at its import; nothing here decodes kernel.pak), where it has the partition."""
+    if not targets.adaptive_partition(job.target, job.fw):
+        return
+    src = job.kernel_certs()
+    if not src:
+        raise Error(
+            f"the firmware {job.fw_name} has an adaptive partition but keeps no kernel "
+            f"certificates ({firmware.KERNEL_CERTS}, named by its manifest's kernel_certs): "
+            "import it again where epk2extract is installed"
+        )
+    try:
+        shutil.copyfile(src, os.path.join(new, VERITY_CERTS))
+    except OSError as e:
+        raise Error(f"the kernel's certificates: {e}") from None
+    record["derived_files"][VERITY_CERTS] = VERITY_CERTS  # in the VM's directory
+
+
 def _make(job, new, say):
     if not targets.board_data(job.target):
         # the test guest: no partition map, no EEPROM, nothing derived from a firmware
@@ -341,14 +373,7 @@ def _make(job, new, say):
     except targets.Error as e:
         raise Error(str(e)) from None
     record["derived_files"] = dict(files)
-    # the firmware kernel's built-in certificates, which its webos-verity checks the adaptive
-    # partition's table against (kernelcerts.py), where the firmware has the partition
-    if targets.adaptive_partition(job.target, job.fw):
-        try:
-            kernelcerts.write(job.fw, os.path.join(new, VERITY_CERTS))
-        except (kernelcerts.Error, OSError) as e:
-            raise Error(f"the kernel's certificates: {e}") from None
-        record["derived_files"][VERITY_CERTS] = VERITY_CERTS  # in the VM's directory
+    _verity_certs(job, new, record)
     # /dev/tee0 with no TA where the firmware has OP-TEE's client and no chip module has its TAs
     try:
         tee = targets.tee_device(job.target, job.fw)

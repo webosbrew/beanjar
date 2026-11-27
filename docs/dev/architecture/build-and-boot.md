@@ -373,8 +373,9 @@ set, which skips it under suspend-to-idle without a cpuidle driver (docs/dev/arc
 metadata, FEC); the target reads the FEC header and LG's metadata, checks the table's PKCS#7
 signature against the keyring `.webos_verity` and hands the table, with the options LG's kernel
 adds, to the stock verity target, whose operations it shares. The keyring holds the firmware
-kernel's own built-in certificates (`host/core/beanjar/kernelcerts.py`, prepared board data's
-`webos-verity-certs`), which the initramfs writes to `/proc/webos_verity_certs` and seals before
+kernel's own built-in certificates (`host/core/beanjar/kernelcerts.py`, read once at the firmware's
+import and kept as the entry's `kernel-certs.der`; prepared board data's `webos-verity-certs` is a
+copy of it), which the initramfs writes to `/proc/webos_verity_certs` and seals before
 webOS starts; nothing is compiled in. A bad signature refuses the table, where LG's kernel restarts
 the set (docs/research/w22o-queue-no-signal-black.md).
 

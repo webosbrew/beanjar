@@ -11,8 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-from beanjar import firmware, kernelcerts, targets
+from beanjar import firmware, kernelcerts, prepare, targets
 
 QUEUE = ("o22", "queue")
 # W22O 43.21.89's paks as the shared collection keeps them (ARIB build), without appackage.pak
@@ -95,3 +94,77 @@ def test_kernel_certificates(tmp_path):
     (fw / "kernel.pak").unlink()
     with pytest.raises(kernelcerts.Error, match="no kernel.pak"):
         kernelcerts.write(str(fw), str(out))
+
+
+def certified_firmware(tmp, name, image):
+    """a W22O queue firmware directory with appackage.pak and a gzipped kernel.pak of image"""
+    fw = Path(queue_firmware(tmp, name, True))
+    (fw / "kernel.pak").write_bytes(gzip.compress(image))
+    return fw
+
+
+@pytest.mark.skipif(not shutil.which("openssl"), reason="needs openssl")
+def test_import_keeps_certificates(tmp_path):
+    """Import reads the certificates from kernel.pak once and keeps them beside the paks; an entry
+    that has the file passes it on without kernel.pak or epk2extract; a firmware without the
+    adaptive partition keeps none; an adaptive one with neither file nor kernel.pak is refused."""
+    cert = openssl_cert(tmp_path, "LGE_TV")
+    fw = certified_firmware(tmp_path, "src", b"\x7fELF" + bytes(8) + cert)
+    dest = tmp_path / "own"
+    dest.mkdir()
+    said = []
+    assert firmware.place_kernel_certs(str(fw), str(dest), QUEUE, "link", said.append) == (
+        firmware.KERNEL_CERTS
+    )
+    assert (dest / firmware.KERNEL_CERTS).read_bytes() == cert
+    # an entry: the stored file, kernel.pak not needed (a W22O one needs epk2extract)
+    entry = Path(queue_firmware(tmp_path, "entry", True))
+    (entry / firmware.KERNEL_CERTS).write_bytes(cert)
+    (entry / "kernel.pak").write_bytes(lz4p_wrapped())
+    use = tmp_path / "use"
+    use.mkdir()
+    firmware.place_kernel_certs(str(entry), str(use), QUEUE, "link", said.append)
+    assert (use / firmware.KERNEL_CERTS).read_bytes() == cert
+    # no adaptive partition: nothing kept
+    plain = Path(queue_firmware(tmp_path, "plain", False))
+    assert firmware.place_kernel_certs(str(plain), str(use), QUEUE, "link", said.append) is None
+    # adaptive, but neither the file nor a readable kernel.pak
+    bare = Path(queue_firmware(tmp_path, "bare", True))
+    (bare / "kernel.pak").unlink()
+    with pytest.raises(firmware.Error, match="no kernel.pak"):
+        firmware.place_kernel_certs(str(bare), str(use), QUEUE, "link", said.append)
+
+
+def lz4p_wrapped():
+    from beanjar import lz4p
+
+    return lz4p.MAGIC + bytes(64)
+
+
+class FakeJob(prepare.Job):
+    def __init__(self, fw):
+        self.fw, self.fw_name, self.target = str(fw), fw.name, QUEUE
+
+
+def test_prepare_copies_stored_certificates(tmp_path):
+    """Prepare copies the file the manifest names and never decodes kernel.pak (an LZ4P one here
+    would need epk2extract); without the file it fails naming the fix, with no fallback."""
+    fw = Path(queue_firmware(tmp_path, "fw", True))
+    (fw / "kernel.pak").write_bytes(lz4p_wrapped())
+    new = tmp_path / "new"
+    new.mkdir()
+    record = {"derived_files": {}}
+    with pytest.raises(prepare.Error, match="import it again"):
+        prepare._verity_certs(FakeJob(fw), str(new), record)
+    (fw / firmware.KERNEL_CERTS).write_bytes(b"DER")
+    (fw / "manifest.toml").write_text(f'kernel_certs = "{firmware.KERNEL_CERTS}"\n')
+    prepare._verity_certs(FakeJob(fw), str(new), record)
+    assert (new / prepare.VERITY_CERTS).read_bytes() == b"DER"
+    assert record["derived_files"] == {prepare.VERITY_CERTS: prepare.VERITY_CERTS}
+    # a manifest that names a path outside the directory is no file
+    (fw / "manifest.toml").write_text('kernel_certs = "../x"\n')
+    with pytest.raises(prepare.Error, match="import it again"):
+        prepare._verity_certs(FakeJob(fw), str(new), record)
+    # a firmware without the adaptive partition needs none
+    plain = Path(queue_firmware(tmp_path, "plain", False))
+    prepare._verity_certs(FakeJob(plain), str(new), {"derived_files": {}})

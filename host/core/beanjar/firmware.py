@@ -30,12 +30,15 @@ import signal
 import subprocess
 import time
 
-from . import targets, paths, superpak
+from . import kernelcerts, paths, superpak, targets
 from .core import OWN_FW, Error, read_toml
 
 # epk2extract names its output directory "<version>-<otaID>", e.g. 05.06.10.01-HE_DTV_WT1H_AFAAABAA
 FW_DIR_RE = re.compile(r"\d\d\.\d\d\.\d\d(\.\d\d)?-[A-Za-z0-9_.-]+")
 OWN = OWN_FW  # the VM's own firmware: <vm>/firmware
+# the firmware kernel's built-in X.509 certificates, one DER list (kernelcerts.py), kept beside the
+# paks of a firmware that has an adaptive partition; its manifest's kernel_certs names the file
+KERNEL_CERTS = "kernel-certs.der"
 
 
 def find_epk2extract(library):
@@ -210,6 +213,26 @@ def place(src, dest, target, how, out):
         out(f"{p}: copying {fmt_size(os.path.getsize(a))}")
         shutil.copyfile(a, b)
         shutil.copystat(a, b)
+
+
+def place_kernel_certs(src, dest, target, how, out):
+    """The certificates of the firmware src into the new directory dest, where it has an adaptive
+    partition: the file the entry keeps, else read from src's kernel.pak (epk2extract decodes a
+    W22O one, so this is import's job, never a VM's start). The file's name for the manifest, or
+    None for a firmware without the partition."""
+    if not targets.adaptive_partition(target, src):
+        return None
+    a, b = os.path.join(src, KERNEL_CERTS), os.path.join(dest, KERNEL_CERTS)
+    if how == "link" and os.path.isfile(a):
+        shutil.copyfile(a, b)
+        out(f"{KERNEL_CERTS}: copied")
+        return KERNEL_CERTS
+    try:
+        n = kernelcerts.write(src, b)
+    except (kernelcerts.Error, OSError) as e:
+        raise Error(f"the kernel's certificates for the adaptive partition: {e}", "fw") from None
+    out(f"{KERNEL_CERTS}: {n} certificates read from kernel.pak")
+    return KERNEL_CERTS
 
 
 def fmt_size(n):

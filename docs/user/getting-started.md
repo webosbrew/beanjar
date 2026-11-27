@@ -69,6 +69,13 @@ release = "afro"
 The other keys Beanjar writes (`epk`, `epk_size`, `sha256`, `source`, `paks`, `imported`) record
 where the paks came from and are optional.
 
+A firmware with an adaptive partition (`appackage.pak`) also keeps `kernel-certs.der` beside its
+paks, the certificates its kernel has built in, which the partition's signature is checked
+against. The manifest names it (`kernel_certs = "kernel-certs.der"`). It is read from `kernel.pak`
+when the firmware is imported, which needs `epk2extract` for some firmwares; a VM from the entry
+copies the file and never needs `epk2extract`. Without it, creating a VM from that firmware fails
+and the firmware has to be imported again.
+
 ### epk2extract
 
 [epk2extract](https://github.com/openlgtv/epk2extract) has no released binaries, so you build it.
