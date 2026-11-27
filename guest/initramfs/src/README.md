@@ -20,7 +20,7 @@ The guest gets four kinds of input from the host, each the way a TV gets it:
   `virtio-multitouch-pci` given to webOS as LG's panel. Errors go to `/run/virtio-touch.log`.
 
 Both launchers attach `virtio-keyboard-pci`, `virtio-tablet-pci` and the `webos.ir` port through
-`host/core/beanjar/qemu.py`, and `virtio-multitouch-pci` for a touch model (`targets.Soc.touch`).
+`host/core/beanjar/runtime/qemu.py`, and `virtio-multitouch-pci` for a touch model (`targets.Soc.touch`).
 
 ## Device names
 

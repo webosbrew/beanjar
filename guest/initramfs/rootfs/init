@@ -25,12 +25,12 @@
 #                       are up; "stock" keeps LG's whitelist and start (see below)
 #   webos.pmlog_debug=a,b   PmLog contexts to raise to debug level (implies full); applied by
 #                       the common layer's usr/libexec/beanjar/pmlog-debug (Upstart job or systemd unit)
-#   webos.net=mitm|direct|off   the network (NET_LINK and NET_MODE in host/core/beanjar/qemu.py); informational.
+#   webos.net=mitm|direct|off   the network (NET_LINK and NET_MODE in host/core/beanjar/runtime/qemu.py); informational.
 #                       With mitm the per-VM layer carries the proxy's CA, which is trusted below
 #   webos.ethaddr=MAC, webos.serial=SERIAL   the VM's own board MAC and serial number, in place of
 #                       board.cmdline's ethaddr= and serialNum=
 #   webos.debugmode=N   the VM's debug_mode (3 debug, 4 event, 5 release), in place of board.cmdline's
-#                       debugMode= (host/core/beanjar/qemu.py DEBUG_MODE)
+#                       debugMode= (host/core/beanjar/runtime/qemu.py DEBUG_MODE)
 #   webos.time_scale=N  bootd's timeouts of 5 s and more times N (the launcher's TCG factor; 1,
 #                       the default, under KVM): see "bootd's fallback timers" below
 #   webos.locksample=S  sample the file locks for S s (debugging; below)
@@ -201,7 +201,7 @@ if [ -e /proc/webos_verity_certs ]; then
 fi
 
 # --- the per-VM layer: the read-only share "vm", RUN_DIR/share/vm, which the launcher assembles
-# from the VM's identity directory at each start (host/core/beanjar/qemu.py guest_layer). boot.conf's LAYERS has it as "vm", on top of every other layer.
+# from the VM's identity directory at each start (host/core/beanjar/runtime/qemu.py guest_layer). boot.conf's LAYERS has it as "vm", on top of every other layer.
 mkdir -p /run/vm
 if mount -t 9p -o ro,trans=virtio,version=9p2000.L,msize=1048576 vm /run/vm 2>/dev/null; then
 	log "per-VM share mounted at /run/vm"
@@ -230,7 +230,7 @@ if [ ! -d /sys/module/btmtk_usb ] && [ -f /lower/rootfs/usr/lib/libbt-vendor_mtk
 	fi
 fi
 
-# --- state disks (boot.conf's STATE_DISKS; STATE in host/core/beanjar/qemu.py): the TV's
+# --- state disks (boot.conf's STATE_DISKS; STATE in host/core/beanjar/runtime/qemu.py): the TV's
 # read-write eMMC partitions. The firmware's own fstabs and scripts reach them as
 # /dev/mmcblk0pN (made below).
 # The launchers always attach them; with STATE=none they are throwaway (snapshot=on) disks.
@@ -446,7 +446,7 @@ for n in $PART_NODES; do
 done
 [ -z "$PART_NODES" ] || log "eMMC partitions: /dev/mmcblk0p{$(echo $PART_NODES | sed 's/:[^ ]*//g; s/ /,/g')}"
 # firmware.updatable (boot.conf's EMMC_OVERLAY, EMMC_TABLE and EMMC_PART_NODES, from
-# host/core/beanjar/qemu.py): the whole-disk /dev/mmcblk0 the stock firmware updater writes into (a
+# host/core/beanjar/runtime/qemu.py): the whole-disk /dev/mmcblk0 the stock firmware updater writes into (a
 # dm-linear device over a discarded scratch overlay), plus the overlay-backed /dev/mmcblk0pN nodes
 # for the partitions it touches that have no backing disk of their own (crc32info, the inactive A/B
 # bank), each a slice of the same overlay so the whole-disk writes and the pN reads are coherent.
@@ -483,7 +483,7 @@ if [ "$INIT_SYSTEM" = systemd ] && [ -n "$(disk efs)" ]; then
 	done
 	log "EFS: stock tasks will activate ordinary disk-backed swap"
 fi
-# A qemu-user VM's swap disk, a memfd in host RAM (host/core/beanjar/hostswap.py), for the cold
+# A qemu-user VM's swap disk, a memfd in host RAM (host/core/beanjar/runtime/hostswap.py), for the cold
 # part of the qemu-arm processes' memory (their translated code above all). With discard a freed
 # swap page is a hole in the memfd again, host RAM back. On before webOS starts, so that memchute
 # counts it from its first look.
@@ -632,7 +632,7 @@ elif [ "$pmlog" = full ]; then
 fi
 
 # --- bootd's fallback timers for a slow guest (webos.time_scale=N, the launcher's TCG factor,
-# host/core/beanjar/qemu.py TIME_SCALE) ---
+# host/core/beanjar/runtime/qemu.py TIME_SCALE) ---
 # bootd waits for each boot signal with a fixed timeout and goes on without it on expiry; under TCG
 # the producers are late only because the guest is slow. N > 1 LD_PRELOADs the webos layer's
 # libbootd-scale.so (guest/layers/webos/src/bootd-scale), which multiplies bootd's timeouts of 5 s and more

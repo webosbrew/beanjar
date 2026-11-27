@@ -81,7 +81,7 @@ def judge(nonblack, colours, platform, accel="kvm"):
 def host_accel():
     """The accelerator a VM of this host runs on (the launcher's own choice)."""
     sys.path.insert(0, str(ROOT / "host" / "core"))
-    from beanjar import qemu
+    from beanjar.runtime import qemu
 
     return qemu.default_accel()
 

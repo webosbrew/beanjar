@@ -10,7 +10,7 @@ from unittest import mock
 import pytest
 
 from beanjar.guestside import layerimage, share
-from beanjar import vmunits
+from beanjar.runtime import vmunits
 
 
 class Tree:

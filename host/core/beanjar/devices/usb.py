@@ -255,7 +255,7 @@ def _running(vm):
 
 def record_dir(vm):
     """Where vm's attached devices are recorded: its unit's RuntimeDirectory, else run/."""
-    from .. import lifecycle, vmunits
+    from ..runtime import lifecycle, vmunits
 
     unit_name = vm.unit_name()
     return lifecycle.state_dir(
@@ -267,7 +267,7 @@ def _record(vm, add=None, remove=None):
     """Adds the device add to vm's record, or removes the id remove from it, under a lock."""
     import fcntl
 
-    from .. import lifecycle
+    from ..runtime import lifecycle
 
     d = record_dir(vm)
     with open(os.path.join(d, lifecycle.USB_RECORD + ".lock"), "w") as lock:
@@ -284,7 +284,7 @@ def state(vm):
     """{restarts, restarting, devices}: how many times vm's unit started QEMU again, whether it is
     doing so now (then no devices: the new QEMU is not up), and its devices (query). Error if the VM
     is not running and not restarting."""
-    from .. import lifecycle
+    from ..runtime import lifecycle
 
     restarting = lifecycle.restarting(vm.run_dir)
     out = {"restarts": lifecycle.restarts(vm.run_dir), "restarting": restarting, "devices": []}

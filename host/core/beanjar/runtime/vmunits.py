@@ -11,9 +11,7 @@ import subprocess
 import sys
 import time
 
-from .base import (
-    Error,
-)
+from ..base import Error
 
 
 UNIT_PROPS = ("ActiveState", "SubState", "MainPID", "Result", "ExecMainStatus", "Description")

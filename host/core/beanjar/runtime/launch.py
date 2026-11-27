@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The host runtime's command line: boot, stop and drive webOS VMs (host/scripts/vm-launcher, or python3 -m
-beanjar.launch with host/core on PYTHONPATH).
+beanjar.runtime.launch with host/core on PYTHONPATH).
 
   host/scripts/vm-launcher run [words...]        boot in the foreground, serial console on stdio (Ctrl-A c: the
                                    QEMU monitor; Ctrl-A x quits); the environment is qemu.py's
@@ -133,28 +133,15 @@ import sys
 import time
 import tomllib
 
-from . import (
-    base,
-    core,
-    hostswap,
-    keys,
-    mediasandbox,
-    paths,
-    poweroff,
-    qemu,
-    runner,
-    unit,
-    vmidentity,
-    vmsettings,
-    vmunits,
-)
-from .guestside import compat, share
-from .firmware import cache, facts, targets
-from .board import nvm, prepare
-from .access import console
-from .devices import rotation
-from .network import netns
-from .tuner import antenna
+from .. import base, core, keys, paths, vmidentity, vmsettings
+from . import hostswap, mediasandbox, poweroff, qemu, runner, unit, vmunits
+from ..guestside import compat, share
+from ..firmware import cache, facts, targets
+from ..board import nvm, prepare
+from ..access import console
+from ..devices import rotation
+from ..network import netns
+from ..tuner import antenna
 
 TREE = paths.TREE
 # Every runtime path of a --dir VM follows its directory, whatever the caller's environment; the
@@ -200,7 +187,7 @@ def say(line):
 # ------------------------------------------------------------------ instances of the checkout VM
 def instance_env(env, tree=TREE):
     """Default runtime and identity paths of a managed development VM."""
-    from . import development
+    from .. import development
 
     try:
         return development.environment(env, tree)
@@ -1189,7 +1176,7 @@ def qmp(sock, command, timeout=10.0):
 def parser():
     p = argparse.ArgumentParser(
         prog="host/scripts/vm-launcher",
-        description="Boot, stop and drive webOS VMs (beanjar/launch.py)",
+        description="Boot, stop and drive webOS VMs (beanjar/runtime/launch.py)",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
     for name, text in (
@@ -1301,7 +1288,7 @@ def parser():
 def main(argv_=None):
     a = parser().parse_args(argv_)
     try:
-        from . import development
+        from .. import development
 
         if a.cmd == "migrate-local":
             print("migrated development VM: " + development.migrate(dict(os.environ)))

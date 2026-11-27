@@ -8,7 +8,8 @@ import shlex
 import stat
 import sys
 
-from .. import base, core, hostprocs, keys, poweroff, vmsettings, vmunits
+from .. import base, core, keys, vmsettings
+from ..runtime import hostprocs, poweroff, vmunits
 from ..access import remote
 from ..core import fmt_duration
 from ..base import Error
@@ -108,7 +109,8 @@ def vm_row(vm):
 def unit_row(name, props):
     """A VM's unit in beanjar.slice that is no library's VM (a regress target's, one of another
     RUN_DIR): what its unit and its main process's environment (the launcher's) tell."""
-    from .. import keys, qemu, paths
+    from .. import keys, paths
+    from ..runtime import qemu
     from ..firmware import targets
     from ..board import nvm
     from ..network import netns

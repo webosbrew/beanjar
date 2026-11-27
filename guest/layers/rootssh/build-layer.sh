@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Assemble the generated "rootssh" layer in build/layers/<chip>-<release>/rootssh: key-only root SSH on port 22,
-# like a rooted TV. Select it with LAYERS=...,rootssh; the launcher (beanjar/qemu.py) then forwards
+# like a rooted TV. Select it with LAYERS=...,rootssh; the launcher (beanjar/runtime/qemu.py) then forwards
 # host 127.0.0.1:${SSH_PORT:-6622} to the guest's port 22.
 #
 #   guest/layers/rootssh/build-layer.sh

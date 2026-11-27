@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""beanjar/cpus.py (big.LITTLE placement) against a stand-in /sys/devices/system/cpu."""
+"""beanjar/runtime/cpus.py (big.LITTLE placement) against a stand-in /sys/devices/system/cpu."""
 
 import os
 from unittest.mock import patch
 
 import pytest
 
-from beanjar import cpus
+from beanjar.runtime import cpus
 
 
 @pytest.fixture

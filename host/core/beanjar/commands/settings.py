@@ -6,7 +6,8 @@ add, remove, list, prune-layer-images)."""
 import argparse
 import os
 
-from .. import capacity, core, hostconfig, paths, vmsettings
+from ..runtime import capacity, hostconfig
+from .. import core, paths, vmsettings
 from ..access import remote
 from ..base import Error
 from .common import Usage, emit, layer_versions, progress, table, text_value

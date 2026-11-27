@@ -777,7 +777,7 @@ The build stays in `host/viewer/meson.build`, in the host build.
 
 ## Launcher
 
-The launcher (`host/core/beanjar/qemu.py`) adds three
+The launcher (`host/core/beanjar/runtime/qemu.py`) adds three
 things on both machines:
 - `-qmp unix:$VIEWER_QMP_SOCK,server=on,wait=off`, which defaults to `build/viewer-qmp.sock` next to
   the D-Bus socket

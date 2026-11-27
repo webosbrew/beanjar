@@ -12,7 +12,8 @@ import shutil
 import subprocess
 import tempfile
 
-from . import base, core, paths, vmconfig, vmidentity, vmsettings, vmunits
+from . import base, core, paths, vmconfig, vmidentity, vmsettings
+from .runtime import vmunits
 
 
 class Error(Exception):
@@ -76,7 +77,7 @@ def _offline(run, directory):
     for path in (run / "qemu.pid", Path(directory) / "run/qemu.pid"):
         if base.proc_alive(base.read_pid(str(path)), "qemu-system"):
             raise Error("stop the development VM before migration")
-    from . import unit
+    from .runtime import unit
 
     for props in vmunits.vm_units().values():
         if props.get("ActiveState") in unit.UP and props.get("Description") in (
@@ -87,7 +88,7 @@ def _offline(run, directory):
 
 
 def _config(env, tree, preserve_identity=False):
-    from . import qemu
+    from .runtime import qemu
 
     firmware, _ = tree.firmware(env.get("FW"))
     # vm.toml resolves a relative fw against the VM's folder (firmware.vm_firmware), not the caller's

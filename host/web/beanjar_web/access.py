@@ -34,7 +34,7 @@ class Error(Exception):
 
 
 def config_dir():
-    """The manager's (beanjar.hostconfig.global_config_dir): $XDG_CONFIG_HOME/beanjar."""
+    """The manager's (beanjar.runtime.hostconfig.global_config_dir): $XDG_CONFIG_HOME/beanjar."""
     return os.path.join(
         os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "beanjar"
     )

@@ -464,7 +464,7 @@ def reset(lib, name, snap, out=print):
     """The VM name, which is off, put back to its snapshot snap: its state/ replaced by the
     snapshot's, its identity/sestore.toml by the snapshot's with its current model key. Returns
     info() and the seconds it took."""
-    from . import qemu
+    from .runtime import qemu
 
     vm = lib.vm(name)
     d = snapshot_dir(vm, snap)

@@ -267,7 +267,7 @@ def test_cont_failed_is_tried_again(vm):
 
 
 def test_status_reads_standby_while_stopped():
-    from beanjar import poweroff
+    from beanjar.runtime import poweroff
 
     assert poweroff.status_of(("running", True, False)) == "standby"
     assert poweroff.status_of(("running", True, True)) == "standby"
@@ -279,7 +279,7 @@ def test_status_reads_standby_while_stopped():
 
 
 def test_micom_standby(tmp_path):
-    from beanjar import poweroff
+    from beanjar.runtime import poweroff
 
     p = tmp_path / "micom-status"
     assert not poweroff.micom_standby(str(p))

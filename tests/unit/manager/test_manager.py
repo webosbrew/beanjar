@@ -8,7 +8,7 @@ Each test gets a temporary library, a temporary, empty "checkout" and a stand-in
 free memory (BEANJAR_MEMINFO, which the start's admission reads). A .epk comes in as --firmware,
 through the CLI's create or the GUI's New VM worker, python3 -m beanjar.newvm (newvm()).
 
-The fake launcher runs the fake QEMU through the real beanjar.unit: where a user systemd runs,
+The fake launcher runs the fake QEMU through the real beanjar.runtime.unit: where a user systemd runs,
 as real transient units (beanjar-vm-test<pid>-<vm>) with a real private dbus-daemon in each, so the
 unit's lifetime, its control group and `stop --unplug`'s SIGKILL are the real ones; without one, and
 in SetsidTest always, through the setsid fallback."""
@@ -35,21 +35,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import (
-    base,
-    capacity,
-    core,
-    hostconfig,
-    hostprocs,
-    keys,
-    paths,
-    poweroff,
-    tomlfile,
-    unit,
-    vmidentity,
-    vmsettings,
-    vmunits,
-)  # noqa: E402
+from beanjar import base, core, keys, paths, tomlfile, vmidentity, vmsettings  # noqa: E402
+from beanjar.runtime import capacity, hostconfig, hostprocs, poweroff, unit, vmunits  # noqa: E402
 from beanjar.firmware import install, targets  # noqa: E402
 from beanjar.display import framing  # noqa: E402
 import testunits  # noqa: E402
@@ -110,7 +97,7 @@ def cleanup(tmp):
             if n in ("qemu.pid", "viewer.pid", "vnc.pid", "launcher.pid"):
                 pid = base.read_pid(os.path.join(root, n))
                 if pid and base.proc_alive(
-                    pid, "qemu-system", "beanjar-viewer", "beanjar-vnc", "beanjar.unit"
+                    pid, "qemu-system", "beanjar-viewer", "beanjar-vnc", "beanjar.runtime.unit"
                 ):
                     testunits.end(pid, group=n == "launcher.pid")  # the session: QEMU, the bus
     shutil.rmtree(tmp, ignore_errors=True)
@@ -2020,7 +2007,7 @@ class ManagerTest(unittest.TestCase):
             mock.patch.object(vm, "unit_name", return_value="running"),
             mock.patch.object(vm, "unit_up", return_value=True),
             mock.patch(
-                "beanjar.vmunits.systemctl",
+                "beanjar.runtime.vmunits.systemctl",
                 return_value=(0, "MemoryHigh=5368709120\nMemoryCurrent=1073741824\n"),
             ),
         ):
@@ -2304,7 +2291,7 @@ class ManagerTest(unittest.TestCase):
                     mock.patch.object(vm, "unit_name", return_value="existing"),
                     mock.patch.object(vm, "unit_up", return_value=True),
                     mock.patch(
-                        "beanjar.vmunits.systemctl",
+                        "beanjar.runtime.vmunits.systemctl",
                         return_value=(0, "MemoryHigh=2147483648\nMemoryCurrent=536870912\n"),
                     ),
                 ):
@@ -2795,7 +2782,7 @@ class ManagerTest(unittest.TestCase):
         """A KVM VM needs its RAM and the headroom; a TCG VM also the TB cache (qemu.TCG_TB_DEFAULT_MIB)."""
         self.cli("create", "a", "--import", "--firmware", self.fw_src)
         mem = self.lib().vm("a").mem()
-        tb = __import__("beanjar.qemu", fromlist=["x"]).TCG_TB_DEFAULT_MIB
+        tb = __import__("beanjar.runtime.qemu", fromlist=["x"]).TCG_TB_DEFAULT_MIB
         for accel, need in (
             ("kvm", mem + capacity.START_HEADROOM_MIB),
             ("tcg", mem + tb + capacity.START_HEADROOM_MIB),
@@ -4308,7 +4295,7 @@ class PowerOffTest(unittest.TestCase):
     def test_busy_retry(self):
         """Bg.power_off repeats a busy call, accepts a later answer, and gives up after the last."""
         from beanjar.access import console
-        from beanjar import launch
+        from beanjar.runtime import launch
 
         busy = '{"errorText":"power is busy","returnValue":false}'
         for replies, sends, code in (

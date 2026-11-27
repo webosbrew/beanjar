@@ -4,7 +4,7 @@
 # Assemble the generated "hbchannel" layer in build/layers/<chip>-<release>/hbchannel: Homebrew Channel
 # (org.webosbrew.hbchannel) as a developer app, elevated, where a rooted TV has it. Select it with
 # LAYERS=...,hbchannel,devmode (not with rootssh: both own the guest's port 22); the launcher
-# (beanjar/qemu.py) then forwards host VM_ADDRESS:${SSH_PORT:-6622} to its Dropbear on the guest's 22.
+# (beanjar/runtime/qemu.py) then forwards host VM_ADDRESS:${SSH_PORT:-6622} to its Dropbear on the guest's 22.
 #
 #   guest/layers/hbchannel/build-layer.sh
 #

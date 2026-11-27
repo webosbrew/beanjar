@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""A front end keeps its window across a guest restart (host/core/beanjar/lifecycle.py).
+"""A front end keeps its window across a guest restart (host/core/beanjar/runtime/lifecycle.py).
 
     check-restart.py VIEWER_HEADLESS
 

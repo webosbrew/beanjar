@@ -67,7 +67,7 @@ def find(env):
     """bwrap's path on a Linux host (on PATH, else /usr/bin or /bin), or None."""
     if not sys.platform.startswith("linux"):
         return None
-    from .network import mitmtool
+    from ..network import mitmtool
 
     return mitmtool.sandbox(env)
 

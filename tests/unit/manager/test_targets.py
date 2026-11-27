@@ -283,7 +283,7 @@ def test_missing_definitions(tmp_path, installed):
         else "the checkout has no guest/targets"
     )
     assert r.stdout == f"no board definitions at {where}: {what}\n"
-    r = run("-m", "beanjar.launch", "config", "TARGETS")
+    r = run("-m", "beanjar.runtime.launch", "config", "TARGETS")
     assert (r.returncode, r.stdout) == (1, "")
     assert f"no board definitions at {where}: {what}" in r.stderr
 

@@ -141,7 +141,7 @@ is none:
   (`/proc/<pid>/net/dev`, mode=mitm); mode=direct and link=off have no host-side counters.
 
 The pid is the launcher's `qemu.pid`; it and `viewer-qmp.sock` are looked up next to the D-Bus
-socket (the launcher, `host/core/beanjar/qemu.py`, writes both on every start path; `QEMU_PIDFILE`,
+socket (the launcher, `host/core/beanjar/runtime/qemu.py`, writes both on every start path; `QEMU_PIDFILE`,
 `VIEWER_QMP_SOCK`). A VM started otherwise shows `—` with the reason. It is coloured as a
 libadwaita bottom bar (the header bar's colours), with dimmed labels and the success colour for a
 lit LED. The Remote toggle and the window's buttons are in the header bar. Nothing in the bar takes keyboard

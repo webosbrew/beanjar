@@ -10,7 +10,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from beanjar import base, hostconfig, launch, qemu, runner
+from beanjar import base
+from beanjar.runtime import hostconfig, launch, qemu, runner
 
 
 class ChooseTest(unittest.TestCase):

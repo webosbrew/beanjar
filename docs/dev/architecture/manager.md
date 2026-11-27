@@ -38,8 +38,8 @@ The launcher resolves the target, layers and disks, assembles the host share and
 and owns QEMU and its helper processes. The host runtime uses a systemd user unit where
 available, with a process-session fallback.
 
-Which of the two holds a VM's processes is the runner (`host/core/beanjar/runner.py`). Both run the
-same main process, `python3 -m beanjar.unit run`, with the same environment; a runner only starts
+Which of the two holds a VM's processes is the runner (`host/core/beanjar/runtime/runner.py`). Both run the
+same main process, `python3 -m beanjar.runtime.unit run`, with the same environment; a runner only starts
 it, says whether it is up, and stops it, and `launch.Bg` drives every runner through those three
 calls. A start uses the chosen runner; a stop and the running check ask every runner, since a VM
 is stopped by the one it was started with. The choice is automatic (systemd where a user systemd
@@ -202,7 +202,7 @@ the end. `io usb attach --image FILE` makes a disk image a USB stick instead (`b
 (`beanjar/devices/gamepad.py`, `host/helpers/virtpad`) runs on the VM's host against the socket and stays
 after the command, so that `io usb gamepad press` can reach it later. A
 hot-plugged device is the running VM's, not a setting: a guest restart keeps it (the unit records
-it and puts it back on the new QEMU, `beanjar/lifecycle.py`), a new start of the VM drops it.
+it and puts it back on the new QEMU, `beanjar/runtime/lifecycle.py`), a new start of the VM drops it.
 See the [manager README](../../../host/core/README.md#several-machines).
 
 ## Identity and presentation

@@ -8,7 +8,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import development, paths, qemu, vmconfig
+from beanjar import development, paths, vmconfig
+from beanjar.runtime import qemu
 
 
 class Dev:

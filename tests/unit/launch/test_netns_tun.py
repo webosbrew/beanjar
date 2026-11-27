@@ -111,7 +111,7 @@ def test_ready_waits_for_the_device(tmp_path):
 
 
 def test_unit_keeps_the_mitmweb_override():
-    from beanjar import unit
+    from beanjar.runtime import unit
 
     assert unit.env_for({"NETNS_MITMWEB": "/x/mitmweb"}) == {"NETNS_MITMWEB": "/x/mitmweb"}
 

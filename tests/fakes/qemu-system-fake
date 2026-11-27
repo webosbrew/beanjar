@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Stand-in QEMU for the manager tests (it names itself qemu-system-fake in /proc/<pid>/comm, as the
 launcher's and the manager's checks for a QEMU expect):
-`qemu-system-fake [kernel cmdline words...]`, run by beanjar.unit as the launcher (RUN) for
+`qemu-system-fake [kernel cmdline words...]`, run by beanjar.runtime.unit as the launcher (RUN) for
 the VM directory FAKE_VM_DIR, writes run/qemu.pid, serves QMP query-status on run/qmp.sock
 (FAKE_QMP_STATUS, default running), writes "debug shell" to logs/console.log after
 FAKE_BOOT_DELAY seconds (default 0) and runs until SIGTERM, on which it exits 0 as QEMU does

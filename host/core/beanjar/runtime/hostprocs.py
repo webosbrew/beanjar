@@ -9,10 +9,7 @@ import socket
 import subprocess
 import sys
 
-from .base import (
-    Error,
-    proc_alive,
-)
+from ..base import Error, proc_alive
 
 
 def tcp_listeners(port):

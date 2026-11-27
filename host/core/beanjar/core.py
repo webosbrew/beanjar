@@ -49,20 +49,8 @@ import sys
 import tempfile
 import time
 
-from . import (
-    base,
-    cpus,
-    paths,
-    vmconfig,
-    capacity,
-    hostconfig,
-    hostprocs,
-    poweroff,
-    tomlfile,
-    vmidentity,
-    vmsettings,
-    vmunits,
-)
+from . import base, paths, vmconfig, tomlfile, vmidentity, vmsettings
+from .runtime import cpus, capacity, hostconfig, hostprocs, poweroff, vmunits
 from .firmware import targets
 from .board import countries, nvm
 from .display import capture_relay, dbus, framing
@@ -369,7 +357,7 @@ class VM:
     def userland(self):
         """The userland (native or qemu-user) its next start resolves to on this host
         (qemu.vm_userland), None for one that does not resolve."""
-        from . import qemu
+        from .runtime import qemu
 
         return qemu.vm_userland(self.launch_env())
 
@@ -1205,7 +1193,7 @@ class Library:
         reason = vmunits.reason_text(reason)
         if reason:
             vmunits.reason_text(by, "label", vmunits.REASON_BY_MAX)
-            from . import runner
+            from .runtime import runner
 
             if runner.choose() != runner.SYSTEMD:
                 raise Error(
@@ -1380,7 +1368,8 @@ class Library:
         if vm.alive():
             raise Error(f"VM {name} is not off; stop it before wiping")
         parts = list(parts or [])
-        from . import qemu, snapshot
+        from .runtime import qemu
+        from . import snapshot
 
         snapshot.finish_reset(vm.dir, out)  # a reset to a snapshot killed halfway, first
 

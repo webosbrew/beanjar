@@ -307,7 +307,7 @@ def test_enter_argv_refuses_the_hosts_namespace():
 
 
 def test_netns_exec_needs_a_running_vm(tmp_path):
-    from beanjar import launch
+    from beanjar.runtime import launch
 
     (tmp_path / "run").mkdir()
     with pytest.raises(launch.Error, match="not running"):

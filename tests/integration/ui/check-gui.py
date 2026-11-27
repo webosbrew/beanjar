@@ -67,7 +67,8 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import base, core, hostconfig, unit, vmsettings  # noqa: E402
+from beanjar import base, core, vmsettings  # noqa: E402
+from beanjar.runtime import hostconfig, unit  # noqa: E402
 from beanjar.firmware import targets  # noqa: E402
 from beanjar_ui.manager import gui, ui  # noqa: E402
 import testunits  # noqa: E402

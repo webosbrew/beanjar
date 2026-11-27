@@ -8,7 +8,8 @@ import subprocess
 import sys
 import unittest
 
-from beanjar import base, hostswap
+from beanjar import base
+from beanjar.runtime import hostswap
 
 
 class HostSwapTest(unittest.TestCase):

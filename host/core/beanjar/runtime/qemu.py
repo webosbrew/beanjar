@@ -196,14 +196,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .display import capture_relay
-from .firmware import cache as firmware_cache, lz4p, targets
-from . import hostswap, keys, paths, vmsettings
-from .guestside import layerimage, layermeta, share
-from .board import nvm, partmap, prepare
-from .access import guestshell
-from .devices import ir_relay, mic
-from .tuner import antenna
+from ..display import capture_relay
+from ..firmware import cache as firmware_cache, lz4p, targets
+from . import hostswap
+from .. import keys, paths, vmsettings
+from ..guestside import layerimage, layermeta, share
+from ..board import nvm, partmap, prepare
+from ..access import guestshell
+from ..devices import ir_relay, mic
+from ..tuner import antenna
 
 MEDIA_PORTS = 8
 MEDIA_POOL = "media-pool"  # the media pool's file (WEBOS_MEDIA_POOL_SIZE), the helper's
@@ -467,7 +468,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     accel = accel or env.get("ACCEL") or default_accel(guest_kernel)
     if accel not in ("tcg", "kvm"):
         raise Error(f"unknown ACCEL={accel} (tcg or kvm)")
-    from . import development
+    from .. import development
 
     explicit_ca = "NETSTUB_CA" in env
     env = development.environment(env, tree)
@@ -494,7 +495,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     except targets.Error as e:
         raise Error(f"BROADCAST: {e}") from None
     if env.get("COUNTRY"):
-        from .board import countries
+        from ..board import countries
 
         try:
             p.country = countries.parse(env["COUNTRY"])
@@ -1026,7 +1027,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         p.env["NETSTUB_CA"] = p.ca_dir
         p.ca = os.path.join(p.ca_dir, "ca.pem")
         say(f"proxy CA: {p.ca_dir}")
-    from . import sestore
+    from .. import sestore
 
     if targets.platform(p.target) == "webOS":
         try:
@@ -1856,7 +1857,7 @@ def guest_layer(p):
                                                       guest encrypts it with its own passphrase
     The client key (id_ed25519) and the CA's key never go in. Also rewrites identity/known_hosts for
     the ports."""
-    from . import sestore
+    from .. import sestore
 
     store = None
     compiled = None

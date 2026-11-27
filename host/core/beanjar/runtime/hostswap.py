@@ -22,7 +22,7 @@ backing in _backing; none is built yet, and open_fds says so."""
 
 import os
 
-from .base import Error
+from ..base import Error
 
 
 # the disk's serial, which the guest's init looks for, and the -add-fd opaque string's prefix

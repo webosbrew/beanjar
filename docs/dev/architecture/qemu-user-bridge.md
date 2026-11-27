@@ -124,7 +124,7 @@ large services reach. 16 MiB cost the first boot three times the CPU time in ret
 
 Most of that overhead is cold (only about 105 of the 1515 MiB anonymous memory was touched in 60 s
 idle), so a qemu-user start also gives the guest a swap disk in host RAM
-(`vmsettings.QEMU_USER_SWAP_MIB`, 1536 MiB; `host/core/beanjar/hostswap.py`): a sparse
+(`vmsettings.QEMU_USER_SWAP_MIB`, 1536 MiB; `host/core/beanjar/runtime/hostswap.py`): a sparse
 memfd the process that runs QEMU creates just before it does (`hostswap.open_fds` in `launch.py`
 and `netns.py`), passed with `-add-fd` at descriptors 200 (read-write) and 201 (read-only; QEMU
 takes from the fdset a descriptor with the access mode it opens with, and opens both ways), and

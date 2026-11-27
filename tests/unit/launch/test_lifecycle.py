@@ -23,7 +23,8 @@ import warnings
 from unittest import mock
 
 
-from beanjar import base, core, launch, lifecycle, poweroff, unit, vmunits
+from beanjar import base, core
+from beanjar.runtime import launch, lifecycle, poweroff, unit, vmunits
 from beanjar.access import console
 
 import testunits
@@ -58,7 +59,7 @@ class LifecycleTest(unittest.TestCase):
             **extra,
         )
         p = subprocess.Popen(
-            [sys.executable, "-m", "beanjar.unit", "run"],
+            [sys.executable, "-m", "beanjar.runtime.unit", "run"],
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

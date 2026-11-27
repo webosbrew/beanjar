@@ -27,7 +27,7 @@ beanjar = "beanjar.cli:main"
 
 # Not on PATH: the Debian package puts these in /usr/libexec/beanjar.
 [tool.beanjar.libexec]
-vm-launcher = "beanjar.launch:main"
+vm-launcher = "beanjar.runtime.launch:main"
 
 [tool.setuptools.packages.find]
 include = ["beanjar", "beanjar.*"]

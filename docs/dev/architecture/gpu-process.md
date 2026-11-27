@@ -67,7 +67,7 @@ DRM fdinfo of the unit's processes) count its GPU use.
 
 ## Guest restarts and a full disk
 
-Every VM, whatever its GPU, runs this way under its unit (`beanjar/lifecycle.py`, `unit.run`):
+Every VM, whatever its GPU, runs this way under its unit (`beanjar/runtime/lifecycle.py`, `unit.run`):
 
 - **A guest restart is a cold start.** QEMU runs with `-action reboot=shutdown`, so a reset
   request (webOS's restart, which `webos-start` turns into `reboot -f`; PSCI; QMP `system_reset`)

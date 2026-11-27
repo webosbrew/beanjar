@@ -6,7 +6,7 @@
             where a user systemd runs
   session   a session of its own (unit.spawn; RUN_DIR/launcher.pid), without one
 
-Either runs the same main process, `python3 -m beanjar.unit run`, with the same environment
+Either runs the same main process, `python3 -m beanjar.runtime.unit run`, with the same environment
 (unit.env_for); only who holds the process tree, and how it is found and stopped, differs. Each
 runner is an object with start (the VM's processes started), running (they are up) and stop (they
 are ended); the stop of every runner is tried, since a VM is stopped by the runner it was started
@@ -21,8 +21,9 @@ usable here is an Error at start, never another runner instead.
 import os
 import time
 
-from . import base, unit, vmunits
-from .base import Error
+from .. import base
+from . import unit, vmunits
+from ..base import Error
 
 SYSTEMD, SESSION = "systemd", "session"
 AUTO = "auto"

@@ -1,6 +1,6 @@
 # Emulator (guest/layers/common): the stock job, running the stock /etc/pulse/system.pa. That file's
 # pcm_output is module-alsa-sink on hw:0,6, which the virtio-sound PCM is because the kernel
-# cmdline has virtio_snd.pcm_device_base=6 (guest/kernel/patches, beanjar/qemu.py). Restores the
+# cmdline has virtio_snd.pcm_device_base=6 (guest/kernel/patches, beanjar/runtime/qemu.py). Restores the
 # stock "start on init-boot-done" (the emulator layer used to set "manual" when there was no
 # card). Without a playback device (AUDIO=off, the x86 TCG launcher) that sink cannot load and
 # pulseaudio would exit and respawn, so the pre-start stops the job instead. The firmware's

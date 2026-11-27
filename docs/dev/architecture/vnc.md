@@ -457,7 +457,7 @@ On hosts whose cores differ in capacity (`/sys/devices/system/cpu/cpu*/cpu_capac
 Cortex-A53 at 381, two Cortex-A72 at 1024), `beanjar vnc start` starts beanjar-vnc on the biggest
 cores (`taskset`, so every thread it makes inherits them) and moves QEMU's main thread there
 (the display and virgl; the threads QEMU made before keep theirs, the vCPU threads included)
-(`host/core/beanjar/cpus.py`). Where the cores are alike nothing is changed.
+(`host/core/beanjar/runtime/cpus.py`). Where the cores are alike nothing is changed.
 
 Measured on the RK3399 with unchanged frames dropped (the JPEG stream, since removed; changed frames a second;
 three rounds of 12, 12 and 20 s in rotating order; CPU in % of one core):

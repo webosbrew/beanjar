@@ -5,9 +5,7 @@ and headroom the running VMs claim against what the host has) and the listen add
 
 import os
 
-from .base import (
-    Error,
-)
+from ..base import Error
 from . import hostconfig, hostprocs, vmunits
 
 

@@ -57,7 +57,7 @@ program-less stub whose result is not 4 bytes, or more entries than rtk.ko's arr
 ## Wiring into the launcher
 
 A chip whose `SocModule` has `derived="rpc-table"` (k5lp: `rtk`) gets these parameters at every
-start: the launcher (`beanjar/launch.py` through `targets.derived_params`) runs
+start: the launcher (`beanjar/runtime/launch.py` through `targets.derived_params`) runs
 `rpc-table.py <firmware dir> --cache --name <firmware name>` and appends its stdout words to the
 module's table parameters in boot.conf (`MODULE_PARAMS_rtk`), which guest/initramfs/rootfs/init passes to
 `insmod /lib/modules/rtk.ko`. The words have no white space or quotes, as `_words()` needs.

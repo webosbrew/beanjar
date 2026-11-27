@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Assemble the generated "devmode" layer in build/layers/<chip>-<release>/devmode: the emulator behaves like a TV
 # with LG's Developer Mode app switched on, so the ares tools can install, launch and remove
-# apps. Select it with LAYERS=...,devmode; the launcher (beanjar/qemu.py) then forwards host
+# apps. Select it with LAYERS=...,devmode; the launcher (beanjar/runtime/qemu.py) then forwards host
 # 127.0.0.1:9922 (ssh, prisoner) and 127.0.0.1:9991 (key server) to the guest.
 #
 #   guest/layers/devmode/build-layer.sh

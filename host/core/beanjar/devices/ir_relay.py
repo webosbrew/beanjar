@@ -156,7 +156,7 @@ class PowerDown:
 
 
 def qmp_command(qmp_sock, name):
-    from .. import launch
+    from ..runtime import launch
 
     try:
         reply = launch.qmp(qmp_sock, json.dumps({"execute": name}))
@@ -170,7 +170,7 @@ def qmp_command(qmp_sock, name):
 
 
 def power_down(qmp_sock, micom_status):
-    from .. import poweroff
+    from ..runtime import poweroff
 
     return PowerDown(
         lambda: poweroff.qmp_state(qmp_sock),
@@ -180,7 +180,7 @@ def power_down(qmp_sock, micom_status):
 
 
 def qmp_standby(qmp_sock):
-    from .. import poweroff
+    from ..runtime import poweroff
 
     return poweroff.qmp_status(qmp_sock) == "standby"
 

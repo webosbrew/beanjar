@@ -109,7 +109,7 @@ class Job:
         self.identity_dir = os.path.join(tree.top, ident) if ident else identity_dir(self.vm_dir)
         self.mac = (env.get("MAC") or "").lower()
         if not self.mac and targets.release(self.target).lgudid:
-            from .. import qemu
+            from ..runtime import qemu
 
             self.mac = qemu.guest_mac(self.target, tree, self.broadcast, self.model).lower()
 

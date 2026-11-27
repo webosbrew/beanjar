@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Summarise what the guest sent, from a pcap of its NIC (python3, stdlib only).
 
-    NET_DUMP=build/net.pcap host/scripts/vm-launcher start ...    (QEMU filter-dump, beanjar/qemu.py)
+    NET_DUMP=build/net.pcap host/scripts/vm-launcher start ...    (QEMU filter-dump, beanjar/runtime/qemu.py)
     tests/regress/netstub/pcap-summary.py build/net.pcap [--lg]
 
 Lists the guest's DNS queries, TCP connection attempts (SYN) and other UDP destinations, with

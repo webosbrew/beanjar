@@ -5,12 +5,9 @@ directory): max_running, firmware_dirs, memory_headroom_mib, runner."""
 
 import os
 
-from . import paths
-from .base import (
-    Error,
-    read_toml,
-)
-from . import tomlfile
+from .. import paths
+from ..base import Error, read_toml
+from .. import tomlfile
 
 
 # The machine's settings, every library's alike (the development library's, the regress harness's):

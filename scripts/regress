@@ -272,7 +272,8 @@ sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
 sys.path.insert(0, os.path.join(TOP, "scripts"))
 from beanjar.guestside import compat, components  # noqa: E402
-from beanjar import launch, paths, qemu, vmunits  # noqa: E402
+from beanjar.runtime import launch, qemu, vmunits  # noqa: E402
+from beanjar import paths  # noqa: E402
 from beanjar.firmware import targets  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
 import buildlock  # noqa: E402

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Stand-in for host/scripts/vm-launcher in the manager tests: `fake-vm start|stop|status|prepare --dir VM-DIR [words]`.
-start runs qemu-system-fake the way the launcher runs QEMU - through the real beanjar.unit, as the
+start runs qemu-system-fake the way the launcher runs QEMU - through the real beanjar.runtime.unit, as the
 transient user service ${FAKE_UNIT_PREFIX:-beanjar-vm-test-}<vm> (in its slice, vmunits.unit_slice) with a private D-Bus beside it
 (DISPLAY_BACKEND=dbus), or, without a user systemd (VM_SYSTEMD=0), in a session of its own - and
 waits for its pidfile; the fake QEMU's FAKE_* knobs reach it as the caller's own variables (unit.start's
@@ -15,7 +15,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "host", "core"))
-from beanjar import base, core, unit, vmunits  # noqa: E402
+from beanjar import base, core  # noqa: E402
+from beanjar.runtime import unit, vmunits  # noqa: E402
 
 p = argparse.ArgumentParser()
 p.add_argument("cmd", choices=("start", "stop", "status", "prepare"))

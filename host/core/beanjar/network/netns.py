@@ -94,7 +94,8 @@ import tempfile
 import threading
 import time
 
-from .. import base, hostswap, paths, vmsettings
+from .. import base, paths, vmsettings
+from ..runtime import hostswap
 from . import mitmtool
 
 

@@ -4,7 +4,7 @@
 # Inside webOS: the notifications starfish-media-pipeline sent to uMediaServer (loadCompleted,
 # playing, paused, seekDone, currentTime, endOfStream, error ...), one line each with its time.
 # Needs PmLog context smp.main at debug level: boot with PMLOG_DEBUG="smp.main" (see
-# beanjar/qemu.py). Passive: a second subscriber to com.webos.media can disturb WebKit.
+# beanjar/runtime/qemu.py). Passive: a second subscriber to com.webos.media can disturb WebKit.
 #   (the VM gets it with `host/scripts/vm-launcher put tests/regress/video/pipeline-events.sh` on the host)
 #   webos-enter sh /mnt/host/tests/regress/video/pipeline-events.sh [LINES]
 grep -a -h 'sendJsonStringToUMS' /var/log/messages |

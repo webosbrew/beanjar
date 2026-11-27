@@ -19,7 +19,7 @@ import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import launch, mediasandbox
+from beanjar.runtime import launch, mediasandbox
 
 
 def test_self_confinement(artefact, tmp_path):

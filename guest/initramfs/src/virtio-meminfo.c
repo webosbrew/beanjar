@@ -7,7 +7,7 @@
  * the stock efs-on and swap-on scripts on the EFS disk, guest/initramfs/rootfs/init), so this pump
  * writes the guest's swap every 2 seconds to the webos.memory port as one line of text:
  *   swap total=<SwapTotal kB> free=<SwapFree kB>
- * QEMU keeps the port's output in a ring buffer (host/core/beanjar/qemu.py) that the viewer
+ * QEMU keeps the port's output in a ring buffer (host/core/beanjar/runtime/qemu.py) that the viewer
  * reads with QMP ringbuf-read. /proc/meminfo is opened once and read again from the start each
  * time; a line the port cannot take now is dropped (the next one carries the same). It runs from
  * the initramfs, so the same on every init system. Errors go to stderr

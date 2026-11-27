@@ -175,8 +175,8 @@ struct wv {
     struct capture capture;
     char *capture_path;
     GDBusConnection *peer;
-    /* a guest restart (host/core/beanjar/lifecycle.py) ends QEMU and starts a new one on the
-     * same bus: restarting is the run directory's marker of one, qemu_owner the unique name of
+    /* a guest restart (host/core/beanjar/runtime/lifecycle.py) ends QEMU and starts a new one on
+     * the same bus: restarting is the run directory's marker of one, qemu_owner the unique name of
      * the QEMU shown; lost_at when its display connection closed (0: it did not), and until when
      * the next QEMU is waited for (0: not waiting) */
     char *restarting, *qemu_owner;
@@ -1426,7 +1426,8 @@ static void reconnect_poll(struct wv *v)
     fprintf(stderr, "display: connected to the new QEMU\n");
     touch(v);
 }
-/* vm-info.toml in dir (host/core/beanjar/launch.py): its top-level lines, before any table */
+/* vm-info.toml in dir (host/core/beanjar/runtime/launch.py): its top-level lines, before any table
+ */
 static char **vm_info_lines(const char *dir)
 {
     char *path = g_build_filename(dir, "vm-info.toml", NULL), *info = NULL;
@@ -1514,8 +1515,8 @@ void wv_start(struct wv *v)
         default_capture = g_build_filename(dir, "capture.sock", NULL);
         v->restarting = g_build_filename(dir, "restarting", NULL);
         /* A launch without the media helper (MEDIAHUB=0, or none built) has decoding off: its
-         * vm-info.toml says media = "off" (host/core/beanjar/launch.py), and the viewer then
-         * runs as with --no-media, the video windows checkerboards. */
+         * vm-info.toml says media = "off" (host/core/beanjar/runtime/launch.py), and the viewer
+         * then runs as with --no-media, the video windows checkerboards. */
         if (!v->media_prefix && !v->no_media && vm_info_media_off(dir)) {
             v->no_media = 1;
             fprintf(stderr, "media: decoding off (the launch runs no media helper)\n");

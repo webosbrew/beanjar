@@ -24,7 +24,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar.access import ares, remote  # noqa: E402
-from beanjar import base, cli, commands, core, hostconfig  # noqa: E402
+from beanjar import base, cli, commands, core  # noqa: E402
+from beanjar.runtime import hostconfig  # noqa: E402
 from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.network import inspector  # noqa: E402
 from beanjar.commands import vms as vm_commands  # noqa: E402

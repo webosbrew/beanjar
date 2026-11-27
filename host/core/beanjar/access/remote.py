@@ -18,7 +18,8 @@ import threading
 import time
 from typing import NamedTuple
 
-from .. import base, hostconfig
+from .. import base
+from ..runtime import hostconfig
 from ..base import ARES_QUERY, LOCAL, split_spec  # noqa: F401 (remote's names for them)
 from ..base import Error
 

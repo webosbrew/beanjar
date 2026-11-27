@@ -45,18 +45,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from beanjar import (
-    base,
-    capacity,
-    core,
-    hostprocs,
-    lifecycle,
-    newvm,
-    paths,
-    poweroff,
-    vmsettings,
-    vmunits,
-)  # noqa: E402
+from beanjar import base, core, newvm, paths, vmsettings  # noqa: E402
+from beanjar.runtime import capacity, hostprocs, lifecycle, poweroff, vmunits  # noqa: E402
 from beanjar.firmware import install, targets  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
 from beanjar.display import gpu  # noqa: E402

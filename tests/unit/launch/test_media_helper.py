@@ -14,7 +14,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from beanjar import launch, mediasandbox, paths, qemu
+from beanjar.runtime import launch, mediasandbox, qemu
+from beanjar import paths
 
 from launchkit import fake_tree
 

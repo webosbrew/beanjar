@@ -5,7 +5,7 @@
 # (guest/layers/webos/meson.build).
 # Not a shim under a stock soname: guest/initramfs/rootfs/init LD_PRELOADs it into bootd from the
 # override it writes for webos.time_scale=N, N > 1 (the launcher's TCG factor,
-# host/core/beanjar/qemu.py TIME_SCALE); nothing else loads it.
+# host/core/beanjar/runtime/qemu.py TIME_SCALE); nothing else loads it.
 bootd_scale = shared_library('bootd-scale', 'bootd-scale.c',
   gnu_symbol_visibility: 'hidden',
   link_args: ['-ldl'],

@@ -9,7 +9,7 @@ what the guest plays with nothing sent to a speaker (docs/dev/guides/build.md, "
     capture.py stop               stop every tap (QEMU writes the WAV's header then)
 
 QMP is RUN_DIR/qmp.sock (RUN_DIR default build). The tap is the audiodev's mix at the card's
-fixed format, 44100 Hz s16 stereo (beanjar/qemu.py: the audiodev's fixed settings).
+fixed format, 44100 Hz s16 stereo (beanjar/runtime/qemu.py: the audiodev's fixed settings).
 """
 
 import json

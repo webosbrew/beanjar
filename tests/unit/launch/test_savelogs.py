@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from beanjar import launch
+from beanjar.runtime import launch
 from beanjar.guestside import share
 from launchkit import TOP, VM
 

@@ -5,11 +5,11 @@ the port relays, mitmweb, the DHCP server) and the private D-Bus of DISPLAY_BACK
 systemd user service, so that they start, stop and die together (launch.py drives it):
 
   available()          a user systemd can run the VM (VM_SYSTEMD=0: never)
-  start(unit, env, words)   start UNIT.service running `python3 -m beanjar.unit run [words]`
-  python3 -m beanjar.unit run [words]   the service's main process (ExecStart); with no user
+  start(unit, env, words)   start UNIT.service running `python3 -m beanjar.runtime.unit run [words]`
+  python3 -m beanjar.runtime.unit run [words]   the service's main process (ExecStart); with no user
                        systemd, launch.py runs it in a session of its own (setsid) instead
-  python3 -m beanjar.unit sync          ExecStop: flush the guest's page cache (the state disks)
-  python3 -m beanjar.unit post          ExecStopPost: remove what the processes leave behind
+  python3 -m beanjar.runtime.unit sync          ExecStop: flush the guest's page cache (the state disks)
+  python3 -m beanjar.runtime.unit post          ExecStopPost: remove what the processes leave behind
 
 The unit is a service, not a scope: systemd forks it, so it belongs to no shell or terminal; it
 ends when its main process does, so when QEMU exits (a guest power-off, a crash) the whole control
@@ -36,7 +36,7 @@ UNIT) and to LOG_DIR/qemu.out. `systemctl --user stop UNIT` runs ExecStop (the g
 (netns.py, NETNS_SOCK_DIR: its netns/), the reason (reason.json) and what lifecycle.py keeps across a
 guest restart; systemd removes it on every stop, SIGKILL included.
 
-Env: RUN_DIR, LOG_DIR (absolute), RUN (the launcher instead of `python3 -m beanjar.launch run`;
+Env: RUN_DIR, LOG_DIR (absolute), RUN (the launcher instead of `python3 -m beanjar.runtime.launch run`;
 the tests' fake QEMU), DISPLAY_BACKEND, SOCK/LOG (the serial console, for sync), QEMU_PIDFILE
 (default RUN_DIR/qemu.pid), VM_SYSTEMD (0: never a unit).
 """
@@ -52,9 +52,10 @@ import sys
 import threading
 import time
 
-from .access import console
-from . import lifecycle, paths
-from .base import read_pid
+from ..access import console
+from . import lifecycle
+from .. import paths
+from ..base import read_pid
 from .vmunits import linger, systemctl, unit_slice
 
 # seconds a restart waits for the last QEMU's helpers to end (unit.reap_orphans)
@@ -281,7 +282,7 @@ def start(unit, env, words=(), tree=paths.TREE, mem=None, keep=()):
     started it."""
     linger()
     env = _python_env(env_for(env, keep), tree)
-    me = f"{shlex.quote(sys.executable)} -m beanjar.unit"
+    me = f"{shlex.quote(sys.executable)} -m beanjar.runtime.unit"
     cmd = [
         "systemd-run",
         "--user",
@@ -304,7 +305,7 @@ def start(unit, env, words=(), tree=paths.TREE, mem=None, keep=()):
     cmd += [f"--setenv={k}={v}" for k, v in env.items()]
     return (
         subprocess.run(
-            [*cmd, "--", sys.executable, "-m", "beanjar.unit", "run", *words],
+            [*cmd, "--", sys.executable, "-m", "beanjar.runtime.unit", "run", *words],
             stdin=subprocess.DEVNULL,
         ).returncode
         == 0
@@ -315,7 +316,7 @@ def spawn(env, words=(), tree=paths.TREE, keep=()):
     """The fallback without a user systemd: `run` in a session of its own, with the unit's
     environment (env_for); its pid."""
     p = subprocess.Popen(
-        [sys.executable, "-m", "beanjar.unit", "run", *words],
+        [sys.executable, "-m", "beanjar.runtime.unit", "run", *words],
         env=_python_env(env_for(env, keep), tree),
         cwd=tree.top,
         stdin=subprocess.DEVNULL,
@@ -441,7 +442,7 @@ def _rm(path):
 def launcher_cmd(env, words):
     if env.get("RUN"):
         return [env["RUN"], *words]
-    return [sys.executable, "-m", "beanjar.launch", "run", *words]
+    return [sys.executable, "-m", "beanjar.runtime.launch", "run", *words]
 
 
 def keep_logs(env, p):

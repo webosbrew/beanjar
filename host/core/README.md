@@ -365,7 +365,7 @@ The launcher is part of this package (stdlib only), with `host/scripts/vm-launch
 |---|---|
 | `launch.py` | `host/scripts/vm-launcher`: `run` (boot in the foreground, serial console on stdio), `argv` (print the QEMU command of `run`, a dry run), `start`/`stop` (the checkout's VM in the background, or a VM directory with `--dir`), `status --dir`, `console`, `qmp`, `reset-state`, `firmware-cache`, `config FW\|FW_NAME\|TARGET\|PAKS\|TARGETS\|RENDERNODE` |
 | `qemu.py` | the QEMU command line from the launcher's environment (`FW MEM SMP LAYERS NET_LINK NET_MODE ROOTFS STATE DISPLAY_BACKEND AUDIO`, ...): x86_64 TCG or aarch64 KVM (`ACCEL`), the paks, the state disks, the network, the port forwards, the display and audio |
-| `unit.py` | a VM's processes as one transient systemd user service (`python3 -m beanjar.unit run`), or a setsid session without one; its private D-Bus for `display = "dbus"`; the guest sync at stop |
+| `unit.py` | a VM's processes as one transient systemd user service (`python3 -m beanjar.runtime.unit run`), or a setsid session without one; its private D-Bus for `display = "dbus"`; the guest sync at stop |
 | `netns.py` | `link = "nat"` and `"lan"`, both modes (a rootless namespace: `unshare -rn`, slirp4netns, ip, mitmweb for `mitm`, beanjar-relay (`host/helpers/network/relay.c`) for the port bridges, and the policy rules that keep the guest off the host's loopback and, without `lan_access`, the LAN) and `link = "off"` (the NIC's link set down over QMP) |
 | `console.py` | the serial console bridge |
 | `dbus.py` | the VM's private D-Bus through Gio, the core's only use of gi: QEMU's display size, the front end's `Screenshot`, `SetUIInfo` of the secondary display, and the connection the remote, pointer and touch pipes call through |
@@ -903,7 +903,7 @@ The steps, each also a command of its own:
   `GUEST` attached (the device on the guest's bus).
 
 A guest restart keeps what is attached, as a TV keeps what is in its ports. The restart ends QEMU
-and the VM's unit starts a new one (`beanjar/lifecycle.py`, docs/dev/architecture/gpu-process.md):
+and the VM's unit starts a new one (`beanjar/runtime/lifecycle.py`, docs/dev/architecture/gpu-process.md):
 `attach` and `attach --image` record each device in the unit's `RuntimeDirectory` (`usb.json`,
 in attach order; `detach` takes it out), and the unit puts them back on the new QEMU, before its
 guest boots, at the same sockets and on ports in the same order. The client of `attach --device`
@@ -1685,7 +1685,7 @@ them ([testing](../../docs/dev/guides/testing.md)):
 - `tests/unit/manager/test_manager.py`: the core and CLI (and the GUI's New VM worker) against fakes of
   epk2extract (its `rootfs.pak` is `trust-rootfs.pak`, a tiny afro SquashFS with two trust bundles),
   the launcher (`fake-vm`, which runs
-  the real `beanjar.unit`), QEMU (`qemu-system-fake`: pidfile, QMP) and the viewer. No VM and no GUI.
+  the real `beanjar.runtime.unit`), QEMU (`qemu-system-fake`: pidfile, QMP) and the viewer. No VM and no GUI.
 - `tests/unit/launch/`: the host runtime. The QEMU command lines of `qemu.py`, pinned in
   `launch-argv.json` (recorded from the shell launchers it replaced; `test_argv.py`), and
   (`tests/integration/launch/test_launcher.py`, with the guest build installed) the real

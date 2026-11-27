@@ -12,7 +12,8 @@ import sys
 from dataclasses import dataclass
 from urllib.parse import quote, urlsplit
 
-from .. import base, hostprocs, vmsettings
+from .. import base, vmsettings
+from ..runtime import hostprocs
 
 
 @dataclass(frozen=True)

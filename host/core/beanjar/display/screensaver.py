@@ -18,7 +18,8 @@ import secrets
 import shlex
 import time
 
-from .. import base, paths, poweroff
+from .. import base, paths
+from ..runtime import poweroff
 from ..access import console
 from ..base import Error
 

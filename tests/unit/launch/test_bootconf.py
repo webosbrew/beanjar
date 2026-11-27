@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import base, keys, paths, qemu
+from beanjar import base, keys, paths
+from beanjar.runtime import qemu
 from beanjar.firmware import targets
 from beanjar.board import nvm
 
@@ -1925,7 +1926,7 @@ class InitBootConfTest(unittest.TestCase):
 
 
 class InitSwapTest(unittest.TestCase):
-    """guest/initramfs/rootfs/init's qemu-user swap block (host/core/beanjar/hostswap.py), run by sh
+    """guest/initramfs/rootfs/init's qemu-user swap block (host/core/beanjar/runtime/hostswap.py), run by sh
     with disk, mkswap and swapon stubbed and a scratch /sys/block: the disk with the serial
     beanjar-swap gets mkswap and swapon -d (discard); without it nothing runs."""
 

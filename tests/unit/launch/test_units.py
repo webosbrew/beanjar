@@ -15,7 +15,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import base, capacity, core, hostconfig, launch, qemu, unit, vmsettings, vmunits
+from beanjar import base, core, vmsettings
+from beanjar.runtime import capacity, hostconfig, launch, qemu, unit, vmunits
 
 import testunits
 

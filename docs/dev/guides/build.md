@@ -1241,7 +1241,7 @@ So every host runs the patched QEMU, beanjar-vendor's, which every host build pu
 else Debian's QEMU from `PATH` (with `qemu-system-modules-opengl`).
 
 On WSL, Mesa 25's software winsys takes llvmpipe unless
-`GALLIUM_DRIVER=d3d12`; the launcher (`host/core/beanjar/qemu.py`, for QEMU) and the viewer set it when `/dev/dxg`
+`GALLIUM_DRIVER=d3d12`; the launcher (`host/core/beanjar/runtime/qemu.py`, for QEMU) and the viewer set it when `/dev/dxg`
 exists and `/dev/dri` does not.
 
 A build directory set up by another Meson (the pinned 1.8.5 venv this build used on Debian 12)

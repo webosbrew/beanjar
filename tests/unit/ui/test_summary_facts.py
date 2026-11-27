@@ -132,7 +132,7 @@ def test_catches_signal(tmp_path):
     (hostprocs.catches_signal, from /proc/PID/status's SigCgt)."""
     import signal
 
-    from beanjar import hostprocs
+    from beanjar.runtime import hostprocs
 
     (tmp_path / "7").mkdir()
     status = tmp_path / "7" / "status"

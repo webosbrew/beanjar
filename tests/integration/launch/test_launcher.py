@@ -18,7 +18,8 @@ import unittest
 
 import pytest
 import testunits
-from beanjar import base, capacity, core, launch, paths, unit, vmunits
+from beanjar import base, core, paths
+from beanjar.runtime import capacity, launch, unit, vmunits
 from beanjar.guestside import compat
 from launchkit import FW_NAME, H13_AFRO, TOP, TRUST_PAK, VM
 
@@ -73,7 +74,7 @@ class LaunchTest(unittest.TestCase):
         testunits.stop_ours()
         for n in ("launcher.pid", "qemu.pid", "dbus-daemon.pid"):
             pid = base.read_pid(os.path.join(self.dir, "run", n))
-            if pid and base.proc_alive(pid, "qemu-system", "beanjar.unit", "dbus-daemon"):
+            if pid and base.proc_alive(pid, "qemu-system", "beanjar.runtime.unit", "dbus-daemon"):
                 testunits.end(pid)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -269,7 +270,7 @@ class LaunchTest(unittest.TestCase):
             + os.environ.get("PYTHONPATH", ""),
         )
         p = subprocess.Popen(
-            [sys.executable, "-m", "beanjar.unit", "run"],
+            [sys.executable, "-m", "beanjar.runtime.unit", "run"],
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

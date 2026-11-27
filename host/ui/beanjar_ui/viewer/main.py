@@ -265,7 +265,7 @@ def titles(name, info):
 
 def gpu_rendernode():
     """Whether a render node with a GPU behind it exists: vgem's (loaded on WSL for VA-API,
-    docs/dev/architecture/vnc.md) is none, as beanjar/qemu.py's is_vgem."""
+    docs/dev/architecture/vnc.md) is none, as beanjar/runtime/qemu.py's is_vgem."""
     for n in sorted(glob.glob("/dev/dri/renderD*")):
         dev = os.path.realpath(f"/sys/class/drm/{os.path.basename(n)}/device")
         if os.path.basename(dev) != "vgem":
@@ -275,7 +275,7 @@ def gpu_rendernode():
 
 def prefer_d3d12():
     """On WSL (/dev/dxg, no GPU render node), Mesa 25 (Debian 13) draws with llvmpipe unless
-    GALLIUM_DRIVER names d3d12, as the launcher (beanjar/qemu.py) does for QEMU. Set before GDK starts."""
+    GALLIUM_DRIVER names d3d12, as the launcher (beanjar/runtime/qemu.py) does for QEMU. Set before GDK starts."""
     if os.path.exists("/dev/dxg") and not gpu_rendernode():
         os.environ.setdefault("GALLIUM_DRIVER", "d3d12")
 

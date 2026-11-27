@@ -4,11 +4,11 @@
 #define VIEWER_SOUND_STATUS_H
 #include <stddef.h>
 /* The TV's master volume and speaker mute for the media audio: the file sound-status beside
- * qemu.pid (host/core/beanjar/qemu.py), where QEMU writes what the guest's sound pump sends on the
- * webos.sound port, a line at each change: "level=0x7f00 mute=0 gain=65536". The gain is the one
- * the guest's sound card applies to its own PCM (guest/kernel/modules/lgemu/snd.c), in Q16, 0 when
- * muted. QEMU truncates the file at each start; an empty or missing file is unity, as the card is
- * until the firmware sets its volume. */
+ * qemu.pid (host/core/beanjar/runtime/qemu.py), where QEMU writes what the guest's sound pump sends
+ * on the webos.sound port, a line at each change: "level=0x7f00 mute=0 gain=65536". The gain is the
+ * one the guest's sound card applies to its own PCM (guest/kernel/modules/lgemu/snd.c), in Q16, 0
+ * when muted. QEMU truncates the file at each start; an empty or missing file is unity, as the card
+ * is until the firmware sets its volume. */
 #define SOUND_UNITY 0x10000u
 struct sound_status {
     char *path;          /* NULL: none, always unity */
