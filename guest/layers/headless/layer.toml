@@ -1,4 +1,4 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# The headless layer (host/core/beanjar/layermeta.py reads this file).
+# The headless layer (host/core/beanjar/guestside/layermeta.py reads this file).
 description = "No graphics: stands in for the compositor; instead of gl"

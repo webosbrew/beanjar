@@ -27,7 +27,7 @@ import re
 import tomllib
 from typing import NamedTuple
 
-from . import paths
+from .. import paths
 
 FILE = "layer.toml"
 KEYS = {"description", "requires", "conflicts", "forwards"}

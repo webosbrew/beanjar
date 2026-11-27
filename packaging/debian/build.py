@@ -133,7 +133,7 @@ Comment: QEMU {version}'s linux-user (qemu-arm, and qemu-aarch64 where it is the
 def guest_range(version, identity):
     """The beanjar-guest versions of version's host-guest contract (identity.contract): 0.2.x for a
     0.2 host, any patch version and build of it. An apt hint: the launcher checks what the guest
-    payload has, not its version (host/core/beanjar/compat.py)."""
+    payload has, not its version (host/core/beanjar/guestside/compat.py)."""
     return (
         f"beanjar-guest (>= {identity.contract(version)}), "
         f"beanjar-guest (<< {identity.next_contract(version)})"
@@ -488,7 +488,7 @@ def components(source, destination):
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
     # the selections, their selected variants and each layer's layer.toml, which the installed
-    # manager reads (beanjar/layermeta.py); packaging/shippable.py scans the same
+    # manager reads (beanjar/guestside/layermeta.py); packaging/shippable.py scans the same
     try:
         paths = module.shipped(source)
     except ValueError as e:
@@ -502,10 +502,10 @@ def components(source, destination):
 
 def layer_images(g):
     """The read-only image of every shipped layer (each selected variant, and normal) in
-    g/layer-images, under the name the installed launcher looks for (host/core/beanjar/layerimage.py),
+    g/layer-images, under the name the installed launcher looks for (host/core/beanjar/guestside/layerimage.py),
     so an installed host builds none."""
     sys.path.insert(0, str(TOP / "host/core"))
-    from beanjar import layerimage, layermeta
+    from beanjar.guestside import layerimage, layermeta
 
     sources = [(p, ()) for p in sorted((g / "layers").rglob("variants/*")) if p.is_dir()]
     sources.append((g / "layers/normal", (layermeta.FILE,)))

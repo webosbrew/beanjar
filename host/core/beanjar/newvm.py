@@ -48,7 +48,8 @@ import tempfile
 import threading
 import time
 
-from . import capacity, compat, keys, paths, vmconfig, vmidentity
+from . import capacity, keys, paths, vmconfig, vmidentity
+from .guestside import compat
 from .firmware import install, targets
 from .board import nvm
 from .core import VM, Library, prepare_board_data

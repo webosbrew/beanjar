@@ -93,7 +93,8 @@ def version_info():
     beanjar. source is "package" (the installed package's installation.toml) or "checkout" (the
     commit the checkout holds); guest is the guest payload's {"version", "commit"}. A commit that
     cannot be known is null, a version "unknown"."""
-    from .. import compat, paths
+    from ..guestside import compat
+    from .. import paths
 
     host = compat.host_identity()
     return {
@@ -138,7 +139,7 @@ def warn(text):
 def layer_versions(layers):
     """{layer: version} of the versioned layers among layers (layermeta.versions_of); {} when
     the layers' metadata cannot be read."""
-    from .. import layermeta
+    from ..guestside import layermeta
 
     try:
         return layermeta.versions_of(layers or [])

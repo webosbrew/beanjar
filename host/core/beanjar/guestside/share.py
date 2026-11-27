@@ -43,7 +43,7 @@ import sys
 from typing import NamedTuple
 
 from . import layermeta
-from .firmware import targets
+from ..firmware import targets
 
 # The guest-side scripts every VM has (the launcher's save-logs.sh at stop, time-boot.sh, check-m1.sh).
 BASE = (
@@ -276,7 +276,7 @@ def resolve_layers(tree, target, layers):
     version, plain NAME its default) and the firmware target's always-used layers: the Layers,
     highest first, and the optional layers the host does not have, as notes. Error if an
     always-used layer is not built, or for a version the layer does not have."""
-    from . import guestlayers
+    from . import components as guestside_components
 
     out, missing = [], []
     meta = None
@@ -297,8 +297,8 @@ def resolve_layers(tree, target, layers):
                     f"{layermeta.version_text(meta[name])}"
                 )
             try:
-                src = guestlayers.select(
-                    tree.build("components"), target, guestlayers.versioned(name, version)
+                src = guestside_components.select(
+                    tree.build("components"), target, guestside_components.versioned(name, version)
                 )
             except (ValueError, OSError) as exc:
                 raise Error(str(exc)) from exc
@@ -308,7 +308,7 @@ def resolve_layers(tree, target, layers):
                 out.append(Layer(name, src, os.path.relpath(src, tree.top)))
             continue
         try:
-            components = guestlayers.resolve(tree, target, name)
+            components = guestside_components.resolve(tree, target, name)
         except (ValueError, OSError) as exc:
             raise Error(str(exc)) from exc
         if components:

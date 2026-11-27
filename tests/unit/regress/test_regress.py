@@ -1625,7 +1625,7 @@ class ResultTest(unittest.TestCase):
         """Every checkout file tv.sh runs from the host share (/mnt/host/PATH) is put there for the
         lane whose steps use it; PUT_TV_GRAPHICS's only by graphics steps (gles, histogram)."""
         sys.path.insert(0, os.path.join(TOP, "host", "core"))
-        from beanjar import share
+        from beanjar.guestside import share
 
         with open(os.path.join(TOP, "tests", "regress", "tv.sh")) as f:
             used = set(re.findall(r"/mnt/host/((?:build|tests)/[A-Za-z0-9_./-]+)", f.read()))

@@ -240,7 +240,7 @@ custom targets, for these reasons:
 The host (`beanjar`) and the guest payload (`beanjar-guest`, or a checkout's `build/`) are built
 and updated separately: the Pi builds its host and keeps the PC-built guest. Version numbers are
 not trusted to say whether the two work together; the launcher checks what the payload actually
-has (`beanjar/compat.py`):
+has (`beanjar/guestside/compat.py`):
 
 - **Components.** At VM create and start, before LLS, disk creation, EEPROM or key
   synchronisation, or any helper starts (`launch.py`, `newvm.py`), the payload must have every
@@ -810,7 +810,7 @@ debug shell without it.
 
 The layers are used in place: each is a read-only squashfs image on the host, attached as a disk
 and mounted by `/init` as an overlay lower, so nothing of a layer is copied at boot
-(`host/core/beanjar/layerimage.py`). Until 2026-11 `/init` copied every layer from
+(`host/core/beanjar/guestside/layerimage.py`). Until 2026-11 `/init` copied every layer from
 the host's 9p share into tmpfs (`cp -a`, `chown -R 0:0`), which cost 23 s of a 100 s first boot on
 an RK3399 board whose files are on NFS (the gl layer's 16 MB alone 14.8 s) and kept the copies in
 guest RAM.

@@ -8,7 +8,7 @@
 # release's capture: releases whose installs wrote the same files share one, named after the first
 # of them. Every release of hbchannel_versions is built, as layers['hbchannel@<version>'], published
 # as build/components/hbchannel/versions/<version> (meson/components.py); versions/default names
-# the one plain hbchannel means (host/core/beanjar/layermeta.py). The layer holds no key: the
+# the one plain hbchannel means (host/core/beanjar/guestside/layermeta.py). The layer holds no key: the
 # host key and root's authorized_keys are each VM's own, brought in through the per-VM layer.
 hbchannel_versions = ['0.7.3', '0.8.0']   # the shipped releases, each a directory of versions/
 hbchannel_default = fs.read('versions/default').strip()

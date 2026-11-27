@@ -11,7 +11,8 @@ import unittest
 
 
 from beanjar.firmware import targets
-from beanjar import paths, share
+from beanjar import paths
+from beanjar.guestside import share
 
 from launchkit import boot_conf, H13_AFRO, TOP, VM
 

@@ -676,10 +676,10 @@ class Tree:
         from .firmware import targets
 
         if p:
-            from . import guestlayers
+            from .guestside import components
 
-            selected = guestlayers.select(
-                self.build("components"), target, guestlayers.component(target, p[0])
+            selected = components.select(
+                self.build("components"), target, components.component(target, p[0])
             )
             if selected:
                 return os.path.join(selected, *p[1:])

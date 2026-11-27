@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Host-guest compatibility by what the guest payload has (beanjar/compat.py): the target's components,
+"""Host-guest compatibility by what the guest payload has (beanjar/guestside/compat.py): the target's components,
 every module parameter the host passes declared in the guest .ko's .modinfo (cached), versions as
 information only, the identities and their drift (a warning, and the fix in a refusal skew explains),
 and a VM with no record of any kind starts."""
@@ -16,7 +16,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import compat, launch, paths, vmconfig
+from beanjar.guestside import compat
+from beanjar import launch, paths, vmconfig
 from beanjar.firmware import targets
 
 HERE = os.path.dirname(os.path.abspath(__file__))

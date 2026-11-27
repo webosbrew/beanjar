@@ -135,7 +135,6 @@ import tomllib
 
 from . import (
     base,
-    compat,
     core,
     hostswap,
     keys,
@@ -144,12 +143,12 @@ from . import (
     poweroff,
     qemu,
     runner,
-    share,
     unit,
     vmidentity,
     vmsettings,
     vmunits,
 )
+from .guestside import compat, share
 from .firmware import cache, facts, targets
 from .board import nvm, prepare
 from .access import console

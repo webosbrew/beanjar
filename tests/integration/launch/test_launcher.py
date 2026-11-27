@@ -18,7 +18,8 @@ import unittest
 
 import pytest
 import testunits
-from beanjar import base, capacity, compat, core, launch, paths, unit, vmunits
+from beanjar import base, capacity, core, launch, paths, unit, vmunits
+from beanjar.guestside import compat
 from launchkit import FW_NAME, H13_AFRO, TOP, TRUST_PAK, VM
 
 

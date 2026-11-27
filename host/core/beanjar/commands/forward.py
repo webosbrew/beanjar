@@ -31,7 +31,7 @@ def stream_to(host):
 def host_drift(host):
     """compat.drift of this beanjar and host's, each item warned about on stderr; [] when host
     cannot say its version."""
-    from .. import compat
+    from ..guestside import compat
 
     items = compat.drift(version_info(), remote.identity(host, remote.hosts()[host]), host)
     for item in items:

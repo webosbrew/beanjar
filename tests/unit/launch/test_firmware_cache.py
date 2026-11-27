@@ -201,7 +201,7 @@ class LayerImageTest(unittest.TestCase):
     def test_key(self):
         """The key is the content's (not times or owners) and the format's; a published variant's
         name is its digest, so its tree is not read."""
-        from beanjar import layerimage
+        from beanjar.guestside import layerimage
 
         k = layerimage.key(layerimage.layer_digest(self.src, ("layer.toml",)))
         os.utime(os.path.join(self.src, "usr", "sbin", "tool"), (1, 1))
@@ -222,7 +222,7 @@ class LayerImageTest(unittest.TestCase):
 
     def test_installed_dirs(self):
         """Installed: the package's prebuilt images first, then the user's cache."""
-        from beanjar import layerimage
+        from beanjar.guestside import layerimage
 
         self.assertEqual(
             layerimage.dirs(self.tree), [os.path.join(self.top, "build", "layer-images")]
@@ -241,7 +241,7 @@ class LayerImageTest(unittest.TestCase):
     def test_build_once(self):
         """Built into the cache with root's files and the tree's modes and links, layer.toml left
         out; the second call finds it, a shipped image is taken first."""
-        from beanjar import layerimage
+        from beanjar.guestside import layerimage
 
         img = layerimage.image(self.tree, self.src, ("layer.toml",))
         cache = os.path.join(self.top, "build", "layer-images")

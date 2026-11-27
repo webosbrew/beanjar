@@ -271,7 +271,8 @@ IDENTITY_PY = os.path.join(TOP, "packaging", "identity.py")
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
 sys.path.insert(0, os.path.join(TOP, "scripts"))
-from beanjar import compat, guestlayers, launch, paths, qemu, vmunits  # noqa: E402
+from beanjar.guestside import compat, components  # noqa: E402
+from beanjar import launch, paths, qemu, vmunits  # noqa: E402
 from beanjar.firmware import targets  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
 import buildlock  # noqa: E402
@@ -344,7 +345,7 @@ TV_STEPS = {
 TV_LAYERS = "normal,gl,devmode"  # graphics --tv: developer mode, for the test app's dev/install
 SMP_IPK = "build/regress/{run}/smpcheck.ipk"  # the SMP check app (tests/regress/smp), packed by its pack.sh
 # A host file into the VM's out share (out-relative), never through the guest's links: the share is
-# the guest's, its links real host ones (host/core/beanjar/share.py)
+# the guest's, its links real host ones (host/core/beanjar/guestside/share.py)
 PUT_OUT = "host/scripts/vm-launcher put-out"
 # ... and the guest's files out of it: a regular file only, never through a link (the guest's
 # links would hand over any file the user can read, its FIFOs hang the read), and a removal never
@@ -3145,9 +3146,9 @@ def prepare(a, sel):
             if not os.path.exists(os.path.join(TOP, p))
         ]
         for target, _ in sel:
-            comp = guestlayers.component(tuple(target.split("-", 1)), layer)
+            comp = components.component(tuple(target.split("-", 1)), layer)
             try:
-                found = guestlayers.select(
+                found = components.select(
                     os.path.join(TOP, "build", "components"), tuple(target.split("-", 1)), comp
                 )
             except ValueError as e:

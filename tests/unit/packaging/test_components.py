@@ -16,7 +16,8 @@ import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import core, guestlayers, layermeta, paths
+from beanjar import core, paths
+from beanjar.guestside import components, layermeta
 
 spec = importlib.util.spec_from_file_location("component_publish", TOP / "meson/components.py")
 publisher = importlib.util.module_from_spec(spec)
@@ -54,7 +55,7 @@ class TestComponentsTest:
 
     def test_split_and_runtime_stack_preserve_files(self):
         publisher.publish(self.root, "k5lp", "goldilocks2", {"gl": self.source}, ["mali"])
-        selected = guestlayers.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
+        selected = components.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
         assert [name for name, _ in selected] == ["gl-release", "gl-soc", "gl"]
         actual = {}
         for _, directory in reversed(selected):
@@ -73,7 +74,7 @@ class TestComponentsTest:
             if file.is_file() or file.is_symlink()
         }
         assert actual == expected
-        assert guestlayers.resolve(self.tree, ("k5lp", "afro"), "gl") == []
+        assert components.resolve(self.tree, ("k5lp", "afro"), "gl") == []
         assert not (self.root / "k5lp-goldilocks2").exists()
 
     def test_identical_features_shared_and_modes_distinguish_variants(self):
@@ -158,8 +159,8 @@ class TestComponentsTest:
         assert not (self.root / "hbchannel/selections.json").exists()
         assert not (self.root / "hbchannel@0.7.3").exists()
         for version, tree in (("0.7.3", old), ("0.8.0", new)):
-            selected = guestlayers.select(
-                self.root, ("o22", "queue"), guestlayers.versioned("hbchannel", version)
+            selected = components.select(
+                self.root, ("o22", "queue"), components.versioned("hbchannel", version)
             )
             assert Path(selected).name == publisher.digest(tree)
         out = self.top / "package/guest"
@@ -167,7 +168,7 @@ class TestComponentsTest:
         assert (out / "layers/hbchannel/versions/default").read_text() == "0.8.0\n"
         for version in ("0.7.3", "0.8.0"):
             assert (out / f"layers/hbchannel/versions/{version}/selections.json").is_file()
-        from beanjar import layerimage
+        from beanjar.guestside import layerimage
 
         with mock.patch.object(layerimage, "build") as build:
             (out / "layers/normal").mkdir()
@@ -178,7 +179,7 @@ class TestComponentsTest:
     def test_versioned_layer_resolved_per_vm(self):
         """The manager stacks the version a selection names, the default for plain NAME, under the
         layer's own name (the guest's disk serial); an unknown version is refused, naming them."""
-        from beanjar import share
+        from beanjar.guestside import share
 
         old, new, _meta = self.publish_versions()
         loaded = layermeta.load(self.tree)
@@ -241,10 +242,10 @@ class TestComponentsTest:
         selection = self.root / "gl/selections.json"
         selection.write_text('{"k5lp-goldilocks2":"../../escape"}')
         with pytest.raises(ValueError, match="invalid component variant"):
-            guestlayers.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
+            components.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
         selection.write_text('{"k5lp-goldilocks2":"' + "0" * 64 + '"}')
         with pytest.raises(ValueError, match="missing component"):
-            guestlayers.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
+            components.resolve(self.tree, ("k5lp", "goldilocks2"), "gl")
 
 
 def test_copy_keeps_systemd_masks_and_refuses_external_links(tmp_path):

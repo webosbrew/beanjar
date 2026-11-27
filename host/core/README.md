@@ -324,7 +324,7 @@ which `guest/initramfs/rootfs/init` stacks on top of every other layer. Nothing 
 guest, the client key never. The rootssh, hbchannel and devmode layers themselves hold no key and are the
 same for every VM. Development VMs use the same directory layout, in a separate development library.
 
-The guest sees only its runtime tree, `run/share/` (`beanjar/share.py`; the checkout VM's
+The guest sees only its runtime tree, `run/share/` (`beanjar/guestside/share.py`; the checkout VM's
 `build/share/`), never the checkout, `identity/`, the CA or the firmware directory:
 
 | Host | 9p tag | Guest | What |

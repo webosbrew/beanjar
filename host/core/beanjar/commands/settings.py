@@ -192,7 +192,7 @@ def cmd_host_remove(lib, a):
 def cmd_host_show(lib, a):
     """host show NAME: the host's beanjar and guest payload (its `beanjar --version --json`, asked
     now) and what differs from this beanjar (compat.drift)."""
-    from .. import compat
+    from ..guestside import compat
     from .common import version_info
 
     hosts = remote.hosts()
@@ -228,7 +228,8 @@ def cmd_host_list(lib, a):
 
 def cmd_host_prune_layer_images(lib, a):
     """Remove the cached layer images no VM of this library (and its development libraries) uses."""
-    from .. import base, layerimage, paths
+    from .. import base, paths
+    from ..guestside import layerimage
 
     libraries = [core.Library(r) for r in base.slot_domain(lib.root)[1] if os.path.isdir(r)]
     try:

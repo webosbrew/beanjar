@@ -198,7 +198,8 @@ from pathlib import Path
 
 from .display import capture_relay
 from .firmware import cache as firmware_cache, lz4p, targets
-from . import hostswap, keys, layerimage, layermeta, paths, share, vmsettings
+from . import hostswap, keys, paths, vmsettings
+from .guestside import layerimage, layermeta, share
 from .board import nvm, partmap, prepare
 from .access import guestshell
 from .devices import ir_relay, mic

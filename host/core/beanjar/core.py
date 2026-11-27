@@ -636,7 +636,7 @@ class VM:
         SSH_PORT, developer mode 9922 and 9991), then its own forward= ones; Error (key forward) if
         one of those clashes with the others or with beanjar's own ports. cfg: settings to use in
         place of its vm.toml's (configure's, before they are saved)."""
-        from . import layermeta
+        from .guestside import layermeta
 
         cfg = self.config if cfg is None else cfg
         try:
@@ -873,7 +873,7 @@ class Library:
         layer.toml names (conflicts declared on either side), "versions", "default_version": a
         versioned layer's (layermeta.Versions; (), None for a layer built once; "built" and "path"
         are its default's)}; the layers a VM always gets included."""
-        from . import guestlayers, layermeta, share
+        from .guestside import components, layermeta, share
 
         meta = layermeta.load()
 
@@ -894,8 +894,8 @@ class Library:
             if v is None:
                 return share.resolve_layer(tree, target, name)[0]
             try:
-                return guestlayers.select(
-                    tree.build("components"), target, guestlayers.versioned(name, v.default)
+                return components.select(
+                    tree.build("components"), target, components.versioned(name, v.default)
                 )
             except (ValueError, OSError):
                 return None
@@ -1096,7 +1096,7 @@ class Library:
                 cfg.pop(k, None)  # debug is the default, not written out
                 continue
             elif k == "forward":
-                from . import layermeta
+                from .guestside import layermeta
 
                 try:
                     v = layermeta.forward_text(layermeta.parse_forward(v))

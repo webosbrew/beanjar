@@ -732,7 +732,7 @@ def validate(cfg, saved=False):
         except keys.Error as e:
             raise Error(str(e), "listen") from None
     if "forward" in cfg:
-        from . import layermeta
+        from .guestside import layermeta
 
         if not isinstance(cfg["forward"], str):
             raise Error("forward must be a string of ports, e.g. 8080,8081:80", "forward")
@@ -775,7 +775,7 @@ def validate(cfg, saved=False):
             "layers is a list of layer names (a-z, 0-9, '_', '-'), each NAME or NAME@VERSION",
             "layers",
         )
-    from . import layermeta
+    from .guestside import layermeta
 
     try:
         layermeta.check(layers, unknown_ok=saved)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The guest layers' layer.toml (beanjar/layermeta.py): the loader, the one check of a LAYERS
+"""The guest layers' layer.toml (beanjar/guestside/layermeta.py): the loader, the one check of a LAYERS
 selection, and this tree's own files (every guest/layers/<name>/layer.toml)."""
 
 import os
@@ -9,7 +9,8 @@ import shutil
 
 import pytest
 
-from beanjar import layermeta, paths
+from beanjar.guestside import layermeta
+from beanjar import paths
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 

@@ -95,7 +95,7 @@ disk() {
 }
 
 # --- the host's shares: the VM's runtime tree, never the checkout
-# (host/core/beanjar/share.py). "host", read-only at /host: boot.conf, the layers, binds.conf
+# (host/core/beanjar/guestside/share.py). "host", read-only at /host: boot.conf, the layers, binds.conf
 # and the guest-side scripts the launcher put there. "out", read-write at /host/out: what the guest writes
 # for the host (guest/scripts/save-logs.sh's logs, tests' results). Both are /mnt/host in webOS.
 HOSTSHARE= OUTSHARE=
@@ -249,7 +249,7 @@ else
 fi
 
 # --- layers (boot.conf's PAK_LOWERS and LAYERS, bottom to top) ---
-# Each layer is a read-only squashfs image made on the host (host/core/beanjar/layerimage.py:
+# Each layer is a read-only squashfs image made on the host (host/core/beanjar/guestside/layerimage.py:
 # root-owned files, while the host's stay the user's), a disk with the serial layer-<name>, mounted
 # in place at /run/layers/<name>: nothing is copied (docs/dev/architecture/build-and-boot.md, "Layer
 # images"). /host/layer-sources says where each was made from. "vm", the per-VM share at /run/vm,

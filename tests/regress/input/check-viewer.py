@@ -22,12 +22,12 @@ import time
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import share
+from beanjar.guestside import share
 
 BUILD = TOP / "build"
 RUN = Path(sys.argv[1]) if len(sys.argv) > 1 else BUILD
 LOGS = Path(sys.argv[2]) if len(sys.argv) > 2 else RUN
-OUT = RUN / "share/out"  # the guest's /host/out (beanjar/share.py)
+OUT = RUN / "share/out"  # the guest's /host/out (beanjar/guestside/share.py)
 ready = OUT / "viewer-probe.ready"
 ready.unlink(missing_ok=True)
 for kind in ("pointer", "keyboard", "remote"):

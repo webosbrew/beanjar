@@ -522,7 +522,7 @@ def ssh_commands(vm):
     hbchannel) with its client key and prisoner (devmode)
     with its developer key, both pinned to its known_hosts; for devmode also the key server and
     how to run the ares tools against it (beanjar ares-TOOL, ares.py)."""
-    from .. import layermeta
+    from ..guestside import layermeta
 
     ident = vm.identity_dir
     layers = vm.config.get("layers") or []

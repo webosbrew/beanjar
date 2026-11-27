@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-# The hbchannel layer (host/core/beanjar/layermeta.py reads this file).
+# The hbchannel layer (host/core/beanjar/guestside/layermeta.py reads this file).
 description = "Homebrew Channel, elevated; its root SSH on port 6622"
 # HBC installs apps through appinstalld's dev/install, which developer mode gates
 requires = ["devmode"]

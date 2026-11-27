@@ -8,7 +8,7 @@
 # Writes out/logs/NAME/ (/host/out, the VM's RUN_DIR/share/out on the host; NAME defaults to the
 # guest's UTC time), which the launcher saves to the saved logs (build/logs/NAME for the checkout
 # VM, <vm>/logs/saved/NAME for a library VM) once .done is there, and then removes: at stop, at
-# start, or with `host/scripts/vm-launcher logs` (host/core/beanjar/share.py, save). Only regular
+# start, or with `host/scripts/vm-launcher logs` (host/core/beanjar/guestside/share.py, save). Only regular
 # files and directories are saved: a symlink (cp -a keeps /var/log's), FIFO or socket here is
 # listed in the saved directory's skipped.txt, with a symlink's target. The launcher adds its own
 # webos.log, console.log, qemu.out and netstub.log there; files of those names here are not saved.

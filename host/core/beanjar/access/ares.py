@@ -53,7 +53,8 @@ import sys
 import tempfile
 import termios
 
-from .. import base, keys, layermeta, vmsettings
+from .. import base, keys, vmsettings
+from ..guestside import layermeta
 from . import remote
 from ..base import Error
 

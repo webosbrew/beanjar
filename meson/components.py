@@ -5,7 +5,7 @@
 
 A layer built once per version, NAME@VERSION (guest/layers/hbchannel), is published as the
 component NAME/versions/VERSION, and --default NAME=VERSION as NAME/versions/default: the version
-plain NAME means (host/core/beanjar/layermeta.py reads both)."""
+plain NAME means (host/core/beanjar/guestside/layermeta.py reads both)."""
 
 import argparse
 import fcntl
@@ -93,7 +93,7 @@ def copy_files(source, dest, keep):
 
 
 def publish_meta(root, name, source):
-    """A layer's layer.toml (host/core/beanjar/layermeta.py) as <root>/<name>/layer.toml, beside its
+    """A layer's layer.toml (host/core/beanjar/guestside/layermeta.py) as <root>/<name>/layer.toml, beside its
     component's selections: the same for every target, so the last target's copy stands."""
     directory = root / name
     directory.mkdir(parents=True, exist_ok=True)

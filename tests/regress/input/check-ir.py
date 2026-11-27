@@ -30,7 +30,7 @@ from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import share
+from beanjar.guestside import share
 
 SWEEP = None
 args = sys.argv[1:]
@@ -38,7 +38,7 @@ if args[:1] == ["--keys"]:
     SWEEP, args = ("service", args[2:]) if args[1:2] == ["service"] else ("normal", args[1:])
 RUN = Path(args[0]) if args else TOP / "build"
 LOGS = Path(args[1]) if len(args) > 1 else RUN
-OUT = str(RUN / "share/out")  # the guest's /host/out (beanjar/share.py)
+OUT = str(RUN / "share/out")  # the guest's /host/out (beanjar/guestside/share.py)
 capture = RUN / "share/out/ir-input-test.bin"
 capture.unlink(missing_ok=True)
 

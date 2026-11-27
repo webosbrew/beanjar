@@ -107,7 +107,7 @@ SimpleSmart and NetCast use their own always-used layers, `simplesmart`, `netcas
 ### Layer metadata (`layer.toml`)
 
 Each layer declares what the manager needs to know of it in `guest/layers/<name>/layer.toml`
-(`tests/regress/tcg/layer.toml` for `tcg-perf`), read by `host/core/beanjar/layermeta.py`:
+(`tests/regress/tcg/layer.toml` for `tcg-perf`), read by `host/core/beanjar/guestside/layermeta.py`:
 
 ```toml
 description = "Homebrew Channel, elevated; its root SSH on port 6622"   # the dialogs' line

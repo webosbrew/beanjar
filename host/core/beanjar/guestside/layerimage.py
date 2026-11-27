@@ -201,7 +201,8 @@ def referenced(tree, libraries):
     VM is running or being started on this host (any library's, the development VMs' and the regress
     harness's too: vmunits.vm_units, each VM's start lock): nothing is pruned while one may use an image.
     A VM whose layers cannot be resolved (no firmware, a layer not built) uses no image yet."""
-    from . import base, share, vmunits
+    from .. import base, vmunits
+    from . import share
 
     units = vmunits.vm_units()
     if units:

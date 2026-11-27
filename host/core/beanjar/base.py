@@ -300,7 +300,7 @@ def target(name, vm_dir, cfg, root=False):
     except FileNotFoundError:
         key = None
     if root:
-        from . import layermeta
+        from .guestside import layermeta
 
         port = layermeta.root_port(layers, cfg.get("SSH_PORT"))
     else:

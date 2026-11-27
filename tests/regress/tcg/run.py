@@ -52,7 +52,7 @@ def measure(out, profile, services, io=False, kernel=None):
         WEBOS_LOG=str(out / "webos.log"),
         CURSOR_SOCK=str(out / "cursor.sock"),
         RUN_DIR=str(out),
-    )  # the guest's shares: out/share (beanjar/share.py)
+    )  # the guest's shares: out/share (beanjar/guestside/share.py)
     if services:
         target = subprocess.run(
             [ROOT / "host/scripts/vm-launcher", "config", "TARGET"],

@@ -169,7 +169,7 @@ if guest_lane
   arm_stage = [python, stage_py, '--strip', strip, '--readelf', readelf, '--glibc-max', glibc_max]
   layers_dir = meson.project_build_root() / 'stage/layers'   # the assembled layer trees
   layers = {}                      # name -> custom target of <layers_dir>/<name>
-  # name -> its layer.toml (host/core/beanjar/layermeta.py), for a layer whose source is not
+  # name -> its layer.toml (host/core/beanjar/guestside/layermeta.py), for a layer whose source is not
   # guest/layers/<name>; published beside the layer's component
   layer_meta = {}
   # name -> the version plain <name> means, for a layer built once per version as <name>@<version>

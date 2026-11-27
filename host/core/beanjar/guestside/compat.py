@@ -21,8 +21,8 @@ import os
 import re
 import tomllib
 
-from . import semver
-from .firmware import targets
+from .. import semver
+from ..firmware import targets
 
 MODINFO_CACHE = "modinfo-params.json"
 
@@ -94,7 +94,7 @@ def _checkout_identity(tree):
 def host_identity():
     """The running host's {"version", "commit", "dirty"}: its installation.toml, or the checkout's
     (_checkout_identity); "unknown" and None for what cannot be known."""
-    from . import paths
+    from .. import paths
 
     tree = paths.TREE
     if tree.installed:
@@ -243,12 +243,12 @@ def drift_text(item):
 
 def components(tree, target, name):
     """Error unless the guest payload has every always-used component of the firmware target."""
-    from . import guestlayers, share
+    from . import components as guestside_components, share
 
     missing = []
     for layer in targets.always_layers(target):
         try:
-            if guestlayers.resolve(tree, target, layer):
+            if guestside_components.resolve(tree, target, layer):
                 continue
         except (ValueError, OSError) as e:
             raise Error(f"Cannot start '{name}': guest component {layer}: {e}") from None
