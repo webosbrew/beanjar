@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* The antenna, webos.tuner <-> dtv_soc.ko, in the arm64 initramfs.
  *
- * The host's tuner (host/core/beanjar/tuner.py) sends its channel map and the transport stream
- * of the tuned frequency over the webos.tuner virtio-serial port, and learns which frequency
+ * The host's tuner (host/core/beanjar/tuner/antenna.py) sends its channel map and the transport
+ * stream of the tuned frequency over the webos.tuner virtio-serial port, and learns which frequency
  * frontend 0 is tuned to (include/webos-tuner.h). The kernel cannot read a virtio port itself (the
  * port's file has no read_iter), so this pump copies the port's stream to /dev/dtv-soc
  * (guest/kernel/modules/dtv_soc), whose parser takes it apart, and the device's tune frames to

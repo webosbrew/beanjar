@@ -5,7 +5,7 @@
 # unless `beanjar io tuner lineup set` gave it another. One multiplex on UHF 27 with one SD
 # service and its BML data broadcast (the arib-bml folder). The network, TS and area numbers are
 # picked in the terrestrial ranges, not taken from a station. docs/user/tuner.md describes the
-# format; host/core/beanjar/tuner_lineup.py reads it.
+# format; host/core/beanjar/tuner/lineup.py reads it.
 
 broadcast = "arib"
 loop_seconds = 5  # of the picture and sound, looped

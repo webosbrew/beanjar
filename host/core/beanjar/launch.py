@@ -153,12 +153,12 @@ from . import (
     runner,
     share,
     targets,
-    tuner,
     unit,
     vmidentity,
     vmsettings,
     vmunits,
 )
+from .tuner import antenna
 
 TREE = paths.TREE
 # Every runtime path of a --dir VM follows its directory, whatever the caller's environment; the
@@ -570,19 +570,19 @@ def run(words, env=None):
         # child, which outlives the exec below and ends with this pid, serves it on QEMU's
         # webos.shell port
         start_shell_relay(p)
-    if tuner.has_tuner(p.target):
-        # the antenna (tuner.py), a child that outlives the exec below and ends with this pid
+    if antenna.has_tuner(p.target):
+        # the antenna (antenna.py), a child that outlives the exec below and ends with this pid
         helper_env = helper_environment(p.env)
         with open(os.path.join(p.run_dir, "tuner.log"), "ab") as out:
             subprocess.Popen(
                 [
                     sys.executable,
                     "-m",
-                    "beanjar.tuner",
+                    "beanjar.tuner.antenna",
                     str(os.getpid()),
                     p.run_dir,
                     p.state_dir,
-                    tuner.cache_dir(p.tree),
+                    antenna.cache_dir(p.tree),
                     p.broadcast or "",
                 ],
                 env=helper_env,

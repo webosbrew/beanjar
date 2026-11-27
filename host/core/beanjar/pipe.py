@@ -50,7 +50,8 @@ PRESS_HOLD = 0.1  # seconds a `remote press` holds each key: a short press
 def vm_layout(vm):
     """The layout the GTK viewer would show for vm: its firmware's remote, the Japanese one on an
     ARIB board (tuner.vm_broadcast, as the launch writes it to vm-info.toml)."""
-    from . import targets, tuner
+    from . import targets
+    from .tuner import antenna
     from . import remote_layouts as lib
 
     try:
@@ -59,7 +60,7 @@ def vm_layout(vm):
     except Error:
         info = {}
     else:
-        broadcast = tuner.vm_broadcast(vm)
+        broadcast = antenna.vm_broadcast(vm)
         if broadcast:
             info["broadcast"] = broadcast
     return lib.LAYOUTS[lib.remote_layout("auto", info)]

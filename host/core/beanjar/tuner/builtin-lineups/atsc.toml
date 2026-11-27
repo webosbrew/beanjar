@@ -3,7 +3,7 @@
 #
 # The built-in US lineup: the antenna of a VM on an ATSC board unless `beanjar io tuner lineup set`
 # gave it another. Three channels on the air and one on cable (C78, QAM-256, with a CVCT).
-# docs/user/tuner.md describes the format; host/core/beanjar/tuner_lineup.py reads it.
+# docs/user/tuner.md describes the format; host/core/beanjar/tuner/lineup.py reads it.
 
 broadcast = "atsc"
 timezone = "America/New_York"  # each service's programme cycle repeats from local midnight

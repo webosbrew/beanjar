@@ -72,7 +72,7 @@ params = [
 ]
 
 # the frontends' signal, the demuxes and the video decoder, fed from the host's tuner (beanjar io
-# tuner, host/core/beanjar/tuner.py)
+# tuner, host/core/beanjar/tuner/antenna.py)
 [[modules]]
 name = "dtv_soc"
 

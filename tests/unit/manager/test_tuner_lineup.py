@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""A VM's own broadcast, without a VM or tools: the lineup file format (beanjar/tuner_lineup.py)
+"""A VM's own broadcast, without a VM or tools: the lineup file format (beanjar/tuner/lineup.py)
 and its errors, the built-in lineups as files, a lineup set and reset in a VM's state; a user's
-transport stream (beanjar/tuner_ts.py): its errors and warnings on small synthesised streams, and
+transport stream (beanjar/tuner/user_stream.py): its errors and warnings on small synthesised streams, and
 the loop over it (tuner.RecordedStream: cuts, continuity counters and the discontinuity
 indicator over the wrap); the CLI's lineup and --stream for a VM on another host."""
 
@@ -20,8 +20,9 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import cli, remote, tuner, tuner_band, tuner_lineup, tuner_stream, tuner_ts
-from beanjar import tuner_stream_arib as arib
+from beanjar import cli, remote
+from beanjar.tuner import antenna, band, lineup, atsc as tuner_atsc, user_stream
+from beanjar.tuner import arib as arib
 
 ATSC_MIN = """
 broadcast = "atsc"
@@ -57,12 +58,12 @@ events = [{ title = "番組", minutes = 60, text = "説明" }]
 
 
 def parse(text, base="/nonexistent", **kw):
-    return tuner_lineup.parse(text, "t.toml", base, **kw)
+    return lineup.parse(text, "t.toml", base, **kw)
 
 
 class FormatTest(unittest.TestCase):
     def test_builtin_lineups(self):
-        atsc = tuner_lineup.default("atsc")
+        atsc = lineup.default("atsc")
         self.assertEqual([rf["rf"] for rf in atsc["rf"]], ["7", "14", "33", "C78"])
         self.assertEqual(
             [(rf["medium"], rf.get("modulation")) for rf in atsc["rf"]],
@@ -79,9 +80,9 @@ class FormatTest(unittest.TestCase):
                           True))  # fmt: skip
         self.assertEqual(svc["captions"]["language"], "eng")
         self.assertTrue(os.path.isfile(svc["captions"]["file"]))
-        self.assertIn(svc["captions"]["file"], tuner_lineup.paths(atsc))
+        self.assertIn(svc["captions"]["file"], lineup.paths(atsc))
         self.assertEqual(svc["events"][0]["minutes"], 60)
-        arib_lu = tuner_lineup.default("arib")
+        arib_lu = lineup.default("arib")
         rf = arib_lu["rf"][0]
         self.assertEqual(
             (rf["channel"], rf["network_id"], rf["tsid"], rf["area_code"], rf["remote_key"]),
@@ -90,11 +91,11 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(rf["services"][0]["service_id"], 0x0400)
         self.assertTrue(os.path.isfile(os.path.join(rf["services"][0]["bml"], "startup.bml")))
         # the built-in lineups are the tuner's
-        self.assertEqual(tuner.ATSC.channels, ["7", "14", "33", "C78"])
-        self.assertEqual(tuner.ATSC.services("7"), ["7.1 BJ7", "7.2 BJ7-2"])
-        self.assertEqual(tuner.ATSC.services("C78"), ["78.1 BJC78"])
-        self.assertEqual(tuner.ARIB.services("27"), ["1 ビーンジャー１"])
-        dvb = tuner_lineup.default("dvb")
+        self.assertEqual(antenna.ATSC.channels, ["7", "14", "33", "C78"])
+        self.assertEqual(antenna.ATSC.services("7"), ["7.1 BJ7", "7.2 BJ7-2"])
+        self.assertEqual(antenna.ATSC.services("C78"), ["78.1 BJC78"])
+        self.assertEqual(antenna.ARIB.services("27"), ["1 ビーンジャー１"])
+        dvb = lineup.default("dvb")
         self.assertEqual(
             [(rf["rf"], rf["system"]) for rf in dvb["rf"]], [("21", "t"), ("C38", "c")]
         )
@@ -110,7 +111,7 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(
             (dvb["rf"][1]["modulation"], dvb["rf"][1]["symbol_rate"]), ("qam256", 6900000)
         )
-        self.assertEqual(tuner.DVB.services("21"), ["1 Beanjar Eins", "2 Beanjar Zwei"])
+        self.assertEqual(antenna.DVB.services("21"), ["1 Beanjar Eins", "2 Beanjar Zwei"])
 
     def test_round_trip(self):
         """A built-in lineup installed and read back is the same lineup: the same key, values and
@@ -118,12 +119,12 @@ class FormatTest(unittest.TestCase):
         for b in ("atsc", "arib", "dvb"):
             with tempfile.TemporaryDirectory() as d:
                 dest = os.path.join(d, "lineup")
-                got = tuner_lineup.install(tuner_lineup.default_path(b), dest, b)
-                want = tuner_lineup.default(b)
+                got = lineup.install(lineup.default_path(b), dest, b)
+                want = lineup.default(b)
                 self.assertEqual(got["key"], want["key"], b)
-                self.assertEqual(tuner_lineup.public(got), tuner_lineup.public(want))
+                self.assertEqual(lineup.public(got), lineup.public(want))
                 self.assertEqual(got["text"], want["text"])
-                for p in tuner_lineup.paths(got):
+                for p in lineup.paths(got):
                     self.assertTrue(p.startswith(dest + os.sep), p)
 
     def test_defaults_and_values(self):
@@ -137,7 +138,7 @@ class FormatTest(unittest.TestCase):
         self.assertFalse(own["rf"][0]["services"][0]["label"])
         self.assertEqual(svc["events"], [{"title": "Show", "minutes": 30, "text": ""}])
         self.assertEqual(lu["timezone"], "America/New_York")
-        self.assertEqual(lu["video"], tuner_lineup.default("atsc")["video"])  # the built-in's
+        self.assertEqual(lu["video"], lineup.default("atsc")["video"])  # the built-in's
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, "page"))
             with open(os.path.join(d, "page", "startup.bml"), "wb") as f:
@@ -147,7 +148,7 @@ class FormatTest(unittest.TestCase):
             self.assertEqual((rf["ts_name"], rf["network_name"]), ("テスト", "テスト"))
             self.assertEqual(rf["services"][0]["provider"], "テスト")
             self.assertEqual(rf["services"][0]["bml"], os.path.join(d, "page"))
-            self.assertEqual(tuner_lineup.public(lu)["rf"][0]["services"][0]["bml"], "page")
+            self.assertEqual(lineup.public(lu)["rf"][0]["services"][0]["bml"], "page")
             # the key follows a file's content
             key = lu["key"]
             with open(os.path.join(d, "page", "startup.bml"), "wb") as f:
@@ -197,10 +198,10 @@ class FormatTest(unittest.TestCase):
             (ARIB_MIN, "page: no such folder"),
         ]  # fmt: skip
         for text, want in cases:
-            with self.subTest(want=want), self.assertRaises(tuner_lineup.Error) as e:
+            with self.subTest(want=want), self.assertRaises(lineup.Error) as e:
                 parse(text)
             self.assertIn(want, str(e.exception))
-        with self.assertRaises(tuner_lineup.Error) as e:
+        with self.assertRaises(lineup.Error) as e:
             parse(ATSC_MIN, broadcast="arib")
         self.assertIn(
             "the lineup is atsc, the board's broadcast standard is arib", str(e.exception)
@@ -212,7 +213,7 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(svc["sound"], [{"tone": 400, "language": "eng"},
                                         {"file": "/nonexistent/b.ac3", "language": "spa"}])  # fmt: skip
         self.assertEqual(svc["captions"], {"file": "/nonexistent/cc.scc", "language": "spa"})
-        self.assertEqual(tuner_lineup.paths(lu), ["/nonexistent/b.ac3", "/nonexistent/cc.scc"])
+        self.assertEqual(lineup.paths(lu), ["/nonexistent/b.ac3", "/nonexistent/cc.scc"])
         self.assertIsNone(parse(ATSC_MIN)["rf"][0]["services"][0]["captions"])
         arib_lu = parse(ARIB_MIN, check_files=False)
         self.assertEqual(
@@ -226,7 +227,7 @@ class FormatTest(unittest.TestCase):
             os.makedirs(os.path.join(d, "page"))
             with open(os.path.join(d, "page", "menu.bml"), "wb") as f:
                 f.write(b"<bml/>")
-            with self.assertRaises(tuner_lineup.Error) as e:
+            with self.assertRaises(lineup.Error) as e:
                 parse(ARIB_MIN, d)
             self.assertIn("no startup.bml", str(e.exception))
 
@@ -251,7 +252,7 @@ class FormatTest(unittest.TestCase):
             self.assertNotIn("data_component", t["pmt1"])
             self.assertIn('PCR_PID="0x121"', t["pmt1"])
             self.assertIn('remote_control_key_id="3"', t["nit"])
-            self.assertIn(f'value="{tuner_band.jp_uhf_hz(30)}"', t["nit"])
+            self.assertIn(f'value="{band.jp_uhf_hz(30)}"', t["nit"])
             self.assertEqual(t["eit"].count("<EIT "), 2)
 
     def test_arib_second_sound_track(self):
@@ -273,7 +274,7 @@ class FormatTest(unittest.TestCase):
         self.assertIn('component_tag="0x10" stream_type="0x0F" main_component="true"', t["eit"])
         self.assertIn('component_tag="0x11" stream_type="0x0F" main_component="false"', t["eit"])
         self.assertIn('ISO_639_language_code="eng"', t["eit"])
-        keep, remap = tuner_stream.ff_remap(
+        keep, remap = tuner_atsc.ff_remap(
             rf["services"], lambda i, k: arib.video_pid(i) if k is None else arib.audio_pid(i, k)
         )
         self.assertEqual(remap, ["256=273", "257=274", "258=275"])
@@ -301,7 +302,7 @@ def ts_packet(pid, payload=b"", start=False, cc=0, tsc=0, pcr=None, disc=False):
 def psi(table_id, body):
     length = len(body) + 4
     sec = bytes([table_id, 0xB0 | (length >> 8), length & 0xFF]) + body
-    return sec + tuner_stream.crc32_mpeg(sec).to_bytes(4, "big")
+    return sec + tuner_atsc.crc32_mpeg(sec).to_bytes(4, "big")
 
 
 PAT = psi(0x00, b"\x00\x01\xc1\x00\x00" + b"\x00\x01\xe1\x00")  # program 1, PMT 0x100
@@ -345,11 +346,11 @@ class StreamCheckTest(unittest.TestCase):
         self.path = os.path.join(tmp.name, "rec.ts")
 
     def check(self, broadcast="atsc", ch=20):
-        center = tuner_band.center_hz(broadcast, str(ch))
-        return tuner_ts.inspect(self.path, broadcast, center, ch)
+        center = band.center_hz(broadcast, str(ch))
+        return user_stream.inspect(self.path, broadcast, center, ch)
 
     def error(self, want, **kw):
-        with self.assertRaises(tuner.Error) as e:
+        with self.assertRaises(antenna.Error) as e:
             self.check(**kw)
         self.assertIn(want, str(e.exception))
 
@@ -394,9 +395,7 @@ class StreamCheckTest(unittest.TestCase):
 
     def test_standard_and_frequency(self):
         # ISDB-T delivery: area/guard/mode, then UHF 30 in 1/7 MHz
-        isdbt = nit(
-            0xFA, b"\x5a\x56" + round(tuner_band.jp_uhf_hz(30) * 7 / 1e6).to_bytes(2, "big")
-        )
+        isdbt = nit(0xFA, b"\x5a\x56" + round(band.jp_uhf_hz(30) * 7 / 1e6).to_bytes(2, "big"))
         tot = bytes([0x70, 0x70, 0x05]) + arib.jst_time(1_800_000_000)
         extra = [ts_packet(0x10, isdbt, start=True), ts_packet(0x14, tot, start=True)]
         stream(self.path, extra=extra)
@@ -421,8 +420,8 @@ class LoopTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "rec.ts")
             pkts = stream(path, seconds=1.0)
-            rec = tuner_ts.inspect(path, "atsc")
-            s = tuner.RecordedStream(path, rec, clock={})
+            rec = user_stream.inspect(path, "atsc")
+            s = antenna.RecordedStream(path, rec, clock={})
             out = s.next(3.05)  # three loops and a bit
             self.assertEqual(s.loops, 3)
             got = [out[i : i + 188] for i in range(0, len(out), 188)]
@@ -455,8 +454,8 @@ class LoopTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "rec.ts")
             pkts = stream(path, seconds=1.0)
-            rec = tuner_ts.inspect(path, "atsc")
-            s = tuner.RecordedStream(path, rec, clock={})
+            rec = user_stream.inspect(path, "atsc")
+            s = antenna.RecordedStream(path, rec, clock={})
             out = s.next(0.99)
             got = [out[i : i + 188] for i in range(0, len(out), 188)]
             want = []
@@ -503,7 +502,7 @@ class VmTest(unittest.TestCase):
             ("vm_broadcast", lambda vm: "atsc"),
             ("make", lambda cache, channels, hint="", lu=None: self.made.append((lu.own, list(channels)))),
         ):  # fmt: skip
-            p = mock.patch.object(tuner, name, value)
+            p = mock.patch.object(antenna, name, value)
             p.start()
             self.addCleanup(p.stop)
 
@@ -515,28 +514,28 @@ class VmTest(unittest.TestCase):
         os.makedirs(os.path.join(src, "art"))
         with open(os.path.join(src, "art", "logo.png"), "wb") as f:
             f.write(b"png")
-        tuner.save_map(self.vm.state_dir, ["7", "14"])
-        data = tuner.lineup_set(self.vm, self.tree, os.path.join(src, "lineup.toml"))
+        antenna.save_map(self.vm.state_dir, ["7", "14"])
+        data = antenna.lineup_set(self.vm, self.tree, os.path.join(src, "lineup.toml"))
         self.assertEqual((data["lineup"], data["unmapped"]), ("own", ["7", "14"]))
-        self.assertEqual(tuner.mapped(self.vm.state_dir), [])
+        self.assertEqual(antenna.mapped(self.vm.state_dir), [])
         shutil.rmtree(src)  # the VM no longer depends on the user's files
-        shown = tuner.lineup_show(self.vm)
+        shown = antenna.lineup_show(self.vm)
         self.assertEqual(
             shown["values"]["rf"][0]["services"][0]["picture"], {"image": "art/logo.png"}
         )
         self.assertIn('name = "MINE"', shown["text"])
-        st = tuner.status(self.vm)
+        st = antenna.status(self.vm)
         self.assertEqual(
             [(c["channel"], c["services"]) for c in st["channels"]], [("20", ["20.1 MINE"])]
         )
         self.assertEqual(st["lineup"], "own")
-        tuner.change(self.vm, self.tree, add=["20"])
+        antenna.change(self.vm, self.tree, add=["20"])
         self.assertEqual(self.made[-1], (True, ["20"]))
-        with self.assertRaises(tuner.Error):
-            tuner.change(self.vm, self.tree, add=["7"])  # not the own lineup's
-        data = tuner.lineup_reset(self.vm, self.tree)
+        with self.assertRaises(antenna.Error):
+            antenna.change(self.vm, self.tree, add=["7"])  # not the own lineup's
+        data = antenna.lineup_reset(self.vm, self.tree)
         self.assertEqual((data["lineup"], data["unmapped"]), ("built-in", ["20"]))
-        self.assertEqual(tuner.lineup_show(self.vm)["text"], tuner_lineup.default("atsc")["text"])
+        self.assertEqual(antenna.lineup_show(self.vm)["text"], lineup.default("atsc")["text"])
 
     def cached(self, *names):
         cache = os.path.join(self.dir, "cache")
@@ -547,7 +546,7 @@ class VmTest(unittest.TestCase):
         return cache
 
     def test_cache_keeps_what_a_lineup_refers_to(self):
-        builtin = tuner_lineup.default("atsc")["key"][:8]
+        builtin = lineup.default("atsc")["key"][:8]
         other = "0" * 8
         cache = self.cached(
             f"rf07-{builtin}-aaaa.ts",  # the built-in lineup's
@@ -558,10 +557,10 @@ class VmTest(unittest.TestCase):
             "notes.txt",
         )
         # the own lineup being set: its streams stay, the earlier edit's go
-        spec = tuner_lineup.parse(ATSC_MIN, "-", os.getcwd(), "atsc")
+        spec = lineup.parse(ATSC_MIN, "-", os.getcwd(), "atsc")
         mine = spec["key"][:8]
         self.cached(f"rf20-{mine}-dddd.ts", f"loop20-{mine}-dddd.ts")
-        tuner.lineup_set(self.vm, self.tree, "-", ATSC_MIN)
+        antenna.lineup_set(self.vm, self.tree, "-", ATSC_MIN)
         self.assertEqual(
             sorted(os.listdir(cache)),
             sorted(
@@ -575,83 +574,83 @@ class VmTest(unittest.TestCase):
             ),
         )
         # reset: the own lineup's streams go too, the built-in ones stay
-        tuner.lineup_reset(self.vm, self.tree)
+        antenna.lineup_reset(self.vm, self.tree)
         self.assertEqual(
             sorted(os.listdir(cache)),
             sorted([f"rf07-{builtin}-aaaa.ts", f"loop07-{builtin}-aaaa.ts", "notes.txt"]),
         )
 
     def test_cache_keeps_another_vms_lineup(self):
-        spec = tuner_lineup.parse(ATSC_MIN, "-", os.getcwd(), "atsc")
+        spec = lineup.parse(ATSC_MIN, "-", os.getcwd(), "atsc")
         theirs = VM(os.path.join(self.dir, "other"))
         self.vm.library.vms = lambda: [self.vm, theirs]
-        tuner_lineup.install(
-            "-", os.path.join(theirs.state_dir, tuner.LINEUP_DIR), "atsc", ATSC_MIN
-        )
+        lineup.install("-", os.path.join(theirs.state_dir, antenna.LINEUP_DIR), "atsc", ATSC_MIN)
         cache = self.cached(f"rf20-{spec['key'][:8]}-eeee.ts")
-        tuner.lineup_reset(self.vm, self.tree)
+        antenna.lineup_reset(self.vm, self.tree)
         self.assertEqual(os.listdir(cache), [f"rf20-{spec['key'][:8]}-eeee.ts"])
         # and a mirror of a VM on another host is a lineup in use too
-        mirror = tuner.remote_dir(self.dir, "pi", "tv")
+        mirror = antenna.remote_dir(self.dir, "pi", "tv")
         self.vm.library.vms = lambda: [self.vm]
         shutil.rmtree(theirs.state_dir)
-        tuner_lineup.install("-", os.path.join(mirror, tuner.LINEUP_DIR), "atsc", ATSC_MIN)
-        tuner.prune_cache(self.tree, self.vm.library)
+        lineup.install("-", os.path.join(mirror, antenna.LINEUP_DIR), "atsc", ATSC_MIN)
+        antenna.prune_cache(self.tree, self.vm.library)
         self.assertEqual(len(os.listdir(cache)), 1)
         shutil.rmtree(mirror)
-        tuner.prune_cache(self.tree, self.vm.library)
+        antenna.prune_cache(self.tree, self.vm.library)
         self.assertEqual(os.listdir(cache), [])
 
     def test_set_of_another_standard(self):
-        with self.assertRaises(tuner.Error) as e:
-            tuner.lineup_set(self.vm, self.tree, "-", ARIB_MIN)
+        with self.assertRaises(antenna.Error) as e:
+            antenna.lineup_set(self.vm, self.tree, "-", ARIB_MIN)
         self.assertIn(
             "the lineup is arib, the board's broadcast standard is atsc", str(e.exception)
         )
 
     def test_fed_lineup_keeps_only_the_file(self):
-        with mock.patch.object(tuner, "vm_broadcast", lambda vm: "arib"):
-            data = tuner.lineup_set(
+        with mock.patch.object(antenna, "vm_broadcast", lambda vm: "arib"):
+            data = antenna.lineup_set(
                 self.vm, self.tree, "-", ARIB_MIN, fed=True
             )  # page/ is elsewhere
             self.assertEqual(data["lineup"], "own")
-            lu = tuner.vm_lineup(self.vm.state_dir, "arib")
+            lu = antenna.vm_lineup(self.vm.state_dir, "arib")
             self.assertEqual(lu.channels, ["30"])
-            with self.assertRaises(tuner_stream.Error) as e:
+            with self.assertRaises(tuner_atsc.Error) as e:
                 lu.make("/nonexistent", "30", 0)
             self.assertIn("machine that feeds this VM", str(e.exception))
 
     def test_stream_map_and_unmap(self):
         rec_path = os.path.join(self.dir, "rec.ts")
         stream(rec_path)
-        data = tuner.change(self.vm, self.tree, add=["20"], stream=rec_path)
+        data = antenna.change(self.vm, self.tree, add=["20"], stream=rec_path)
         self.assertIn("no STT", " ".join(data["warnings"]))
         (c,) = [c for c in data["channels"] if c["channel"] == "20"]
         self.assertEqual((c["mapped"], c["stream"], c["services"]), (True, "rec.ts", ["program 1"]))
-        copied = os.path.join(self.vm.state_dir, tuner.STREAMS_DIR, "rf20.ts")
+        copied = os.path.join(self.vm.state_dir, antenna.STREAMS_DIR, "rf20.ts")
         self.assertTrue(os.path.isfile(copied))
         os.unlink(rec_path)  # played from the VM's state
-        recorded = tuner.streams(self.vm.state_dir)
+        recorded = antenna.streams(self.vm.state_dir)
         self.assertEqual(recorded["20"]["path"], copied)
-        player = tuner.Player("/nonexistent", print, tuner.ATSC, lambda: recorded)
+        player = antenna.Player("/nonexistent", print, antenna.ATSC, lambda: recorded)
         ready = player.ready(["20"])
-        self.assertIsInstance(ready[tuner.ATSC.tuning("20")], tuner.RecordedStream)
-        self.assertEqual(tuner.channels_of([tuner.ATSC.tuning("20")], tuner.ATSC, recorded), ["20"])
-        tuner.change(self.vm, self.tree, remove=["20"])
+        self.assertIsInstance(ready[antenna.ATSC.tuning("20")], antenna.RecordedStream)
+        self.assertEqual(
+            antenna.channels_of([antenna.ATSC.tuning("20")], antenna.ATSC, recorded), ["20"]
+        )
+        antenna.change(self.vm, self.tree, remove=["20"])
         self.assertFalse(os.path.exists(copied))
-        self.assertEqual(tuner.streams(self.vm.state_dir), {})
-        with self.assertRaises(tuner.Error):
-            tuner.change(self.vm, self.tree, add=["37"], stream=rec_path)
+        self.assertEqual(antenna.streams(self.vm.state_dir), {})
+        with self.assertRaises(antenna.Error):
+            antenna.change(self.vm, self.tree, add=["37"], stream=rec_path)
 
     def test_bad_stream_is_not_kept(self):
         rec_path = os.path.join(self.dir, "rec.ts")
         stream(rec_path, tsc_at=0)
-        with self.assertRaises(tuner.Error) as e:
-            tuner.change(self.vm, self.tree, add=["20"], stream=rec_path)
+        with self.assertRaises(antenna.Error) as e:
+            antenna.change(self.vm, self.tree, add=["20"], stream=rec_path)
         self.assertIn("scrambled", str(e.exception))
-        self.assertEqual(tuner.mapped(self.vm.state_dir), [])
+        self.assertEqual(antenna.mapped(self.vm.state_dir), [])
         self.assertFalse(
-            os.path.exists(os.path.join(self.vm.state_dir, tuner.STREAMS_DIR, "rf20.ts"))
+            os.path.exists(os.path.join(self.vm.state_dir, antenna.STREAMS_DIR, "rf20.ts"))
         )
 
 
@@ -673,9 +672,9 @@ class RemoteTest(unittest.TestCase):
         self.addCleanup(p.stop)
         self.calls = []
         mock.patch.object(remote, "transport", self.transport).start()
-        self.made = mock.patch.object(tuner, "make").start()
-        self.start = mock.patch.object(tuner, "start_feed").start()
-        mock.patch.object(tuner, "stop_feed").start()
+        self.made = mock.patch.object(antenna, "make").start()
+        self.start = mock.patch.object(antenna, "start_feed").start()
+        mock.patch.object(antenna, "stop_feed").start()
         self.addCleanup(mock.patch.stopall)
         remote.add_host("pi", "ssh://pi.example")
 
@@ -693,7 +692,7 @@ class RemoteTest(unittest.TestCase):
         }  # fmt: skip
         if words[2] == "lineup":
             data = {"name": "tv", "broadcast": "atsc", "lineup": "own", "text": ATSC_MIN,
-                    "values": tuner_lineup.public(parse(ATSC_MIN)), "unmapped": []}  # fmt: skip
+                    "values": lineup.public(parse(ATSC_MIN)), "unmapped": []}  # fmt: skip
         return 0, json.dumps(data).encode(), ""
 
     def beanjar(self, *argv):
@@ -706,7 +705,7 @@ class RemoteTest(unittest.TestCase):
         return rc, out.getvalue(), err.getvalue()
 
     def mirror(self):
-        return tuner.remote_dir(os.path.join(self.dir, "lib"), "pi", "tv")
+        return antenna.remote_dir(os.path.join(self.dir, "lib"), "pi", "tv")
 
     def test_lineup_set(self):
         path = os.path.join(self.dir, "mine.toml")
@@ -720,13 +719,13 @@ class RemoteTest(unittest.TestCase):
         )
         self.assertEqual(stdin.decode(), ATSC_MIN)
         self.assertTrue(
-            os.path.isfile(os.path.join(self.mirror(), tuner.LINEUP_DIR, "lineup.toml"))
+            os.path.isfile(os.path.join(self.mirror(), antenna.LINEUP_DIR, "lineup.toml"))
         )
         self.assertEqual(self.made.call_args.args[1], ["20"])  # the mapped channel, made here
         self.assertIn("its own ATSC lineup: RF 20 (1 service)", out)
         rc, _out, err = self.beanjar("io", "tuner", "lineup", "reset", "pi/tv")
         self.assertEqual(rc, 0, err)
-        self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.LINEUP_DIR)))
+        self.assertFalse(os.path.exists(os.path.join(self.mirror(), antenna.LINEUP_DIR)))
 
     def test_map_stream(self):
         rec_path = os.path.join(self.dir, "rec.ts")
@@ -738,7 +737,7 @@ class RemoteTest(unittest.TestCase):
         self.assertEqual(
             words, ["io", "tuner", "map", "local/tv", "20", "--fed", "--stream", "rec.ts", "--json"]
         )
-        self.assertTrue(os.path.isfile(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf20.ts")))
+        self.assertTrue(os.path.isfile(os.path.join(self.mirror(), antenna.STREAMS_DIR, "rf20.ts")))
         self.assertEqual(self.start.call_args.kwargs["content"], self.mirror())
         self.made.assert_not_called()
         rc, _out, err = self.beanjar(
@@ -747,7 +746,9 @@ class RemoteTest(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("one physical channel", err)
         self.assertEqual(self.beanjar("io", "tuner", "unmap", "pi/tv", "all")[0], 0)
-        self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf20.ts")))
+        self.assertFalse(
+            os.path.exists(os.path.join(self.mirror(), antenna.STREAMS_DIR, "rf20.ts"))
+        )
 
     def test_lineup_files_reach_the_feed(self):
         """The lineup's files are copied into the mirror the feed reads, and the lineup the feed
@@ -762,9 +763,9 @@ class RemoteTest(unittest.TestCase):
         rc, _out, err = self.beanjar("io", "tuner", "lineup", "set", "pi/tv", path)
         self.assertEqual(rc, 0, err)
         shutil.rmtree(src)  # the feed does not depend on the user's folder
-        with open(os.path.join(self.mirror(), tuner.LINEUP_DIR, "art", "logo.png"), "rb") as f:
+        with open(os.path.join(self.mirror(), antenna.LINEUP_DIR, "art", "logo.png"), "rb") as f:
             self.assertEqual(f.read(), b"png")
-        fed = tuner.lineup_for_systems(self.mirror(), {tuner.SYS_ATSC})
+        fed = antenna.lineup_for_systems(self.mirror(), {antenna.SYS_ATSC})
         self.assertTrue(fed.own)
         self.assertEqual(fed.spec["key"], self.made.call_args.kwargs["lu"].spec["key"])
 
@@ -777,14 +778,14 @@ class RemoteTest(unittest.TestCase):
         self.assertNotEqual(rc, 0)
         self.assertIn("nope.png", err)
         self.assertEqual([w for w, _ in self.calls[calls:] if w[3] == "set"], [])
-        self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.LINEUP_DIR)))
+        self.assertFalse(os.path.exists(os.path.join(self.mirror(), antenna.LINEUP_DIR)))
 
     def test_lineup_from_stdin(self):
         with mock.patch("sys.stdin", io.StringIO(ATSC_MIN)):
             rc, _out, err = self.beanjar("io", "tuner", "lineup", "set", "pi/tv", "-")
         self.assertEqual(rc, 0, err)
         self.assertEqual(self.calls[-1][1].decode(), ATSC_MIN)
-        self.assertIsNotNone(tuner.own_lineup(self.mirror()))
+        self.assertIsNotNone(antenna.own_lineup(self.mirror()))
 
     def test_stream_is_copied_whole_and_read_by_the_feed(self):
         rec_path = os.path.join(self.dir, "rec.ts")
@@ -792,12 +793,14 @@ class RemoteTest(unittest.TestCase):
         self.beanjar("io", "tuner", "map", "pi/tv", "20", "--stream", rec_path)
         with (
             open(rec_path, "rb") as a,
-            open(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf20.ts"), "rb") as b,
+            open(os.path.join(self.mirror(), antenna.STREAMS_DIR, "rf20.ts"), "rb") as b,
         ):
             self.assertEqual(a.read(), b.read())
-        rec = tuner.streams(self.mirror())["20"]
+        rec = antenna.streams(self.mirror())["20"]
         self.assertTrue(os.path.isfile(rec["path"]))
-        self.assertEqual(tuner.mapped(self.mirror()), [])  # the map is the host's; the feed asks it
+        self.assertEqual(
+            antenna.mapped(self.mirror()), []
+        )  # the map is the host's; the feed asks it
 
     def test_map_without_stream_goes_back_to_the_lineup(self):
         rec_path = os.path.join(self.dir, "rec.ts")
@@ -809,8 +812,10 @@ class RemoteTest(unittest.TestCase):
             self.calls[-1][0], ["io", "tuner", "map", "local/tv", "7", "--fed", "--json"]
         )
         self.assertEqual(self.made.call_args.args[1], ["7"])  # the lineup's stream, made here
-        self.assertEqual(tuner.streams(self.mirror()), {})
-        self.assertFalse(os.path.exists(os.path.join(self.mirror(), tuner.STREAMS_DIR, "rf07.ts")))
+        self.assertEqual(antenna.streams(self.mirror()), {})
+        self.assertFalse(
+            os.path.exists(os.path.join(self.mirror(), antenna.STREAMS_DIR, "rf07.ts"))
+        )
 
     def test_host_refusal_is_reported(self):
         rec_path = os.path.join(self.dir, "rec.ts")

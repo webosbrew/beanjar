@@ -5,7 +5,7 @@ channels carry a signal, and the transport stream of the one the set is tuned to
 
 `beanjar io tuner list NAME` lists the lineup's physical channels (Lineup: the lineup in effect,
 the VM's own, `io tuner lineup set`, kept in its state's tuner-lineup/, else the built-in one of
-the board's broadcast standard, lineups/atsc.toml, arib.toml or dvb.toml; tuner_lineup.py reads
+the board's broadcast standard, builtin-lineups/atsc.toml, arib.toml or dvb.toml; lineup.py reads
 them) and
 those of the user's streams, which of them are mapped and what the set is tuned to; `beanjar io
 tuner map NAME RF...` and `unmap NAME RF...|all` change the map, which is kept in the VM's state
@@ -24,7 +24,7 @@ Two halves, which may run on two machines:
   (ATSC STT, ISDB and DVB TDT and TOT) set to now (include/webos-tuner.h's frames). Each RF of the
   map carries its own delivery system, and a stream goes only to a tune of that frequency and
   delivery system.
-- The feeder (Tuner) runs beside QEMU: the launcher starts it (`python -m beanjar.tuner PID
+- The feeder (Tuner) runs beside QEMU: the launcher starts it (`python -m beanjar.tuner.antenna PID
   RUN_DIR STATE_DIR CACHE BROADCAST`, the board's standard) beside a VM that has the webos.tuner
   port (qemu.py). It connects to QEMU's socket for the port (RUN_DIR's tuner.sock), writes what it
   does to RUN_DIR's tuner-status.json and ends with QEMU (PID). It listens on RUN_DIR's tuner-feed.sock for a feed:
@@ -36,7 +36,7 @@ Two halves, which may run on two machines:
 A VM on another host (`beanjar io tuner map HOST/NAME RF...`) is fed from this machine: the host's
 beanjar keeps the map without making streams (--fed; of an own lineup only the file, of a user's
 stream only its name), this machine keeps the VM's own lineup and streams with their files
-(remote_dir), and a feed process here (`python -m beanjar.tuner feed HOST URI NAME SOCKET CACHE
+(remote_dir), and a feed process here (`python -m beanjar.tuner.antenna feed HOST URI NAME SOCKET CACHE
 DIR`, started detached by start_feed) reaches its
 tuner-feed.sock through a forward of the host's shared ssh connection (ares.Forward), so only the
 tuned channel crosses the network, encrypted, over the connection beanjar already has. The feed
@@ -57,16 +57,9 @@ import tempfile
 import threading
 import time
 
-from . import (
-    base,
-    tuner_band,
-    tuner_lineup,
-    tuner_stream,
-    tuner_stream_arib,
-    tuner_stream_dvb,
-    tuner_ts,
-)
-from .base import Error
+from .. import base
+from . import band, lineup as tuner_lineup, atsc, arib, dvb, user_stream
+from ..base import Error
 
 MAGIC = 0x4E555457
 MAP, TS, TUNE = 1, 2, 3
@@ -77,10 +70,10 @@ SOCK = "tuner.sock"
 FEED_SOCK = "tuner-feed.sock"  # in RUN_DIR: where a generator elsewhere connects
 TICK = 0.02  # seconds between sends
 TOLERANCE_HZ = 1_000_000  # dtv_soc.c's LOCK_TOLERANCE_HZ
-SYS_ISDBT, SYS_ATSC = tuner_band.SYS_ISDBT, tuner_band.SYS_ATSC
+SYS_ISDBT, SYS_ATSC = band.SYS_ISDBT, band.SYS_ATSC
 CHUNK_PACKETS = 512  # include/webos-tuner.h's WEBOS_TUNER_TS_MAX
 MAP_MAX = 128  # include/webos-tuner.h's WEBOS_TUNER_MAP_MAX
-LIMITS = {MAP: MAP_MAX * 8, TS: CHUNK_PACKETS * tuner_stream.PACKET, TUNE: 64}  # payload bytes
+LIMITS = {MAP: MAP_MAX * 8, TS: CHUNK_PACKETS * atsc.PACKET, TUNE: 64}  # payload bytes
 FEED_PREFIX = "beanjar-tuner-"  # a feed's record directory: beanjar-tuner-PID-RANDOM
 FEED_INFO = "feed.json"
 FEED_WAIT = 15.0  # seconds a feed waits for the feeder's first frame
@@ -107,7 +100,7 @@ def map_channels(payload):
 
 def ts_frames(freq, packets):
     """TS frames of the packets (bytes, a multiple of 188), at most CHUNK_PACKETS each."""
-    step = CHUNK_PACKETS * tuner_stream.PACKET
+    step = CHUNK_PACKETS * atsc.PACKET
     return b"".join(frame(TS, freq, packets[i : i + step]) for i in range(0, len(packets), step))
 
 
@@ -132,12 +125,12 @@ class Lineup:
         """The centre frequency of RF ch of the band (any of it, not only the lineup's); Error for
         an RF the band does not have."""
         try:
-            return tuner_band.center_hz(self.name, ch)
-        except tuner_band.Error as e:
+            return band.center_hz(self.name, ch)
+        except band.Error as e:
             raise Error(str(e)) from None
 
     def delsys(self, ch):
-        return tuner_band.delsys(self.name, ch, self.system.get(ch))
+        return band.delsys(self.name, ch, self.system.get(ch))
 
     def tuning(self, ch):
         """(centre frequency, delivery system) of RF ch."""
@@ -154,14 +147,14 @@ class Lineup:
 
 # the delivery systems a board of each standard tunes (tuner_band)
 SYSTEMS = {
-    "atsc": {tuner_band.SYS_ATSC, tuner_band.SYS_DVBC_ANNEX_B},
-    "arib": {tuner_band.SYS_ISDBT},
-    "dvb": {tuner_band.SYS_DVBT, tuner_band.SYS_DVBT2, tuner_band.SYS_DVBC_ANNEX_A},
+    "atsc": {band.SYS_ATSC, band.SYS_DVBC_ANNEX_B},
+    "arib": {band.SYS_ISDBT},
+    "dvb": {band.SYS_DVBT, band.SYS_DVBT2, band.SYS_DVBC_ANNEX_A},
 }
 
 
 def fed_make(cache, ch, now):
-    raise tuner_stream.Error(
+    raise atsc.Error(
         "the lineup's files are on the machine that feeds this VM: map the channel from there "
         "(beanjar io tuner map HOST/NAME RF...)"
     )
@@ -182,39 +175,35 @@ def from_spec(spec, own=False, fed=False):
     if b == "arib":
         return Lineup(
             "arib",
-            tuner_stream_arib.MUX_RATE,
+            arib.MUX_RATE,
             _services(spec, lambda rf, s: f"{rf['remote_key']} {s['name']}"),
-            fed_make
-            if fed
-            else lambda cache, ch, now: tuner_stream_arib.make_cached(cache, spec, ch, now),
-            {tuner_stream_arib.TOT_PID: lambda p, now: tuner_stream_arib.time_rewrite(p, now)},
+            fed_make if fed else lambda cache, ch, now: arib.make_cached(cache, spec, ch, now),
+            {arib.TOT_PID: lambda p, now: arib.time_rewrite(p, now)},
             spec,
             own,
         )
     if b == "dvb":
         return Lineup(
             "dvb",
-            tuner_stream_dvb.MUX_RATE,
+            dvb.MUX_RATE,
             _services(spec, lambda rf, s: f"{s['lcn']} {s['name']}"),
-            fed_make
-            if fed
-            else lambda cache, ch, now: tuner_stream_dvb.make_cached(cache, spec, ch, now),
-            {tuner_stream_dvb.TOT_PID: lambda p, now: tuner_stream_dvb.time_rewrite(p, now)},
+            fed_make if fed else lambda cache, ch, now: dvb.make_cached(cache, spec, ch, now),
+            {dvb.TOT_PID: lambda p, now: dvb.time_rewrite(p, now)},
             spec,
             own,
         )
     return Lineup(
         "atsc",
-        tuner_stream.MUX_RATE,
+        atsc.MUX_RATE,
         _services(spec, lambda rf, s: f"{s['major']}.{s['minor']} {s['name']}"),
-        fed_make if fed else lambda cache, ch, now: tuner_stream.make(cache, spec, ch, now),
-        {tuner_stream.BASE_PID: lambda p, now: tuner_stream.stt_rewrite(p, now)},
+        fed_make if fed else lambda cache, ch, now: atsc.make(cache, spec, ch, now),
+        {atsc.BASE_PID: lambda p, now: atsc.stt_rewrite(p, now)},
         spec,
         own,
     )
 
 
-# the built-in lineups by broadcast standard (targets.BROADCASTS): lineups/atsc.toml, arib.toml
+# the built-in lineups by broadcast standard (targets.BROADCASTS): builtin-lineups/atsc.toml, arib.toml
 # and dvb.toml
 ATSC = from_spec(tuner_lineup.default("atsc"))
 ARIB = from_spec(tuner_lineup.default("arib"))
@@ -362,26 +351,26 @@ class Stream:
     lineup's: the ATSC STT, the ISDB TDT and TOT), so the set's clock follows the host's instead of
     repeating with the loop."""
 
-    def __init__(self, path, rate=tuner_stream.MUX_RATE, clock=None):
+    def __init__(self, path, rate=atsc.MUX_RATE, clock=None):
         self.path = path
         with open(path, "rb") as f:
             self.data = f.read()
-        self.count = len(self.data) // tuner_stream.PACKET
+        self.count = len(self.data) // atsc.PACKET
         self.rate = rate
         self.clock = ATSC.clock if clock is None else clock
         self.at = 0
         self.owed = 0.0
 
     def next(self, seconds, now=None):
-        self.owed += seconds * self.rate / 8 / tuner_stream.PACKET
+        self.owed += seconds * self.rate / 8 / atsc.PACKET
         n = int(self.owed)
         self.owed -= n
         out = []
         for _ in range(n):
-            p = self.data[self.at * tuner_stream.PACKET : (self.at + 1) * tuner_stream.PACKET]
+            p = self.data[self.at * atsc.PACKET : (self.at + 1) * atsc.PACKET]
             self.at = (self.at + 1) % self.count
             pid = ((p[1] & 0x1F) << 8) | p[2]
-            if pid == tuner_stream.NULL_PID:
+            if pid == atsc.NULL_PID:
                 continue
             rewrite = self.clock.get(pid)
             if rewrite is not None:
@@ -403,7 +392,7 @@ class RecordedStream(Stream):
         self.path = path
         with open(path, "rb") as f:
             self.data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-        self.count = len(self.data) // tuner_stream.PACKET
+        self.count = len(self.data) // atsc.PACKET
         self.rate = rec["rate"]
         self.clock = ATSC.clock if clock is None else clock
         self.cuts = {int(pid): cut for pid, cut in rec.get("cuts", {}).items()}
@@ -415,11 +404,11 @@ class RecordedStream(Stream):
         self.loops = 0
 
     def next(self, seconds, now=None):
-        self.owed += seconds * self.rate / 8 / tuner_stream.PACKET
+        self.owed += seconds * self.rate / 8 / atsc.PACKET
         n = int(self.owed)
         self.owed -= n
         out = []
-        size = tuner_stream.PACKET
+        size = atsc.PACKET
         for _ in range(n):
             i = self.at
             p = self.data[i * size : (i + 1) * size]
@@ -428,7 +417,7 @@ class RecordedStream(Stream):
                 self.loops += 1
                 self.discontinuity = set(self.pcr_pids)
             pid = ((p[1] & 0x1F) << 8) | p[2]
-            if pid == tuner_stream.NULL_PID:
+            if pid == atsc.NULL_PID:
                 continue
             cut = self.cuts.get(pid)
             if cut is not None and not cut[0] <= i < cut[1]:
@@ -458,7 +447,7 @@ def mapped(state_dir):
     """The physical channels mapped for the VM ("7", "C78"), air before cable, by number."""
     try:
         with open(os.path.join(state_dir, STATE)) as f:
-            return sorted(set(json.load(f).get("channels", [])), key=tuner_band.sort_key)
+            return sorted(set(json.load(f).get("channels", [])), key=band.sort_key)
     except (OSError, ValueError):
         return []
 
@@ -472,7 +461,7 @@ def save_map(state_dir, channels, streams=None):
             old = json.load(f)
     except (OSError, ValueError):
         old = {}
-    data = {"channels": sorted(set(channels), key=tuner_band.sort_key)}
+    data = {"channels": sorted(set(channels), key=band.sort_key)}
     if streams is None:
         kept = old.get("streams") or {}
     else:
@@ -490,7 +479,7 @@ def channels_of(wanted, lu=ATSC, extra=()):
     """The physical channels, of the lineup and extra (the user's streams' channels), among wanted
     [(frequency, delivery system)] (within TOLERANCE_HZ), sorted; pairs of none are left out."""
     out = []
-    for ch in sorted(set(lu.channels) | set(extra), key=tuner_band.sort_key):
+    for ch in sorted(set(lu.channels) | set(extra), key=band.sort_key):
         f, d = lu.tuning(ch)
         if any(abs(f - wf) <= TOLERANCE_HZ and d == wd for wf, wd in wanted):
             out.append(ch)
@@ -524,12 +513,12 @@ def prune_cache(tree, library):
             own = None
         if own is not None:
             keep.add(own.spec["key"][:8])
-    return tuner_stream.prune(cache_dir(tree), keep)
+    return atsc.prune(cache_dir(tree), keep)
 
 
 def has_tuner(target):
     """Whether the target's board has our tuner: dtv_soc among its modules."""
-    from . import targets
+    from .. import targets
 
     return any(m.name == "dtv_soc" for m in targets.soc(target).modules)
 
@@ -537,7 +526,7 @@ def has_tuner(target):
 def vm_broadcast(vm):
     """The broadcast standard of the VM's board (targets.board_broadcast), None if it names none or
     cannot be worked out."""
-    from . import targets
+    from .. import targets
 
     try:
         return targets.board_broadcast(
@@ -580,7 +569,7 @@ def status(vm):
                 "services": stream_services(recorded[ch]) if ch in recorded else lu.services(ch),
                 "stream": recorded[ch]["name"] if ch in recorded else None,
             }
-            for ch in sorted(set(lu.channels) | set(recorded), key=tuner_band.sort_key)
+            for ch in sorted(set(lu.channels) | set(recorded), key=band.sort_key)
         ],
         "tuned_hz": st.get("tuned_hz"),
         "tuned_delsys": st.get("tuned_delsys"),
@@ -603,7 +592,7 @@ def make(cache, channels, hint="", lu=ATSC):
     for ch in channels:
         try:
             lu.make(cache, ch, now)
-        except (tuner_stream.Error, Error, OSError) as e:
+        except (atsc.Error, Error, OSError) as e:
             raise Error(f"tuner: {e}{hint}") from None
 
 
@@ -613,7 +602,7 @@ MAKE_HINT = "; or map them from a machine that has the tools: beanjar io tuner m
 def inspect_stream(path, lu, ch):
     """tuner_ts.inspect of a user's stream for the lineup's standard and RF ch."""
     lu.check_band(ch)
-    return tuner_ts.inspect(path, lu.name, lu.center_hz(ch), ch)
+    return user_stream.inspect(path, lu.name, lu.center_hz(ch), ch)
 
 
 def put_stream(state_dir, ch, path, rec):
@@ -791,7 +780,7 @@ class Player:
                     s = RecordedStream(path, rec, lu.clock)
                 else:
                     s = Stream(path, lu.rate, lu.clock)
-            except (tuner_stream.Error, Error, OSError, ValueError) as e:
+            except (atsc.Error, Error, OSError, ValueError) as e:
                 if self.failed.get(ch) != str(e):
                     self.log(f"rf{ch}: {e}")
                 self.failed[ch] = str(e)
@@ -829,7 +818,7 @@ class Sender:
             packets = s.next(min(now - self.last, 0.2))
             if packets:
                 self.send(ts_frames(tuned, packets))
-                self.counted(len(packets) // tuner_stream.PACKET)
+                self.counted(len(packets) // atsc.PACKET)
         self.last = now
 
 
@@ -979,7 +968,7 @@ class Tuner:
                     if kind == MAP:
                         self.feed_map = f
                     else:
-                        self.count(len(payload) // tuner_stream.PACKET)
+                        self.count(len(payload) // atsc.PACKET)
                     try:
                         self.to_qemu(f)
                     except OSError:
@@ -1191,7 +1180,7 @@ def feed_session(sock, player, log, on_status=None, wait=FEED_WAIT, content=None
 
 
 def feeds_parent():
-    from . import ares
+    from .. import ares
 
     return ares.home_parent() or tempfile.gettempdir()
 
@@ -1221,9 +1210,17 @@ def find_feed(host, name, parent=None):
 
 
 def feed_argv(host, uri, name, address, cache, content=None):
-    return [sys.executable, "-m", "beanjar.tuner", "feed", host, uri, name, address, cache] + (
-        [content] if content else []
-    )
+    return [
+        sys.executable,
+        "-m",
+        "beanjar.tuner.antenna",
+        "feed",
+        host,
+        uri,
+        name,
+        address,
+        cache,
+    ] + ([content] if content else [])
 
 
 def start_feed(host, uri, name, address, cache, spawn=subprocess.Popen, parent=None,
@@ -1231,7 +1228,7 @@ def start_feed(host, uri, name, address, cache, spawn=subprocess.Popen, parent=N
     """A feed of VM name on host from this machine, started if none runs: its feed.json once it
     is connected. Error if it ends first or does not connect within wait seconds (its log's last
     lines)."""
-    from . import ares
+    from .. import ares
 
     running = find_feed(host, name, parent)
     if running:
@@ -1288,13 +1285,13 @@ def stop_feed(host, name, parent=None, wait=5.0):
 
 
 def feed_main(argv, connect=socket.create_connection):
-    """python -m beanjar.tuner feed HOST URI NAME SOCKET CACHE [DIR]: feeds VM name on host through
+    """python -m beanjar.tuner.antenna feed HOST URI NAME SOCKET CACHE [DIR]: feeds VM name on host through
     a forward of the shared ssh connection to SOCKET there (its tuner-feed.sock), with the streams
     made into CACHE here (of the VM's own lineup and the user's streams in DIR, remote_dir), until the feeder ends the connection or SIGTERM or SIGHUP; status 0 when
     the connection ended, 1 when it could not be made."""
     import shutil
 
-    from . import ares
+    from .. import ares
 
     host, uri, name, address, cache = argv[:5]
     content = argv[5] if len(argv) > 5 else None

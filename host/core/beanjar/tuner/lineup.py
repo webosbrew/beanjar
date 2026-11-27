@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Lineup files: the broadcast a VM's antenna carries, in TOML (docs/user/tuner.md): its
 physical channels, their services, each service's programme events, picture and sound, and on
-ARIB a folder of BML documents per service. The generators (tuner_stream.py for ATSC,
-tuner_stream_arib.py for ISDB-T, tuner_stream_dvb.py for DVB) make their streams from a parsed
-lineup only; the built-in lineups are the files in lineups/ beside this module, one per broadcast
+ARIB a folder of BML documents per service. The generators (atsc.py for ATSC,
+arib.py for ISDB-T, dvb.py for DVB) make their streams from a parsed
+lineup only; the built-in lineups are the files in builtin-lineups/ beside this module, one per broadcast
 standard.
 
 Each physical channel has its name, "rf" (tuner_band: "7" on the air, "C78" on cable): an ATSC one
@@ -25,8 +25,8 @@ import shutil
 import tomllib
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from . import tuner_band
-from .base import Error as BaseError
+from . import band
+from ..base import Error as BaseError
 
 
 class Error(BaseError):
@@ -34,7 +34,7 @@ class Error(BaseError):
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULTS_DIR = os.path.join(HERE, "lineups")
+DEFAULTS_DIR = os.path.join(HERE, "builtin-lineups")
 BROADCASTS = ("atsc", "arib", "dvb")
 FILE = "lineup.toml"  # an installed lineup's name in its directory
 META = ("source", "base", "text", "key")  # a parsed lineup's keys that are not the file's values
@@ -277,8 +277,8 @@ MODULATIONS = ("qam64", "qam256")  # a US cable channel's, its CVCT's modulation
 
 def _band(w, where, broadcast, name):
     try:
-        tuner_band.center_hz(broadcast, name)
-    except tuner_band.Error as e:
+        band.center_hz(broadcast, name)
+    except band.Error as e:
         w.fail(where, str(e))
     return name
 
@@ -290,7 +290,7 @@ def _atsc_rf(w, where, rf, base, check):
         w.fail(f"{where}.medium", f"{medium!r}: air or cable")
     cable = medium == "cable"
     ch = _int(w, f"{where}.channel", rf["channel"], 1, 135 if cable else 36)
-    name = _band(w, f"{where}.channel", "atsc", tuner_band.name(ch, cable))
+    name = _band(w, f"{where}.channel", "atsc", band.name(ch, cable))
     if "modulation" in rf and not cable:
         w.fail(f"{where}.modulation", 'a cable channel\'s (medium = "cable"); air is 8VSB')
     modulation = rf.get("modulation", "qam256")
@@ -353,7 +353,7 @@ def _dvb_rf(w, where, rf, base, check):
         w.fail(f"{where}.system", f"{system!r}: t (DVB-T) or c (DVB-C); DVB-T2 is not made yet")
     cable = system == "c"
     ch = _int(w, f"{where}.channel", rf["channel"], 1, 106 if cable else 69)
-    name = _band(w, f"{where}.channel", "dvb", tuner_band.name(ch, cable))
+    name = _band(w, f"{where}.channel", "dvb", band.name(ch, cable))
     for k in ("modulation", "symbol_rate"):
         if k in rf and not cable:
             w.fail(f"{where}.{k}", 'a DVB-C channel\'s (system = "c")')
@@ -543,7 +543,7 @@ def parse(text, source, base, broadcast=None, check_files=True):
     make_rf = {"atsc": _atsc_rf, "arib": _arib_rf, "dvb": _dvb_rf}[b]
     out["rf"] = [make_rf(w, f"rf[{i}]", _table(w, f"rf[{i}]", rf), base, check_files)
                  for i, rf in enumerate(rfs)]  # fmt: skip
-    out["rf"].sort(key=lambda rf: tuner_band.sort_key(rf["rf"]))
+    out["rf"].sort(key=lambda rf: band.sort_key(rf["rf"]))
     _unique(w, "rf", [rf["rf"] for rf in out["rf"]], "RF")
     if b == "atsc":
         services = [s for rf in out["rf"] for s in rf["services"]]

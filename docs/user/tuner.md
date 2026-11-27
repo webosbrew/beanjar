@@ -60,7 +60,7 @@ host that this machine feeds) has any more, an earlier edit's included; the buil
 streams stay. A removed stream is made again when a lineup of that content comes back.
 
 The built-in lineups are complete examples: `beanjar io tuner lineup show NAME` prints the one in
-effect, and they are `host/core/beanjar/lineups/atsc.toml`, `arib.toml` and `dvb.toml` in the
+effect, and they are `host/core/beanjar/tuner/builtin-lineups/atsc.toml`, `arib.toml` and `dvb.toml` in the
 source.
 
 ### ATSC (US)
@@ -114,7 +114,7 @@ events = [
   They go out as CEA-608 CC1 in the pictures' user data (ATSC A/53), with the caption service
   descriptor in the PMT and the guide. They repeat with the picture, so they must fit in
   `loop_seconds`. `language` defaults to `eng`. The built-in 7.1 has a pair of test captions
-  (`lineups/captions-eng.scc` in the source). A US set finds, decodes and draws them once its
+  (`builtin-lineups/captions-eng.scc` in the source). A US set finds, decodes and draws them once its
   captions are on (the system setting `caption`/`captionEnable`); drawing is checked on W23P
   (K8LPN) so far.
 

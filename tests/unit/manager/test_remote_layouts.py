@@ -92,7 +92,7 @@ def test_code_valid():
 def vm(broadcast):
     v = mock.Mock()
     v.target.return_value = ("o22", "queue")
-    return v, mock.patch("beanjar.tuner.vm_broadcast", return_value=broadcast)
+    return v, mock.patch("beanjar.tuner.antenna.vm_broadcast", return_value=broadcast)
 
 
 def test_vm_layout_arib():

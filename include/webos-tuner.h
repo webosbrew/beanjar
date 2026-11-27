@@ -8,7 +8,7 @@
 #include <stdint.h>
 #endif
 /* The antenna on the webos.tuner virtio-serial port: between the host's tuner
- * (host/core/beanjar/tuner.py) and dtv_soc.ko (guest/kernel/modules/dtv_soc), through the
+ * (host/core/beanjar/tuner/antenna.py) and dtv_soc.ko (guest/kernel/modules/dtv_soc), through the
  * initramfs's pump (guest/initramfs/src/virtio-tuner.c), which copies both ways between the port
  * and /dev/dtv-soc (the kernel cannot read a virtio port itself).
  *

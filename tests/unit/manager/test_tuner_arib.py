@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The ISDB-T stream with a BML data broadcast (beanjar/tuner_stream_arib.py): the carousel
+"""The ISDB-T stream with a BML data broadcast (beanjar/tuner/arib.py): the carousel
 messages' ARIB layout and the page without tools; then, with TSDuck and ffmpeg, a made stream read
 back by TSDuck: the PMT's streams and descriptors, the SI around it, the DII and DDB sections
 repeated on the data PID and module 0 rebuilt from them holding startup.bml byte for byte.
@@ -22,12 +22,12 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar import tuner_band, tuner_lineup, tuner_stream
-from beanjar import tuner_stream_arib as arib
+from beanjar.tuner import band, lineup, atsc
+from beanjar.tuner import arib as arib
 
-LINEUP = tuner_lineup.default("arib")
+LINEUP = lineup.default("arib")
 SERVICE = LINEUP["rf"][0]["services"][0]
-PARTS = tuner_lineup.bml_parts(SERVICE["bml"])
+PARTS = lineup.bml_parts(SERVICE["bml"])
 DOCUMENTS = {name: body for name, _type, body in PARTS}
 WINDOW = (48, 36, 480, 270)  # the built-in menu.bml's video window (run-bml.py measures it)
 
@@ -126,13 +126,13 @@ class CarouselTest(unittest.TestCase):
     def test_folder(self):
         self.assertEqual([n for n, _t, _b in PARTS], ["startup.bml", "menu.bml"])
         with tempfile.TemporaryDirectory() as d:
-            with self.assertRaises(tuner_lineup.Error) as e:
-                tuner_lineup.bml_parts(d)
+            with self.assertRaises(lineup.Error) as e:
+                lineup.bml_parts(d)
             self.assertIn("no startup.bml", str(e.exception))
             for name, body in (("startup.bml", b"<bml/>"), ("logo.png", b"png"), ("a.bml", b"a")):
                 with open(os.path.join(d, name), "wb") as f:
                     f.write(body)
-            parts = tuner_lineup.bml_parts(d)
+            parts = lineup.bml_parts(d)
             self.assertEqual(
                 [(n, t) for n, t, _b in parts],
                 [("startup.bml", "text/X-arib-bml; charset=euc-jp"), ("a.bml", "text/X-arib-bml; charset=euc-jp"),
@@ -145,8 +145,8 @@ class CarouselTest(unittest.TestCase):
             )
             with open(os.path.join(d, "notes.txt"), "w") as f:
                 f.write("x")
-            with self.assertRaises(tuner_lineup.Error) as e:
-                tuner_lineup.bml_parts(d)
+            with self.assertRaises(lineup.Error) as e:
+                lineup.bml_parts(d)
             self.assertIn("notes.txt: not a file type of BML", str(e.exception))
 
     def test_module(self):
@@ -202,10 +202,10 @@ class CarouselTest(unittest.TestCase):
         self.assertEqual(arib.data_component_info(auto_start=False)[0], 0x23)
 
     def test_uhf(self):
-        self.assertEqual(tuner_band.jp_uhf_hz(13), 473142857)
-        self.assertEqual(tuner_band.jp_uhf_hz(27), 557142857)
-        with self.assertRaises(tuner_band.Error):
-            tuner_band.jp_uhf_hz(63)
+        self.assertEqual(band.jp_uhf_hz(13), 473142857)
+        self.assertEqual(band.jp_uhf_hz(27), 557142857)
+        with self.assertRaises(band.Error):
+            band.jp_uhf_hz(63)
 
 
 def sections(data):
@@ -298,7 +298,7 @@ class StreamTest(unittest.TestCase):
         dii = [s for s in self.data if s[0] == 0x3B]
         ddb = [s for s in self.data if s[0] == 0x3C]
         for s in dii + ddb:
-            self.assertEqual(tuner_stream.crc32_mpeg(s), 0)
+            self.assertEqual(atsc.crc32_mpeg(s), 0)
         # 10 s at DII 500 ms and DDB 250 ms
         self.assertGreaterEqual(len(dii), 15)
         self.assertGreaterEqual(len(ddb), 30)

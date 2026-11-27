@@ -7,7 +7,7 @@ or fail with numbers.
   run-tracks.py NAME [--channel BJ7] [--shots DIR]
 
 After a scan (run-scan.py) of the built-in lineup, whose 7.1 BJ7 has an English and a Spanish AC-3
-track and CEA-608 captions (host/core/beanjar/lineups/atsc.toml): turns the set's captions on (the
+track and CEA-608 captions (host/core/beanjar/tuner/builtin-lineups/atsc.toml): turns the set's captions on (the
 system setting caption/captionEnable), watches the channel in Live TV and checks
 
 - the audio language list of Live TV's pipeline (legacybroadcast.broadcast/getAudioLanguageList)
@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
-from beanjar import tuner_lineup, tuner_stream
+from beanjar.tuner import lineup, atsc
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 
@@ -151,7 +151,7 @@ def main():
     ap.add_argument("--channel", default="BJ7", help="the service's short name (default BJ7)")
     ap.add_argument("--shots", help="keep screenshots in this folder")
     a = ap.parse_args()
-    lu = tuner_lineup.default("atsc")
+    lu = lineup.default("atsc")
     found = [(rf, i, s) for rf in lu["rf"] for i, s in enumerate(rf["services"])
              if s["name"] == a.channel]  # fmt: skip
     if not found:
@@ -159,7 +159,7 @@ def main():
         return 1
     _rf, svc_i, svc = found[0]
     want = [t["language"] for t in svc["sound"]]
-    want_pids = [tuner_stream.audio_pid(svc_i, k) for k in range(len(want))]
+    want_pids = [atsc.audio_pid(svc_i, k) for k in range(len(want))]
     if len(want) < 2 or not svc.get("captions"):
         print(f"FAIL: {a.channel} has no second sound track or no captions in the lineup")
         return 1

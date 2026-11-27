@@ -792,15 +792,15 @@ with `noMotionAutoOff` when its `addNoMotionAndNoOperationTimer` (5 minutes or l
 `beanjar io tuner list NAME` lists the physical channels of the VM's lineup and which of them are
 mapped and what the set is tuned to; `beanjar io tuner map NAME RF...` and `unmap NAME RF...|all`
 change the map, kept in the VM's state for its next starts. An RF is a channel number, or C and
-the number for a cable channel (`7`, `C78`; `beanjar/tuner_band.py` has each standard's plans),
+the number for a cable channel (`7`, `C78`; `beanjar/tuner/band.py` has each standard's plans),
 and carries its own delivery system: US air 8VSB, US cable QAM annex B, DVB-T, DVB-C annex A,
 ISDB-T; so air 7 and cable C7, both on 177 MHz, are two RFs. Only boards whose SoC data loads
 `dtv_soc` have the tuner (`targets.Soc.modules`; `k7lp`, `k8lp`, `k8lpn` but its number1, `k8lpn2`,
 `k24` ponytail and queue and `o22` ponytail and queue). The lineup is a TOML file
-(`beanjar/tuner_lineup.py`, the format in [docs/user/tuner.md](../../docs/user/tuner.md)): the
-built-in one of the board's broadcast standard, `beanjar/lineups/atsc.toml` (air RF 7, 14 and 33
+(`beanjar/tuner/lineup.py`, the format in [docs/user/tuner.md](../../docs/user/tuner.md)): the
+built-in one of the board's broadcast standard, `beanjar/tuner/builtin-lineups/atsc.toml` (air RF 7, 14 and 33
 with four virtual channels, cable C78 with one), `arib.toml` (UHF 27, one service with the BML
-pages of `lineups/arib-bml`) or `dvb.toml` (DVB-T on UHF 21 with two services, DVB-C on C38 with
+pages of `builtin-lineups/arib-bml`) or `dvb.toml` (DVB-T on UHF 21 with two services, DVB-C on C38 with
 one), unless `beanjar io tuner lineup set NAME FILE` gave the VM its own: checked
 against the board's standard, then copied with the files it names into the state's
 `tuner-lineup/`; `lineup show NAME` prints the one in effect (TOML; `--json` its values) and
@@ -808,12 +808,12 @@ against the board's standard, then copied with the files it names into the state
 with TSDuck and ffmpeg into the cache's `tuner/` (keyed on the lineup's values and its files'
 content, so an edit makes it again): for ATSC PAT, PMT, the PSIP tables (MGT, TVCT on the air or
 CVCT on cable, RRT, STT, EIT-0 to 3 and their ETTs) and each service's picture and sound, 5
-Mbit/s, 20 s, looped; for DVB (`beanjar/tuner_stream_dvb.py`) PAT, PMT, NIT with the delivery
+Mbit/s, 20 s, looped; for DVB (`beanjar/tuner/dvb.py`) PAT, PMT, NIT with the delivery
 descriptor and the logical channel numbers, SDT, EIT present/following and a day's schedule,
 TDT and TOT, MPEG-2 video and MPEG-1 layer II sound, 10 s.
 
 `beanjar io tuner map NAME RF --stream FILE` puts a transport stream of the user's on one RF
-instead (`beanjar/tuner_ts.py`): refused if it is not whole 188-byte packets, is scrambled in its
+instead (`beanjar/tuner/user_stream.py`): refused if it is not whole 188-byte packets, is scrambled in its
 first seconds, or has no PAT or PCR; warned about if its NIT or PSIP is of another standard than
 the board's, its delivery descriptor names another frequency, or it has no clock tables. It is
 copied into the state's `tuner-streams/` and looped at its PCR's rate, its tables as they are but
@@ -821,7 +821,7 @@ the clock (STT; TDT and TOT) set to now; at the wrap each PID restarts at a PES 
 the continuity counters run on and the first PCR after it has the discontinuity indicator
 (`tuner.RecordedStream`). `unmap` removes the copy.
 
-Beside QEMU a helper (`python -m beanjar.tuner`, `run/tuner.log`, `run/tuner-status.json`) sends
+Beside QEMU a helper (`python -m beanjar.tuner.antenna`, `run/tuner.log`, `run/tuner-status.json`) sends
 the map and, while frontend 0 is tuned within 1 MHz of a mapped channel with that channel's
 delivery system, its stream at its mux rate, nulls dropped and the clock's time (STT; TDT and
 TOT) set to now, over
@@ -845,7 +845,7 @@ it makes and sends the streams itself. `beanjar io tuner map HOST/NAME RF...` us
 on a host without the tools (the Pi, the ROCK Pi boards): it makes the streams here, keeps the map
 on the host (no streams made there; of an own lineup the host keeps only the file, of a stream
 only its name, and this machine the files, in the library's `remote/HOST/NAME/`) and, while the VM runs, starts a detached feed here (`python
--m beanjar.tuner feed`, its log in the cache's `tuner/feeds/`) that reaches the socket through a
+-m beanjar.tuner.antenna feed`, its log in the cache's `tuner/feeds/`) that reaches the socket through a
 forward of the host's shared ssh connection (`ares.Forward`). Only the tuned channel crosses the
 network, under 5 Mbit/s. The feed ends when the VM stops (the helper ends with QEMU and closes the
 connection) and when `unmap` leaves nothing mapped; a VM started again is fed again by the next

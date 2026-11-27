@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""DVB transport streams, one per physical channel of a DVB lineup (tuner_lineup.py: the built-in
-lineups/dvb.toml or a VM's own): DVB-T on the air, DVB-C on cable. Each service's PMT carries
+"""DVB transport streams, one per physical channel of a DVB lineup (lineup.py: the built-in
+builtin-lineups/dvb.toml or a VM's own): DVB-T on the air, DVB-C on cable. Each service's PMT carries
 MPEG-2 video (also its PCR) and MPEG-1 layer II sound tracks, each with its ISO 639 language.
 Around them the SI (EN 300 468) a European set scans and fills its guide from:
 
@@ -13,9 +13,9 @@ Around them the SI (EN 300 468) a European set scans and fills its guide from:
   ahead, normalized by TSDuck into the sections and segments of TS 101 211 (a W21P DVB board fills
   its guide only from the schedule: docs/research/tuner-emulation.md);
 - TDT and TOT in UTC, the TOT with the local time offset of the lineup's country and time zone.
-  The tuner (tuner.py) rewrites their time to now as it sends them (time_rewrite).
+  The tuner (antenna.py) rewrites their time to now as it sends them (time_rewrite).
 
-Made like the ARIB streams (tuner_stream_arib.py): ffmpeg encodes the A/V loop, tsp injects the
+Made like the ARIB streams (arib.py): ffmpeg encodes the A/V loop, tsp injects the
 tables at their rates. A stream holds the present and following events of its services, so it is
 made again when a present event ends (stream_key)."""
 
@@ -28,9 +28,9 @@ from datetime import UTC, datetime
 from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
-from . import tuner_band
-from .tuner_stream import FF_PID0, NULL_PID, PACKET, Error, channel, crc32_mpeg, events, ff_remap
-from .tuner_stream_arib import time_rewrite as _time_rewrite
+from . import band
+from .atsc import FF_PID0, NULL_PID, PACKET, Error, channel, crc32_mpeg, events, ff_remap
+from .arib import time_rewrite as _time_rewrite
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 1  # of the generator: part of a stream's key (stream_key)
@@ -91,7 +91,7 @@ def local_offset(timezone, now):
 
 
 def _delivery(rf):
-    hz = tuner_band.center_hz("dvb", rf["rf"])
+    hz = band.center_hz("dvb", rf["rf"])
     if rf["system"] == "c":
         modulation = {"qam64": "64-QAM", "qam256": "256-QAM"}[rf["modulation"]]
         return (
@@ -203,7 +203,7 @@ def _run(cmd):
 def _make_loop(lu, rf, path):
     """The A/V loop: each service's picture and sound, MPEG-2 video and MPEG-1 layer II audio; a
     program each, so each video carries its own PCR."""
-    from .tuner_stream import av_inputs, ff_programs
+    from .atsc import av_inputs, ff_programs
 
     v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     vb = str(v["bitrate"])
@@ -270,7 +270,7 @@ def validate(path):
     """{"ok_crc", "bad_crc", "tables": {name: count}} of the stream's PSI/SI sections, reassembled
     here, with each long section's CRC32 checked independently of TSDuck; EIT schedule sections
     (0x50 to 0x5F) count as "EIT-schedule"."""
-    from .tuner_ts import _Sections
+    from .user_stream import _Sections
 
     with open(path, "rb") as f:
         data = f.read()

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The broadcast the host's tuner sends: one ATSC transport stream per physical channel of
-an ATSC lineup (tuner_lineup.py: the built-in lineups/atsc.toml or a VM's own), with the PSIP
+an ATSC lineup (lineup.py: the built-in builtin-lineups/atsc.toml or a VM's own), with the PSIP
 tables a US set scans and builds its guide from (PAT, PMT, MGT, TVCT on the air or CVCT on cable,
 RRT, STT, EIT-0 to EIT-3 with their ETTs) and each service's picture and sound. A cable channel's
 CVCT gives each virtual channel the RF's modulation (QAM-256 unless the lineup says 64).
@@ -12,7 +12,7 @@ repetition rates (PAT and PMT every 100 ms, MGT 120 ms, TVCT 340 ms, STT 850 ms,
 ETT-0 1 s, the later blocks 3 s). A stream holds the guide of the four 3-hour blocks from the one
 it is made in, so it is made again when a new block starts or the lineup changes (stream_path's
 key). The tuner
-(tuner.py) loops the file and rewrites the STT's time as it sends it (stt_rewrite), so the set's
+(antenna.py) loops the file and rewrites the STT's time as it sends it (stt_rewrite), so the set's
 clock follows the host's.
 
 A service may have up to three AC-3 sound tracks, each a complete main service of its own language

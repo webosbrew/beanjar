@@ -34,9 +34,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
-from beanjar import tuner_band, tuner_stream
-from beanjar import tuner_stream_arib as arib
-from beanjar import tuner_stream_dvb as dvb
+from beanjar.tuner import band, atsc
+from beanjar.tuner import arib as arib
+from beanjar.tuner import dvb as dvb
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 
@@ -88,7 +88,7 @@ def expected(channels, now, lineup):
     for rf in lineup["rf"]:
         if rf["rf"] not in channels:
             continue
-        cable = tuner_band.parse(rf["rf"])[0]
+        cable = band.parse(rf["rf"])[0]
         for s in rf["services"]:
             if lineup["broadcast"] == "arib":
                 number = rf["remote_key"] * 10 + (s["service_id"] & 7) + 1
@@ -97,7 +97,7 @@ def expected(channels, now, lineup):
                 on_air = dvb.present_following(s, now, lineup["timezone"])
                 out[label(str(s["lcn"]), cable)] = on_air[0][2] if on_air else None
             else:
-                on_air = tuner_stream.events(s, now, now + 1, lineup["timezone"])
+                on_air = atsc.events(s, now, now + 1, lineup["timezone"])
                 out[label(f"{s['major']}.{s['minor']}", cable)] = on_air[0][2] if on_air else None
     return out
 

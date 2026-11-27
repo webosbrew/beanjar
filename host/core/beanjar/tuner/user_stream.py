@@ -17,7 +17,7 @@ wrap (tuner.RecordedStream)."""
 import mmap
 import os
 
-from .base import Error
+from ..base import Error
 
 PACKET = 188
 NULL_PID = 0x1FFF

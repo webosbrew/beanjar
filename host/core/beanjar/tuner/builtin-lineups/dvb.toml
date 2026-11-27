@@ -5,7 +5,7 @@
 # lineup set` gave it another. A DVB-T multiplex on UHF 21 (474 MHz) with two services and a DVB-C
 # one on cable channel C38 (346 MHz) with one. The network, TS and service numbers are picked from
 # the ranges for private and temporary use, not taken from a broadcaster. docs/user/tuner.md
-# describes the format; host/core/beanjar/tuner_lineup.py reads it.
+# describes the format; host/core/beanjar/tuner/lineup.py reads it.
 
 broadcast = "dvb"
 timezone = "Europe/Berlin"  # each service's programme cycle repeats from local midnight

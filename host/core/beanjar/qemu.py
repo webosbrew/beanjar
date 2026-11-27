@@ -213,9 +213,9 @@ from . import (
     paths,
     prepare,
     share,
-    tuner,
     vmsettings,
 )
+from .tuner import antenna
 
 MEDIA_PORTS = 8
 MEDIA_POOL = "media-pool"  # the media pool's file (WEBOS_MEDIA_POOL_SIZE), the helper's
@@ -1197,12 +1197,12 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
         "virtserialport,chardev=shell,name=webos.shell",
     ]
     p.shell_relay = (os.path.join(p.run_dir, guestshell.SOCK), shell_qemu)
-    # the antenna of a board with our tuner (dtv_soc): the host's tuner (tuner.py, started by the
+    # the antenna of a board with our tuner (dtv_soc): the host's tuner (antenna.py, started by the
     # launcher) connects to RUN_DIR's tuner.sock, the guest's pump (virtio-tuner.c) to the port
-    if tuner.has_tuner(p.target):
+    if antenna.has_tuner(p.target):
         devices += [
             "-chardev",
-            f"socket,id=tuner,path={os.path.join(p.run_dir, tuner.SOCK)},server=on,wait=off",
+            f"socket,id=tuner,path={os.path.join(p.run_dir, antenna.SOCK)},server=on,wait=off",
             "-device",
             "virtserialport,chardev=tuner,name=webos.tuner",
         ]

@@ -17,7 +17,7 @@ An RF's name is its channel number, or C and the number for a cable channel: "7"
 
 import re
 
-from .base import Error as BaseError
+from ..base import Error as BaseError
 
 
 class Error(BaseError):

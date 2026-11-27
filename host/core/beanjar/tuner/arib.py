@@ -1,21 +1,21 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Japanese digital terrestrial (ISDB-T) transport streams with ARIB BML data broadcasts, one per
-physical channel of an ARIB lineup (tuner_lineup.py: the built-in lineups/arib.toml or a VM's
+physical channel of an ARIB lineup (lineup.py: the built-in builtin-lineups/arib.toml or a VM's
 own). Each service's PMT carries MPEG-2 video (also its PCR), AAC (ADTS) audio and, for a service
 with a BML folder, a data component: the DSM-CC data carousel on that component's PID (one DII
 and the DDBs of module 0, a multipart/mixed module holding the folder's files, startup.bml first).
 Around them the SI a set needs: NIT with the ISDB-T terrestrial delivery and TS information
 descriptors, SDT, EIT present/following, TOT and TDT in JST.
 
-Made like the ATSC streams (tuner_stream.py): ffmpeg encodes the A/V loop, tsp injects the tables
+Made like the ATSC streams (atsc.py): ffmpeg encodes the A/V loop, tsp injects the tables
 (with --japan: ARIB STD-B24 strings, JST times). TSDuck's own DII model writes the moduleInfo of a
 DVB object carousel (BIOP timeouts and taps); ARIB's moduleInfo is descriptors only (STD-B24 vol. 3,
 TR-B14), so the DII and DDB sections are made here (TSDuck's XML also caps them at the PSI size)
 and tsp only repeats them. Byte layout cross-checked against denpa's
 packages/arib synth.ts (MIT) and web-bml's server/decode_ts.ts (MIT); no code taken from either.
 
-The built-in page (lineups/arib-bml) is EUC-JP with the ARIB BML 1.0 DOCTYPE and `<?bml
+The built-in page (builtin-lineups/arib-bml) is EUC-JP with the ARIB BML 1.0 DOCTYPE and `<?bml
 bml-version="100.0" ?>`, as terrestrial broadcasts and denpa's test documents are written; a
 folder's .bml files go into the module as they are, declared EUC-JP."""
 
@@ -27,8 +27,8 @@ import subprocess
 from datetime import date, datetime, timedelta, timezone
 from xml.sax.saxutils import escape, quoteattr
 
-from .tuner_band import jp_uhf_hz
-from .tuner_stream import FF_PID0, PACKET, Error, crc32_mpeg, ff_remap
+from .band import jp_uhf_hz
+from .atsc import FF_PID0, PACKET, Error, crc32_mpeg, ff_remap
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 9  # of the generator: part of a stream's key (stream_key)
@@ -131,7 +131,7 @@ def module(parts):
 
 def service_module(svc):
     """Module 0 of the service's BML folder; None for a service without one."""
-    from .tuner_lineup import bml_parts
+    from .lineup import bml_parts
 
     return module(bml_parts(svc["bml"])) if svc.get("bml") else None
 
@@ -349,7 +349,7 @@ def _run(cmd):
 def _make_loop(lu, rf, path):
     """The A/V loop: each service's picture and sound, MPEG-2 video and AAC (ADTS) audio; with more
     than one service a program each, so each video carries its own PCR."""
-    from .tuner_stream import av_inputs, ff_programs
+    from .atsc import av_inputs, ff_programs
 
     v, a, dur = lu["video"], lu["audio"], lu["loop_seconds"]
     vb = str(v["bitrate"])
@@ -418,7 +418,7 @@ def tools():
 def make(path, lu, ch, now):
     """Makes the stream of the lineup's physical channel ch into path for the time now (EIT p/f,
     TOT, TDT); returns path."""
-    from .tuner_stream import channel
+    from .atsc import channel
 
     missing = tools()
     if missing:
@@ -451,7 +451,7 @@ def stream_key(lu, ch, now):
     """What the stream depends on: the generator, the lineup (its values and its files' content:
     its key) and the present and following events (EIT p/f) of the channel's services, so it is
     made again when a present event ends."""
-    from .tuner_stream import channel
+    from .atsc import channel
 
     rf = channel(lu, ch)
     text = json.dumps(

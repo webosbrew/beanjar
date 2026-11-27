@@ -19,11 +19,11 @@ def tuner_words(a):
         return verb, []
     if verb == "unmap" and rest == ["all"]:
         return verb, None
-    from .. import tuner_band
+    from ..tuner import band
 
     try:
-        channels = [tuner_band.canonical(w) for w in rest]
-    except tuner_band.Error as e:
+        channels = [band.canonical(w) for w in rest]
+    except band.Error as e:
         raise Usage(f"io tuner {verb}: {e}") from None
     if verb == "map" and getattr(a, "stream", None) is not None and len(channels) != 1:
         raise Usage("io tuner map --stream FILE: one physical channel, RF, the stream's")
@@ -92,31 +92,34 @@ def read_lineup_file(path):
 
 
 def cmd_tuner(lib, a):
-    from .. import paths, tuner
+    from .. import paths
+    from ..tuner import antenna
 
     vm = lib.vm(a.name)
     if a.verb == "lineup":
         if a.lineup_verb == "show":
-            data = tuner.lineup_show(vm)
+            data = antenna.lineup_show(vm)
             return emit(a, data, data["text"].rstrip("\n"))
         if a.lineup_verb == "set":
             path, text = read_lineup_file(a.file)
             if a.fed and text is None:
                 with open(path, encoding="utf-8") as f:
                     text = f.read()
-            data = tuner.lineup_set(vm, paths.Tree(vm.library.repo), path, text, a.fed)
+            data = antenna.lineup_set(vm, paths.Tree(vm.library.repo), path, text, a.fed)
         else:
-            data = tuner.lineup_reset(vm, paths.Tree(vm.library.repo))
+            data = antenna.lineup_reset(vm, paths.Tree(vm.library.repo))
         return lineup_done(a, a.name, data)
     verb, channels = tuner_words(a)
     if verb == "list":
-        data = tuner.status(vm)
+        data = antenna.status(vm)
     else:
         tree = paths.Tree(vm.library.repo)
         if verb == "map":
-            data = tuner.change(vm, tree, add=channels, fed=a.fed, stream=a.stream)
+            data = antenna.change(vm, tree, add=channels, fed=a.fed, stream=a.stream)
         else:
-            data = tuner.change(vm, tree, remove=channels or (), clear=channels is None, fed=a.fed)
+            data = antenna.change(
+                vm, tree, remove=channels or (), clear=channels is None, fed=a.fed
+            )
         for w in data.pop("warnings", []):
             warn(w)
     return emit(a, data, tuner_text(a.name, data))
@@ -125,20 +128,21 @@ def cmd_tuner(lib, a):
 def remote_lineup(a, host, name, uri, mirror, listed):
     """io tuner lineup for VM name on host: the host keeps the file (--fed), this machine, which
     feeds the VM, the file and the files it names (mirror) and makes the streams."""
-    from .. import paths, tuner, tuner_lineup
+    from .. import paths
+    from ..tuner import antenna, lineup as tuner_lineup
 
     words = ["io", "tuner", "lineup", a.lineup_verb, remote.own(name)]
     if a.lineup_verb == "show":
         data = remote.call_json(host, uri, words)
         return emit(a, data, data["text"].rstrip("\n"))
-    dest = os.path.join(mirror, tuner.LINEUP_DIR)
+    dest = os.path.join(mirror, antenna.LINEUP_DIR)
     if a.lineup_verb == "reset":
         data = remote.call_json(host, uri, words)
         import shutil
 
         shutil.rmtree(dest, ignore_errors=True)
         library = Library(a.library, a.repo)
-        tuner.prune_cache(paths.Tree(library.repo), library)
+        antenna.prune_cache(paths.Tree(library.repo), library)
         return lineup_done(a, f"{host}/{name}", data)
     path, text = read_lineup_file(a.file)
     broadcast = listed.get("broadcast", "atsc")
@@ -148,15 +152,15 @@ def remote_lineup(a, host, name, uri, mirror, listed):
         else tuner_lineup.parse(text, path, os.getcwd(), broadcast)
     )
     # the mapped channels' streams, made here, where the feed makes them: their errors now
-    recorded = tuner.streams(mirror)
-    new = tuner.from_spec(spec)
+    recorded = antenna.streams(mirror)
+    new = antenna.from_spec(spec)
     wanted = [
         c["channel"]
         for c in listed["channels"]
         if c["mapped"] and c["channel"] in new.channels and c["channel"] not in recorded
     ]
-    cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
-    tuner.make(cache, wanted, lu=new)
+    cache = antenna.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
+    antenna.make(cache, wanted, lu=new)
     os.makedirs(mirror, exist_ok=True)
     tuner_lineup.install(path, dest, broadcast, text)
     rc, out, err = remote.call(
@@ -165,7 +169,7 @@ def remote_lineup(a, host, name, uri, mirror, listed):
     if rc:
         raise remote.HostError(host, err.strip() or f"io tuner lineup set: status {rc}")
     library = Library(a.library, a.repo)
-    tuner.prune_cache(paths.Tree(library.repo), library)
+    antenna.prune_cache(paths.Tree(library.repo), library)
     return lineup_done(a, f"{host}/{name}", json.loads(out))
 
 
@@ -174,10 +178,11 @@ def remote_tuner(a, host, name):
     there) and keep a feed from this machine running while anything is mapped and the VM runs
     (tuner.start_feed, stop_feed). The VM's own lineup and the user's streams are kept here too,
     in this machine's directory for it (tuner.remote_dir), where the feed reads them."""
-    from .. import paths, tuner
+    from .. import paths
+    from ..tuner import antenna
 
     uri = remote.hosts()[host]
-    mirror = tuner.remote_dir(Library(a.library, a.repo).root, host, name)
+    mirror = antenna.remote_dir(Library(a.library, a.repo).root, host, name)
     if a.verb == "lineup":
         listed = {}
         if a.lineup_verb == "set":
@@ -191,34 +196,34 @@ def remote_tuner(a, host, name):
         # the host's board's lineup: its broadcast standard, and the VM's own lineup, kept here
         listed = remote.call_json(host, uri, ["io", "tuner", "list", remote.own(name)])
         broadcast = listed.get("broadcast") if isinstance(listed, dict) else None
-        lu = tuner.vm_lineup(mirror, broadcast)
-        cache = tuner.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
-        recorded = tuner.streams(mirror)
+        lu = antenna.vm_lineup(mirror, broadcast)
+        cache = antenna.cache_dir(paths.Tree(Library(a.library, a.repo).repo))
+        recorded = antenna.streams(mirror)
         stream = getattr(a, "stream", None)
         words = [*(channels if channels is not None else ["all"]), "--fed"]
         if verb == "map" and stream is not None:
             (ch,) = channels
-            rec = tuner.inspect_stream(stream, lu, ch)
+            rec = antenna.inspect_stream(stream, lu, ch)
             warnings = rec["warnings"]
-            tuner.drop_streams(mirror, recorded, [ch])
-            recorded[ch] = tuner.put_stream(mirror, ch, stream, rec)
+            antenna.drop_streams(mirror, recorded, [ch])
+            recorded[ch] = antenna.put_stream(mirror, ch, stream, rec)
             words += ["--stream", os.path.basename(stream)]
         elif verb == "map":
-            tuner.check_channels(channels, lu)
-            tuner.make(cache, channels, lu=lu)  # here, where the feed makes them: its errors now
-            tuner.drop_streams(mirror, recorded, channels)
+            antenna.check_channels(channels, lu)
+            antenna.make(cache, channels, lu=lu)  # here, where the feed makes them: its errors now
+            antenna.drop_streams(mirror, recorded, channels)
         else:
-            tuner.check_channels(channels or [], lu, recorded)
-            tuner.drop_streams(mirror, recorded, list(recorded) if channels is None else channels)
-        tuner.save_map(mirror, [], recorded)
+            antenna.check_channels(channels or [], lu, recorded)
+            antenna.drop_streams(mirror, recorded, list(recorded) if channels is None else channels)
+        antenna.save_map(mirror, [], recorded)
         data = remote.call_json(host, uri, ["io", "tuner", verb, remote.own(name), *words])
         if not isinstance(data, dict) or "feed_socket" not in data:
             raise remote.HostError(host, "its beanjar io tuner has no feeds: update it")
         data.pop("warnings", None)
         if not any(c["mapped"] for c in data["channels"]):
-            tuner.stop_feed(host, name)
+            antenna.stop_feed(host, name)
         elif verb == "map" and data["connected"]:
-            tuner.start_feed(host, uri, name, data["feed_socket"], cache, content=mirror)
+            antenna.start_feed(host, uri, name, data["feed_socket"], cache, content=mirror)
         elif verb == "map":
             warnings.append(
                 f"{host}/{name} is not running: map again once it runs to feed it from here"
@@ -226,7 +231,7 @@ def remote_tuner(a, host, name):
     for w in warnings:
         warn(w)
     if isinstance(data, dict) and data.get("tuner"):
-        info = tuner.find_feed(host, name)
+        info = antenna.find_feed(host, name)
         data["feed"] = {"pid": info["pid"]} if info else {}
     return emit(a, data, tuner_text(f"{host}/{name}", data))
 
@@ -453,7 +458,7 @@ def register(cli):
         dest="area",
         metavar="DEVICE",
     )
-    tuner = group(
+    antenna = group(
         "tuner",
         "the antenna of a set with our tuner: its lineup (the built-in one of its board's broadcast "
         "standard: US ATSC channels on the air and on cable, a Japanese ISDB-T one on an ARIB board, "
@@ -467,7 +472,7 @@ def register(cli):
         dest="verb",
     )
     s = command(
-        tuner,
+        antenna,
         "list",
         "the lineup's physical channels and those of your streams, which are mapped, and what the "
         "set is tuned to",
@@ -475,7 +480,7 @@ def register(cli):
     )
     vm_name(s, "tuner")
     s = command(
-        tuner,
+        antenna,
         "map",
         "put a signal on physical channels RF...: the lineup's streams, or with --stream one RF "
         "that plays your transport stream. An RF is a channel number (7) or, on cable, C and the "
@@ -496,7 +501,7 @@ def register(cli):
     )
     s.add_argument("--fed", action="store_true", help=argparse.SUPPRESS)
     s = command(
-        tuner,
+        antenna,
         "unmap",
         "take the signal off physical channels RF..., or all; a stream of yours on one is removed",
         cmd_tuner,
@@ -512,7 +517,7 @@ def register(cli):
         "the VM's lineup: the physical channels, services, programme events, pictures and sounds "
         "(and, on ARIB, BML data broadcasts) its antenna carries, as a TOML file "
         "(docs/user/tuner.md); the built-in one of its board's broadcast standard unless set",
-        under=tuner,
+        under=antenna,
         dest="lineup_verb",
     )
     s = command(

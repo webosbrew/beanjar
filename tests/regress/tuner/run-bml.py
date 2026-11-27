@@ -10,7 +10,7 @@ After a scan (run-scan.py), with the ISDB-T channel mapped and a front end that 
 keys (beanjar vnc start NAME, or the viewer): brings Live TV to the front without
 closing it, and launches it again while Home covers it (Home comes over Live TV once after a
 boot, and the set runs the page only with Live TV in front). Then waits, up to S seconds (default 300), for the generator's page
-(the built-in lineup's host/core/beanjar/lineups/arib-bml: a blue panel over the lower third, white text on it, the
+(the built-in lineup's host/core/beanjar/tuner/builtin-lineups/arib-bml: a blue panel over the lower third, white text on it, the
 video above it): screenshots are measured, nothing is read from the guest's logs. Then presses
 d twice: the first hides the page, the second shows it again. Then the blue key, which opens the
 page's second document (menu.bml): the video scaled into a window of a quarter of the screen near
@@ -45,7 +45,7 @@ sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "host", "core")
 )
 
-from beanjar import tuner_lineup
+from beanjar.tuner import lineup
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 LIVETV = "com.webos.app.livetv"
@@ -59,7 +59,7 @@ def menu_window():
     """The built-in menu.bml's video window (x, y, w, h) in the page's 960x540: its video div."""
     import re
 
-    with open(os.path.join(tuner_lineup.DEFAULTS_DIR, "arib-bml", "menu.bml"), "rb") as f:
+    with open(os.path.join(lineup.DEFAULTS_DIR, "arib-bml", "menu.bml"), "rb") as f:
         text = f.read().decode("euc_jp")
     style = re.search(r'<div id="video" style="([^"]*)"', text).group(1)
     v = dict(kv.split(":") for kv in style.split(";") if ":" in kv)
