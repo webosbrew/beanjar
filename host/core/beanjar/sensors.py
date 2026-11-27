@@ -23,8 +23,8 @@ supportMotionDetectSensor names the TMF8821 (targets.tof_dev). Nobody is there a
 import os
 import re
 
-from . import core
-from .core import Error
+from . import base
+from .base import Error
 
 PARAMS = "/sys/module/lgemu/parameters"
 COUNT_MAX = 0xFFFF
@@ -136,7 +136,7 @@ def _console(vm, line):
     from . import console, paths
 
     state, detail = vm.state()
-    if state != core.RUNNING or detail or not vm.pid():
+    if state != base.RUNNING or detail or not vm.pid():
         raise Error(f"VM {vm.name}: it is not running ({state} {detail})".rstrip())
     try:
         return console.send(

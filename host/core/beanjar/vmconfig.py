@@ -238,7 +238,7 @@ def read(path, default=None, check_broadcast=True):
 
 
 def _check_broadcast(path, cfg):
-    from .core import vm_firmware
+    from .firmware import vm_firmware
 
     fw = vm_firmware(os.path.dirname(os.path.abspath(path)), cfg.get("fw"))[0]
     check_firmware_broadcast(fw, cfg.get("broadcast"), cfg.get("model"))

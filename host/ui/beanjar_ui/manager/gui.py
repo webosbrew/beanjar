@@ -46,22 +46,24 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from beanjar import (
+    base,
     capacity,
     core,
     firmware,
     gpu,
     hostprocs,
+    lifecycle,
     newvm,
     nvm,
-    targets,
     paths,
-    lifecycle,
     poweroff,
     rotation,
+    targets,
     vmsettings,
     vmunits,
 )  # noqa: E402
-from beanjar.core import OFF, RUNNING, STARTING, Error, Library  # noqa: E402
+from beanjar.core import Library  # noqa: E402
+from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402
 from beanjar.firmware import fmt_size  # noqa: E402
 
 from .. import no_display  # noqa: E402
@@ -581,7 +583,7 @@ class Manager:
         self.tick += 1
         if self.tick % QMP_EVERY == 0:
             self.safe_refresh(qmp=True)
-        elif any(st[0] == core.STARTING and st[2] for st in self.states.values()):
+        elif any(st[0] == base.STARTING and st[2] for st in self.states.values()):
             # QEMU is up and the guest is not yet at its debug shell: nothing watches the console
             # log's first line (only the selected VM's console is monitored, and that does not
             # change the state), so look each second, not at the next whole refresh
@@ -1540,7 +1542,7 @@ class Manager:
         vm = core.VM(library, name)
         if not vm.pid():
             return None
-        sent = core.read_pid(vm.power_off_file) == vm.pid()
+        sent = base.read_pid(vm.power_off_file) == vm.pid()
         d = Adw.AlertDialog(
             heading=f"{name} Has Not Powered Off",
             body=(
@@ -1671,7 +1673,7 @@ class Manager:
             "changed",
             lambda e: form.set_response_enabled(
                 "ok",
-                bool(core.NAME_RE.fullmatch(e.get_text().strip())) and e.get_text().strip() != name,
+                bool(base.NAME_RE.fullmatch(e.get_text().strip())) and e.get_text().strip() != name,
             ),
         )
         form.set_response_enabled("ok", False)
@@ -1709,7 +1711,7 @@ class Manager:
             "changed",
             lambda e: form.set_response_enabled(
                 "ok",
-                bool(core.NAME_RE.fullmatch(e.get_text().strip()))
+                bool(base.NAME_RE.fullmatch(e.get_text().strip()))
                 and e.get_text().strip() not in taken,
             ),
         )
@@ -1789,9 +1791,9 @@ class Manager:
             sources += [("Firmware File (.epk)…", "epk", None), ("Directory…", "dir", None)]
         else:
             sources = []
-            if paths.root_pak(os.path.join(vm_dir, core.OWN_FW)):
-                m = firmware.manifest(os.path.join(vm_dir, core.OWN_FW)) or {}
-                form.own_fw = m.get("name", core.OWN_FW)
+            if paths.root_pak(os.path.join(vm_dir, firmware.OWN_FW)):
+                m = firmware.manifest(os.path.join(vm_dir, firmware.OWN_FW)) or {}
+                form.own_fw = m.get("name", firmware.OWN_FW)
                 sources.append((f"In the VM's Folder: {fw_label(form.own_fw)}", "own", ""))
             sources.append(("Directory in Place…", "dir", None))
         form.sources = sources
@@ -2254,7 +2256,7 @@ def main(argv=None):
         prog="beanjar_ui.manager",
         description="Beanjar, the VM manager's window (GTK 4, libadwaita)",
     )
-    p.add_argument("--library", help=f"library directory (default {core.default_library()})")
+    p.add_argument("--library", help=f"library directory (default {base.default_library()})")
     p.add_argument("--repo", help="the Beanjar checkout")
     p.add_argument(
         "--ui-dir",

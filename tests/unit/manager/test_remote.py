@@ -23,7 +23,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import ares, cli, commands, core, framing, hostconfig, inspector, pipe, remote  # noqa: E402
+from beanjar import ares, base, cli, commands, core, framing, hostconfig, inspector, pipe, remote  # noqa: E402
 from beanjar.commands import vms as vm_commands  # noqa: E402
 import subprocess  # noqa: E402
 
@@ -120,7 +120,7 @@ class HostsTest(Base):
             "http://x", "x", "ssh://", "ssh://-oProxyCommand=x", "ssh://u@h/path", "ssh://h:0",
             "ssh://h:70000", "ssh://-u@h", "ssh://h:x", "ssh://u@h extra", "", None,
         ):  # fmt: skip
-            with self.subTest(bad), self.assertRaises(core.Error):
+            with self.subTest(bad), self.assertRaises(base.Error):
                 remote.parse_uri(bad)
 
     def test_add_remove_list(self):
@@ -158,7 +158,7 @@ class HostsTest(Base):
         os.makedirs(hostconfig.global_config_dir())
         with open(hostconfig.global_config_path(), "w") as f:
             f.write('[hosts.pi]\nuri = "ftp://x"\n')
-        with self.assertRaisesRegex(core.Error, r"\[hosts.pi\]"):
+        with self.assertRaisesRegex(base.Error, r"\[hosts.pi\]"):
             remote.hosts()
 
 
@@ -237,7 +237,7 @@ class LocateTest(Base):
         self.assertEqual(self.locate("pi/tv")[0], ("pi", "tv"))
         self.assertEqual(self.fake.calls, [], "HOST/NAME asks nobody")
         for bad in ("zz/tv", "pi/a/b", "pi/"):
-            with self.subTest(bad), self.assertRaises(core.Error):
+            with self.subTest(bad), self.assertRaises(base.Error):
                 self.locate(bad)
 
     def test_bare(self):
@@ -246,10 +246,10 @@ class LocateTest(Base):
         self.assertEqual(self.locate("local-only", local)[0], (None, "local-only"))
         self.assertEqual(self.locate("remote-only", local)[0], ("pi", "remote-only"))
         self.assertEqual(self.locate("nuc-only", local)[0], ("nuc", "nuc-only"))
-        with self.assertRaises(core.Error) as ctx:
+        with self.assertRaises(base.Error) as ctx:
             self.locate("both", local)
         self.assertIn("local/both, pi/both, nuc/both", str(ctx.exception))
-        with self.assertRaisesRegex(core.Error, "^no VM named nowhere$"):
+        with self.assertRaisesRegex(base.Error, "^no VM named nowhere$"):
             self.locate("nowhere", local)
         self.assertEqual(self.locate("bad name!")[0], (None, "bad name!"))
 
@@ -267,7 +267,7 @@ class LocateTest(Base):
         self.assertEqual(found, ("nuc", "tv"))
         self.assertEqual(len(warnings), 1)
         self.assertIn("host pi: Connection refused", warnings[0])
-        with self.assertRaisesRegex(core.Error, r"no VM named x \(could not ask pi\)"):
+        with self.assertRaisesRegex(base.Error, r"no VM named x \(could not ask pi\)"):
             self.locate("x")
 
 
@@ -600,7 +600,7 @@ class RemotePowerTest(unittest.TestCase):
         self.ir = []
         r = pipe.Remote.__new__(pipe.Remote)
         r.vm = mock.Mock(qmp_sock=sock)
-        r.layout = pipe.vm_layout(mock.Mock(target=mock.Mock(side_effect=core.Error("none"))))
+        r.layout = pipe.vm_layout(mock.Mock(target=mock.Mock(side_effect=base.Error("none"))))
         r.held = None
         r._call = lambda dest, path, iface, method, signature, values: self.ir.append(values)
         self.remote = r
@@ -656,7 +656,7 @@ class PointerMappingTest(unittest.TestCase):
         self.assertEqual(framing.frame_to_source(160, 0, f, s), (0, 0))
         self.assertEqual(framing.frame_to_source(1119, 719, f, s), (1023, 767))
         for x, y in ((159, 360), (1120, 360), (1280, 0), (0, 720)):
-            with self.assertRaisesRegex(core.Error, "outside the TV picture"):
+            with self.assertRaisesRegex(base.Error, "outside the TV picture"):
                 framing.frame_to_source(x, y, f, s)
 
     def test_geometry(self):
@@ -723,7 +723,7 @@ class PointerTest(unittest.TestCase):
 
     def test_outside_sends_nothing(self):
         self.source = (1024, 768)
-        with self.assertRaisesRegex(core.Error, "outside the TV picture"):
+        with self.assertRaisesRegex(base.Error, "outside the TV picture"):
             pipe.pointer(mock.Mock(), "click", 100, 360)
         self.assertEqual(self.calls, [])
 
@@ -1392,7 +1392,7 @@ class MitmShowTest(unittest.TestCase):
                                return_value=inspector.State("direct", "Not running")):  # fmt: skip
             data = inspector.show(vm)
         self.assertEqual((data["mode"], data["ready"], data["url"]), ("direct", False, None))
-        with self.assertRaises(core.Error) as e:
+        with self.assertRaises(base.Error) as e:
             inspector.check_ready("tv", data)
         self.assertIn("network mode direct", str(e.exception))
 
@@ -1514,7 +1514,7 @@ class QueryTest(Base):
         try:
             vm = core.Library(self.lib).vm(name)
             return 0, json.dumps(ares.target(vm, root)) + "\n", ""
-        except core.Error as e:
+        except base.Error as e:
             error = {"error": str(e), **({"key": e.key} if e.key else {})}
             return 1, "", json.dumps(error) + "\n"
 

@@ -14,7 +14,7 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import core, pipe, remote_layouts as rl  # noqa: E402
+from beanjar import base, pipe, remote_layouts as rl  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -102,7 +102,7 @@ def test_vm_layout_arib():
     v, patch = vm("atsc")
     with patch, mock.patch("beanjar.targets.platform", return_value="webOS"):
         assert pipe.vm_layout(v) is rl.NORMAL
-    v = mock.Mock(target=mock.Mock(side_effect=core.Error("none")))
+    v = mock.Mock(target=mock.Mock(side_effect=base.Error("none")))
     assert pipe.vm_layout(v) is rl.NORMAL
 
 
@@ -112,5 +112,5 @@ def test_remote_code_takes_names_and_extended_codes():
     assert r.code("DATA") == 0x9F and r.code("bs4k") == 0xDB40
     assert r.code("0xdb30") == 0xDB30 and r.code("0x9f") == 0x9F
     for bad in ("0x100", "0xdc00", "LIST"):
-        with pytest.raises(core.Error):
+        with pytest.raises(base.Error):
             r.code(bad)

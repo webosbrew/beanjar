@@ -12,7 +12,7 @@ import struct
 import subprocess
 import tempfile
 
-from .core import Error
+from .base import Error
 
 INSTALL_HINT = "Install it with: go install github.com/devcell-sh/go-textshot/cmd/textshot@latest"
 

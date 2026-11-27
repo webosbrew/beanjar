@@ -18,9 +18,9 @@ import threading
 import time
 from typing import NamedTuple
 
-from . import core, hostconfig
+from . import base, hostconfig
 from .base import ARES_QUERY, LOCAL, split_spec  # noqa: F401 (remote's names for them)
-from .core import Error
+from .base import Error
 
 HOST_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 _USER = r"[A-Za-z0-9_][A-Za-z0-9._-]*"
@@ -102,7 +102,7 @@ def hosts():
 def add_host(name, uri):
     check_name(name)
     parse_uri(uri)
-    cfg = core.read_toml(hostconfig.global_config_path(), {})
+    cfg = base.read_toml(hostconfig.global_config_path(), {})
     table = cfg.setdefault("hosts", {})
     if name in table:
         raise Error(
@@ -113,7 +113,7 @@ def add_host(name, uri):
 
 
 def remove_host(name):
-    cfg = core.read_toml(hostconfig.global_config_path(), {})
+    cfg = base.read_toml(hostconfig.global_config_path(), {})
     table = cfg.get("hosts", {})
     if name not in table:
         raise Error(f"no host named {name} (beanjar host list)")
@@ -407,7 +407,7 @@ def locate(spec, local_has, warn, pinned=False):
     asked, as for local/NAME."""
     host, name = split_spec(spec)
     if host is not None:
-        if not core.NAME_RE.fullmatch(name):
+        if not base.NAME_RE.fullmatch(name):
             raise Error(f"invalid VM name {name!r} (letters, digits, '.', '_', '-')")
         if host == LOCAL:
             return None, name
@@ -415,7 +415,7 @@ def locate(spec, local_has, warn, pinned=False):
             raise Error(f"no host named {host} (beanjar host list)")
         return host, name
     configured = {} if pinned else hosts()
-    if not configured or not core.NAME_RE.fullmatch(name):
+    if not configured or not base.NAME_RE.fullmatch(name):
         return None, name  # a name the library refuses says so itself
     from concurrent.futures import ThreadPoolExecutor
 

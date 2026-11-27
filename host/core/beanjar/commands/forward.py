@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 from .. import framing, remote
-from ..core import Error
+from ..base import Error
 from .common import Usage, emit, kv_lines, parse_size, read_new_password, version_info, warn
 from .devices import gamepad_controls, plug_usb, remote_tuner, usb_attach_usage
 from .mitm import mitm_cleared

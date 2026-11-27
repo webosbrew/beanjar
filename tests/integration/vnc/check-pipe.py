@@ -36,7 +36,7 @@ import time
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import core, pipe  # noqa: E402
+from beanjar import base, pipe  # noqa: E402
 from beanjar import remote_layouts  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
@@ -70,7 +70,7 @@ class StandInVM:
         return self._vnc
 
     def target(self):
-        raise core.Error("no firmware here")
+        raise base.Error("no firmware here")
 
 
 def wait_log(path, lines, seconds=5):
@@ -153,7 +153,7 @@ def check_vnc_pipe(vm):
     print("vnc pipe: None alone, fake-qemu's picture, ends with stdin")
     try:
         pipe.vnc_pipe(StandInVM(os.path.dirname(vm.dbus_sock), None))
-    except core.Error as e:
+    except base.Error as e:
         if "beanjar vnc start tv" not in str(e):
             fail(f"without beanjar-vnc: {e}")
     else:
@@ -190,7 +190,7 @@ def check_audio_pipe(vm):
     old.audio_local_sock += ".missing"
     try:
         pipe.audio_pipe(old)
-    except core.Error as e:
+    except base.Error as e:
         if "predates it" not in str(e):
             fail(f"without the audio socket: {e}")
     else:
@@ -237,7 +237,7 @@ def check_video_pipe(vm):
     old.video_local_sock += ".missing"
     try:
         pipe.video_pipe(old)
-    except core.Error as e:
+    except base.Error as e:
         if "predates it" not in str(e):
             fail(f"without the video socket: {e}")
     else:
@@ -261,7 +261,7 @@ def check_remote(vm, input_log):
     wait_log(input_log, ["IR.Down 0x44", "IR.Up 0x44"])
     try:
         pipe.press(vm, ["NETFLIX"])
-    except core.Error as e:
+    except base.Error as e:
         if "sends nothing" not in str(e):
             fail(f"press NETFLIX: {e}")
     else:

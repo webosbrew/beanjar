@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import tempfile
 
-from . import core, paths, vmconfig, vmidentity, vmsettings, vmunits
+from . import base, core, paths, vmconfig, vmidentity, vmsettings, vmunits
 
 
 class Error(Exception):
@@ -71,10 +71,10 @@ def legacy(env, tree):
 
 def _offline(run, directory):
     for path in (run / "launcher.pid", Path(directory) / "run/launcher.pid"):
-        if core.proc_alive(core.read_pid(str(path))):
+        if base.proc_alive(base.read_pid(str(path))):
             raise Error("stop the development launcher before migration")
     for path in (run / "qemu.pid", Path(directory) / "run/qemu.pid"):
-        if core.proc_alive(core.read_pid(str(path)), "qemu-system"):
+        if base.proc_alive(base.read_pid(str(path)), "qemu-system"):
             raise Error("stop the development VM before migration")
     from . import unit
 
@@ -90,7 +90,7 @@ def _config(env, tree, preserve_identity=False):
     from . import qemu
 
     firmware, _ = tree.firmware(env.get("FW"))
-    # vm.toml resolves a relative fw against the VM's folder (core.vm_firmware), not the caller's
+    # vm.toml resolves a relative fw against the VM's folder (firmware.vm_firmware), not the caller's
     firmware = os.path.abspath(firmware)
     target = paths.firmware_target(firmware)
     from . import targets
@@ -150,7 +150,7 @@ def configured_environment(env, tree=paths.TREE):
         dict(stored, **env)
         | {
             "SLOT": slot,
-            "ADDRESS_PREFIX": core.addresses_of(library),
+            "ADDRESS_PREFIX": base.addresses_of(library),
             "NET_LAN_PARENT": vmidentity.lan_parent_of(library) or "",
         },
         tree,
@@ -203,7 +203,7 @@ def prepare(env, tree=paths.TREE):
     for key in ("MAC", "SERIAL"):
         out[key] = env.get(key) or stored.get(key, "")
     out["SLOT"] = stored["SLOT"]  # the VM's own, never the caller's
-    out["ADDRESS_PREFIX"] = core.addresses_of(library)  # its library's, never the caller's
+    out["ADDRESS_PREFIX"] = base.addresses_of(library)  # its library's, never the caller's
     out["NET_LAN_PARENT"] = vmidentity.lan_parent_of(library) or ""
     return environment(out, tree)
 

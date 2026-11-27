@@ -7,7 +7,7 @@ import argparse
 import os
 
 from .. import capacity, core, hostconfig, paths, remote, vmsettings
-from ..core import Error
+from ..base import Error
 from .common import Usage, emit, layer_versions, progress, table, text_value
 
 

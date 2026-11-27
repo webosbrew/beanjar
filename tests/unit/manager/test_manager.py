@@ -36,15 +36,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar import (
+    base,
     capacity,
     core,
+    firmware,
     framing,
     hostconfig,
     hostprocs,
     keys,
-    targets,
     paths,
     poweroff,
+    targets,
     tomlfile,
     unit,
     vmidentity,
@@ -107,8 +109,8 @@ def cleanup(tmp):
     for root, _dirs, files in os.walk(tmp):
         for n in files:
             if n in ("qemu.pid", "viewer.pid", "vnc.pid", "launcher.pid"):
-                pid = core.read_pid(os.path.join(root, n))
-                if pid and core.proc_alive(
+                pid = base.read_pid(os.path.join(root, n))
+                if pid and base.proc_alive(
                     pid, "qemu-system", "beanjar-viewer", "beanjar-vnc", "beanjar.unit"
                 ):
                     testunits.end(pid, group=n == "launcher.pid")  # the session: QEMU, the bus
@@ -535,7 +537,7 @@ class ManagerTest(unittest.TestCase):
             self.assertEqual(f.read(), before)
         # nothing known at all: the error names the command that stores a checkout
         with mock.patch.object(core, "default_repo", return_value=None):
-            with self.assertRaises(core.Error) as e:
+            with self.assertRaises(base.Error) as e:
                 core.Library(self.lib_dir).repo
         self.assertIn("beanjar library config set repo=DIR", str(e.exception))
         self.cli("library", "config", "set", f"repo={scratch}")
@@ -598,7 +600,7 @@ class ManagerTest(unittest.TestCase):
         dev = os.path.join(self.lib_dir, "development-0123abcd")
         os.makedirs(dev)
         self.assertEqual(
-            core.addresses_of(dev), "127.0.2", "a development library takes its library's"
+            base.addresses_of(dev), "127.0.2", "a development library takes its library's"
         )
         self.assertIn(
             "with its development libraries",
@@ -680,7 +682,7 @@ class ManagerTest(unittest.TestCase):
         # not settable, and checked
         self.assertIn("KEY one of", self.cli("config", "set", "tv4", "slot=9", ok=False))
         for bad in (0, 255, True, "2"):
-            with self.assertRaisesRegex(core.Error, "slot"):
+            with self.assertRaisesRegex(base.Error, "slot"):
                 vmsettings.validate({"slot": bad})
         # conversion: a vm.toml without a slot gets the lowest free one when the library is opened
         path = os.path.join(self.lib_dir, "vms", "tv2", "vm.toml")
@@ -1217,7 +1219,7 @@ class ManagerTest(unittest.TestCase):
         with open(path, "w") as f:
             f.write(text.replace('directory = "firmware"', 'directory = "/nonexistent/fw"'))
         with mock.patch.dict(os.environ, HOME=self.home):
-            with self.assertRaisesRegex(core.Error, "has no firmware /nonexistent/fw"):
+            with self.assertRaisesRegex(base.Error, "has no firmware /nonexistent/fw"):
                 clone.clone(lib, "tv1", "tv2", out=lambda _: None)
         with open(path, "w") as f:
             f.write(text)
@@ -1279,7 +1281,7 @@ class ManagerTest(unittest.TestCase):
                 src_dir, os.path.join(libs["h2"], "vms", "tv2"), "\n".join(lines), model_key
             )
             self.assertTrue({h for h, _ in shells} == {"h1", "h2"})
-            with self.assertRaisesRegex(core.Error, "exists"):
+            with self.assertRaisesRegex(base.Error, "exists"):
                 clone.clone(pc, "h1/tv1", "h2/tv2", out=lines.append)
             # this machine to a host
             here = core.Library(os.path.join(self.tmp, "lib-here"), self.repo)
@@ -1411,12 +1413,12 @@ class ManagerTest(unittest.TestCase):
             with (
                 self.subTest(attr),
                 mock.patch.object(core.VM, attr, return_value=4321),
-                self.assertRaisesRegex(core.Error, re.escape(text)),
+                self.assertRaisesRegex(base.Error, re.escape(text)),
             ):
                 lib.rename("tv1", "tv3")
         with (
             mock.patch.object(vmunits, "unit_show", return_value={"ActiveState": "active"}),
-            self.assertRaisesRegex(core.Error, "is still active: stop it before renaming"),
+            self.assertRaisesRegex(base.Error, "is still active: stop it before renaming"),
         ):
             lib.rename("tv1", "tv3")
         self.assertFalse(os.path.exists(os.path.join(vm_dir, "start.lock")), "the lock released")
@@ -1768,7 +1770,9 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(tload(os.path.join(vm_dir, "vm.toml"))["fw"], fw)
         self.assertFalse(os.path.exists(os.path.join(vm_dir, "firmware")))
         self.assertEqual(self.lib().vm("a").firmware_dir(), fw)
-        self.assertEqual(core.vm_firmware(vm_dir, fw), (fw, os.path.join(vm_dir, "firmware-cache")))
+        self.assertEqual(
+            firmware.vm_firmware(vm_dir, fw), (fw, os.path.join(vm_dir, "firmware-cache"))
+        )
         self.assertTrue(self.listing()["a"]["fw_external"])
         # a path (relative here: any value with a '/') is used as given, made absolute
         self.cli("create", "b", "--firmware", os.path.relpath(fw) + "/")
@@ -2044,7 +2048,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(rows["a"]["state"], "Running")
         self.assertTrue(rows["a"]["pid"])
         lock = os.path.join(self.lib_dir, "vms", "a", "start.lock")
-        self.assertTrue(core.proc_alive(jload(lock)["pid"]) or rows["a"]["pid"], "a's start lock")
+        self.assertTrue(base.proc_alive(jload(lock)["pid"]) or rows["a"]["pid"], "a's start lock")
         self.assertIn("already running", self.cli("start", "a", ok=False))
         # the admission: b's RAM (the model's 1 GiB) and the headroom, against MemAvailable less
         # what a, running, may still claim (its reservation less its use)
@@ -2094,7 +2098,7 @@ class ManagerTest(unittest.TestCase):
         # its disks synced and QEMU stopped (the launcher's stop), and the stop says why
         self.assertIn("a: no power-off signal (webOS is still starting); syncing its disks", out)
         self.assertIn("SAVE_LOGS=1", out)
-        self.assertFalse(core.proc_alive(pid, "qemu-system"))
+        self.assertFalse(base.proc_alive(pid, "qemu-system"))
         self.assertEqual(self.listing()["a"]["state"], "Off")
         self.assertFalse(os.path.exists(lock))
 
@@ -2876,9 +2880,9 @@ class ManagerTest(unittest.TestCase):
         out = self.cli("stop", "a", "--unplug")
         self.assertIn("SAVE_LOGS=0", out)
         self.assertNotIn("power-off", out)
-        self.assertTrue(wait_for(lambda: not core.proc_alive(pid, "qemu-system")))
+        self.assertTrue(wait_for(lambda: not base.proc_alive(pid, "qemu-system")))
         self.assertTrue(
-            wait_for(lambda: not core.proc_alive(bus, "dbus-daemon")), "the private bus survived"
+            wait_for(lambda: not base.proc_alive(bus, "dbus-daemon")), "the private bus survived"
         )
         self.assertEqual(self.listing()["a"]["state"], "Off")
         self.assertFalse(os.path.exists(os.path.join(self.lib_dir, "vms", "a", "start.lock")))
@@ -2927,7 +2931,7 @@ class ManagerTest(unittest.TestCase):
                     "webOS 1",
                 ),
             )
-            self.assertTrue(core.proc_alive(b["pid"], "qemu-system"))
+            self.assertTrue(base.proc_alive(b["pid"], "qemu-system"))
             p = rows["h13-afro"]
             self.assertEqual(
                 (p["library"], p["tag"], p["unit"], p["run_dir"], p["state"]),
@@ -2939,7 +2943,7 @@ class ManagerTest(unittest.TestCase):
                     "Running",
                 ),
             )
-            self.assertEqual(p["pid"], core.read_pid(os.path.join(target, "run", "qemu.pid")))
+            self.assertEqual(p["pid"], base.read_pid(os.path.join(target, "run", "qemu.pid")))
             text = self.cli("list", "--all")
             self.assertTrue(text.startswith("LIBRARY "), text)
             self.assertRegex(text, rf"(?m)^test{os.getpid()} +h13-afro +Running")
@@ -2961,16 +2965,16 @@ class ManagerTest(unittest.TestCase):
         self.cli("start", "a")
         status = self.info("a")
         pid, bus = status["pid"], self.bus_pid("a")
-        self.assertTrue(core.proc_alive(bus, "dbus-daemon"))
+        self.assertTrue(base.proc_alive(bus, "dbus-daemon"))
         if self.systemd:
             unit = status["unit"]
             self.assertEqual(
                 (unit["ActiveState"], unit["Unit"]), ("active", testunits.PREFIX + "a")
             )
-            self.assertTrue(core.in_unit(pid, unit["Unit"]) and core.in_unit(bus, unit["Unit"]))
+            self.assertTrue(base.in_unit(pid, unit["Unit"]) and base.in_unit(bus, unit["Unit"]))
         os.kill(pid, signal.SIGTERM)  # the fake exits 0, as QEMU at a power-off
         self.assertTrue(
-            wait_for(lambda: not core.proc_alive(bus, "dbus-daemon")), "the private bus survived"
+            wait_for(lambda: not base.proc_alive(bus, "dbus-daemon")), "the private bus survived"
         )
         self.assertTrue(wait_for(lambda: self.listing()["a"]["state"] == "Off"))
         self.assertUnitGone("a")
@@ -2980,8 +2984,8 @@ class ManagerTest(unittest.TestCase):
         self.cli("stop", "a")
 
     def bus_pid(self, name):
-        pid = core.read_pid(os.path.join(self.lib_dir, "vms", name, "run", "dbus-daemon.pid"))
-        self.assertTrue(core.proc_alive(pid, "dbus-daemon"), "no private bus")
+        pid = base.read_pid(os.path.join(self.lib_dir, "vms", name, "run", "dbus-daemon.pid"))
+        self.assertTrue(base.proc_alive(pid, "dbus-daemon"), "no private bus")
         return pid
 
     def assertUnitGone(self, name):
@@ -3065,7 +3069,7 @@ class ManagerTest(unittest.TestCase):
         self.cli("start", "a")
         out = self.cli("viewer", "open", "a", "--remote")
         vpid = int(out.split()[-1])
-        self.assertTrue(core.proc_alive(vpid, "beanjar-viewer"))
+        self.assertTrue(base.proc_alive(vpid, "beanjar-viewer"))
         self.assertIn("already open", self.cli("viewer", "open", "a", ok=False))
         self.assertTrue(self.listing()["a"]["viewer"])
         self.assertTrue(
@@ -3082,12 +3086,12 @@ class ManagerTest(unittest.TestCase):
             log,
         )
         self.assertIn("viewer closed", self.cli("viewer", "close", "a"))
-        self.assertTrue(wait_for(lambda: not core.proc_alive(vpid, "beanjar-viewer")))
+        self.assertTrue(wait_for(lambda: not base.proc_alive(vpid, "beanjar-viewer")))
         self.assertIn("no viewer open", self.cli("viewer", "close", "a"))
         # stop also closes a viewer that stays
         vpid = int(self.cli("viewer", "open", "a").split()[-1])
         self.cli("stop", "a")
-        self.assertTrue(wait_for(lambda: not core.proc_alive(vpid, "beanjar-viewer")))
+        self.assertTrue(wait_for(lambda: not base.proc_alive(vpid, "beanjar-viewer")))
         self.cli("start", "h")
         self.assertIn("needs dbus", self.cli("viewer", "open", "h", ok=False))
         self.cli("stop", "h")
@@ -3120,7 +3124,7 @@ class ManagerTest(unittest.TestCase):
         self.assertEqual(os.stat(password_file).st_mode & 0o777, 0o600)
         first = slurp(password_file).strip()
         self.assertRegex(first, r"^[2-9a-hjkmnp-z]{20}$")
-        self.assertTrue(core.proc_alive(pid, "beanjar-vnc"))
+        self.assertTrue(base.proc_alive(pid, "beanjar-vnc"))
         self.assertEqual(self.listing()["a"]["vnc"], pid)
         self.assertEqual(
             self.info("a")["vnc"],
@@ -3139,7 +3143,7 @@ class ManagerTest(unittest.TestCase):
         )
         self.assertNotIn(first, slurp(log))
         self.assertIn("beanjar-vnc stopped", self.cli("vnc", "stop", "a"))
-        self.assertTrue(wait_for(lambda: not core.proc_alive(pid, "beanjar-vnc")))
+        self.assertTrue(wait_for(lambda: not base.proc_alive(pid, "beanjar-vnc")))
         self.assertEqual(slurp(password_file).strip(), first, "kept after vnc stop")
         self.assertIn("no beanjar-vnc running", self.cli("vnc", "stop", "a"))
         # the default port, 5900, unless a listener holds it (the Pi desktop's wayvnc on *:5900);
@@ -3192,7 +3196,7 @@ class ManagerTest(unittest.TestCase):
         out = self.cli("vnc", "password", "reset", "a")
         self.assertIn(f"beanjar-vnc (pid {vpid}) keeps the old password until it restarts", out)
         self.assertIn("takes effect at the next beanjar vnc start", out)
-        self.assertTrue(core.proc_alive(vpid, "beanjar-vnc"))
+        self.assertTrue(base.proc_alive(vpid, "beanjar-vnc"))
         self.cli("vnc", "stop", "a")
         # an emptied file is made random again, never none
         open(password_file, "w").close()
@@ -3203,12 +3207,12 @@ class ManagerTest(unittest.TestCase):
         vpid = int(self.cli("viewer", "open", "a").split()[-1])
         self.assertIn("viewer is already open", self.cli("vnc", "start", "a", ok=False))
         self.cli("viewer", "close", "a")
-        self.assertTrue(wait_for(lambda: not core.proc_alive(vpid, "beanjar-viewer")))
+        self.assertTrue(wait_for(lambda: not base.proc_alive(vpid, "beanjar-viewer")))
         # stop also ends a beanjar-vnc that stays, and keeps its password
         kept = slurp(password_file)
         pid = int(self.cli("vnc", "start", "a", "--port", str(port)).split()[3].rstrip(","))
         self.cli("stop", "a")
-        self.assertTrue(wait_for(lambda: not core.proc_alive(pid, "beanjar-vnc")))
+        self.assertTrue(wait_for(lambda: not base.proc_alive(pid, "beanjar-vnc")))
         self.assertEqual(slurp(password_file), kept)
         self.assertFalse(os.path.exists(os.path.join(run, "vnc.password")), "no copy in run/")
 
@@ -3384,7 +3388,7 @@ class LayersTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp)
         lib = core.Library(os.path.join(tmp, "lib"), tmp)
         for args, key in ((("",), "name"), (("tv1",), "fw")):
-            with self.assertRaises(core.Error) as e:
+            with self.assertRaises(base.Error) as e:
                 lib.create(*args)
             self.assertEqual(e.exception.key, key)
         for cfg, key in (
@@ -3402,15 +3406,15 @@ class LayersTest(unittest.TestCase):
             ({"layers": ["normal", "mystery"]}, "layers"),  # no layer.toml
             ({"audio": "dbus", "display": "none"}, "audio"),
         ):
-            with self.assertRaises(core.Error) as e:
+            with self.assertRaises(base.Error) as e:
                 vmsettings.validate(cfg)
             self.assertEqual(e.exception.key, key)
         # a saved VM may name a layer this tree lacks (the dialogs keep it); the rules still hold
         vmsettings.validate({"layers": ["normal", "mystery"]}, saved=True)
-        with self.assertRaisesRegex(core.Error, "layer hbchannel requires devmode"):
+        with self.assertRaisesRegex(base.Error, "layer hbchannel requires devmode"):
             vmsettings.validate({"layers": ["mystery", "hbchannel"]}, saved=True)
         # a new VM with hbchannel and not devmode is refused
-        with self.assertRaisesRegex(core.Error, "layer hbchannel requires devmode") as e:
+        with self.assertRaisesRegex(base.Error, "layer hbchannel requires devmode") as e:
             lib.vm_config(layers=["normal", "hbchannel"])
         self.assertEqual(e.exception.key, "layers")
 
@@ -3423,7 +3427,7 @@ class ChildExitedTest(unittest.TestCase):
     def test_running_child_under_another_name(self):
         p = subprocess.Popen(["sleep", "5"])
         try:
-            self.assertFalse(core.proc_alive(p.pid, "beanjar-vnc"), "named otherwise")
+            self.assertFalse(base.proc_alive(p.pid, "beanjar-vnc"), "named otherwise")
             self.assertFalse(hostprocs.child_exited(p.pid))
         finally:
             p.kill()
@@ -3481,7 +3485,7 @@ class AresStdinTest(unittest.TestCase):
 
     def test_long_command(self):
         from beanjar import ares
-        from beanjar.core import Error
+        from beanjar.base import Error
 
         ok = "x" * (ares.MAX_COMMAND - 1 - len("exec </dev/null; "))
         self.assertEqual(ares.detach_stdin("ares-shell", ["-r", ok], empty=True)[1][-1], "x")
@@ -3521,8 +3525,8 @@ class TomlTest(unittest.TestCase):
             tomlfile.write_toml(path, {"x": 1.5})
         with open(path, "w") as f:
             f.write("x = [1\n")
-        with self.assertRaises(core.Error):
-            core.read_toml(path)
+        with self.assertRaises(base.Error):
+            base.read_toml(path)
 
     def test_launcher_env(self):
         cfg = {
@@ -3562,7 +3566,7 @@ class TomlTest(unittest.TestCase):
             {"UNCOMPRESSED_PAKS": "rootfs"},
             {"FW_CACHE": "/x"},
         ):
-            with self.assertRaises(core.Error):
+            with self.assertRaises(base.Error):
                 vmsettings.launcher_env(bad)
         # as the launcher (launch.py --dir) resolves it: no fw, the VM's own firmware/ with its cache/
         # (the partition map); any other directory (absolute, or relative to the VM's folder; a bare
@@ -3593,7 +3597,7 @@ class TomlTest(unittest.TestCase):
         self.assertEqual(
             launcher(vm, fw="FW1"), f"{vm}/FW1|{vm}/firmware-cache|normal,gl,rootssh|dbus"
         )
-        with self.assertRaises(core.Error):
+        with self.assertRaises(base.Error):
             core.vmconfig.write(os.path.join(vm, "vm.toml"), dict(cfg, RUN_DIR="/x"))
             core.vm_launcher_env(os.path.join(vm, "vm.toml"))
         # Platform is derived from the selected firmware and absent from the document.
@@ -4033,7 +4037,7 @@ class ScreenshotTest(unittest.TestCase):
         raw = zlib.decompress(chunks[b"IDAT"])
         self.assertEqual(raw, b"".join(b"\0" + pixels[y * 9 : y * 9 + 9] for y in range(h)))
         for bad in (b"P5\n3 2\n255\n", b"P6\n3 2\n255\n" + pixels[:-1]):
-            with self.assertRaises(core.Error):
+            with self.assertRaises(base.Error):
                 framing.ppm_to_png(bad)
 
     def test_ask(self):
@@ -4103,7 +4107,7 @@ class ScreenshotTest(unittest.TestCase):
             self.assertTrue(wait_for(ask))
             self.assertEqual(seen[-1], ("/x y/shot.ppm", 1280, 720))
             fail.append(1)
-            with self.assertRaisesRegex(core.Error, "no picture yet"):
+            with self.assertRaisesRegex(base.Error, "no picture yet"):
                 ask()
 
 
@@ -4139,7 +4143,7 @@ class ThumbnailTest(unittest.TestCase):
 
     def test_kept(self):
         with mock.patch.object(core.Library, "vm", return_value=self.vm):
-            with self.assertRaises(core.Error):
+            with self.assertRaises(base.Error):
                 self.lib.last_thumbnail("a")
         small = self.shot((384, 216), 0x40)
         self.shot((1280, 720), 0x80)  # not a thumbnail: the kept one stays
@@ -4317,7 +4321,7 @@ class PowerOffTest(unittest.TestCase):
                 alive = iter([True, True, False])
                 with (
                     mock.patch.object(
-                        core, "read_pid", side_effect=lambda f: 123 if f == bg.pidfile else None
+                        base, "read_pid", side_effect=lambda f: 123 if f == bg.pidfile else None
                     ),
                     mock.patch.object(
                         launch.unit, "alive", side_effect=lambda p: next(alive, False)
@@ -4359,7 +4363,7 @@ class PowerOffTest(unittest.TestCase):
         ):
             try:
                 self.lib.stop("a", how, fallback=fallback, out=said.append)
-            except core.Error as e:
+            except base.Error as e:
                 error = str(e)
         if how == core.POWER_OFF:
             refusal.assert_called_once_with()

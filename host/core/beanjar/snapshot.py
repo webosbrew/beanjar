@@ -37,7 +37,7 @@ import sys
 import tempfile
 import time
 
-from . import core, sestore, tomlfile
+from . import base, sestore, tomlfile
 from .base import NAME_RE, Error, read_toml
 
 SNAPSHOTS = "snapshots"
@@ -249,7 +249,7 @@ def list_snapshots(vm):
 def check_off(vm, doing):
     """An Error unless the VM is off (doing: what needs it off, for the message)."""
     st = vm.state()[0]
-    if st != core.OFF:
+    if st != base.OFF:
         raise Error(
             f"VM {vm.name} is {st.lower()}: {doing} needs it off; stop it first: beanjar stop "
             f"{vm.name}"
@@ -318,7 +318,7 @@ def finish_reset(vm_dir, out=None):
     if not os.path.isdir(pending):
         return False
     state = os.path.join(vm_dir, STATE)
-    identity = core.identity_dir(vm_dir)
+    identity = base.identity_dir(vm_dir)
     old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, HELD)
     try:
         new_state = os.path.join(pending, STATE)

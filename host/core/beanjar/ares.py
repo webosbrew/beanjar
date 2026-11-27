@@ -53,8 +53,8 @@ import sys
 import tempfile
 import termios
 
-from . import base, core, keys, layermeta, remote, vmsettings
-from .core import Error
+from . import base, keys, layermeta, remote, vmsettings
+from .base import Error
 
 TOOL_RE = re.compile(r"ares-[a-z-]+")
 HOME_DIR = "ares-home"  # under the VM's run directory
@@ -233,14 +233,14 @@ def split_device(args):
         opt, eq, value = word.partition("=")
         if opt in DEVICE_OPTIONS:
             if device is not None:
-                raise core.Error("give -d NAME once")
+                raise base.Error("give -d NAME once")
             if not eq:
                 if i + 1 >= len(args):
-                    raise core.Error(f"{word} needs a VM name")
+                    raise base.Error(f"{word} needs a VM name")
                 value = args[i + 1]
                 i += 1
             if not value:
-                raise core.Error(f"{word} needs a VM name")
+                raise base.Error(f"{word} needs a VM name")
             device = value
         else:
             rest.append(word)

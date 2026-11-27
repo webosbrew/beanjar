@@ -9,7 +9,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import core, firmware, paths, superpak
+from beanjar import base, firmware, paths, superpak
 
 HERE = Path(__file__).resolve().parent
 
@@ -90,7 +90,7 @@ def test_import_and_storage_estimate(pak):
             assert (pak.dest / (name + ".pak")).read_bytes() == payload
         assert (pak.dest / "license.pak").read_bytes() == b"LICENSE"
         (pak.src / "license.pak").unlink()
-        with pytest.raises(core.Error, match="lacks license.pak"):
+        with pytest.raises(base.Error, match="lacks license.pak"):
             firmware.check_paks(pak.src, ("test", "test"))
 
 

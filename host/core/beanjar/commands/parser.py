@@ -8,7 +8,7 @@ import os
 import shutil
 import textwrap
 
-from .. import core
+from .. import base
 from . import (
     devices,
     display,
@@ -295,7 +295,7 @@ def build():
     )
     p.add_argument(
         "--library",
-        help=f"library directory (default $BEANJAR_LIBRARY or {core.default_library()}); "
+        help=f"library directory (default $BEANJAR_LIBRARY or {base.default_library()}); "
         "anywhere on the line",
     )
     p.add_argument(

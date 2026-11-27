@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import core, paths, vmconfig, vmidentity, vmsettings
+from beanjar import base, core, paths, vmconfig, vmidentity, vmsettings
 
 
 @pytest.fixture
@@ -107,11 +107,11 @@ def test_validation():
         ),
     ]
     for fields, message in bad:
-        with pytest.raises(core.Error, match=message):
+        with pytest.raises(base.Error, match=message):
             vmconfig.decode(dict(firmware={"directory": "firmware"}, **fields))
-    with pytest.raises(core.Error):
+    with pytest.raises(base.Error):
         vmconfig.decode({})
-    with pytest.raises(core.Error, match="unknown section"):
+    with pytest.raises(base.Error, match="unknown section"):
         vmconfig.decode({"smp": 4})
 
 
@@ -134,21 +134,21 @@ def test_userland():
     """hardware.userland: auto, the default, is not written out; native and qemu-user are
     USERLAND; qemu-user is refused on the firmware lines that need native 32-bit execution
     (vmsettings.NATIVE_ONLY)."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "userland" not in vmconfig.decode(base)
-    assert "USERLAND" not in vmsettings.launcher_env(vmconfig.decode(base))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "userland" not in vmconfig.decode(base_doc)
+    assert "USERLAND" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
     assert vmsettings.SETTING_HELP["userland"][1] == "auto"
-    cfg = vmconfig.decode(dict(base, hardware={"userland": "qemu-user"}))
+    cfg = vmconfig.decode(dict(base_doc, hardware={"userland": "qemu-user"}))
     assert vmsettings.launcher_env(cfg)["USERLAND"] == "qemu-user"
     vmsettings.validate(cfg)
     vmsettings.validate(dict(cfg, platform="webOS"))
     vmsettings.validate(dict(cfg, platform="Test"))
     for platform in ("NetCast", "SimpleSmart"):
-        with pytest.raises(core.Error, match="userland=qemu-user"):
+        with pytest.raises(base.Error, match="userland=qemu-user"):
             vmsettings.validate(dict(cfg, platform=platform))
         vmsettings.validate(dict(cfg, userland="auto", platform=platform))
     vmsettings.validate(dict(cfg, userland="native", platform="NetCast"))
-    with pytest.raises(core.Error, match="userland=x86"):
+    with pytest.raises(base.Error, match="userland=x86"):
         vmsettings.validate(dict(cfg, userland="x86"))
     assert vmsettings.SETTINGS["userland"] == "USERLAND"
 
@@ -157,20 +157,20 @@ def test_guest_kernel():
     """hardware.guest_kernel: arm64, the default, is not written out; x86-64 is GUEST_KERNEL,
     refused with userland=native and on NetCast and SimpleSmart, and on a host that is not x86-64
     (guest_kernel_host_refusal, at set and at start)."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "guest_kernel" not in vmconfig.decode(base)
-    assert "GUEST_KERNEL" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, hardware={"guest_kernel": "x86-64"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "guest_kernel" not in vmconfig.decode(base_doc)
+    assert "GUEST_KERNEL" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(dict(base_doc, hardware={"guest_kernel": "x86-64"}))
     assert vmsettings.launcher_env(cfg)["GUEST_KERNEL"] == "x86-64"
     vmsettings.validate(dict(cfg, platform="webOS"))
     vmsettings.validate(dict(cfg, platform="webOS", userland="qemu-user"))
-    with pytest.raises(core.Error, match="userland=native is refused") as e:
+    with pytest.raises(base.Error, match="userland=native is refused") as e:
         vmsettings.validate(dict(cfg, platform="webOS", userland="native"))
     assert e.value.key == "guest_kernel"
     for platform in ("NetCast", "SimpleSmart"):
-        with pytest.raises(core.Error, match=f"{platform} firmware needs native 32-bit execution"):
+        with pytest.raises(base.Error, match=f"{platform} firmware needs native 32-bit execution"):
             vmsettings.validate(dict(cfg, platform=platform))
-    with pytest.raises(core.Error, match="guest_kernel=arm"):
+    with pytest.raises(base.Error, match="guest_kernel=arm"):
         vmsettings.validate(dict(cfg, guest_kernel="arm"))
     assert vmsettings.guest_kernel_host_refusal("x86-64", "x86_64") is None
     assert vmsettings.guest_kernel_host_refusal("arm64", "aarch64") is None
@@ -180,28 +180,28 @@ def test_guest_kernel():
 def test_hwdec():
     """hardware.hwdec: auto, the default, is not written out; any other value is MEDIA_HWDEC,
     which advanced.env no longer takes; none refuses MEDIA_SANDBOX=off."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "hwdec" not in vmconfig.decode(base)
-    assert "MEDIA_HWDEC" not in vmsettings.launcher_env(vmconfig.decode(base))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "hwdec" not in vmconfig.decode(base_doc)
+    assert "MEDIA_HWDEC" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
     for value in ("none", "vaapi", "cuda", "v4l2request", "auto"):
-        cfg = vmconfig.decode(dict(base, hardware={"hwdec": value}))
+        cfg = vmconfig.decode(dict(base_doc, hardware={"hwdec": value}))
         assert vmsettings.launcher_env(cfg)["MEDIA_HWDEC"] == value
-    with pytest.raises(core.Error, match="hardware.hwdec: hwdec=gpu: one of auto, none, cuda"):
-        vmconfig.decode(dict(base, hardware={"hwdec": "gpu"}))
+    with pytest.raises(base.Error, match="hardware.hwdec: hwdec=gpu: one of auto, none, cuda"):
+        vmconfig.decode(dict(base_doc, hardware={"hwdec": "gpu"}))
     for gone in ("drm", "qsv", "vdpau"):
-        with pytest.raises(core.Error, match=f"hwdec={gone}: one of auto, none, cuda, v4l2request"):
-            vmconfig.decode(dict(base, hardware={"hwdec": gone}))
-    with pytest.raises(core.Error, match="advanced.env.MEDIA_HWDEC is owned by the launcher"):
-        vmconfig.decode(dict(base, advanced={"env": {"MEDIA_HWDEC": "none"}}))
-    with pytest.raises(core.Error, match="MEDIA_SANDBOX=off is refused") as e:
+        with pytest.raises(base.Error, match=f"hwdec={gone}: one of auto, none, cuda, v4l2request"):
+            vmconfig.decode(dict(base_doc, hardware={"hwdec": gone}))
+    with pytest.raises(base.Error, match="advanced.env.MEDIA_HWDEC is owned by the launcher"):
+        vmconfig.decode(dict(base_doc, advanced={"env": {"MEDIA_HWDEC": "none"}}))
+    with pytest.raises(base.Error, match="MEDIA_SANDBOX=off is refused") as e:
         vmconfig.decode(
-            dict(base, hardware={"hwdec": "none"}, advanced={"env": {"MEDIA_SANDBOX": "off"}})
+            dict(base_doc, hardware={"hwdec": "none"}, advanced={"env": {"MEDIA_SANDBOX": "off"}})
         )
     assert e.value.key == "hwdec"
     vmconfig.decode(
-        dict(base, hardware={"hwdec": "none"}, advanced={"env": {"MEDIA_SANDBOX": "on"}})
+        dict(base_doc, hardware={"hwdec": "none"}, advanced={"env": {"MEDIA_SANDBOX": "on"}})
     )
-    vmconfig.decode(dict(base, advanced={"env": {"MEDIA_SANDBOX": "off"}}))
+    vmconfig.decode(dict(base_doc, advanced={"env": {"MEDIA_SANDBOX": "off"}}))
     assert vmsettings.SETTING_HELP["hwdec"][3] == "auto"  # config unset takes it
 
 
@@ -213,7 +213,7 @@ def test_configure_hwdec(broken_vm):
     assert 'hwdec = "none"' in toml.read_text()
     assert lib.vm("tv").config["hwdec"] == "none"
     before = toml.read_text()
-    with pytest.raises(core.Error, match="hwdec=d3d11va") as e:
+    with pytest.raises(base.Error, match="hwdec=d3d11va") as e:
         lib.configure("tv", prepare=False, hwdec="d3d11va")
     assert e.value.key == "hwdec"
     assert toml.read_text() == before
@@ -261,70 +261,72 @@ def test_resolve_userland_native_only(platform):
         ("x86-64", "kvm", None),
     ):
         with pytest.raises(
-            core.Error,
+            base.Error,
             match=f"{platform} firmware needs native 32-bit execution, which this host cannot "
             "provide",
         ):
             vmsettings.resolve_userland("auto", guest_kernel, accel, aarch32, platform)
-    with pytest.raises(core.Error, match="userland=qemu-user"):
+    with pytest.raises(base.Error, match="userland=qemu-user"):
         vmsettings.resolve_userland("qemu-user", "arm64", "tcg", None, platform)
 
 
 def test_free_page_reporting():
     """Opt-in: off is the default and is not written out; on is FREE_PAGE_REPORTING=on."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "free_page_reporting" not in vmconfig.decode(base)
-    cfg = vmconfig.decode(dict(base, hardware={"free_page_reporting": "on"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "free_page_reporting" not in vmconfig.decode(base_doc)
+    cfg = vmconfig.decode(dict(base_doc, hardware={"free_page_reporting": "on"}))
     assert vmsettings.launcher_env(cfg)["FREE_PAGE_REPORTING"] == "on"
-    assert "FREE_PAGE_REPORTING" not in vmsettings.launcher_env(vmconfig.decode(base))
+    assert "FREE_PAGE_REPORTING" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
 
 
 def test_updatable():
     """firmware.updatable: off is the default and is not written out; on is UPDATABLE=on; a value
     other than on/off is refused."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "updatable" not in vmconfig.decode(base)
-    assert "UPDATABLE" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, firmware={"directory": "firmware", "updatable": "on"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "updatable" not in vmconfig.decode(base_doc)
+    assert "UPDATABLE" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "updatable": "on"}))
     assert vmsettings.launcher_env(cfg)["UPDATABLE"] == "on"
     for bad, why in (("yes", "one of on, off"), (True, "must be a string")):
-        with pytest.raises(core.Error, match=why):
-            vmconfig.decode(dict(base, firmware={"directory": "firmware", "updatable": bad}))
+        with pytest.raises(base.Error, match=why):
+            vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "updatable": bad}))
 
 
 def test_lan_access():
     """network.lan_access: off is the default and is not written out; on is NET_LAN_ACCESS=on; a
     value other than on/off is refused, and so is on with link lan (on the LAN anyway)."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "lan_access" not in vmconfig.decode(base)
-    assert "NET_LAN_ACCESS" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, network={"lan_access": "on"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "lan_access" not in vmconfig.decode(base_doc)
+    assert "NET_LAN_ACCESS" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(dict(base_doc, network={"lan_access": "on"}))
     assert vmsettings.launcher_env(cfg)["NET_LAN_ACCESS"] == "on"
     vmsettings.validate(cfg)
     for bad, why in (("yes", "one of on, off"), (True, "must be a string")):
-        with pytest.raises(core.Error, match=why):
-            vmsettings.validate(vmconfig.decode(dict(base, network={"lan_access": bad})))
-    with pytest.raises(core.Error, match="lan_access is for link=nat"):
+        with pytest.raises(base.Error, match=why):
+            vmsettings.validate(vmconfig.decode(dict(base_doc, network={"lan_access": bad})))
+    with pytest.raises(base.Error, match="lan_access is for link=nat"):
         vmsettings.validate(
-            vmconfig.decode(dict(base, network={"link": "lan", "lan_access": "on"}))
+            vmconfig.decode(dict(base_doc, network={"link": "lan", "lan_access": "on"}))
         )
-    vmsettings.validate(vmconfig.decode(dict(base, network={"link": "off", "lan_access": "on"})))
+    vmsettings.validate(
+        vmconfig.decode(dict(base_doc, network={"link": "off", "lan_access": "on"}))
+    )
 
 
 def test_lg_services():
     """network.lg_services: mock is the default and is not written out (the launcher's own default,
     qemu.py); real is NET_LG_SERVICES=real; any other value is refused."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "lg_services" not in vmconfig.decode(base)
-    assert "NET_LG_SERVICES" not in vmsettings.launcher_env(vmconfig.decode(base))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "lg_services" not in vmconfig.decode(base_doc)
+    assert "NET_LG_SERVICES" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
     assert vmsettings.DEFAULT_LG_SERVICES == "mock"
     for value in ("mock", "real"):
-        cfg = vmconfig.decode(dict(base, network={"lg_services": value}))
+        cfg = vmconfig.decode(dict(base_doc, network={"lg_services": value}))
         assert vmsettings.launcher_env(cfg)["NET_LG_SERVICES"] == value
         vmsettings.validate(cfg)
     for bad, why in (("off", "one of mock, real"), (False, "must be a string")):
-        with pytest.raises(core.Error, match=why):
-            vmsettings.validate(vmconfig.decode(dict(base, network={"lg_services": bad})))
+        with pytest.raises(base.Error, match=why):
+            vmsettings.validate(vmconfig.decode(dict(base_doc, network={"lg_services": bad})))
     values, default, what, unset = vmsettings.SETTING_HELP["lg_services"]
     assert (values, default, unset) == ("mock|real", "mock", "mock")
     assert "telemetry" in what and "real model key" in what
@@ -332,26 +334,28 @@ def test_lg_services():
 
 def test_debug_mode():
     """firmware.debug_mode: debug (the default, not written out), event or release; DEBUG_MODE."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "debug_mode" not in vmconfig.decode(base)
-    assert "DEBUG_MODE" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, firmware={"directory": "firmware", "debug_mode": "release"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "debug_mode" not in vmconfig.decode(base_doc)
+    assert "DEBUG_MODE" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(
+        dict(base_doc, firmware={"directory": "firmware", "debug_mode": "release"})
+    )
     assert vmsettings.launcher_env(cfg)["DEBUG_MODE"] == "release"
     for bad, why in (("quiet", "one of debug, event, release"), (5, "must be a string")):
-        with pytest.raises(core.Error, match=why):
-            vmconfig.decode(dict(base, firmware={"directory": "firmware", "debug_mode": bad}))
+        with pytest.raises(base.Error, match=why):
+            vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "debug_mode": bad}))
 
 
 def test_broadcast(path, tmp_path):
     """firmware.broadcast: the broadcast standard a global firmware boots as (BROADCAST), one of
     dvb, atsc and arib, and one the VM's chip has a board for where its manifest tells the chip."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "broadcast" not in vmconfig.decode(base)
-    cfg = vmconfig.decode(dict(base, firmware={"directory": "firmware", "broadcast": "atsc"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "broadcast" not in vmconfig.decode(base_doc)
+    cfg = vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "broadcast": "atsc"}))
     assert vmsettings.launcher_env(cfg)["BROADCAST"] == "atsc"
     for bad, why in (("pal", "one of dvb, atsc, arib"), (5, "must be a string")):
-        with pytest.raises(core.Error, match=why):
-            vmconfig.decode(dict(base, firmware={"directory": "firmware", "broadcast": bad}))
+        with pytest.raises(base.Error, match=why):
+            vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "broadcast": bad}))
     fw = tmp_path / "firmware"
     fw.mkdir()
     manifest = fw / "manifest.toml"
@@ -361,7 +365,7 @@ def test_broadcast(path, tmp_path):
     assert vmconfig.read(path)["broadcast"] == "atsc"
     manifest.write_text('name = "x"\nchip = "lm21ann"\nrelease = "number1"\n')
     with pytest.raises(
-        core.Error, match="firmware.broadcast: lm21ann-number1 has no board for broadcast"
+        base.Error, match="firmware.broadcast: lm21ann-number1 has no board for broadcast"
     ):
         vmconfig.read(path)
     manifest.write_text('name = "x"\nchip = "o22"\nrelease = "queue"\n')
@@ -369,20 +373,20 @@ def test_broadcast(path, tmp_path):
     assert vmconfig.read(path)["broadcast"] == "atsc"  # pak names state no standard
     # an ARIB firmware: its model_id.json says so
     with mock.patch.object(paths, "model_id", return_value={"region": "ARIB"}):
-        with pytest.raises(core.Error, match="broadcast 'atsc', but the firmware is 'arib'"):
+        with pytest.raises(base.Error, match="broadcast 'atsc', but the firmware is 'arib'"):
             vmconfig.read(path)
 
 
 def test_model(path, tmp_path):
     """firmware.model: the retail model whose board the VM boots (MODEL), one of its chip's
     model_boards where the manifest tells the chip, of the firmware's and broadcast's standard."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "model" not in vmconfig.decode(base)
-    assert "MODEL" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, firmware={"directory": "firmware", "model": "42LX3QPUA"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "model" not in vmconfig.decode(base_doc)
+    assert "MODEL" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "model": "42LX3QPUA"}))
     assert vmsettings.launcher_env(cfg)["MODEL"] == "42LX3QPUA"
-    with pytest.raises(core.Error, match="must be a string"):
-        vmconfig.decode(dict(base, firmware={"directory": "firmware", "model": 42}))
+    with pytest.raises(base.Error, match="must be a string"):
+        vmconfig.decode(dict(base_doc, firmware={"directory": "firmware", "model": 42}))
     fw = tmp_path / "firmware"
     fw.mkdir()
     manifest = fw / "manifest.toml"
@@ -392,22 +396,22 @@ def test_model(path, tmp_path):
     assert vmconfig.read(path)["model"] == "42LX3QPUA"
     manifest.write_text('name = "x"\nchip = "o22n"\nrelease = "number1"\n')
     with pytest.raises(
-        core.Error,
+        base.Error,
         match="firmware.model: o22n-number1 has no board for model '42LX3QPUA' "
         r"\(it has no model to choose\)",
     ):
         vmconfig.read(path)
     manifest.write_text('name = "x"\nchip = "o22"\nrelease = "ponytail"\n')
     path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "OLED65C2PUA"\n')
-    with pytest.raises(core.Error, match=r"no board for model 'OLED65C2PUA' \(it has: 42LX3QPUA\)"):
+    with pytest.raises(base.Error, match=r"no board for model 'OLED65C2PUA' \(it has: 42LX3QPUA\)"):
         vmconfig.read(path)
     # the model's standard is its board's: another broadcast, or firmware, is refused
     path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "42LX3QPUA"\nbroadcast = "dvb"\n')
-    with pytest.raises(core.Error, match="model '42LX3QPUA' is a atsc set, not dvb"):
+    with pytest.raises(base.Error, match="model '42LX3QPUA' is a atsc set, not dvb"):
         vmconfig.read(path)
     path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "42LX3QPUA"\n')
     with mock.patch.object(paths, "model_id", return_value={"region": "ARIB"}):
-        with pytest.raises(core.Error, match="is a atsc set, but the firmware is 'arib'"):
+        with pytest.raises(base.Error, match="is a atsc set, but the firmware is 'arib'"):
             vmconfig.read(path)
 
 
@@ -435,7 +439,7 @@ def test_configure_refuses_bad_broadcast(broken_vm):
     """configure checks broadcast against the firmware before it saves: nothing is written."""
     lib, toml = broken_vm
     before = toml.read_text()
-    with pytest.raises(core.Error, match="firmware.broadcast: lm21u-kisscurl has no board") as e:
+    with pytest.raises(base.Error, match="firmware.broadcast: lm21u-kisscurl has no board") as e:
         lib.configure("tv", prepare=False, broadcast="dvb")
     assert e.value.key == "broadcast"
     assert toml.read_text() == before
@@ -447,7 +451,7 @@ def test_configure_model(broken_vm):
     lib, toml = broken_vm
     before = toml.read_text()
     with pytest.raises(
-        core.Error, match="firmware.model: lm21u-kisscurl has no board for model"
+        base.Error, match="firmware.model: lm21u-kisscurl has no board for model"
     ) as e:
         lib.configure("tv", prepare=False, model="42LX3QPUA")
     assert e.value.key == "model"
@@ -465,10 +469,10 @@ def test_configure_fixes_saved_bad_broadcast(broken_vm):
     lib, toml = broken_vm
     bad = toml.read_text().replace("[firmware]", '[firmware]\nbroadcast = "dvb"')
     toml.write_text(bad)
-    with pytest.raises(core.Error, match="has no board for broadcast"):
+    with pytest.raises(base.Error, match="has no board for broadcast"):
         lib.vm("tv").config
     assert lib.vm("tv").config_unchecked["broadcast"] == "dvb"
-    with pytest.raises(core.Error, match="has no board for broadcast"):
+    with pytest.raises(base.Error, match="has no board for broadcast"):
         lib.configure("tv", prepare=False, mem=2048)  # still bad: refused, nothing written
     assert toml.read_text() == bad
     lib.configure("tv", prepare=False, broadcast="")
@@ -485,7 +489,7 @@ def test_configure_refuses_fw_that_breaks_broadcast(broken_vm):
     other = str(toml.parent.parent.parent.parent / "fw2")
     lib.configure("tv", prepare=False, fw=other, broadcast="dvb")
     before = toml.read_text()
-    with pytest.raises(core.Error, match="has no board for broadcast 'dvb'") as e:
+    with pytest.raises(base.Error, match="has no board for broadcast 'dvb'") as e:
         lib.configure("tv", prepare=False, fw=str(toml.parent.parent.parent.parent / "fw"))
     assert e.value.key == "broadcast"
     assert toml.read_text() == before
@@ -493,29 +497,29 @@ def test_configure_refuses_fw_that_breaks_broadcast(broken_vm):
 
 def test_mitm_flows():
     """The inspector's flow history: 1000 by default, not written out; 0 keeps all."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "MITM_FLOWS" not in vmsettings.launcher_env(vmconfig.decode(base))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "MITM_FLOWS" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
     for n in (0, 200):
-        cfg = vmconfig.decode(dict(base, network={"mitm_flows": n}))
+        cfg = vmconfig.decode(dict(base_doc, network={"mitm_flows": n}))
         assert vmsettings.launcher_env(cfg)["MITM_FLOWS"] == str(n)
 
 
 def test_forward():
     """network.forward is FORWARD; unset, none; not a string, or a bad port, refused."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "FORWARD" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, network={"forward": "8080,8081:80"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "FORWARD" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(dict(base_doc, network={"forward": "8080,8081:80"}))
     assert vmsettings.launcher_env(cfg)["FORWARD"] == "8080,8081:80"
     for bad in (8080, "80", "x"):
-        with pytest.raises(core.Error, match="forward"):
-            vmconfig.decode(dict(base, network={"forward": bad}))
+        with pytest.raises(base.Error, match="forward"):
+            vmconfig.decode(dict(base_doc, network={"forward": bad}))
 
 
 def test_mitm_flow_bytes():
     """The inspector's byte budget: off by default; a size such as 200M is MITM_FLOW_BYTES."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "MITM_FLOW_BYTES" not in vmsettings.launcher_env(vmconfig.decode(base))
-    cfg = vmconfig.decode(dict(base, network={"mitm_flow_bytes": "200M"}))
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "MITM_FLOW_BYTES" not in vmsettings.launcher_env(vmconfig.decode(base_doc))
+    cfg = vmconfig.decode(dict(base_doc, network={"mitm_flow_bytes": "200M"}))
     assert vmsettings.launcher_env(cfg)["MITM_FLOW_BYTES"] == "200M"
     assert [vmsettings.byte_size(x) for x in ("200M", "1g", "512K", "4096", "", "0")] == [
         200 << 20,
@@ -535,10 +539,10 @@ def test_mitm_flow_bytes():
 
 
 def test_network():
-    base = {"firmware": {"directory": "firmware"}}
+    base_doc = {"firmware": {"directory": "firmware"}}
     cfg = vmconfig.decode(
         dict(
-            base,
+            base_doc,
             network={
                 "link": "lan",
                 "mode": "mitm",
@@ -552,11 +556,14 @@ def test_network():
         "192.168.1.50/24,192.168.1.1",
     )
     assert (
-        vmconfig.decode(dict(base, network={"link": "lan", "address": "dhcp"}))["address"] == "dhcp"
+        vmconfig.decode(dict(base_doc, network={"link": "lan", "address": "dhcp"}))["address"]
+        == "dhcp"
     )
-    assert vmconfig.decode(dict(base, network={"link": "off", "mode": "direct"}))["link"] == "off"
     assert (
-        vmconfig.decode(dict(base, network={"link": "nat", "listen": "0.0.0.0"}))["listen"]
+        vmconfig.decode(dict(base_doc, network={"link": "off", "mode": "direct"}))["link"] == "off"
+    )
+    assert (
+        vmconfig.decode(dict(base_doc, network={"link": "nat", "listen": "0.0.0.0"}))["listen"]
         == "0.0.0.0"
     )
     assert vmsettings.launcher_env(dict(link="lan", mode="mitm", address="dhcp")) == {
@@ -578,7 +585,7 @@ def test_lan_parent(tmp_path):
         ("../eth0", "interface name"),
         ("a" * 16, "interface name"),
     ):
-        with pytest.raises(core.Error, match=message):
+        with pytest.raises(base.Error, match=message):
             vmidentity.parse_lan_parent(value, str(sys_net))
 
 
@@ -593,6 +600,6 @@ def test_edit_and_failed_edit(path):
     expected = original.replace("cpus=4", "cpus=2")
     assert path.read_text() == expected
     cfg["smp"] = True
-    with pytest.raises(core.Error):
+    with pytest.raises(base.Error):
         vmconfig.write(path, cfg)
     assert path.read_text() == expected

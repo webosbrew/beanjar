@@ -26,7 +26,7 @@ import json
 import re
 import shlex
 
-from .core import Error
+from .base import Error
 
 PARAMS = "/sys/module/lgemu/parameters"
 SEPARATOR = "--- beanjar ---"

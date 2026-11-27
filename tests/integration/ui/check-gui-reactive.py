@@ -40,7 +40,7 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import core, unit  # noqa: E402
+from beanjar import base, core, unit  # noqa: E402
 from beanjar_ui.manager import gui  # noqa: E402
 import testunits  # noqa: E402
 
@@ -122,13 +122,13 @@ def main():
 
     def script():
         cli("create", "a", "--import", "--firmware", fw)
-        yield lambda: phase("a") == core.OFF
+        yield lambda: phase("a") == base.OFF
         check(True, "a VM the CLI made shows")
         cli("start", "a")
-        yield lambda: phase("a") == core.RUNNING
+        yield lambda: phase("a") == base.RUNNING
         check(True, "the CLI's start shows: Running")
         cli("stop", "a")
-        yield lambda: phase("a") == core.OFF
+        yield lambda: phase("a") == base.OFF
         check(True, "the CLI's stop shows: Off")
         cli("config", "set", "a", "smp=2")
         yield lambda: "2 CPUs" in rows()["a"].specs
@@ -177,12 +177,12 @@ def main():
                     os.environ["CHECK_GUI_SHOTS"] + "-summary-broken.png"
                 )
         cli("start", "a")
-        yield lambda: phase("a") == core.RUNNING
+        yield lambda: phase("a") == base.RUNNING
         check(phase("b") == gui.BROKEN, "the other VMs still follow")
         cli("stop", "a")
-        yield lambda: phase("a") == core.OFF
+        yield lambda: phase("a") == base.OFF
         shutil.copyfile(os.path.join(lib_dir, "vms", "a", "vm.toml"), os.path.join(bad, "vm.toml"))
-        yield lambda: phase("b") == core.OFF
+        yield lambda: phase("b") == base.OFF
         check(
             m.summary_view.problem is None or m.summary_view.problem.kind != "broken",
             "fixed, it reads again; the banner no longer says it does not",
@@ -191,7 +191,7 @@ def main():
         # folders moved in and removed
         cli("create", "c", "--import", "--firmware", fw, library=other_dir)
         os.rename(os.path.join(other_dir, "vms", "c"), os.path.join(lib_dir, "vms", "c"))
-        yield lambda: phase("c") == core.OFF
+        yield lambda: phase("c") == base.OFF
         check(True, "a VM folder moved into vms/ shows")
         shutil.rmtree(bad)
         yield lambda: "b" not in rows()
@@ -213,12 +213,12 @@ def main():
             "a run/ made anew is watched again",
         )
         cli("start", "c")
-        yield lambda: phase("c") in (core.STARTING, core.RUNNING)
+        yield lambda: phase("c") in (base.STARTING, base.RUNNING)
         check(True, "the CLI's start shows through the monitors alone")
         m.timer = GLib.timeout_add(1000, m._tick)
         armed = m.tick
         cli("stop", "c")
-        yield lambda: phase("c") == core.OFF
+        yield lambda: phase("c") == base.OFF
 
         # another library's VM, started by its CLI: listed elsewhere, read-only, with Shut Down. It is
         # found by its unit, so this needs a user systemd

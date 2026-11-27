@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
-from beanjar import ares, cli, core, lifecycle, remote, usb
+from beanjar import ares, base, cli, lifecycle, remote, usb
 
 
 class FakeQemu:
@@ -187,7 +187,7 @@ class PayloadTest(unittest.TestCase):
         for good in ("1", "kbd", "a_b-c", "x" * 16):
             self.assertEqual(usb.check_id(good), good)
         for bad in ("", "-a", "_a", "a b", "a/b", "a.b", "x" * 17, None):
-            with self.subTest(bad), self.assertRaises(core.Error):
+            with self.subTest(bad), self.assertRaises(base.Error):
                 usb.check_id(bad)
         self.assertEqual(usb.free_id(set()), "1")
         self.assertEqual(usb.free_id({"1", "2", "kbd"}), "3")
@@ -214,7 +214,7 @@ class QmpTest(Base):
         self.assertTrue(os.path.exists(a["socket"]))
         self.assertEqual(usb.attach(self.vm)["id"], "2")
         self.assertEqual(usb.attach(self.vm, "kbd")["id"], "kbd")
-        with self.assertRaisesRegex(core.Error, "already"):
+        with self.assertRaisesRegex(base.Error, "already"):
             usb.attach(self.vm, "kbd")
         q.connect("2")
         got = {d["id"]: d for d in usb.devices(self.vm)}
@@ -230,7 +230,7 @@ class QmpTest(Base):
         self.assertFalse(os.path.exists(a["socket"]))
         self.assertNotIn("usb-1-chr", q.chardevs)
         self.assertEqual([d["id"] for d in usb.devices(self.vm)], ["2", "kbd"])
-        with self.assertRaisesRegex(core.Error, "no USB device 1"):
+        with self.assertRaisesRegex(base.Error, "no USB device 1"):
             usb.detach(self.vm, "1")
         self.assertEqual(usb.attach(self.vm)["id"], "1")  # the free number again
         # the chardev, gone with the device, is asked to go anyway and its error tolerated
@@ -249,7 +249,7 @@ class QmpTest(Base):
         self.assertEqual(a, {"id": "2", "image": img, "readonly": False})
         b = usb.attach_image(self.vm, self.image("ro.img"), readonly=True, id_="ro")
         self.assertTrue(b["readonly"])
-        with self.assertRaisesRegex(core.Error, "already"):
+        with self.assertRaisesRegex(base.Error, "already"):
             usb.attach_image(self.vm, img, id_="ro")
         got = {d["id"]: d for d in usb.devices(self.vm)}
         self.assertEqual(
@@ -290,7 +290,7 @@ class QmpTest(Base):
         self.vm.pid = lambda: None
         self.assertEqual(usb.state(self.vm), {"restarts": 2, "restarting": True, "devices": []})
         lifecycle.mark_restarting(self.vm.run_dir, False)
-        with self.assertRaisesRegex(core.Error, "not running"):
+        with self.assertRaisesRegex(base.Error, "not running"):
             usb.state(self.vm)
 
     def test_image_relative_path_is_made_absolute(self):
@@ -303,33 +303,33 @@ class QmpTest(Base):
 
     def test_image_checks(self):
         q = self.qemu()
-        with self.assertRaisesRegex(core.Error, "no such disk image"):
+        with self.assertRaisesRegex(base.Error, "no such disk image"):
             usb.attach_image(self.vm, os.path.join(self.tmp, "missing.img"))
-        with self.assertRaisesRegex(core.Error, "no such disk image"):
+        with self.assertRaisesRegex(base.Error, "no such disk image"):
             usb.attach_image(self.vm, self.tmp)  # a directory
         img = self.image()
         os.chmod(img, 0o444)
         if os.access(img, os.W_OK):
             self.skipTest("running as root: every file is writable")
-        with self.assertRaisesRegex(core.Error, "--readonly"):
+        with self.assertRaisesRegex(base.Error, "--readonly"):
             usb.attach_image(self.vm, img)
         self.assertEqual(usb.attach_image(self.vm, img, readonly=True)["id"], "1")
         self.assertEqual(q.nodes["usb-1-disk"]["ro"], True)
         self.vm.pid = lambda: None
-        with self.assertRaisesRegex(core.Error, "not running"):
+        with self.assertRaisesRegex(base.Error, "not running"):
             usb.attach_image(self.vm, img, True)
 
     def test_storage_add_failure_removes_the_node(self):
         q = self.qemu()
         q.fail_device_add = True
-        with self.assertRaisesRegex(core.Error, "device_add"):
+        with self.assertRaisesRegex(base.Error, "device_add"):
             usb.attach_image(self.vm, self.image())
         self.assertEqual(q.nodes, {})
 
     def test_device_add_failure_removes_the_chardev(self):
         q = self.qemu()
         q.fail_device_add = True
-        with self.assertRaisesRegex(core.Error, "device_add"):
+        with self.assertRaisesRegex(base.Error, "device_add"):
             usb.attach(self.vm)
         self.assertEqual(sorted(q.chardevs), ["compat_monitor0", "standby"])
 
@@ -338,16 +338,16 @@ class QmpTest(Base):
         self.vm.pid = lambda: None
         for f in (lambda: usb.attach(self.vm), lambda: usb.detach(self.vm, "1"),
                   lambda: usb.devices(self.vm)):  # fmt: skip
-            with self.assertRaisesRegex(core.Error, "not running"):
+            with self.assertRaisesRegex(base.Error, "not running"):
                 f()
         self.vm.pid = lambda: 1
         self.vm.run_dir = "/" + "d" * 110
-        with self.assertRaisesRegex(core.Error, "longer than"):
+        with self.assertRaisesRegex(base.Error, "longer than"):
             usb.attach(self.vm)
 
     def test_busy(self):
         self.qemu(greet_delay=0.6)
-        with self.assertRaisesRegex(core.Error, "busy"), usb.Qmp(self.vm.qmp_sock, wait=0.2):
+        with self.assertRaisesRegex(base.Error, "busy"), usb.Qmp(self.vm.qmp_sock, wait=0.2):
             pass
         time.sleep(0.7)  # the fake's first client goes
         with usb.Qmp(self.vm.qmp_sock, wait=2) as q:  # served once the holder leaves
@@ -383,12 +383,12 @@ class DeviceTest(unittest.TestCase):
             usb.find_device("3-5", self.sysfs)["sysfs"], os.path.join(self.sysfs, "3-2")
         )
         self.assertEqual(usb.node(d), "/dev/bus/usb/001/004")
-        with self.assertRaisesRegex(core.Error, r"several.*3-2, 3-5"):
+        with self.assertRaisesRegex(base.Error, r"several.*3-2, 3-5"):
             usb.find_device("1d6b:0104", self.sysfs)
-        with self.assertRaisesRegex(core.Error, "no USB device"):
+        with self.assertRaisesRegex(base.Error, "no USB device"):
             usb.find_device("dead:beef", self.sysfs)
         for bad in ("046d", "046d:82d", "1:2", "a-b", ""):
-            with self.subTest(bad), self.assertRaisesRegex(core.Error, "invalid --device"):
+            with self.subTest(bad), self.assertRaisesRegex(base.Error, "invalid --device"):
                 usb.find_device(bad, self.sysfs)
 
     def test_present(self):
@@ -558,7 +558,7 @@ class PlugTest(unittest.TestCase):
 
     def test_tool_exits_before_the_guest_has_it(self):
         target = FakeTarget(attach_after=100)
-        with self.assertRaisesRegex(core.Error, "exited"):
+        with self.assertRaisesRegex(base.Error, "exited"):
             self.run_plug(target, FakeProc(exits_after=1), [True] * 10)
         self.assertEqual(target.log[-1], ("detach", "1"))
 
@@ -582,7 +582,7 @@ class PlugTest(unittest.TestCase):
         with mock.patch.object(usb.shutil, "which", return_value="/usr/bin/usbredirect"), \
              mock.patch.object(usb.os, "access", return_value=False):  # fmt: skip
             target = FakeTarget()
-            with self.assertRaisesRegex(core.Error, "--sudo"):
+            with self.assertRaisesRegex(base.Error, "--sudo"):
                 usb.plug(target, "tv", usb.Usbredirect(self.DEVICE))
             self.assertEqual(target.log, [])
 
@@ -617,10 +617,10 @@ class PlugTest(unittest.TestCase):
         self.assertEqual(target.log[-1], ("detach", "1"))
 
     def test_camera_checks(self):
-        with self.assertRaisesRegex(core.Error, "invalid --pattern"):
+        with self.assertRaisesRegex(base.Error, "invalid --pattern"):
             usb.Camera("plaid", "/x")
         target = FakeTarget()
-        with self.assertRaisesRegex(core.Error, "no beanjar-virtcam"):
+        with self.assertRaisesRegex(base.Error, "no beanjar-virtcam"):
             usb.plug(target, "tv", usb.Camera("smpte", "/nonexistent/beanjar-virtcam"))
         self.assertEqual(target.log, [])
 
@@ -670,7 +670,7 @@ class MkimageTest(unittest.TestCase):
         self.assertEqual(usb.parse_size("2048K"), 2 << 20)
         self.assertEqual(usb.parse_size("4MiB"), 4 << 20)
         for bad in ("", "64X", "1M", "1500K", "-4M", "M"):
-            with self.subTest(bad), self.assertRaises(core.Error):
+            with self.subTest(bad), self.assertRaises(base.Error):
                 usb.parse_size(bad)
 
     def test_steps(self):
@@ -690,7 +690,7 @@ class MkimageTest(unittest.TestCase):
         self.assertEqual(raw[1 << 20 : (1 << 20) + 4], b"FSFS")  # the partition from 1 MiB
         self.assertEqual(raw[-2:], b"EN")  # to the end
         self.assertEqual(os.listdir(self.tmp), ["ntfs.img"])  # no file of its own left beside it
-        with self.assertRaisesRegex(core.Error, "--force"):
+        with self.assertRaisesRegex(base.Error, "--force"):
             usb.make_image(out, "ntfs", 4 << 20, run=self.run_fake)
         self.assertEqual(usb.FILESYSTEMS["fat32"][0], 0x0C)
 
@@ -701,10 +701,10 @@ class MkimageTest(unittest.TestCase):
             return SimpleNamespace(returncode=1, stdout="", stderr="mkfs.vfat: too small\n")
 
         with mock.patch.object(usb, "which", side_effect=lambda t: t), \
-             self.assertRaisesRegex(core.Error, "mkfs.vfat failed .*too small"):  # fmt: skip
+             self.assertRaisesRegex(base.Error, "mkfs.vfat failed .*too small"):  # fmt: skip
             usb.make_image(out, "fat32", 4 << 20, run=fail)
         self.assertEqual(os.listdir(self.tmp), [])
-        with self.assertRaisesRegex(core.Error, "invalid filesystem"):
+        with self.assertRaisesRegex(base.Error, "invalid filesystem"):
             usb.make_image(out, "ext4")
 
     @unittest.skipUnless(

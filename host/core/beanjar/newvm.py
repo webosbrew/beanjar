@@ -6,7 +6,7 @@ way a VM is made, by the CLI's create, the GUI's New VM and Library.create.
 The firmware (check()) is, by default, a firmware used in place (kind "place"): vm.toml's
 [firmware] directory names it (absolute), it is never written, and what the launcher derives from it
 (the partition map, the uncompressed images' stamps) goes into the VM's firmware-cache/
-(core.vm_firmware). Its board data is worked out before it is published (prepare.py: the partition
+(firmware.vm_firmware). Its board data is worked out before it is published (prepare.py: the partition
 map, the new EEPROM chip, the local key, the chip modules' parameters), so its first start only
 reads it. It is a name in the host's firmware collections (paths.firmware_dirs: the
 machine's config.toml, firmware_dirs) or a path (any value with a '/'), and needs a manifest.toml
@@ -49,7 +49,9 @@ import threading
 import time
 
 from . import capacity, compat, firmware, keys, nvm, targets, paths, vmconfig, vmidentity
-from .core import NAME_RE, VM, Error, Library, prepare_board_data, vm_firmware
+from .core import VM, Library, prepare_board_data
+from .base import NAME_RE, Error
+from .firmware import vm_firmware
 from .tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
 from .vmidentity import free_slot, make_identity_dir, slot_lock
 from .vmsettings import MANIFEST_KEYS

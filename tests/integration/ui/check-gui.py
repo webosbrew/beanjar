@@ -67,7 +67,7 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import core, hostconfig, targets, unit, vmsettings  # noqa: E402
+from beanjar import base, core, hostconfig, targets, unit, vmsettings  # noqa: E402
 from beanjar_ui.manager import gui, ui  # noqa: E402
 import testunits  # noqa: E402
 
@@ -1041,7 +1041,7 @@ def main():
         check(
             m.selected() == "tv1"
             and not m.win.split.get_show_sidebar()
-            and state("tv1") == core.OFF,
+            and state("tv1") == base.OFF,
             "a row picked there is selected and the list goes; nothing starts",
         )
         m.win.set_default_size(1100, 760)
@@ -1060,12 +1060,12 @@ def main():
             "while the start runs the state button keeps its icon, insensitive, its tooltip "
             "Starting…; the header's spinner shows",
         )
-        yield lambda: state("tv1") == core.STARTING and "tv1" not in m.ops
+        yield lambda: state("tv1") == base.STARTING and "tv1" not in m.ops
         check(
-            tv1_row.dot.has_css_class("warning") and item("tv1").phase == core.STARTING,
+            tv1_row.dot.has_css_class("warning") and item("tv1").phase == base.STARTING,
             "Starting: an amber dot",
         )
-        yield lambda: state("tv1") == core.RUNNING
+        yield lambda: state("tv1") == base.RUNNING
         check(
             row("tv1") is tv1_row
             and m.selected() == "tv1"
@@ -1674,14 +1674,14 @@ def main():
         if a.shots:
             shot(m.win, f"{a.shots}-shut-down-unavailable.png")
         form.submit()
-        yield lambda: state("tv1") == core.OFF and "tv1" not in m.ops
+        yield lambda: state("tv1") == base.OFF and "tv1" not in m.ops
         out = m.output.get_buffer()
         text = out.get_text(out.get_start_iter(), out.get_end_iter(), False)
         check(
             "no power-off signal (webOS is still starting)" in text and "SAVE_LOGS=1" in text,
             "without the signal, Shut Down syncs and stops it",
         )
-        check(not core.proc_alive(first_viewer, "beanjar-viewer"), "viewer closed with the VM")
+        check(not base.proc_alive(first_viewer, "beanjar-viewer"), "viewer closed with the VM")
         check("tv1" in m.want_viewer, "viewer still wanted")
         check(m.auto_reconnect(), "auto-reconnect on by default")
         m.start()
@@ -1767,7 +1767,7 @@ def main():
             "Unplug… opens the Shut Down dialog with Unplug chosen",
         )
         form.submit()
-        yield lambda: state("tv1") == core.OFF and "tv1" not in m.ops
+        yield lambda: state("tv1") == base.OFF and "tv1" not in m.ops
         out = m.output.get_buffer()
         text = out.get_text(out.get_start_iter(), out.get_end_iter(), False)
         check("--unplug" in text and "SAVE_LOGS=0" in text, "Unplug kills it at once")
@@ -1905,7 +1905,7 @@ def main():
             check(not form.get_response_enabled("ok"), "Start with Reason needs a reason")
             form.fields["reason"].set_text("gui check")
             form.submit()
-            yield lambda: state("tv2") == core.RUNNING and "tv2" not in m.ops
+            yield lambda: state("tv2") == base.RUNNING and "tv2" not in m.ops
             reason = lib.vm("tv2").reason()
             m.refresh()
             check(
@@ -1917,7 +1917,7 @@ def main():
             )
             form = m.unplug()
             form.submit()
-            yield lambda: state("tv2") == core.OFF and "tv2" not in m.ops
+            yield lambda: state("tv2") == base.OFF and "tv2" not in m.ops
             check(not m.summary_view.reason.get_visible(), "and goes when the VM stops")
         else:
             print("skip: no user systemd: Start with Reason")

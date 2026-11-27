@@ -82,7 +82,7 @@ class Fixture:
             guest(name)
             return ""
 
-        monkeypatch.setattr(launch.core, "read_pid", lambda _p: 1)
+        monkeypatch.setattr(launch.base, "read_pid", lambda _p: 1)
         monkeypatch.setattr(launch.unit, "alive", lambda _p: True)
         monkeypatch.setattr(launch.unit, "is_socket", lambda _p: True)
         monkeypatch.setattr(launch.console, "send", send)

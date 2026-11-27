@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from beanjar import core, hostconfig, launch, qemu, runner
+from beanjar import base, hostconfig, launch, qemu, runner
 
 
 class ChooseTest(unittest.TestCase):
@@ -38,9 +38,9 @@ class ChooseTest(unittest.TestCase):
         self.assertEqual(
             self.choose(True, BEANJAR_RUNNER="systemd", VM_SYSTEMD="0"), runner.SYSTEMD
         )
-        with self.assertRaisesRegex(core.Error, "no usable user systemd"):
+        with self.assertRaisesRegex(base.Error, "no usable user systemd"):
             self.choose(False, BEANJAR_RUNNER="systemd")
-        with self.assertRaisesRegex(core.Error, "BEANJAR_RUNNER: docker is not a runner"):
+        with self.assertRaisesRegex(base.Error, "BEANJAR_RUNNER: docker is not a runner"):
             self.choose(True, BEANJAR_RUNNER="docker")
 
     def test_setting(self):
@@ -51,7 +51,7 @@ class ChooseTest(unittest.TestCase):
         hostconfig.set_global_option("runner", "auto")  # auto: unset
         self.assertNotIn("runner", hostconfig.global_config())
         self.assertEqual(self.choose(True), runner.SYSTEMD)
-        with self.assertRaisesRegex(core.Error, "is not a runner"):
+        with self.assertRaisesRegex(base.Error, "is not a runner"):
             hostconfig.set_global_option("runner", "podman")
 
 

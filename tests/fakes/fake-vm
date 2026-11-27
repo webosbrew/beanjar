@@ -15,7 +15,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "host", "core"))
-from beanjar import core, unit, vmunits  # noqa: E402
+from beanjar import base, core, unit, vmunits  # noqa: E402
 
 p = argparse.ArgumentParser()
 p.add_argument("cmd", choices=("start", "stop", "status", "prepare"))
@@ -83,7 +83,7 @@ if a.cmd == "start":
     end = time.monotonic() + 10
     while not (os.path.exists(pidfile) and os.path.getsize(pidfile)) and time.monotonic() < end:
         time.sleep(0.05)
-    print(f"fake-vm: pid {core.read_pid(pidfile)}")
+    print(f"fake-vm: pid {base.read_pid(pidfile)}")
 elif a.cmd == "stop":
     print(f"fake-vm: stop {d} SAVE_LOGS={os.environ.get('SAVE_LOGS', '1')}", flush=True)
     try:
@@ -92,7 +92,7 @@ elif a.cmd == "stop":
     except OSError:
         pass
     for f in (os.path.join(run, "launcher.pid"), pidfile):
-        pid = core.read_pid(f)
+        pid = base.read_pid(f)
         if pid is None:
             continue
         unit.kill_session(pid)
@@ -102,7 +102,7 @@ elif a.cmd == "stop":
             time.sleep(0.1)
         rm(f)
 else:
-    pid = core.read_pid(pidfile)
+    pid = base.read_pid(pidfile)
     if unit.alive(pid):
         print(f"running {pid}")
     else:

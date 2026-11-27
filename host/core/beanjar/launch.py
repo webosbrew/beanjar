@@ -103,7 +103,7 @@ key is a launcher variable passed through as it is, but ROOTFS and UNCOMPRESSED_
 VM's experiments). The firmware is the VM's own, <vm-dir>/firmware (FW), with its partition map
 in firmware/cache (FW_CACHE). A fw in vm.toml names another directory instead (absolute, or
 relative to the VM directory), which is used in place and never written: its map goes into
-<vm-dir>/firmware-cache (core.vm_firmware). Everything else is
+<vm-dir>/firmware-cache (firmware.vm_firmware). Everything else is
 in the VM directory: state/ (STATE), run/ (RUN_DIR), logs/ (LOG_DIR), logs/saved/ (SAVED_LOG_DIR) and
 identity/ (IDENTITY_DIR, mode 0700: the VM's own files, its SSH keys (beanjar/keys.py) and model key,
 from which each launch assembles run/share/vm, the guest's read-only share "vm"; the checkout VM's
@@ -145,7 +145,6 @@ from . import (
     mediasandbox,
     netns,
     nvm,
-    targets,
     paths,
     poweroff,
     prepare,
@@ -153,6 +152,7 @@ from . import (
     rotation,
     runner,
     share,
+    targets,
     tuner,
     unit,
     vmidentity,
@@ -686,7 +686,7 @@ def settings_vars(vm_dir):
         return ()
     try:
         return tuple(core.vm_launcher_env(path))
-    except core.Error:
+    except base.Error:
         return ()
 
 
@@ -745,7 +745,7 @@ class Bg:
         """Through the serial console, if the VM is up (guest/scripts/save-logs.sh, in the guest)."""
         if (
             self.env.get("SAVE_LOGS", "1") != "1"
-            or not unit.alive(core.read_pid(self.pidfile))
+            or not unit.alive(base.read_pid(self.pidfile))
             or not unit.is_socket(self.sock)
         ):
             return
@@ -782,12 +782,12 @@ class Bg:
         an explicit "returnValue": false or an error), when nothing is pending; else
         core.STOP_TIMED_OUT if QEMU still runs timeout s after the call. No reply at all is not a
         refusal: webOS has powered off after a call that printed none, so QEMU is waited for."""
-        pid = core.read_pid(self.pidfile)
+        pid = base.read_pid(self.pidfile)
         if not unit.alive(pid) or not unit.comm(pid).startswith("qemu-system"):
             return 0
         sent = os.path.join(self.run_dir, poweroff.POWER_OFF_SENT)
         t0 = time.monotonic()
-        if core.read_pid(sent) == pid:  # a stop before sent it: wait again
+        if base.read_pid(sent) == pid:  # a stop before sent it: wait again
             print("power-off: sent before; waiting for QEMU to exit", flush=True)
         elif not unit.is_socket(self.sock):
             say("power-off: no serial console")
@@ -850,7 +850,7 @@ class Bg:
             except FileNotFoundError:
                 pass
         # A private bus left behind (its VM's unit or session ends it).
-        bus = core.read_pid(os.path.join(self.run_dir, "dbus-daemon.pid"))
+        bus = base.read_pid(os.path.join(self.run_dir, "dbus-daemon.pid"))
         if bus is not None:
             if unit.comm(bus) == "dbus-daemon":
                 try:
@@ -875,7 +875,7 @@ class Bg:
         env = self.env
         try:
             how = runner.get(runner.choose(env))
-        except core.Error as e:
+        except base.Error as e:
             raise Error(str(e)) from None
         if self.use_unit and vmunits.unit_show(self.unit).get("ActiveState") in unit.UP:
             desc = vmunits.unit_show(self.unit).get("Description", "")
@@ -945,7 +945,7 @@ class Bg:
             self.refuse_beyond_limit(lock.limit)
             try:
                 how.start(self, env, words, mem=qemu.vm_guest_ram(env))
-            except core.Error as e:
+            except base.Error as e:
                 raise Error(str(e)) from None
         # Until the initramfs shell is up, the launcher fails, or 120 s pass.
         time.sleep(1)
@@ -1021,7 +1021,7 @@ def bg_stop(env=None, power_off=None):
 def vm_alive(vm_dir):
     """QEMU's pid, if the VM's pidfile names a live QEMU (in its unit, for a VM started as one)."""
     run_dir = os.path.join(vm_dir, "run")
-    pid = core.read_pid(os.path.join(run_dir, "qemu.pid"))
+    pid = base.read_pid(os.path.join(run_dir, "qemu.pid"))
     if not unit.alive(pid) or not unit.comm(pid).startswith("qemu-system"):
         return None
     try:
@@ -1029,7 +1029,7 @@ def vm_alive(vm_dir):
             u = f.read().strip()
     except OSError:
         u = None
-    if u and not core.in_unit(pid, u):
+    if u and not base.in_unit(pid, u):
         return None
     return pid
 
@@ -1049,7 +1049,7 @@ def vm_env(vm_dir, env):
     env = {k: v for k, v in env.items() if k not in RUNTIME_VARS}
     try:
         env.update(core.vm_launcher_env(os.path.join(vm_dir, "vm.toml")))
-    except core.Error as e:
+    except base.Error as e:
         raise Error(str(e)) from None
     run_dir, log_dir = os.path.join(vm_dir, "run"), os.path.join(vm_dir, "logs")
     env.update(
@@ -1057,10 +1057,10 @@ def vm_env(vm_dir, env):
         LOG_DIR=log_dir,
         SAVED_LOG_DIR=os.path.join(log_dir, "saved"),
         UNIT=vmunits.vm_unit_name(vm_dir),
-        IDENTITY_DIR=core.identity_dir(vm_dir),
+        IDENTITY_DIR=base.identity_dir(vm_dir),
         NETSTUB_CA=vmidentity.ca_dir(vm_dir),
-        ADDRESS_PREFIX=core.addresses_of(core.library_of(vm_dir)),
-        NET_LAN_PARENT=vmidentity.lan_parent_of(core.library_of(vm_dir)) or "",
+        ADDRESS_PREFIX=base.addresses_of(base.library_of(vm_dir)),
+        NET_LAN_PARENT=vmidentity.lan_parent_of(base.library_of(vm_dir)) or "",
         NET_LAN_HOSTNAME=vmsettings.dns_label(os.path.basename(vm_dir)),
     )
     return env
@@ -1096,21 +1096,21 @@ def vm(cmd, vm_dir, words, env=None, power_off=None):
     start_check(dict(env, RUN_DIR=os.path.join(vm_dir, "run"), UNIT=vmunits.vm_unit_name(vm_dir)))
     try:
         fw = core.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))["FW"]
-    except core.Error as e:
+    except base.Error as e:
         raise Error(str(e)) from None
     guest_preflight(dict(env, FW=fw), os.path.basename(vm_dir))
     try:
         vmidentity.ensure_identity(
             vm_dir, say
         )  # a vm.toml without mac, serial or slot gets them now
-        address = core.vm_address(
+        address = base.vm_address(
             vm_dir, core.vmconfig.read(os.path.join(vm_dir, "vm.toml"))["slot"]
         )
         keys.ensure(
             vmidentity.make_identity_dir(vm_dir), warn=say, address=address
         )  # a missing key is made again
         keys.ensure_ca(vmidentity.ca_dir(vm_dir), warn=say)  # the library's CA
-    except (core.Error, keys.Error) as e:
+    except (base.Error, keys.Error) as e:
         raise Error(str(e)) from None
     env = vm_env(vm_dir, env)
     for d in ("state", "run", "logs"):
@@ -1134,7 +1134,7 @@ def netns_exec(vm_dir, command):
         run_dir = os.path.join(os.path.abspath(vm_dir), "run")
     else:
         run_dir = os.path.join(TREE.top, os.environ.get("RUN_DIR") or "build")
-    pid = core.read_pid(os.path.join(run_dir, "qemu.pid"))
+    pid = base.read_pid(os.path.join(run_dir, "qemu.pid"))
     if not unit.alive(pid) or not unit.comm(pid).startswith("qemu-system"):
         raise Error(f"netns-exec: the VM of {run_dir} is not running")
     try:
@@ -1460,7 +1460,7 @@ def main(argv_=None):
                         "no development VM yet (INSTANCE's): it gets its slot at its first start"
                     )
             print(
-                core.vm_address(
+                base.vm_address(
                     directory, core.vmconfig.read(os.path.join(directory, "vm.toml"))["slot"]
                 )
             )
@@ -1476,7 +1476,7 @@ def main(argv_=None):
             return 0
         if a.cmd == "config" and a.var == "IDENTITY":
             if getattr(a, "dir", None):
-                print(core.identity_dir(a.dir))
+                print(base.identity_dir(a.dir))
             else:
                 print(os.path.join(TREE.top, instance_env(dict(os.environ))["IDENTITY_DIR"]))
             return 0
@@ -1488,7 +1488,7 @@ def main(argv_=None):
         Error,
         compat.Error,
         development.Error,
-        core.Error,
+        base.Error,
         keys.Error,
         qemu.Error,
         netns.Error,

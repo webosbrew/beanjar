@@ -21,7 +21,7 @@ usable here is an Error at start, never another runner instead.
 import os
 import time
 
-from . import core, unit, vmunits
+from . import base, unit, vmunits
 from .base import Error
 
 SYSTEMD, SESSION = "systemd", "session"
@@ -106,7 +106,7 @@ class Session:
             f.write(f"{unit.spawn(env, words, keep=bg.keep)}\n")
 
     def running(self, bg):
-        return unit.alive(core.read_pid(self.pidfile(bg)))
+        return unit.alive(base.read_pid(self.pidfile(bg)))
 
     def stop(self, bg):
         """Sync, then the launcher's session (QEMU, the mode=mitm helpers, the bus), QEMU, the
@@ -115,7 +115,7 @@ class Session:
         if os.path.exists(launcher_pid) or os.path.exists(bg.pidfile):
             unit.sync_guest(bg.paths)
         for f in (bg.sock + ".in.pid", launcher_pid, bg.pidfile):
-            pid = core.read_pid(f)
+            pid = base.read_pid(f)
             if pid is None:
                 if os.path.exists(f):
                     os.unlink(f)

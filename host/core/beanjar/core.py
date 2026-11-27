@@ -69,46 +69,25 @@ from . import (
     vmsettings,
     vmunits,
 )
-from .dbus import SCREENSHOT_NAME, SCREENSHOT_PATH  # noqa: F401 (the library's names for them)
-from .base import (  # noqa: F401 (the library's names for them)
-    NAME_RE,
+from .base import (
+    OFF,
+    RUNNING,
+    STARTING,
+    STOPPING,
     Error,
     addresses_of,
-    default_library,
     identity_dir,
-    in_unit,
-    library_of,
     proc_alive,
     read_pid,
     read_toml,
     slot_domain,
-    vm_address,
 )
-
-
-OFF, STARTING, RUNNING, STOPPING = "Off", "Starting", "Running", "Stopping"
-
-
-OWN_FW = "firmware"  # the VM's own firmware, <vm>/firmware: vm.toml without fw (firmware.py)
-
-
-EXTERNAL_CACHE = "firmware-cache"  # <vm>/firmware-cache: the partition map of an external fw
+from .dbus import SCREENSHOT_NAME
+from .firmware import OWN_FW, vm_firmware
 
 
 def default_repo():
     return paths.TREE.top
-
-
-def vm_firmware(vm_dir, fw=None):
-    """The firmware of the VM in vm_dir, as vm.toml's fw names it: (FW, FW_CACHE). No fw (or one that
-    is the VM's own firmware/): <vm>/firmware, whose cache/ has what the launcher derives from it,
-    the partition map (partmap.py). Any other directory (an absolute path, or one relative to the
-    VM's folder) is used in place and never written: its map goes into the VM's firmware-cache/."""
-    own = os.path.join(vm_dir, OWN_FW)
-    d = os.path.normpath(os.path.join(vm_dir, os.path.expanduser(str(fw)))) if fw else own
-    return (
-        (own, os.path.join(own, "cache")) if d == own else (d, os.path.join(vm_dir, EXTERNAL_CACHE))
-    )
 
 
 # The settings a VM's prepared board data depends on (prepare.Job): a change prepares it again.

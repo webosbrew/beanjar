@@ -12,7 +12,7 @@ import sys
 
 from .. import core
 from ..cli import json_error
-from ..core import Error
+from ..base import Error
 
 
 class Usage(Error):

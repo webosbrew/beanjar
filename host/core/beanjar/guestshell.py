@@ -609,7 +609,7 @@ def want_tty(command, force, never, stdin_tty):
 
 def local_socket(vm):
     """A connection to the relay of VM vm (a library VM here)."""
-    from .core import Error
+    from .base import Error
 
     if not vm.pid():
         raise Error(f"{vm.name} is not running")
@@ -647,7 +647,7 @@ def run_remote(host, name, argv, tty):
     import tempfile
 
     from . import ares, remote
-    from .core import Error
+    from .base import Error
 
     uri = remote.hosts()[host]
     info = remote.call_json(host, uri, ["show", remote.own(name)])

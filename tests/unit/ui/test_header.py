@@ -12,17 +12,17 @@ import pytest
 TOP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
 for package in ("ui", "core"):
     sys.path.append(os.path.join(TOP, "host", package))
-from beanjar import core  # noqa: E402
+from beanjar import base  # noqa: E402
 from beanjar_ui.manager import header  # noqa: E402
 from beanjar_ui.manager.header import slot  # noqa: E402
 
 
 def test_phases_are_cores():
     assert (header.OFF, header.STARTING, header.RUNNING, header.STOPPING) == (
-        core.OFF,
-        core.STARTING,
-        core.RUNNING,
-        core.STOPPING,
+        base.OFF,
+        base.STARTING,
+        base.RUNNING,
+        base.STOPPING,
     )
 
 

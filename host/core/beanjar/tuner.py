@@ -57,8 +57,15 @@ import tempfile
 import threading
 import time
 
-from . import tuner_band, tuner_lineup, tuner_stream, tuner_stream_arib, tuner_stream_dvb, tuner_ts
-from . import base
+from . import (
+    base,
+    tuner_band,
+    tuner_lineup,
+    tuner_stream,
+    tuner_stream_arib,
+    tuner_stream_dvb,
+    tuner_ts,
+)
 from .base import Error
 
 MAGIC = 0x4E555457

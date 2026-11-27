@@ -15,16 +15,7 @@ import unittest
 from unittest import mock
 
 
-from beanjar import (
-    core,
-    launch,
-    qemu,
-    unit,
-    capacity,
-    hostconfig,
-    vmsettings,
-    vmunits,
-)
+from beanjar import base, capacity, core, hostconfig, launch, qemu, unit, vmsettings, vmunits
 
 import testunits
 
@@ -90,7 +81,7 @@ class VmEnvTest(unittest.TestCase):
         for k in self.SOCKS:
             with self.subTest(k):
                 self.assertNotIn(k, env)
-                with self.assertRaisesRegex(core.Error, "set by the VM manager"):
+                with self.assertRaisesRegex(base.Error, "set by the VM manager"):
                     vmsettings.launcher_env({k: "/x"})
 
 

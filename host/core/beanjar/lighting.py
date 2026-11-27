@@ -170,7 +170,7 @@ def read(vm, timeout=10.0):
     with `error` when the guest did not answer (still starting, a beanjar without the shell
     relay)."""
     from . import guestshell
-    from .core import Error
+    from .base import Error
 
     if not has_micom(vm.dir):
         return None

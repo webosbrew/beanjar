@@ -25,8 +25,8 @@ turned as webOS turned its UI (picture_turn), its touches and clicks mapped back
 import os
 import time
 
-from . import core, targets
-from .core import Error
+from . import base, targets
+from .base import Error
 
 ANGLES = (0, 90, 180, 270)
 STATUS = "rotation"  # run/rotation: msc's orientation as an angle, a line at each report
@@ -150,7 +150,7 @@ def require(vm):
     if not sensor(vm.target()):
         raise Error(f"VM {vm.name}: its board has no accelerometer to turn")
     state, detail = vm.state()
-    if state != core.RUNNING or detail or not vm.pid():
+    if state != base.RUNNING or detail or not vm.pid():
         raise Error(f"VM {vm.name}: rotate needs it running ({state} {detail})".rstrip())
     if not os.path.exists(os.path.join(vm.run_dir, STATUS)):
         raise Error(

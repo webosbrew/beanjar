@@ -31,8 +31,8 @@ import subprocess
 import tempfile
 import tomllib
 
-from . import core, keys, nvm, remote, tomlfile, vmconfig, vmidentity
-from .core import Error
+from . import base, core, keys, nvm, remote, tomlfile, vmconfig, vmidentity
+from .base import Error
 
 STAGE = ".clone-stage-"
 SCRATCH = ".clone-"
@@ -151,7 +151,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
         dst_host = None
     elif dst_host is not None and dst_host not in remote.hosts():
         raise Error(f"no host named {dst_host} (beanjar host list)")
-    if not core.NAME_RE.fullmatch(dst_name or ""):
+    if not base.NAME_RE.fullmatch(dst_name or ""):
         raise Error(f"invalid VM name {dst_name!r} (letters, digits, '.', '_', '-')", "name")
     src, dst = End(src_host, lib), End(dst_host, lib)
     src_label, dst_label = f"{src.where}/{src_name}", f"{dst.where}/{dst_name}"
@@ -160,7 +160,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
 
     def check_off():
         d, state = src.vm_state(src_name)
-        if state != core.OFF:
+        if state != base.OFF:
             raise Error(
                 f"VM {src_label} is {state.lower()}: clone copies a VM that is off; stop it first"
             )

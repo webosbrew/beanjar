@@ -118,8 +118,8 @@ def test_existing_ca_and_symlinks_refused(dev):
 def test_running_legacy_vm_refused(dev):
     dev.legacy()
     with (
-        mock.patch.object(development.core, "read_pid", return_value=123),
-        mock.patch.object(development.core, "proc_alive", return_value=True),
+        mock.patch.object(development.base, "read_pid", return_value=123),
+        mock.patch.object(development.base, "proc_alive", return_value=True),
     ):
         with pytest.raises(development.Error):
             development.migrate(dev.env, dev.tree)
@@ -208,7 +208,7 @@ def test_empty_setting_makes_a_new_vm_with_the_default(dev):
 def test_migration_keeps_board_identity_and_absolute_firmware(dev, monkeypatch):
     """A migrated VM keeps the board.cmdline's MAC and serial (a comment naming
     webos.ethaddr= is not the MAC) and stores the firmware as an absolute path, which
-    core.vm_firmware would otherwise resolve against the VM's folder."""
+    firmware.vm_firmware would otherwise resolve against the VM's folder."""
     dev.legacy()
     firmware = dev.root / "firmware"
     firmware.mkdir()

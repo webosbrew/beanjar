@@ -18,7 +18,7 @@ import time
 
 from gi.repository import Gio, GLib, Gtk, Pango
 
-from beanjar import core, inspector, mitmtool, vmsettings
+from beanjar import base, inspector, mitmtool, vmsettings
 
 DESCRIPTION = (
     "This VM's own mitmweb, on its own port and with its own password, while it runs. "
@@ -191,7 +191,7 @@ class Panel(Gtk.Box):
                 vm is not None
                 and vmsettings.guest_net(vm.config.get("link"), vm.config.get("mode")) == "mitm"
             )
-        except core.Error:
+        except base.Error:
             mitm_vm = False
         self.set_visible(mitm_vm)
         if not mitm_vm:

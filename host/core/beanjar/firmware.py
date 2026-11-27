@@ -4,7 +4,7 @@
 paks that qemu.py attaches (its firmware target's, targets.py). Every VM has its own, in its folder: <vm>/firmware/
 (OWN) with the paks, a manifest.toml (where they came from) and cache/, where the launcher keeps its
 partition map (partmap.py). The one exception is a vm.toml whose fw names another directory, which
-is used in place and never written; its map goes into the VM's firmware-cache/ (core.vm_firmware;
+is used in place and never written; its map goes into the VM's firmware-cache/ (firmware.vm_firmware;
 the launcher resolves it the same way).
 
 For measured super.pak/dpmeta.pak firmware, import copies the described linear
@@ -31,11 +31,27 @@ import subprocess
 import time
 
 from . import kernelcerts, paths, superpak, targets
-from .core import OWN_FW, Error, read_toml
+from .base import Error, read_toml
 
 # epk2extract names its output directory "<version>-<otaID>", e.g. 05.06.10.01-HE_DTV_WT1H_AFAAABAA
 FW_DIR_RE = re.compile(r"\d\d\.\d\d\.\d\d(\.\d\d)?-[A-Za-z0-9_.-]+")
-OWN = OWN_FW  # the VM's own firmware: <vm>/firmware
+OWN_FW = "firmware"  # the VM's own firmware, <vm>/firmware: vm.toml without fw
+OWN = OWN_FW
+EXTERNAL_CACHE = "firmware-cache"  # <vm>/firmware-cache: the partition map of an external fw
+
+
+def vm_firmware(vm_dir, fw=None):
+    """The firmware of the VM in vm_dir, as vm.toml's fw names it: (FW, FW_CACHE). No fw (or one that
+    is the VM's own firmware/): <vm>/firmware, whose cache/ has what the launcher derives from it,
+    the partition map (partmap.py). Any other directory (an absolute path, or one relative to the
+    VM's folder) is used in place and never written: its map goes into the VM's firmware-cache/."""
+    own = os.path.join(vm_dir, OWN_FW)
+    d = os.path.normpath(os.path.join(vm_dir, os.path.expanduser(str(fw)))) if fw else own
+    return (
+        (own, os.path.join(own, "cache")) if d == own else (d, os.path.join(vm_dir, EXTERNAL_CACHE))
+    )
+
+
 # the firmware kernel's built-in X.509 certificates, one DER list (kernelcerts.py), kept beside the
 # paks of a firmware that has an adaptive partition; its manifest's kernel_certs names the file
 KERNEL_CERTS = "kernel-certs.der"

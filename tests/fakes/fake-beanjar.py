@@ -20,7 +20,7 @@ import time
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import core, framing, pipe, remote_layouts  # noqa: E402
+from beanjar import base, core, framing, pipe, remote_layouts  # noqa: E402
 
 D = os.environ["FAKE_DIR"]
 args = sys.argv[1:]
@@ -42,7 +42,7 @@ class VM:
         return int(os.environ["FAKE_VNC_PID"])
 
     def target(self):
-        raise core.Error("no firmware here")
+        raise base.Error("no firmware here")
 
     def touch(self):
         return True  # a model with a touch screen: the page sends its touches
@@ -178,5 +178,5 @@ try:
             sys.stdout.buffer.write(framing.ppm_to_png(open(ppm, "rb").read()))
     else:
         fail(f"fake-beanjar: unexpected {args}")
-except core.Error as e:
+except base.Error as e:
     fail(str(e))

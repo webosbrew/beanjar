@@ -19,7 +19,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import clone, core, sestore, snapshot, vmconfig
+from beanjar import base, clone, core, sestore, snapshot, vmconfig
 
 FW = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
 SERIAL = "123ABCD45678"
@@ -219,9 +219,9 @@ class SnapshotTest(unittest.TestCase):
 
         # running: create and reset refused with the step to take; delete and list allowed
         before = tree(self.state)
-        with mock.patch.object(core.VM, "state", return_value=(core.RUNNING, "")):
+        with mock.patch.object(core.VM, "state", return_value=(base.RUNNING, "")):
             for f in (snapshot.create, snapshot.reset):
-                with self.assertRaisesRegex(core.Error, "is running.*beanjar stop tv1"):
+                with self.assertRaisesRegex(base.Error, "is running.*beanjar stop tv1"):
                     f(
                         self.lib,
                         "tv1",
@@ -239,8 +239,8 @@ class SnapshotTest(unittest.TestCase):
         with open(vm.lock_path, "w") as f:
             json.dump({"pid": os.getppid()}, f)
         with (
-            mock.patch.object(core.VM, "state", return_value=(core.OFF, "")),
-            self.assertRaisesRegex(core.Error, "another command"),
+            mock.patch.object(core.VM, "state", return_value=(base.OFF, "")),
+            self.assertRaisesRegex(base.Error, "another command"),
         ):
             snapshot.reset(self.lib, "tv1", "base", out=lambda _: None)
         os.unlink(vm.lock_path)
@@ -413,7 +413,7 @@ class SnapshotTest(unittest.TestCase):
             mock.patch.object(core.capacity, "admit"),
             mock.patch.object(core.capacity, "listen_conflict", return_value=None),
             mock.patch.object(core.hostprocs, "run_streamed", launcher),
-            self.assertRaisesRegex(core.Error, "did not start"),
+            self.assertRaisesRegex(base.Error, "did not start"),
         ):
             self.lib.start("tv1", out=lambda _: None)
         self.assertEqual(seen, [sorted(before)], "the launcher saw the whole snapshot's state")

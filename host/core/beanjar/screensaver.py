@@ -18,8 +18,8 @@ import secrets
 import shlex
 import time
 
-from . import console, core, paths, poweroff
-from .core import Error
+from . import base, console, paths, poweroff
+from .base import Error
 
 POWER = "luna://com.webos.service.tvpower/power2/"
 SAM = "luna://com.webos.applicationManager/"
@@ -69,9 +69,9 @@ def require_running(vm):
     """Unlike power_off_refusal, a pending power-off is never ready for this helper."""
     state, detail = vm.state()
     pid = vm.pid()
-    if state != core.RUNNING or detail or not pid:
+    if state != base.RUNNING or detail or not pid:
         raise Error(f"VM {vm.name}: screensaver requires a running webOS VM ({state} {detail})")
-    if core.read_pid(vm.power_off_file) == pid:
+    if base.read_pid(vm.power_off_file) == pid:
         raise Error(f"VM {vm.name}: power-off is pending")
     why = vm.power_off_refusal()
     if why:

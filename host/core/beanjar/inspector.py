@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass
 from urllib.parse import quote, urlsplit
 
-from . import core, hostprocs, vmsettings
+from . import base, hostprocs, vmsettings
 
 
 @dataclass(frozen=True)
@@ -189,14 +189,14 @@ def show(vm, password=False):
 def check_ready(name, data):
     """Refuses a VM whose inspector cannot be reached: not mode mitm, not running, not ready."""
     if data.get("mode") != "mitm":
-        raise core.Error(
+        raise base.Error(
             f"VM {name} runs without the traffic inspector (network mode {data.get('mode')}, not "
             "mitm)"
         )
     if data.get("status") == "Not running":
-        raise core.Error(f"VM {name} is not running")
+        raise base.Error(f"VM {name} is not running")
     if not data.get("ready"):
-        raise core.Error(f"VM {name}'s traffic inspector: {data.get('status')}")
+        raise base.Error(f"VM {name}'s traffic inspector: {data.get('status')}")
 
 
 CHECK = 5  # seconds between a held connect's looks at the inspector
@@ -312,7 +312,7 @@ def hold(name, data, fetch, link):
             data = fetch()
             check_ready(name, data)
             url, password = link(data), data["password"]
-        except core.Error as e:
+        except base.Error as e:
             if str(e) != said:
                 said = str(e)
                 say(name, f"{said}: waiting for it")
@@ -450,7 +450,7 @@ def connect_remote(host, name):
 
 def cleared(name, url, password):
     if not clear(url, password):
-        raise core.Error(f"VM {name}'s traffic inspector did not clear its flows")
+        raise base.Error(f"VM {name}'s traffic inspector did not clear its flows")
     return {"name": name, "cleared": True}
 
 

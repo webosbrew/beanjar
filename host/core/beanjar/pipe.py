@@ -40,7 +40,7 @@ import threading
 import time
 
 from . import dbus, framing
-from .core import Error
+from .base import Error
 from .dbus import SCREENSHOT_NAME, SCREENSHOT_PATH
 
 CHUNK = 1 << 16

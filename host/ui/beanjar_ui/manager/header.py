@@ -9,7 +9,7 @@ picks which one the button shows. No GTK here: the tests check the mapping witho
 
 from dataclasses import dataclass
 
-# core's phases (beanjar.core.OFF, ...), as strings: this module imports neither GTK nor the core
+# core's phases (beanjar.base.OFF, ...), as strings: this module imports neither GTK nor the core
 OFF, STARTING, RUNNING, STOPPING = "Off", "Starting", "Running", "Stopping"
 
 START_ICON = "media-playback-start-symbolic"

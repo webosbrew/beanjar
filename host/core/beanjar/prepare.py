@@ -468,11 +468,11 @@ def ensure(job, say=print, why=None):
 def vm_env(vm_dir):
     """The environment a library VM's preparation needs (its vm.toml's FW, FW_CACHE, SERIAL,
     BROADCAST, MODEL, DEBUG_MODE, and its RUN_DIR)."""
-    from . import core
+    from . import base, core
 
     try:
         env = core.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
-    except core.Error as e:
+    except base.Error as e:
         raise Error(str(e)) from None
     env["RUN_DIR"] = os.path.join(os.path.abspath(vm_dir), "run")
     return env

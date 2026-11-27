@@ -8,8 +8,9 @@ import shlex
 import stat
 import sys
 
-from .. import core, hostprocs, keys, poweroff, remote, vmsettings, vmunits
-from ..core import Error, fmt_duration
+from .. import base, core, hostprocs, keys, poweroff, remote, vmsettings, vmunits
+from ..core import fmt_duration
+from ..base import Error
 from .common import Usage, emit, kv_lines, layer_versions, progress, table, warn
 from .forward import bare_new_name
 from .settings import settings_of, warn_mitm
@@ -69,7 +70,7 @@ def vm_row(vm):
     """A library VM as `list` shows it."""
     state, detail = vm.state(qmp=True)
     c = vm.config
-    unit = vm.unit_name() if state != core.OFF else vmunits.vm_unit_name(vm.dir)
+    unit = vm.unit_name() if state != base.OFF else vmunits.vm_unit_name(vm.dir)
     fw = firmware_facts(vm)
     return {
         "name": vm.name,
@@ -111,8 +112,8 @@ def unit_row(name, props):
     tag, vm_name = vmunits.unit_tag(name)
     env = hostprocs.proc_env(int(props.get("MainPID") or 0) or None)
     run_dir = vmunits.unit_run_dir(props) or ""
-    pid = core.read_pid(env.get("QEMU_PIDFILE") or os.path.join(run_dir, "qemu.pid"))
-    if not (core.proc_alive(pid, "qemu-system") and core.in_unit(pid, name)):
+    pid = base.read_pid(env.get("QEMU_PIDFILE") or os.path.join(run_dir, "qemu.pid"))
+    if not (base.proc_alive(pid, "qemu-system") and base.in_unit(pid, name)):
         pid = None
     try:
         with open(
@@ -123,11 +124,11 @@ def unit_row(name, props):
         booted = False
     active = props.get("ActiveState")
     state = (
-        core.STOPPING
+        base.STOPPING
         if active == "deactivating"
-        else core.RUNNING
+        else base.RUNNING
         if pid and booted
-        else core.STARTING
+        else base.STARTING
     )
     # FW as the launcher resolves it (a bare name, a path): in the unit's checkout, its working directory
     try:
@@ -145,7 +146,7 @@ def unit_row(name, props):
         )
     except Exception:  # a firmware this tree does not boot: shown as far as it is known
         pass
-    m = core.read_toml(os.path.join(fw, "manifest.toml"), None) if fw else None
+    m = base.read_toml(os.path.join(fw, "manifest.toml"), None) if fw else None
     slot = env.get("SLOT")
     return {
         "name": vm_name,
@@ -339,7 +340,7 @@ def cmd_stop(lib, a):
         out=progress,
         force=a.force,
     )
-    return emit(a, {"name": a.name, "state": core.OFF.lower()}, f"{a.name}: off")
+    return emit(a, {"name": a.name, "state": base.OFF.lower()}, f"{a.name}: off")
 
 
 STATUS_KEYS = ("reason",)

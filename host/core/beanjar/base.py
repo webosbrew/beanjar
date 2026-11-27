@@ -87,6 +87,8 @@ def read_toml(path, default=None):
 
 # -- run state --
 
+OFF, STARTING, RUNNING, STOPPING = "Off", "Starting", "Running", "Stopping"  # a VM's phases
+
 
 def read_pid(path):
     try:

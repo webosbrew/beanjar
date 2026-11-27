@@ -11,7 +11,7 @@ import subprocess
 import pytest
 
 from beanjar import soundbar
-from beanjar.core import Error
+from beanjar.base import Error
 
 
 def edid_with_sads(raw):

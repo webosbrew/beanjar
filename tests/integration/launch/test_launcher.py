@@ -18,15 +18,7 @@ import unittest
 
 import pytest
 import testunits
-from beanjar import (
-    capacity,
-    compat,
-    core,
-    launch,
-    paths,
-    unit,
-    vmunits,
-)
+from beanjar import base, capacity, compat, core, launch, paths, unit, vmunits
 from launchkit import FW_NAME, H13_AFRO, TOP, TRUST_PAK, VM
 
 
@@ -79,8 +71,8 @@ class LaunchTest(unittest.TestCase):
     def tearDown(self):
         testunits.stop_ours()
         for n in ("launcher.pid", "qemu.pid", "dbus-daemon.pid"):
-            pid = core.read_pid(os.path.join(self.dir, "run", n))
-            if pid and core.proc_alive(pid, "qemu-system", "beanjar.unit", "dbus-daemon"):
+            pid = base.read_pid(os.path.join(self.dir, "run", n))
+            if pid and base.proc_alive(pid, "qemu-system", "beanjar.unit", "dbus-daemon"):
                 testunits.end(pid)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -142,11 +134,11 @@ class LaunchTest(unittest.TestCase):
             (qenv.get("FW"), qenv.get("FW_CACHE"), qenv.get("FIRMWARE_CA"), qenv.get("ROOTFS")),
             (self.fw, os.path.join(self.dir, "firmware-cache"), None, None),
         )
-        bus = core.read_pid(os.path.join(self.dir, "run", "dbus-daemon.pid"))
-        self.assertTrue(core.proc_alive(bus, "dbus-daemon"), "no private bus")
+        bus = base.read_pid(os.path.join(self.dir, "run", "dbus-daemon.pid"))
+        self.assertTrue(base.proc_alive(bus, "dbus-daemon"), "no private bus")
         if self.systemd:
             self.assertEqual(vmunits.unit_show(unit_name).get("ActiveState"), "active")
-            self.assertTrue(core.in_unit(pid, unit_name) and core.in_unit(bus, unit_name))
+            self.assertTrue(base.in_unit(pid, unit_name) and base.in_unit(bus, unit_name))
             self.assertEqual(
                 vmunits.unit_show(unit_name).get("Description"), f"webOS VM {self.dir}/run"
             )
@@ -182,14 +174,14 @@ class LaunchTest(unittest.TestCase):
                 self.assertIn("MemoryHigh=infinity", props.split())
         else:
             self.assertTrue(
-                core.proc_alive(core.read_pid(os.path.join(self.dir, "run", "launcher.pid")))
+                base.proc_alive(base.read_pid(os.path.join(self.dir, "run", "launcher.pid")))
             )
         self.assertIn("already running", self.vm("start", "--dir", self.dir, ok=False).stdout)
         self.vm("stop", "--dir", self.dir)
         self.assertEqual(self.vm("status", "--dir", self.dir, ok=False).returncode, 3)
         for p in (pid, bus):
             self.assertFalse(
-                core.proc_alive(p, "qemu-system", "dbus-daemon"), f"pid {p} survived the stop"
+                base.proc_alive(p, "qemu-system", "dbus-daemon"), f"pid {p} survived the stop"
             )
         self.assertNotIn(unit_name, testunits.units())
         run = os.listdir(os.path.join(self.dir, "run"))
@@ -236,14 +228,14 @@ class LaunchTest(unittest.TestCase):
         unit_name = vmunits.vm_unit_name(self.dir)
         self.vm("start", "--dir", self.dir)
         pid = int(self.vm("status", "--dir", self.dir).stdout.split()[1])
-        bus = core.read_pid(os.path.join(self.dir, "run", "dbus-daemon.pid"))
+        bus = base.read_pid(os.path.join(self.dir, "run", "dbus-daemon.pid"))
         os.kill(pid, signal.SIGTERM)
         end = time.monotonic() + 10
         while time.monotonic() < end and (
-            core.proc_alive(bus, "dbus-daemon") or unit_name in testunits.units()
+            base.proc_alive(bus, "dbus-daemon") or unit_name in testunits.units()
         ):
             time.sleep(0.1)
-        self.assertFalse(core.proc_alive(bus, "dbus-daemon"))
+        self.assertFalse(base.proc_alive(bus, "dbus-daemon"))
         self.assertNotIn(unit_name, testunits.units())
         self.assertEqual(self.vm("status", "--dir", self.dir, ok=False).returncode, 3)
 
@@ -255,7 +247,7 @@ class LaunchTest(unittest.TestCase):
         p = self.vm("stop", "--dir", self.dir, "--power-off", "1", ok=False)
         self.assertEqual(p.returncode, core.STOP_REFUSED)
         self.assertIn("power-off: no serial console", p.stdout)
-        self.assertTrue(core.proc_alive(pid, "qemu-system"), "the VM is left running")
+        self.assertTrue(base.proc_alive(pid, "qemu-system"), "the VM is left running")
         self.vm("stop", "--dir", self.dir)
         self.assertEqual(self.vm("status", "--dir", self.dir, ok=False).returncode, 3)
 
@@ -284,13 +276,13 @@ class LaunchTest(unittest.TestCase):
         )
         try:
             end = time.monotonic() + 10
-            while not core.proc_alive(core.read_pid(os.path.join(run, "qemu.pid")), "qemu-system"):
+            while not base.proc_alive(base.read_pid(os.path.join(run, "qemu.pid")), "qemu-system"):
                 self.assertLess(time.monotonic(), end, "the fake QEMU did not start")
                 time.sleep(0.05)
-            bus = core.read_pid(os.path.join(run, "dbus-daemon.pid"))
+            bus = base.read_pid(os.path.join(run, "dbus-daemon.pid"))
             os.killpg(p.pid, signal.SIGTERM)
             self.assertEqual(p.wait(timeout=20), -signal.SIGTERM)
-            self.assertFalse(core.proc_alive(bus, "dbus-daemon"))
+            self.assertFalse(base.proc_alive(bus, "dbus-daemon"))
             self.assertFalse(os.path.exists(os.path.join(run, "dbus.sock")))
         finally:
             if p.poll() is None:

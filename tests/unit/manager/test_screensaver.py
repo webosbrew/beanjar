@@ -21,7 +21,7 @@ from unittest import mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import cli, commands, core, poweroff, remote, screensaver as ss
+from beanjar import base, cli, commands, core, poweroff, remote, screensaver as ss
 from beanjar.commands import forward
 
 
@@ -79,7 +79,7 @@ class Trace:
         elif method == "launch":
             self.assert_payload(payload, {"id": ss.BUILTIN})
             if self.mode == "denied":
-                raise core.Error("permission denied")
+                raise base.Error("permission denied")
             self.launched = now
         elif method == "turnOnScreen":
             self.assert_payload(payload, {"reason": "remoteKey"})
@@ -128,7 +128,7 @@ class ControlTest(unittest.TestCase):
     def test_concurrent_helper_refused_through_launch_completion(self):
         with open(Path(self.vm.run_dir) / "screensaver.lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            with self.assertRaisesRegex(core.Error, "another screensaver command"):
+            with self.assertRaisesRegex(base.Error, "another screensaver command"):
                 self.control("start")
         self.assertEqual(self.trace.calls, [])
         self.assertFalse(self.control("stop")["changed"])
@@ -196,7 +196,7 @@ class ControlTest(unittest.TestCase):
         for action in ("start", "stop"):
             with (
                 self.subTest(action=action),
-                self.assertRaisesRegex(core.Error, "unrelated native power transition"),
+                self.assertRaisesRegex(base.Error, "unrelated native power transition"),
             ):
                 self.control(action)
         self.assertNotIn("turnOnScreen", self.trace.methods())
@@ -212,7 +212,7 @@ class ControlTest(unittest.TestCase):
             return original(uri, payload)
 
         with mock.patch.object(self.trace, "call", side_effect=call):
-            with self.assertRaisesRegex(core.Error, "unrelated native power transition"):
+            with self.assertRaisesRegex(base.Error, "unrelated native power transition"):
                 self.control("stop")
         self.assertNotIn("closeByAppId", self.trace.methods())
 
@@ -230,14 +230,14 @@ class ControlTest(unittest.TestCase):
 
     def test_launch_denied(self):
         self.trace.mode = "denied"
-        with self.assertRaisesRegex(core.Error, "permission denied"):
+        with self.assertRaisesRegex(base.Error, "permission denied"):
             self.control("start")
         self.assertEqual(self.trace.methods().count("launch"), 1)
         self.assertNotIn("turnOnScreen", self.trace.methods())
 
     def test_live_ad_never_taken_over(self):
         self.trace.mode = "alive"
-        with self.assertRaisesRegex(core.Error, "timed out"):
+        with self.assertRaisesRegex(base.Error, "timed out"):
             self.control("start", 7)
         self.assertEqual(self.clock.now, 7)
         self.assertIn("running", self.trace.methods())
@@ -245,7 +245,7 @@ class ControlTest(unittest.TestCase):
 
     def test_window_already_exists_wait_without_takeover(self):
         self.trace.processing, self.trace.windows = ss.READY, ["native.saver"]
-        with self.assertRaisesRegex(core.Error, "timed out"):
+        with self.assertRaisesRegex(base.Error, "timed out"):
             self.control("start", 7)
         self.assertNotIn("running", self.trace.methods())
         self.assertNotIn("launch", self.trace.methods())
@@ -293,7 +293,7 @@ class ControlTest(unittest.TestCase):
             return data
 
         with mock.patch.object(self.trace, "call", side_effect=call):
-            with self.assertRaisesRegex(core.Error, "unrelated native power transition"):
+            with self.assertRaisesRegex(base.Error, "unrelated native power transition"):
                 self.control("start")
         self.assertNotIn("launch", self.trace.methods())
 
@@ -319,7 +319,7 @@ class ControlTest(unittest.TestCase):
 
     def test_never_close_other_screensaver(self):
         self.trace.sub, self.trace.windows = "screen saver", ["native.saver"]
-        with self.assertRaisesRegex(core.Error, "timed out"):
+        with self.assertRaisesRegex(base.Error, "timed out"):
             self.control("stop", 5)
         self.assertIn("turnOnScreen", self.trace.methods())
         self.assertNotIn("closeByAppId", self.trace.methods())
@@ -334,13 +334,13 @@ class ControlTest(unittest.TestCase):
             return data
 
         with mock.patch.object(self.trace, "call", call):
-            with self.assertRaisesRegex(core.Error, "timed out"):
+            with self.assertRaisesRegex(base.Error, "timed out"):
                 self.control("start", 7)
         self.assertEqual(self.trace.methods().count("launch"), 1)
 
     def test_native_state_without_window_is_not_success(self):
         self.trace.sub = "screen saver"
-        with self.assertRaisesRegex(core.Error, "timed out"):
+        with self.assertRaisesRegex(base.Error, "timed out"):
             self.control("start", 5)
 
     def test_refuse_other_power_states_and_transitions(self):
@@ -355,7 +355,7 @@ class ControlTest(unittest.TestCase):
                 self.subTest(power=power),
                 mock.patch.object(self.trace, "call", return_value=power),
             ):
-                with self.assertRaisesRegex(core.Error, "native power"):
+                with self.assertRaisesRegex(base.Error, "native power"):
                     self.control("start")
 
     def test_schema_failure_before_mutation(self):
@@ -371,7 +371,7 @@ class ControlTest(unittest.TestCase):
                 self.subTest(malformed=malformed),
                 mock.patch.object(self.trace, "call", side_effect=replies),
             ):
-                with self.assertRaisesRegex(core.Error, "window schema"):
+                with self.assertRaisesRegex(base.Error, "window schema"):
                     self.control("start")
 
 
@@ -379,11 +379,11 @@ class ReadinessTest(unittest.TestCase):
     def setUp(self):
         self.vm = mock.Mock(name="vm")
         self.vm.name = "tv"
-        self.vm.state.return_value = (core.RUNNING, "")
+        self.vm.state.return_value = (base.RUNNING, "")
         self.vm.pid.return_value = 123
         self.vm.power_off_refusal.return_value = None
         for patch in (
-            mock.patch.object(core, "read_pid", return_value=None),
+            mock.patch.object(base, "read_pid", return_value=None),
             mock.patch.object(poweroff, "qmp_status", return_value="running"),
         ):
             patch.start()
@@ -393,19 +393,19 @@ class ReadinessTest(unittest.TestCase):
         ss.require_running(self.vm)
 
     def test_pending_shutdown_shortcut_refused(self):
-        with mock.patch.object(core, "read_pid", return_value=123):
-            with self.assertRaisesRegex(core.Error, "power-off is pending"):
+        with mock.patch.object(base, "read_pid", return_value=123):
+            with self.assertRaisesRegex(base.Error, "power-off is pending"):
                 ss.require_running(self.vm)
 
     def test_vm_not_running(self):
-        for state in (core.OFF, core.STARTING, core.STOPPING):
+        for state in (base.OFF, base.STARTING, base.STOPPING):
             self.vm.state.return_value = state, ""
-            with self.subTest(state=state), self.assertRaises(core.Error):
+            with self.subTest(state=state), self.assertRaises(base.Error):
                 ss.require_running(self.vm)
 
     def test_not_ready(self):
         self.vm.power_off_refusal.return_value = "webOS is still starting"
-        with self.assertRaisesRegex(core.Error, "still starting"):
+        with self.assertRaisesRegex(base.Error, "still starting"):
             ss.require_running(self.vm)
 
     def test_qmp_not_running_or_unavailable(self):
@@ -414,7 +414,7 @@ class ReadinessTest(unittest.TestCase):
                 self.subTest(status=status),
                 mock.patch.object(poweroff, "qmp_status", return_value=status),
             ):
-                with self.assertRaises(core.Error):
+                with self.assertRaises(base.Error):
                     ss.require_running(self.vm)
 
 
@@ -442,7 +442,7 @@ class FrameTest(unittest.TestCase):
             self.frame({"returnValue": False, "errorText": "permission denied"}),
             self.frame([]),
         ):
-            with self.subTest(output=output), self.assertRaises(core.Error):
+            with self.subTest(output=output), self.assertRaises(base.Error):
                 ss.parse_frame(output, "nonce")
 
     def test_native_shell_quoting_actor_and_encoding_in_namespace(self):
@@ -486,7 +486,7 @@ class FrameTest(unittest.TestCase):
 
     def test_deadline_exhausted_does_not_send(self):
         with mock.patch.object(ss.console, "send") as send:
-            with self.assertRaisesRegex(core.Error, "timed out"):
+            with self.assertRaisesRegex(base.Error, "timed out"):
                 ss.Native(mock.Mock(), time.monotonic() + 2).call(ss.POWER + "getPowerState", {})
         send.assert_not_called()
 
@@ -516,7 +516,7 @@ class FrameTest(unittest.TestCase):
 
         began = time.monotonic()
         with mock.patch.object(ss.console, "send", side_effect=send):
-            with self.assertRaisesRegex(core.Error, "native call exited with status"):
+            with self.assertRaisesRegex(base.Error, "native call exited with status"):
                 ss.Native(vm, began + 3.9).call(ss.POWER + "getPowerState", {})
         self.assertLess(time.monotonic() - began, 3)
 
@@ -525,7 +525,7 @@ class FrameTest(unittest.TestCase):
             run_dir="/unused", console_log="/unused/log", library=SimpleNamespace(repo=str(TOP))
         )
         with mock.patch.object(ss.console, "send", side_effect=OSError("no console")):
-            with self.assertRaisesRegex(core.Error, "console transport failed"):
+            with self.assertRaisesRegex(base.Error, "console transport failed"):
                 ss.Native(vm, time.monotonic() + 10).call(ss.POWER + "getPowerState", {})
 
 

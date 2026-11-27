@@ -14,14 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import (
-    core,
-    keys,
-    nvm,
-    targets,
-    paths,
-    qemu,
-)
+from beanjar import base, keys, nvm, paths, qemu, targets
 
 from launchkit import boot_conf, FW_NAME, H13_AFRO, store_snapshot, text, TOP, TRUST_PAK
 
@@ -1017,7 +1010,7 @@ class BootConfTest(unittest.TestCase):
         vm = types.SimpleNamespace(
             name="tv", portrait=lambda: False, target=lambda: ("lm21a", "kisscurl")
         )
-        with self.assertRaisesRegex(core.Error, "does not turn to portrait"):
+        with self.assertRaisesRegex(base.Error, "does not turn to portrait"):
             rotation.require(vm)
 
     def test_portrait_sensor(self):
@@ -1220,7 +1213,7 @@ class BootConfTest(unittest.TestCase):
         # the typed line comes back too: only the guest's own answer counts
         self.assertEqual(sensors.parse_light(line + "\nlight=10,20\n"), (10, 20))
         self.assertIsNone(sensors.parse_light(line + "\nnolight\n"))
-        with self.assertRaises(core.Error):
+        with self.assertRaises(base.Error):
             sensors.parse_light(line)
         for word, mm in (("present", 1500), ("absent", 0), ("2500", 2500), ("100", 100)):
             self.assertEqual(sensors.presence_value(word), mm)
@@ -1233,14 +1226,14 @@ class BootConfTest(unittest.TestCase):
         self.assertEqual(sensors.parse_presence(line + "\npresence=1500\n"), 1500)
         self.assertEqual(sensors.parse_presence(line + "\npresence=0\n"), 0)
         self.assertIsNone(sensors.parse_presence(line + "\nnotof\n"))
-        with self.assertRaises(core.Error):
+        with self.assertRaises(base.Error):
             sensors.parse_presence(line)
         line = sensors.temperature_command(80)
         self.assertIn("echo 80 > /sys/module/lgemu/parameters/soc_temp", line)
         self.assertEqual(sensors.parse_temperature(line + "\nsoc_temperature=80\n"), 80)
         self.assertEqual(sensors.parse_temperature("soc_temperature=-5\n"), -5)
         self.assertIsNone(sensors.parse_temperature(line + "\nnothermal\n"))
-        with self.assertRaises(core.Error):
+        with self.assertRaises(base.Error):
             sensors.parse_temperature(line)
 
     def test_portrait_report(self):
@@ -1288,7 +1281,7 @@ class BootConfTest(unittest.TestCase):
                     state_dir=d,
                     portrait=lambda: True,
                     target=lambda target=target: target,
-                    state=lambda: (core.RUNNING, ""),
+                    state=lambda: (base.RUNNING, ""),
                     pid=lambda: 1,
                 )
 
@@ -1392,17 +1385,17 @@ class BootConfTest(unittest.TestCase):
                 self.assertEqual(firmware.target_of(fw), H13_AFRO)
             with mock.patch.object(paths, "firmware_release", return_value=("jhericurl", where)):
                 with self.assertRaisesRegex(
-                    core.Error, "WT1H jhericurl firmware might be unsupported"
+                    base.Error, "WT1H jhericurl firmware might be unsupported"
                 ):
                     firmware.target_of(fw)
             with mock.patch.object(paths, "firmware_release", return_value=("beehive", where)):
                 with self.assertRaisesRegex(
-                    core.Error, r"WT1H beehive firmware might be unsupported"
+                    base.Error, r"WT1H beehive firmware might be unsupported"
                 ):
                     firmware.target_of(fw)
             with mock.patch.object(paths, "firmware_release", return_value=(None, "no rootfs.pak")):
                 with self.assertRaisesRegex(
-                    core.Error, "no rootfs.pak: its webOS release is unknown"
+                    base.Error, "no rootfs.pak: its webOS release is unknown"
                 ):
                     firmware.target_of(fw)
             # the release is read from the rootfs itself

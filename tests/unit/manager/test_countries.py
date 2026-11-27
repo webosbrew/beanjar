@@ -8,7 +8,7 @@ import json
 from unittest import mock
 
 import pytest
-from beanjar import core, countries, lls, vmconfig, vmsettings
+from beanjar import base, core, countries, lls, vmconfig, vmsettings
 
 # a firmware's RMM tables as W22O 13.30's have them, cut down: two blocks, grpCode per record
 GROUPS = {
@@ -138,13 +138,13 @@ def test_parse():
 def test_vmconfig_country(tmp_path):
     """firmware.country: an upper-case alpha-3 string, the launcher's COUNTRY; not checked against
     the firmware on read (every read stays cheap: configure and the launcher check it)."""
-    base = {"firmware": {"directory": "firmware"}}
-    assert "country" not in vmconfig.decode(base)
+    base_doc = {"firmware": {"directory": "firmware"}}
+    assert "country" not in vmconfig.decode(base_doc)
     cfg = vmconfig.decode({"firmware": {"directory": "firmware", "country": "CAN"}})
     assert cfg["country"] == "CAN"
     assert vmsettings.launcher_env(cfg)["COUNTRY"] == "CAN"
     for bad, why in (("can", "alpha-3 code in upper case"), (5, "must be a string")):
-        with pytest.raises(core.Error, match=why):
+        with pytest.raises(base.Error, match=why):
             vmconfig.decode({"firmware": {"directory": "firmware", "country": bad}})
     assert "country" in vmsettings.SETTING_HELP and vmsettings.SETTING_HELP["country"][3]
 
@@ -181,13 +181,13 @@ def test_configure_country(vm):
         assert 'country = "CAN"' in toml.read_text()
         assert calls == [(("o22", "number1"), "CAN", "atsc")]
         before = toml.read_text()
-        with pytest.raises(core.Error, match="'GBR' is not one of this board's") as e:
+        with pytest.raises(base.Error, match="'GBR' is not one of this board's") as e:
             lib.configure("tv", prepare=False, country="gbr")
         assert e.value.key == "country" and toml.read_text() == before
-        with pytest.raises(core.Error, match="alpha-3") as e:
+        with pytest.raises(base.Error, match="alpha-3") as e:
             lib.configure("tv", prepare=False, country="UK")
         assert e.value.key == "country"
-        with pytest.raises(core.Error, match="'CAN' is not one of this board's"):
+        with pytest.raises(base.Error, match="'CAN' is not one of this board's"):
             lib.configure("tv", prepare=False, broadcast="dvb")  # CAN is not the DVB board's
         assert toml.read_text() == before
         calls.clear()

@@ -23,15 +23,7 @@ import warnings
 from unittest import mock
 
 
-from beanjar import (
-    console,
-    core,
-    launch,
-    lifecycle,
-    poweroff,
-    unit,
-    vmunits,
-)
+from beanjar import base, console, core, launch, lifecycle, poweroff, unit, vmunits
 
 import testunits
 
@@ -404,13 +396,13 @@ class ConsoleTest(unittest.TestCase):
             t0 = time.monotonic()
             self.assertEqual(console.send("echo hi", 5, sock, log), "hi\n")
             self.assertLess(time.monotonic() - t0, 4, "returns at the end marker, not after WAIT")
-            bridge = core.read_pid(sock + ".in.pid")
-            self.assertTrue(core.proc_alive(bridge, "beanjar.console"))
+            bridge = base.read_pid(sock + ".in.pid")
+            self.assertTrue(base.proc_alive(bridge, "beanjar.console"))
             self.assertEqual(console.send("second", 5, sock, log), "")
-            self.assertEqual(core.read_pid(sock + ".in.pid"), bridge, "one bridge per console")
+            self.assertEqual(base.read_pid(sock + ".in.pid"), bridge, "one bridge per console")
         finally:
             srv.close()
-            bridge = core.read_pid(sock + ".in.pid")
+            bridge = base.read_pid(sock + ".in.pid")
             if bridge:
                 testunits.end(bridge, group=True)
             shutil.rmtree(tmp, ignore_errors=True)

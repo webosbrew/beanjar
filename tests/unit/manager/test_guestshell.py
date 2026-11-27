@@ -335,7 +335,7 @@ def test_run_remote_forwards_to_the_hosts_relay(monkeypatch, tmp_path):
 
 def test_run_remote_not_running(monkeypatch):
     from beanjar import remote
-    from beanjar.core import Error
+    from beanjar.base import Error
 
     monkeypatch.setattr(remote, "hosts", lambda: {"pi": "ssh://pi"})
     monkeypatch.setattr(remote, "call_json", lambda h, u, argv: {"pid": None, "dir": "/x"})

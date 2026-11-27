@@ -4,7 +4,7 @@
 
 import argparse
 
-from ..core import Error
+from ..base import Error
 from .common import emit
 
 
