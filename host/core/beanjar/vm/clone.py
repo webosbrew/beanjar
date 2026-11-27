@@ -34,7 +34,7 @@ import tomllib
 from .. import base, tomlfile
 from ..access import remote
 from ..base import Error
-from ..board import nvm
+from ..board import nvm, prepare
 from . import config, identity, keys
 from . import library as vm_library
 
@@ -296,7 +296,7 @@ def clone(lib, src_spec, dest_spec, out=print, warn=print, pinned=False):
             identity.ensure_slot(dest_dir, say=lambda line: None)
             address = vm_library.VM(lib, dst_name).address()
             # its board data, for its own serial (another host's is made at DEST's first start)
-            vm_library.prepare_board_data(lib, dest_dir, out)
+            prepare.prepare_board_data(lib, dest_dir, out)
         out(f"cloned {src_label} to {dst_label}")
         return {
             "name": dst_name,

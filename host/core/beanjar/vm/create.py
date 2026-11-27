@@ -51,6 +51,7 @@ import time
 from .. import paths
 from ..base import NAME_RE, Error
 from ..board import nvm
+from ..board.prepare import prepare_board_data
 from ..firmware import install, probe, targets
 from ..firmware.install import vm_firmware
 from ..guestside import compat
@@ -58,7 +59,7 @@ from ..runtime import capacity, hostconfig
 from ..tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
 from . import config, identity, keys
 from .identity import free_slot, make_identity_dir, slot_lock
-from .library import VM, Library, prepare_board_data
+from .library import VM, Library
 from .settings import MANIFEST_KEYS
 
 SIGNALS = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}

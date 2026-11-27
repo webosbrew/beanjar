@@ -51,9 +51,10 @@ import shutil
 import subprocess
 import sys
 
-from .. import paths
+from .. import base, paths
 from ..base import identity_dir
 from ..firmware import cache, install, probe, targets
+from ..runtime import hostprocs
 from ..vm import identity
 from . import lls, macadr, nvm, partmap
 
@@ -471,11 +472,10 @@ def ensure(job, say=print, why=None):
 def vm_env(vm_dir):
     """The environment a library VM's preparation needs (its vm.toml's FW, FW_CACHE, SERIAL,
     BROADCAST, MODEL, DEBUG_MODE, and its RUN_DIR)."""
-    from .. import base
-    from ..vm import library
+    from ..vm import settings
 
     try:
-        env = library.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
+        env = settings.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
     except base.Error as e:
         raise Error(str(e)) from None
     env["RUN_DIR"] = os.path.join(os.path.abspath(vm_dir), "run")
@@ -502,6 +502,22 @@ def main(argv=None):
         print(f"prepare: {e}", file=sys.stderr)
         return 1
     return 0
+
+
+# The settings a VM's prepared board data depends on (Job): a change prepares it again.
+BOARD_SETTINGS = ("fw", "broadcast", "model", "debug_mode", "serial", "mac", "country")
+
+
+def prepare_board_data(lib, vm_dir, out=None, force=False):
+    """The launcher's prepare of the VM in vm_dir: its board data worked out again if it
+    is missing or stale (force: always), each line of what it says to out; Error if it fails."""
+    rc = hostprocs.run_streamed(
+        [*lib.launcher(), "prepare", "--dir", vm_dir, *(["--force"] if force else [])],
+        out,
+        cwd=lib.repo,
+    )
+    if rc != 0:
+        raise base.Error(f"the VM's board data could not be prepared (launcher exit {rc})")
 
 
 if __name__ == "__main__":

@@ -670,12 +670,12 @@ def argv(words, env=None):
 
 # ------------------------------------------------------------------ start/stop in the background
 def settings_vars(vm_dir):
-    """The launcher variables vm_dir's vm.toml sets (core.vm_launcher_env), none without one."""
+    """The launcher variables vm_dir's vm.toml sets (settings.vm_launcher_env), none without one."""
     path = os.path.join(vm_dir, "vm.toml")
     if not os.path.isfile(path):
         return ()
     try:
-        return tuple(library.vm_launcher_env(path))
+        return tuple(settings.vm_launcher_env(path))
     except base.Error:
         return ()
 
@@ -1038,7 +1038,7 @@ def vm_env(vm_dir, env):
     the VM directory's paths."""
     env = {k: v for k, v in env.items() if k not in RUNTIME_VARS}
     try:
-        env.update(library.vm_launcher_env(os.path.join(vm_dir, "vm.toml")))
+        env.update(settings.vm_launcher_env(os.path.join(vm_dir, "vm.toml")))
     except base.Error as e:
         raise Error(str(e)) from None
     run_dir, log_dir = os.path.join(vm_dir, "run"), os.path.join(vm_dir, "logs")
@@ -1085,7 +1085,7 @@ def vm(cmd, vm_dir, words, env=None, power_off=None):
         raise Error(f"{vm_dir} is already running (pid {pid}); stop it first")
     start_check(dict(env, RUN_DIR=os.path.join(vm_dir, "run"), UNIT=vmunits.vm_unit_name(vm_dir)))
     try:
-        fw = library.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))["FW"]
+        fw = settings.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))["FW"]
     except base.Error as e:
         raise Error(str(e)) from None
     guest_preflight(dict(env, FW=fw), os.path.basename(vm_dir))
@@ -1450,7 +1450,7 @@ def main(argv_=None):
             # the guest's: the environment's, else the development VM's (INSTANCE's) vm.toml; empty
             # before its first start (the board's then)
             if a.dir:
-                env = library.vm_launcher_env(os.path.join(a.dir, "vm.toml"))
+                env = settings.vm_launcher_env(os.path.join(a.dir, "vm.toml"))
             else:
                 env = development.configured_environment(dict(os.environ))
             print(os.environ.get(a.var) or env.get(a.var) or "")

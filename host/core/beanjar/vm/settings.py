@@ -9,6 +9,7 @@ import re
 from ..base import Error
 from ..board import nvm
 from ..firmware import targets
+from ..firmware.install import vm_firmware
 from . import config, identity
 
 DISPLAYS = ("dbus", "egl-headless", "none")
@@ -299,7 +300,7 @@ DEFAULT_DEBUG_MODE = "debug"
 
 
 # vm.toml: the VM's settings (these keys, in this order, then the manager's own, e.g. created) and
-# the launcher's environment variable each one is (launch.py --dir sets them with vm_launcher_env).
+# the launcher's environment variable each one is (launch.py --dir sets them with vm_launcher_env, below).
 # layers is an array, LAYERS its names joined with commas. Any upper-case key is a launcher
 # variable passed through as it is (e.g. PMLOG_DEBUG = "1", TCG_CPU = "max").
 SETTINGS = {
@@ -795,3 +796,18 @@ def layer_list(layers, available):
         key=lambda n: (rank.get(n, len(rank)), n),
     )
     return rows + [(n, False) for n in rest]
+
+
+def vm_launcher_env(path):
+    """The launcher's environment of the VM whose vm.toml is at path (launch.py, --dir): FW and
+    FW_CACHE as vm_firmware has them."""
+    cfg = config.read(path)
+    if cfg is None:
+        raise Error(f"{path}: no such file")
+    try:
+        env = launcher_env(cfg)
+    except Error as e:
+        raise Error(f"{path}: {e}", e.key) from None
+    vm_dir = os.path.dirname(os.path.abspath(path))
+    env["FW"], env["FW_CACHE"] = vm_firmware(vm_dir, env.get("FW"))
+    return env

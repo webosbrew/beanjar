@@ -64,6 +64,7 @@ from ..base import (
     slot_domain,
 )
 from ..board import countries, nvm
+from ..board import prepare as board_prepare
 from ..display import capture_relay, dbus, framing
 from ..display.dbus import SCREENSHOT_NAME
 from ..firmware import probe, targets
@@ -75,37 +76,6 @@ from . import identity, settings
 
 def default_repo():
     return paths.TREE.top
-
-
-# The settings a VM's prepared board data depends on (prepare.Job): a change prepares it again.
-BOARD_SETTINGS = ("fw", "broadcast", "model", "debug_mode", "serial", "mac", "country")
-
-
-def prepare_board_data(lib, vm_dir, out=None, force=False):
-    """The launcher's prepare (prepare.py) of the VM in vm_dir: its board data worked out again if it
-    is missing or stale (force: always), each line of what it says to out; Error if it fails."""
-    rc = hostprocs.run_streamed(
-        [*lib.launcher(), "prepare", "--dir", vm_dir, *(["--force"] if force else [])],
-        out,
-        cwd=lib.repo,
-    )
-    if rc != 0:
-        raise Error(f"the VM's board data could not be prepared (launcher exit {rc})")
-
-
-def vm_launcher_env(path):
-    """The launcher's environment of the VM whose vm.toml is at path (launch.py, --dir): FW and
-    FW_CACHE as vm_firmware has them."""
-    cfg = vm_config.read(path)
-    if cfg is None:
-        raise Error(f"{path}: no such file")
-    try:
-        env = settings.launcher_env(cfg)
-    except Error as e:
-        raise Error(f"{path}: {e}", e.key) from None
-    vm_dir = os.path.dirname(os.path.abspath(path))
-    env["FW"], env["FW_CACHE"] = vm_firmware(vm_dir, env.get("FW"))
-    return env
 
 
 RUNNING_LOCK = ".running.lock"
@@ -988,7 +958,7 @@ class Library:
         vm = self.vm(name)
         if vm.alive():
             raise Error(f"VM {name} is not off; prepare it while it is off")
-        prepare_board_data(self, vm.dir, out, force)
+        board_prepare.prepare_board_data(self, vm.dir, out, force)
         return vm
 
     def configure(self, name, out=None, prepare=True, **values):
@@ -1155,8 +1125,8 @@ class Library:
             if refusal:
                 raise Error(refusal, refusal.split("=", 1)[0])
         vm.save_config(cfg)
-        if prepare and any(values.get(k) is not None for k in BOARD_SETTINGS):
-            prepare_board_data(self, vm.dir, out)
+        if prepare and any(values.get(k) is not None for k in board_prepare.BOARD_SETTINGS):
+            board_prepare.prepare_board_data(self, vm.dir, out)
         return vm
 
     def set_model_key(self, name, source):
@@ -1413,7 +1383,7 @@ class Library:
             raise Error(str(e)) from None
         out(f"new keys in {vm.identity_dir}: {', '.join(made)}")
         # the new chip has the new serial, the macadr partition the new LGUDID
-        prepare_board_data(self, vm.dir, out)
+        board_prepare.prepare_board_data(self, vm.dir, out)
         pid = vm.vnc_pid()
         if pid:
             out(

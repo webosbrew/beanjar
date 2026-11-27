@@ -114,7 +114,7 @@ def configured_environment(env, tree=paths.TREE):
     """Read existing development settings without creating a VM (for argv)."""
     library, directory = locations(env, tree)
     config = Path(directory) / "vm.toml"
-    stored = vm_library.vm_launcher_env(str(config)) if config.is_file() else {}
+    stored = settings.vm_launcher_env(str(config)) if config.is_file() else {}
     # the VM's slot, or the one it would be made with
     slot = stored.get("SLOT") or str(vm_identity.free_slot(library))
     return environment(
@@ -153,7 +153,7 @@ def prepare(env, tree=paths.TREE):
                     cfg["slot"] = vm_identity.free_slot(library)
                     vm_config.write(str(Path(temporary) / "vm.toml"), cfg)
                     os.rename(temporary, directory)
-    stored = vm_library.vm_launcher_env(str(config))
+    stored = settings.vm_launcher_env(str(config))
     if env.get("FW") and os.path.realpath(env["FW"]) != os.path.realpath(stored["FW"]):
         resolved, _ = tree.firmware(env["FW"])
         if os.path.realpath(resolved) != os.path.realpath(stored["FW"]):
@@ -161,7 +161,7 @@ def prepare(env, tree=paths.TREE):
     out = dict(stored, **env)
     vm_identity.ensure_identity(directory, lambda _: None)
     # Persisted identity is supplied when the environment does not override it.
-    stored = vm_library.vm_launcher_env(str(config))
+    stored = settings.vm_launcher_env(str(config))
     for key in ("MAC", "SERIAL"):
         out[key] = env.get(key) or stored.get(key, "")
     out["SLOT"] = stored["SLOT"]  # the VM's own, never the caller's

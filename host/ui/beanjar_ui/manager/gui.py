@@ -46,6 +46,7 @@ gi.require_version("Adw", "1")
 from beanjar import base, paths  # noqa: E402
 from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402
 from beanjar.board import nvm  # noqa: E402
+from beanjar.board import prepare as board_prepare  # noqa: E402
 from beanjar.devices import rotation  # noqa: E402
 from beanjar.display import gpu  # noqa: E402
 from beanjar.firmware import (  # noqa: E402
@@ -2178,7 +2179,7 @@ class Manager:
                 "clear": ", model key cleared",
             }.get(change, "")
             after = self.lib.vm(name).config
-            if any(before.get(k) != after.get(k) for k in vm_library.BOARD_SETTINGS):
+            if any(before.get(k) != after.get(k) for k in board_prepare.BOARD_SETTINGS):
                 # its board data comes from what changed: worked out in the background
                 self.prepare_async(form, name, saved)
                 return self.widgets.STAY

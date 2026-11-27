@@ -20,6 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar import base
+from beanjar.board import prepare as board_prepare
 from beanjar.vm import clone, config, library, sestore, snapshot
 
 FW = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
@@ -433,7 +434,9 @@ class SnapshotTest(unittest.TestCase):
     def test_interrupted_after_commit_finished_by_clone(self):
         before, dvr = self.killed_after_commit()
         lines = []
-        with mock.patch.object(library, "prepare_board_data"):  # the fixture's firmware is not real
+        with mock.patch.object(
+            board_prepare, "prepare_board_data"
+        ):  # the fixture's firmware is not real
             clone.clone(self.lib, "tv1", "tv2", out=lines.append, warn=lines.append, pinned=True)
         self.assertIn("tv1: snapshot reset finished", lines)
         self.check_finished(before, dvr)

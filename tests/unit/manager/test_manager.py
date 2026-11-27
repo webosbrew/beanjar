@@ -641,7 +641,7 @@ class ManagerTest(unittest.TestCase):
         said.clear()
         vm_identity.ensure_identity(os.path.join(self.lib_dir, "vms", "tv2"), said.append)
         self.assertEqual((said, self.vm_toml("tv2")), ([], c), "kept once made")
-        env = vm_library.vm_launcher_env(os.path.join(self.lib_dir, "vms", "tv2", "vm.toml"))
+        env = vm_settings.vm_launcher_env(os.path.join(self.lib_dir, "vms", "tv2", "vm.toml"))
         self.assertEqual((env["MAC"], env["SERIAL"]), (c["mac"], c["serial"]))
 
     def test_slots(self):
@@ -691,7 +691,7 @@ class ManagerTest(unittest.TestCase):
         vm_identity.ensure_identity(os.path.dirname(path), said.append)
         self.assertEqual(tload(path)["slot"], 2)
         self.assertTrue(len(said) == 1 and "slot 2" in said[0] and "127.0.1.2" in said[0], said)
-        env = vm_library.vm_launcher_env(path)
+        env = vm_settings.vm_launcher_env(path)
         self.assertEqual(env["SLOT"], "2")
         # VMs made at once take different slots
         procs = [
@@ -1828,7 +1828,7 @@ class ManagerTest(unittest.TestCase):
         ext_before = self.tree(ext)
         self.cli("config", "set", "a", f"fw={ext}")
         self.assertEqual(self.vm_toml("a")["fw"], ext)
-        env = vm_library.vm_launcher_env(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))
+        env = vm_settings.vm_launcher_env(os.path.join(self.lib_dir, "vms", "a", "vm.toml"))
         self.assertEqual(
             (env["FW"], env["FW_CACHE"], env.get("FIRMWARE_CA")),
             (ext, os.path.join(self.lib_dir, "vms", "a", "firmware-cache"), None),
@@ -2614,7 +2614,7 @@ class ManagerTest(unittest.TestCase):
         self.cli("config", "set", "a", "listen= 127.0.1.201")
         path = os.path.join(self.lib_dir, "vms", "a", "vm.toml")
         self.assertIn('listen = "127.0.1.201"', slurp(path))
-        self.assertEqual(vm_library.vm_launcher_env(path)["LISTEN_ADDRESS"], "127.0.1.201")
+        self.assertEqual(vm_settings.vm_launcher_env(path)["LISTEN_ADDRESS"], "127.0.1.201")
         st = self.info("a")
         self.assertEqual((st["listen"], st["address"]), ("127.0.1.201", "127.0.1.1"))
         self.assertTrue(st["ssh"]["devmode"].endswith("prisoner@127.0.1.201"), st["ssh"])
@@ -2659,7 +2659,7 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn("lg_services", slurp(path))
         self.cli("config", "set", "a", "lg_services=real")
         self.assertIn('lg_services = "real"', slurp(path))
-        self.assertEqual(vm_library.vm_launcher_env(path)["NET_LG_SERVICES"], "real")
+        self.assertEqual(vm_settings.vm_launcher_env(path)["NET_LG_SERVICES"], "real")
         self.assertIn("lg_services", self.cli("config", "set", "a", "lg_services=on", ok=False))
         self.cli("config", "set", "a", "lg_services=mock")
         self.assertNotIn("lg_services", slurp(path))
@@ -2675,7 +2675,7 @@ class ManagerTest(unittest.TestCase):
         self.assertNotIn("lan_access", slurp(path))
         self.cli("config", "set", "a", "lan_access=on")
         self.assertIn('lan_access = "on"', slurp(path))
-        self.assertEqual(vm_library.vm_launcher_env(path)["NET_LAN_ACCESS"], "on")
+        self.assertEqual(vm_settings.vm_launcher_env(path)["NET_LAN_ACCESS"], "on")
         self.assertIn("lan_access", self.cli("config", "set", "a", "lan_access=yes", ok=False))
         self.cli("config", "set", "a", "lan_access=off")
         self.assertNotIn("lan_access", slurp(path))
@@ -2702,7 +2702,7 @@ class ManagerTest(unittest.TestCase):
             "8080,8081:80",
         )
         self.assertIn('forward = "8080,8081:80"', slurp(path))
-        self.assertEqual(vm_library.vm_launcher_env(path)["FORWARD"], "8080,8081:80")
+        self.assertEqual(vm_settings.vm_launcher_env(path)["FORWARD"], "8080,8081:80")
         self.assertEqual(
             self.lib().vm("a").listeners()[-2:], [("127.0.1.1", 8080), ("127.0.1.1", 8081)]
         )
@@ -2743,7 +2743,7 @@ class ManagerTest(unittest.TestCase):
             self.cli_json("config", "set", "a", "debug_mode=release")["debug_mode"], "release"
         )
         self.assertIn('debug_mode = "release"', slurp(path))
-        self.assertEqual(vm_library.vm_launcher_env(path)["DEBUG_MODE"], "release")
+        self.assertEqual(vm_settings.vm_launcher_env(path)["DEBUG_MODE"], "release")
         self.assertEqual(self.info("a")["debug_mode"], "release")
         self.assertIn("debug_mode", self.cli("config", "set", "a", "debug_mode=quiet", ok=False))
         self.assertIn("unset", self.cli("config", "set", "a", "debug_mode=", ok=False))
@@ -3578,7 +3578,7 @@ class TomlTest(unittest.TestCase):
             if c["fw"] is None:
                 del c["fw"]
             vm_library.vm_config.write(os.path.join(vm_dir, "vm.toml"), c)
-            env = vm_library.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
+            env = vm_settings.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
             self.assertFalse({"FIRMWARE_CA", "ROOTFS"} & set(env), env)
             return f"{env['FW']}|{env['FW_CACHE']}|{env['LAYERS']}|{env['DISPLAY_BACKEND']}"
 
@@ -3598,7 +3598,7 @@ class TomlTest(unittest.TestCase):
         )
         with self.assertRaises(base.Error):
             vm_library.vm_config.write(os.path.join(vm, "vm.toml"), dict(cfg, RUN_DIR="/x"))
-            vm_library.vm_launcher_env(os.path.join(vm, "vm.toml"))
+            vm_settings.vm_launcher_env(os.path.join(vm, "vm.toml"))
         # Platform is derived from the selected firmware and absent from the document.
         self.assertEqual(
             launcher(vm, fw="FW1"), f"{vm}/FW1|{vm}/firmware-cache|normal,gl,rootssh|dbus"
