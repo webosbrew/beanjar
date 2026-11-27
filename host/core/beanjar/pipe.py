@@ -28,7 +28,7 @@ and the web server never opens a VM's socket itself.
 - In standby (Quick Start+) the keys go the same way: the micom's always-on part on the host
   (ir_relay.py, behind the front end's ir.sock) wakes the guest on POWER and drops the other keys
   (docs/dev/architecture/suspend.md).
-- layout: the VM's remote (beanjar.remote_layouts, the GTK remote's data) as JSON.
+- layout: the VM's remote (beanjar.devices.remote_layouts, the GTK remote's data) as JSON.
 """
 
 import os
@@ -52,7 +52,7 @@ def vm_layout(vm):
     ARIB board (tuner.vm_broadcast, as the launch writes it to vm-info.toml)."""
     from . import targets
     from .tuner import antenna
-    from . import remote_layouts as lib
+    from .devices import remote_layouts as lib
 
     try:
         target = vm.target()
@@ -182,7 +182,7 @@ class Remote(FrontEnd):
     def code(self, word):
         """A key's IR code: a number (0x7c, 124; a Japanese remote's extended code 0xdb30) or a name of
         the VM's layout (HOME)."""
-        from . import remote_layouts
+        from .devices import remote_layouts
 
         try:
             code = int(word, 0)
@@ -323,7 +323,7 @@ def rotation_reported(vm):
 def watch_rotation(vm, say, stop):
     """remote pipe's "rotation N" lines: the guest's rotation setting as it reports it (run/rotation,
     rotation.py; 0 before its first report), once at the start and at each change, until stop."""
-    from . import rotation
+    from .devices import rotation
 
     last = None
     while True:

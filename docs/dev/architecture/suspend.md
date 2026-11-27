@@ -96,7 +96,7 @@ restore. Decided instead:
   queue, 2026-11-09: a POWER and a local key sent by `tests/regress/ir-key.py` during a suspend, then
   `MICOM send key to IM` for both after a wake from `beanjar remote`). The micom's always-on part is
   therefore on the host: the launcher listens on `ir.sock` and relays it to QEMU's socket for the port
-  (`ir-qemu.sock`) through `beanjar/ir_relay.py`. With QMP's standby chardev open, a key-down of the
+  (`ir-qemu.sock`) through `beanjar/devices/ir_relay.py`. With QMP's standby chardev open, a key-down of the
   remote's POWER or of a local key there is `system_powerdown`; every key-down in standby, and the
   key-up of each, is dropped, as the micom ignores keys then. Awake, records pass unchanged.
 - **A key during the way down is latched.** The micom model gets the warm standby command before the SoC
@@ -156,7 +156,7 @@ the wake. No guest kernel change beyond one export (patch 0029), no QEMU patch.
   devices stay in D0 and keep running across s2idle (patch 0004). The close is `__fput_sync`: a
   plain `fput` from the suspending task (tvpowerd) would close it only on that task's return to
   user space, after the whole resume. A key latched on the way down (decision 3) skips the open.
-- **The IR relay stops it.** `beanjar/ir_relay.py` (the host's always-on micom part, running for the
+- **The IR relay stops it.** `beanjar/devices/ir_relay.py` (the host's always-on micom part, running for the
   VM's life) looks at QMP every 0.5 s while `micom-status` says standby (and never otherwise), and
   stops a running VM whose `suspended` chardev is open, once for each time the SoC is down: after
   a wake, which the guest takes a moment to show, it does not stop it again until the port has

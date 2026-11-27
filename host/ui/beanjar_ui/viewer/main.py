@@ -225,7 +225,7 @@ def vm_info(sockets):
 def remote_layout(requested, info):
     """Use the selected target's remote by default; an explicit layout takes precedence
     (remote_layouts.remote_layout, shared with the manager's beanjar remote layout)."""
-    from beanjar.remote_layouts import remote_layout as choose
+    from beanjar.devices.remote_layouts import remote_layout as choose
 
     try:
         return choose(requested, info)

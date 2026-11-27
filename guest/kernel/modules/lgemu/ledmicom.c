@@ -15,7 +15,8 @@
  *
  * The model acknowledges every write and keeps, per command byte, how many writes it had and the
  * last payload; /proc/lgemu/led_micom lists them for the host (`beanjar status show`'s lighting,
- * host/core/beanjar/lighting.py decodes them). Nothing else in the stock stack talks to it. */
+ * host/core/beanjar/devices/lighting.py decodes them). Nothing else in the stock stack talks to it.
+ */
 #define pr_fmt(fmt) KBUILD_MODNAME ": ledmicom: " fmt
 #include <linux/i2c.h>
 #include <linux/kernel.h>

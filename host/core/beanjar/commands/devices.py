@@ -254,7 +254,7 @@ def usb_attach_usage(a, remote_host=None):
 
 
 def cmd_usb_attach(lib, a):
-    from .. import usb
+    from ..devices import usb
 
     usb_attach_usage(a)
     if a.device or a.camera:
@@ -269,7 +269,7 @@ def cmd_usb_attach(lib, a):
 
 
 def cmd_usb_mkimage(lib, a):
-    from .. import usb
+    from ..devices import usb
 
     size = usb.parse_size(a.size)
     data = usb.make_image(a.file, a.fs, size, a.label, a.overwrite)
@@ -278,7 +278,7 @@ def cmd_usb_mkimage(lib, a):
 
 
 def cmd_usb_detach(lib, a):
-    from .. import usb
+    from ..devices import usb
 
     data = usb.detach(lib.vm(a.name), a.id)
     return emit(a, {"name": a.name} | data, f"{a.name}: USB device {a.id} detached")
@@ -305,7 +305,7 @@ def usb_rows(devices):
 
 
 def cmd_usb_list(lib, a):
-    from .. import usb
+    from ..devices import usb
 
     st = usb.state(lib.vm(a.name))
     devices = st["devices"]
@@ -319,7 +319,7 @@ def cmd_usb_list(lib, a):
 def plug_usb(lib, a, host=None):
     """io usb attach --device or --camera: a device of this machine, or the virtual camera, fed
     into lib's VM a.name, or with host, that host's VM a.name, until this command ends."""
-    from .. import usb
+    from ..devices import usb
 
     usb_attach_usage(a)
     if a.camera:
@@ -347,7 +347,7 @@ def plug_usb(lib, a, host=None):
 
 def gamepad_controls(a):
     """io usb gamepad press's controls, checked here, also before they go to another host."""
-    from .. import gamepad
+    from ..devices import gamepad
 
     try:
         return gamepad.check_controls(a.controls)
@@ -356,7 +356,7 @@ def gamepad_controls(a):
 
 
 def cmd_gamepad(lib, a):
-    from .. import gamepad
+    from ..devices import gamepad
 
     controls = gamepad_controls(a) if a.gamepad_verb == "press" else None
     vm = lib.vm(a.name)
@@ -425,7 +425,7 @@ def soundbar_text(name, data):
 
 
 def cmd_soundbar(lib, a):
-    from .. import soundbar
+    from ..devices import soundbar
 
     vm = lib.vm(a.name)
     if a.verb == "attach":
@@ -442,7 +442,7 @@ def cmd_soundbar(lib, a):
 
 
 def cmd_mic(lib, a):
-    from .. import mic
+    from ..devices import mic
 
     vm = lib.vm(a.name)
     data = mic.play(vm, a.file)
@@ -639,7 +639,7 @@ def register(cli):
     s.add_argument("--label", default="BEANJAR", help="the filesystem's label (default BEANJAR)")
     s.add_argument("--overwrite", action="store_true", help="replace FILE if it exists")
 
-    from ..gamepad import CONTROLS, DEVICE
+    from ..devices.gamepad import CONTROLS, DEVICE
 
     pad = group(
         "gamepad",
@@ -708,7 +708,7 @@ def register(cli):
         under=io,
         dest="verb",
     )
-    from ..soundbar import DEFAULT_FORMATS, FORMATS
+    from ..devices.soundbar import DEFAULT_FORMATS, FORMATS
 
     s = command(
         g,

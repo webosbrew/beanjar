@@ -26,7 +26,7 @@ import json
 import re
 import shlex
 
-from .base import Error
+from ..base import Error
 
 PARAMS = "/sys/module/lgemu/parameters"
 SEPARATOR = "--- beanjar ---"
@@ -283,7 +283,7 @@ def parse(out):
 
 
 def _run(vm, line, timeout=20.0):
-    from . import guestshell
+    from .. import guestshell
 
     with guestshell.local_socket(vm) as sock:
         status, text = guestshell.output(sock, ["sh", "-c", line], timeout)

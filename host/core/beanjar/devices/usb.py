@@ -44,7 +44,7 @@ import tempfile
 import threading
 import time
 
-from .base import Error
+from ..base import Error
 
 BUS = "usb-bus.0"  # the bus of the launcher's qemu-xhci, which has no id (qemu.py)
 DRIVER = "usb-redir"
@@ -255,7 +255,7 @@ def _running(vm):
 
 def record_dir(vm):
     """Where vm's attached devices are recorded: its unit's RuntimeDirectory, else run/."""
-    from . import lifecycle, vmunits
+    from .. import lifecycle, vmunits
 
     unit_name = vm.unit_name()
     return lifecycle.state_dir(
@@ -267,7 +267,7 @@ def _record(vm, add=None, remove=None):
     """Adds the device add to vm's record, or removes the id remove from it, under a lock."""
     import fcntl
 
-    from . import lifecycle
+    from .. import lifecycle
 
     d = record_dir(vm)
     with open(os.path.join(d, lifecycle.USB_RECORD + ".lock"), "w") as lock:
@@ -284,7 +284,7 @@ def state(vm):
     """{restarts, restarting, devices}: how many times vm's unit started QEMU again, whether it is
     doing so now (then no devices: the new QEMU is not up), and its devices (query). Error if the VM
     is not running and not restarting."""
-    from . import lifecycle
+    from .. import lifecycle
 
     restarting = lifecycle.restarting(vm.run_dir)
     out = {"restarts": lifecycle.restarts(vm.run_dir), "restarting": restarting, "devices": []}
@@ -602,7 +602,7 @@ class Camera:
             raise Error(f"invalid --pattern {pattern!r}: " + ", ".join(PATTERNS))
         self.pattern = pattern
         if program is None:
-            from . import paths
+            from .. import paths
 
             program = paths.TREE.virtcam()
         self.program = program
@@ -729,7 +729,7 @@ class Remote:
         self.host, self.uri, self.name, self.record = host, uri, name, record
 
     def _call(self, *words):
-        from . import remote
+        from .. import remote
 
         return remote.call_json(
             self.host, self.uri, ["io", "usb", words[0], remote.own(self.name), *words[1:]]
@@ -760,7 +760,7 @@ class Remote:
         }
 
     def way(self, path):
-        from . import ares
+        from .. import ares
 
         return ares.Forward(self.host, self.uri, path, None, self.record)
 
@@ -875,7 +875,7 @@ def plug(target, name, client, id_=None, ready=None, out=None, spawn=subprocess.
 def plug_remote(host, name, client, id_=None, ready=None, out=None):
     """plug for VM name on host, its forward recorded for ares.sweep_homes should this process be
     killed outright."""
-    from . import ares, remote
+    from .. import ares, remote
 
     uri = remote.hosts()[host]
     old = {s: signal.signal(s, ares.raise_terminated) for s in (signal.SIGTERM, signal.SIGHUP)}
@@ -895,7 +895,7 @@ def plug_remote(host, name, client, id_=None, ready=None, out=None):
 
 
 def plug_local(vm, client, id_=None, ready=None, out=None):
-    from . import ares
+    from .. import ares
 
     old = {s: signal.signal(s, ares.raise_terminated) for s in (signal.SIGTERM, signal.SIGHUP)}
     try:

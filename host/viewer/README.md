@@ -150,7 +150,7 @@ focus. `--no-statusbar` hides it.
 **Standby** (Quick Start+, docs/dev/architecture/suspend.md): the same QMP connection asks `query-chardev`
 each second; while the guest holds its `webos.standby` port open (chardev `standby`), the TV is in
 standby. The keys still go to `ir.sock`, where the micom's always-on part on the host
-(`beanjar/ir_relay.py`) drops them and wakes the guest on POWER (the micom reports no keys in
+(`beanjar/devices/ir_relay.py`) drops them and wakes the guest on POWER (the micom reports no keys in
 standby); the host also stops the VM while the guest's SoC is down and continues it at the wake. The panel is off then, and also in the micom's warm
 standby (`micom-status` `power=2`: webOS's Active Standby after Power Off, the SoC running): the
 picture is black and LG's cursor is not drawn, as the guest never sends its hide. After the wake
@@ -205,7 +205,7 @@ a value for "no key"; the key is hidden only where nothing is decoded.
 ## TV remote
 
 `beanjar_ui/viewer/remote.py` provides firmware-specific LG remotes and the shared
-service remote; their data (keys, colours, IR codes) is `beanjar/remote_layouts.py`, without
+service remote; their data (keys, colours, IR codes) is `beanjar/devices/remote_layouts.py`, without
 GTK, which the web viewer's remote also draws. For an instance with `vm-info.toml`, the chin menu offers only
 its **webOS Remote**, **NetCast Remote**, **SimpleSmart Remote** or **Japanese Remote** (a webOS
 board whose broadcast is ARIB, `vm-info.toml`'s `broadcast`), plus **Service Remote**. With no firmware metadata, standalone previews retain all choices.

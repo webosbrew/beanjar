@@ -124,7 +124,7 @@ vms/<name>/identity/   the VM's own files, mode 0700: its SSH keys and known_hos
                        (including its SDP model key; below), vnc.password (beanjar vnc's; vnc password),
                        lgudid.toml (its LGUDID; below)
 vms/<name>/run/        qemu.pid qmp.sock viewer-qmp.sock console.sock dbus.sock cursor.sock video.sock ir.sock
-                       (the micom's IR receiver, beanjar/ir_relay.py: ir-relay.log; QEMU's port is
+                       (the micom's IR receiver, beanjar/devices/ir_relay.py: ir-relay.log; QEMU's port is
                        ir-qemu.sock) shell.sock (beanjar shell's relay, beanjar/guestshell.py:
                        shell-relay.log; QEMU's port is shell-qemu.sock) capture.sock (the guest's
                        captures, beanjar/capture_relay.py: capture-relay.log; QEMU's port is
@@ -728,7 +728,7 @@ turns.
 ### Light and temperature
 
 Two of the board's sensors are set from the host on a running VM, over the console into lgemu's
-module parameters (`host/core/beanjar/sensors.py`). Neither is kept across a restart.
+module parameters (`host/core/beanjar/devices/sensors.py`). Neither is kept across a restart.
 
 - **Ambient light.** `beanjar sensor set light NAME CH0 [CH1]` sets the light sensor's two channels in raw
   counts (0 to 65535; one value sets both); `beanjar sensor show light NAME` prints them. pqcontroller reports
@@ -865,7 +865,7 @@ beanjar io tuner map tv 30 --stream rec.ts
 ### USB devices
 
 A USB device of this machine, or of the machine `beanjar` runs on, is plugged into a running VM
-with usbredir (`beanjar/usb.py`), the protocol QEMU's `usb-redir` device speaks and
+with usbredir (`beanjar/devices/usb.py`), the protocol QEMU's `usb-redir` device speaks and
 `usbredirect` (Debian's `usbredirect` package) serves for a local device:
 
 ```sh
@@ -1304,7 +1304,7 @@ one: `start --reason` is refused there before anything starts.
 is off). It is read when asked, over the VM's shell port: the guest's `/proc/lgemu/sound_out`, the
 table where the emulated hardware keeps what the firmware selected for its sound outputs, and the
 TV's own `soundOutput` and `soundOutputDigital` settings; the streams come from the media helper's
-`media-streams` file in the VM's `run/media` directory. `beanjar/soundout.py` decodes the table per line of
+`media-streams` file in the VM's `run/media` directory. `beanjar/devices/soundout.py` decodes the table per line of
 firmware ([docs/research/tv-sound-outputs.md](../../docs/research/tv-sound-outputs.md) has the
 numbers).
 
@@ -1334,7 +1334,7 @@ On a VM whose board has the OLED Flex's gaming LED micom (lgemu's `ledmicom`: a 
 type LX3Q, `model=42LX3QPUA`), `status show NAME` also reports its lighting, as `lighting` in
 `--json` (`null` when the VM is off or its board has no micom). It is read when asked, over the
 VM's shell port: the guest's `/proc/lgemu/led_micom`, what the stock lightingcontroller wrote to the
-micom per command byte, and the TV's own lighting settings. `beanjar/lighting.py` decodes it
+micom per command byte, and the TV's own lighting settings. `beanjar/devices/lighting.py` decodes it
 ([docs/research/led-lighting.md](../../docs/research/led-lighting.md) has the commands).
 
 | Key | Value |

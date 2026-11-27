@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 // beanjar-virtpad: a virtual wired Xbox 360 controller (045e:028e) for a QEMU usb-redir device.
-// `beanjar io usb gamepad attach NAME` starts it on the VM's host (host/core/beanjar/gamepad.py).
+// `beanjar io usb gamepad attach NAME` starts it on the VM's host (host/core/beanjar/devices/gamepad.py).
 //
 //   beanjar-virtpad --unix PATH --control PATH [--retry SECONDS]
 //

@@ -148,7 +148,6 @@ from . import (
     poweroff,
     prepare,
     qemu,
-    rotation,
     runner,
     share,
     targets,
@@ -157,6 +156,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .devices import rotation
 from .network import netns
 from .tuner import antenna
 
@@ -545,7 +545,7 @@ def run(words, env=None):
                 [
                     sys.executable,
                     "-m",
-                    "beanjar.ir_relay",
+                    "beanjar.devices.ir_relay",
                     str(os.getpid()),
                     str(ir.fileno()),
                     qemu_ir,

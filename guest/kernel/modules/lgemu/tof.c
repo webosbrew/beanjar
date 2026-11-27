@@ -33,7 +33,7 @@
  *
  * The host sets it through the module parameter presence (mm, 0 for nobody; writable at runtime:
  * /sys/module/lgemu/parameters/presence); `beanjar sensor set presence` writes it
- * (host/core/beanjar/sensors.py). */
+ * (host/core/beanjar/devices/sensors.py). */
 #define pr_fmt(fmt) KBUILD_MODNAME ": tof: " fmt
 #include <linux/i2c.h>
 #include <linux/kernel.h>

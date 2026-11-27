@@ -20,7 +20,7 @@ import socket
 import subprocess
 import time
 
-from .base import Error
+from ..base import Error
 
 SOCK = "mic.sock"
 RATE = 48000
@@ -46,7 +46,7 @@ def decode_command(path):
 
 def need_mic(vm):
     """Error unless vm runs and its model has the microphone; the socket's path."""
-    from . import targets
+    from .. import targets
 
     if not targets.soc(vm.target()).mic:
         raise Error(

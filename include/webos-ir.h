@@ -72,7 +72,7 @@ _Static_assert(sizeof(struct webos_ir_record) == 4, "IR wire record");
  * step of the suspend (its noirq callback: user space frozen, the devices suspended) and closes it
  * at the first step of the resume, which the host sees as the frontend-open of chardev "suspended"
  * in QMP query-chardev. The host then stops the VM, as a TV powers its SoC down, and continues it
- * at the wake (host/core/beanjar/ir_relay.py; docs/dev/architecture/suspend.md). */
+ * at the wake (host/core/beanjar/devices/ir_relay.py; docs/dev/architecture/suspend.md). */
 #define WEBOS_IR_SUSPENDED_PORT 0x4901 /* _IO('I', 1) */
 
 /* A read of n >= sizeof(struct webos_micom_status) from /dev/lgemu-ir has the whole state, of

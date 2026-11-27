@@ -23,7 +23,7 @@ import socket
 import subprocess
 import time
 
-from .base import Error
+from ..base import Error
 
 PROGRAM = "beanjar-virtpad"
 DEVICE = "045e:028e"
@@ -43,7 +43,7 @@ RECORD = "gamepad-{}.json"
 
 
 def program():
-    from . import paths
+    from .. import paths
 
     return paths.TREE.virtpad()
 

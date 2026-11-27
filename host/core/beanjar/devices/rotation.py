@@ -25,8 +25,8 @@ turned as webOS turned its UI (picture_turn), its touches and clicks mapped back
 import os
 import time
 
-from . import base, targets
-from .base import Error
+from .. import base, targets
+from ..base import Error
 
 ANGLES = (0, 90, 180, 270)
 STATUS = "rotation"  # run/rotation: msc's orientation as an angle, a line at each report
@@ -204,7 +204,7 @@ def rotate(vm, angle, wait=WAIT, settle=SETTLE):
 def turn_sensor(vm, angle):
     """Sets the running VM's accelerometer to the set turned to angle, in the initramfs (lgemu's
     accel_mg), and keeps the angle for its next start."""
-    from . import console, paths
+    from .. import console, paths
 
     x, y, z = gravity(angle)
     try:

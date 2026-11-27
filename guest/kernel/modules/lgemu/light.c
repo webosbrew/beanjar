@@ -23,7 +23,7 @@
  *
  * The host sets the light, raw counts of the chip's two channels, through the module parameter
  * light ("ch0,ch1", writable at runtime: /sys/module/lgemu/parameters/light); `beanjar sensor
- * light` writes it (host/core/beanjar/sensors.py). ch0 is what pqcontroller reports as
+ * light` writes it (host/core/beanjar/devices/sensors.py). ch0 is what pqcontroller reports as
  * luminance, ch1 as visibleLuminance. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": light: " fmt
 #include <linux/i2c.h>

@@ -126,7 +126,7 @@ DERIVED_PAKS = {"mstar-mboot": ("boot",)}
 # com.webos.service.msc.supportPortrait true, and msc turns the UI by the set's accelerometer,
 # lgemu's accel device): `beanjar sensor set rotate` sets the sensor, the launcher adds the webos.rotation port
 # that reports msc's orientation back, and the viewers turn the picture to match
-# (host/core/beanjar/rotation.py). Other models refuse a rotation.
+# (host/core/beanjar/devices/rotation.py). Other models refuse a rotation.
 # light_bus: the I2C channel (lgemu's Linux adapter) of the ambient light sensor, libdile_i2c's
 # LIGHT_SENSOR_1 and LIGHT_SENSOR_2 rows (8-bit slave 0x20) in the chip's firmwares; None where
 # they have none. Whether a board has the sensor, and which type, is its own tool option

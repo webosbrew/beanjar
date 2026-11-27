@@ -9,7 +9,7 @@ from .common import emit
 
 
 def cmd_rotate(lib, a):
-    from .. import rotation
+    from ..devices import rotation
 
     vm = lib.vm(a.name)
     if a.angle is None:
@@ -29,7 +29,7 @@ def cmd_rotate(lib, a):
 
 
 def cmd_light(lib, a):
-    from .. import sensors
+    from ..devices import sensors
 
     channels = None
     if a.values:
@@ -45,7 +45,7 @@ def cmd_light(lib, a):
 
 
 def cmd_presence(lib, a):
-    from .. import sensors
+    from ..devices import sensors
 
     data = sensors.presence(lib.vm(a.name), a.mm)
     if not data["sensor"]:
@@ -58,7 +58,7 @@ def cmd_presence(lib, a):
 
 
 def cmd_temperature(lib, a):
-    from .. import sensors
+    from ..devices import sensors
 
     data = sensors.temperature(lib.vm(a.name), a.celsius)
     if not data["thermalinfo"]:
@@ -71,7 +71,7 @@ def cmd_temperature(lib, a):
 def rotation_angle(text):
     """rotate's ANGLE: 0, 90, 180 or 270 (off is 0), rotation.angle_value."""
 
-    from .. import rotation
+    from ..devices import rotation
 
     try:
         return rotation.angle_value(text)
@@ -82,7 +82,7 @@ def rotation_angle(text):
 def light_count(text):
     """light's CH0/CH1: raw counts, 0 to 65535 (sensors.count_value)."""
 
-    from .. import sensors
+    from ..devices import sensors
 
     try:
         return sensors.count_value(text)
@@ -93,7 +93,7 @@ def light_count(text):
 def presence_mm(text):
     """presence's argument: present, absent or millimetres (sensors.presence_value)."""
 
-    from .. import sensors
+    from ..devices import sensors
 
     try:
         return sensors.presence_value(text)
@@ -104,7 +104,7 @@ def presence_mm(text):
 def celsius(text):
     """temperature's CELSIUS: -40 to 200 (sensors.celsius_value)."""
 
-    from .. import sensors
+    from ..devices import sensors
 
     try:
         return sensors.celsius_value(text)

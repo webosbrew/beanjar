@@ -125,7 +125,7 @@ class ViewerPane(Gtk.Box):
         self.on_fullscreen = None
         self.said = []  # every message, the last one last
         # a set that turns to portrait (vm-info.toml's portrait): the guest's rotation setting as
-        # it reports it (run/rotation, beanjar/rotation.py), the picture turned to match; rotate()
+        # it reports it (run/rotation, beanjar/devices/rotation.py), the picture turned to match; rotate()
         # turns the set through `beanjar sensor set rotate` where the VM is a library's (vm_name)
         self.run_dir = stats_dir if portrait else None
         self.vm_name = vm_name
@@ -219,7 +219,7 @@ class ViewerPane(Gtk.Box):
     def _rotation_poll(self):
         if self._finished is not None:
             return False
-        from beanjar import rotation
+        from beanjar.devices import rotation
 
         angle = rotation.current(self.run_dir) or 0
         if angle != self.rotation:
@@ -246,7 +246,7 @@ class ViewerPane(Gtk.Box):
         landscape): `beanjar sensor set rotate NAME ANGLE`; the picture follows when the guest reports it."""
         if not self.can_rotate() or self.rotating:
             return
-        from beanjar import rotation
+        from beanjar.devices import rotation
 
         from .stats import CORE
 

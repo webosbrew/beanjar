@@ -3,7 +3,7 @@
 """The micom's infrared receiver on the host: ir.sock, where the front ends and tests write
 the remote's and the set's own key edges (include/webos-ir.h), relayed to QEMU's webos.ir port.
 
-    python3 -m beanjar.ir_relay PID LISTEN_FD QEMU_SOCK QMP_SOCK MICOM_STATUS
+    python3 -m beanjar.devices.ir_relay PID LISTEN_FD QEMU_SOCK QMP_SOCK MICOM_STATUS
 
 The micom model is in the guest (lgemu's i2c.c) and sleeps with it while the SoC is suspended
 (Quick Start+, docs/dev/architecture/suspend.md): the IR pump that feeds it is frozen. A TV's micom
@@ -156,7 +156,7 @@ class PowerDown:
 
 
 def qmp_command(qmp_sock, name):
-    from . import launch
+    from .. import launch
 
     try:
         reply = launch.qmp(qmp_sock, json.dumps({"execute": name}))
@@ -170,7 +170,7 @@ def qmp_command(qmp_sock, name):
 
 
 def power_down(qmp_sock, micom_status):
-    from . import poweroff
+    from .. import poweroff
 
     return PowerDown(
         lambda: poweroff.qmp_state(qmp_sock),
@@ -180,7 +180,7 @@ def power_down(qmp_sock, micom_status):
 
 
 def qmp_standby(qmp_sock):
-    from . import poweroff
+    from .. import poweroff
 
     return poweroff.qmp_status(qmp_sock) == "standby"
 

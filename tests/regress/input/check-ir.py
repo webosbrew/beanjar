@@ -118,7 +118,7 @@ LINUX = {
 }
 TAP_S, GAP_S = 0.15, 0.45
 if SWEEP:
-    from beanjar.remote_layouts import LAYOUTS
+    from beanjar.devices.remote_layouts import LAYOUTS
 
     skip = {"POWER", "P_ONLY", "IN_STOP"}
     sweep = [

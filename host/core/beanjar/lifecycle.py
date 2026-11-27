@@ -125,7 +125,7 @@ def replay_commands(devices):
     """The QMP commands that put the recorded USB devices on a new QEMU, in their order: a stick's
     block node and usb-storage device, a usb-redir device's listening socket and device (its client,
     `io usb attach --device`'s, connects again by itself)."""
-    from . import usb
+    from .devices import usb
 
     cmds = []
     for d in devices:

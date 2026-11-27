@@ -23,8 +23,8 @@ supportMotionDetectSensor names the TMF8821 (targets.tof_dev). Nobody is there a
 import os
 import re
 
-from . import base
-from .base import Error
+from .. import base
+from ..base import Error
 
 PARAMS = "/sys/module/lgemu/parameters"
 COUNT_MAX = 0xFFFF
@@ -133,7 +133,7 @@ def parse_temperature(out):
 
 
 def _console(vm, line):
-    from . import console, paths
+    from .. import console, paths
 
     state, detail = vm.state()
     if state != base.RUNNING or detail or not vm.pid():

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""`beanjar io usb gamepad` (beanjar/gamepad.py): attach, press and detach against a fake QMP
+"""`beanjar io usb gamepad` (beanjar/devices/gamepad.py): attach, press and detach against a fake QMP
 server (test_usb.FakeQemu) and a stand-in for beanjar-virtpad that answers on its control socket
 as the program does, the records, the device's kind in io usb list, and the command line's
 parsing and remote dispatch. No VM, no build."""
@@ -20,7 +20,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_usb
-from beanjar import gamepad, usb
+from beanjar.devices import gamepad, usb
 from test_usb import FakeQemu
 
 # beanjar-virtpad's control side: "state" and "press HOLD_MS CONTROL..." on --control, each

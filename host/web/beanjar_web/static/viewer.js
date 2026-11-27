@@ -25,7 +25,7 @@ let rfb = null, layout = null, remoteWin = null;
 let touchScreen = false; // the VM's model has a touch screen (/api/vms's touch)
 // A set that turns to portrait (/api/vms's portrait, the StanbyME): the remote socket reports the
 // guest's rotation setting ("rotation N", beanjar remote pipe), and the picture is shown turned as
-// far as the set is, (360 - N) % 360 clockwise (beanjar/rotation.py picture_turn), noVNC's canvas
+// far as the set is, (360 - N) % 360 clockwise (beanjar/devices/rotation.py picture_turn), noVNC's canvas
 // and the stream's turned by a CSS transform. While it is turned the page maps the pointer itself
 // ("pointer X Y BUTTONS WxH" on the remote socket), noVNC's mapping not knowing the turn; the
 // keyboard stays noVNC's. The Rotate button toggles the set between landscape (0) and portrait (270), from any other

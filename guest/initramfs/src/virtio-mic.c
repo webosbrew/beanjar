@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /* The built-in microphone's sound, webos.mic -> lgemu.ko, in the initramfs.
  *
- * The host (host/core/beanjar/mic.py) sends what the microphone hears, 48 kHz stereo S16_LE, over
- * the webos.mic virtio-serial port. The kernel cannot read a virtio port itself (the port's file
- * has no read_iter), so this pump copies the port's stream to /dev/lgemu-mic
+ * The host (host/core/beanjar/devices/mic.py) sends what the microphone hears, 48 kHz stereo
+ * S16_LE, over the webos.mic virtio-serial port. The kernel cannot read a virtio port itself (the
+ * port's file has no read_iter), so this pump copies the port's stream to /dev/lgemu-mic
  * (guest/kernel/modules/lgemu/mic.c), in whole frames; that write blocks while the sound is far
  * enough ahead of real time, which holds the host back through the port. A hang-up of the port
  * means no host program is connected: the port then polls readable and reads 0 bytes at once, so

@@ -74,7 +74,7 @@ except ImportError:
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import remote_layouts  # noqa: E402
+from beanjar.devices import remote_layouts  # noqa: E402
 
 sys.path.insert(0, os.path.join(TOP, "tests", "lib"))
 import audiostream  # noqa: E402

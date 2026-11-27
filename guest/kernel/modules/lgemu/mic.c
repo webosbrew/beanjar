@@ -21,7 +21,7 @@
  * pointer is the time since its start, and the frames up to it are written when it is read.
  *
  * What the microphone hears comes from the host: the webos.mic virtio-serial port, whose host side
- * is the VM's mic.sock (host/core/beanjar/mic.py), carries 48 kHz stereo S16_LE, and the
+ * is the VM's mic.sock (host/core/beanjar/devices/mic.py), carries 48 kHz stereo S16_LE, and the
  * initramfs's pump (guest/initramfs/src/virtio-mic.c) writes it to /dev/lgemu-mic. That is the air
  * around the set: sound after a silence is heard from AIR_DELAY_NS after it arrives, at real time,
  * and a writer is held back while what it wrote reaches more than AIR_LEAD_NS ahead, so the host

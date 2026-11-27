@@ -990,7 +990,7 @@ class BootConfTest(unittest.TestCase):
         is the last "rotation=N" line, and the viewers turn the panel's picture the other way: the
         compositor draws the UI turned clockwise by the angle, upright on a set turned that far
         counter-clockwise."""
-        from beanjar import rotation
+        from beanjar.devices import rotation
 
         self.assertEqual(
             [targets.name(p) for p in targets.all_targets() if targets.soc(p).portrait],
@@ -1019,7 +1019,7 @@ class BootConfTest(unittest.TestCase):
         0x19), its vector for each angle lands in msc's band of that orientation (calOrient4BAM422:
         -y landscape, +x reversed_portrait, +y reversed_landscape, -x portrait, 512 counts per g),
         and a start gives it the angle rotate saved."""
-        from beanjar import rotation
+        from beanjar.devices import rotation
 
         self.assertEqual(
             [targets.name(p) for p in targets.all_targets() if rotation.sensor(p)],
@@ -1197,7 +1197,7 @@ class BootConfTest(unittest.TestCase):
     def test_sensor_commands(self):
         """beanjar sensor light, temperature and presence: their values, the console lines and the
         reports."""
-        from beanjar import sensors
+        from beanjar.devices import sensors
 
         self.assertEqual(sensors.count_value("3000"), 3000)
         self.assertEqual(sensors.celsius_value("-5"), -5)
@@ -1240,7 +1240,7 @@ class BootConfTest(unittest.TestCase):
         """The guest reports msc's orientation, not the sensor's angle (beanjar-rotation --parse:
         rotation.ORIENTATIONS), and rotate returns what it reports: at 180 N21D's webOS 24 msc
         keeps the orientation it had ("don't support reversed_landscape"), its webOS 6 takes it."""
-        from beanjar import rotation
+        from beanjar.devices import rotation
 
         script = os.path.join(TOP, "guest", "initramfs", "rootfs", "bin")
         replies = (

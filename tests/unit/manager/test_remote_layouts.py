@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The remotes' layouts (host/core/beanjar/remote_layouts.py) and the layout a VM gets
+"""The remotes' layouts (host/core/beanjar/devices/remote_layouts.py) and the layout a VM gets
 (pipe.vm_layout): the Japanese remote on an ARIB board, its keys' codes, the extended codes the
 CLI's remote takes. No VM. `pytest tests/unit/manager/test_remote_layouts.py`."""
 
@@ -14,7 +14,8 @@ import pytest
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, pipe, remote_layouts as rl  # noqa: E402
+from beanjar import base, pipe  # noqa: E402
+from beanjar.devices import remote_layouts as rl  # noqa: E402
 
 
 @pytest.mark.parametrize(

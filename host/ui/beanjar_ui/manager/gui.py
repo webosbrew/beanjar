@@ -57,11 +57,11 @@ from beanjar import (
     nvm,
     paths,
     poweroff,
-    rotation,
     targets,
     vmsettings,
     vmunits,
 )  # noqa: E402
+from beanjar.devices import rotation  # noqa: E402
 from beanjar.core import Library  # noqa: E402
 from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402
 from beanjar.firmware import fmt_size  # noqa: E402

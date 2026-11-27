@@ -357,8 +357,8 @@ static irqreturn_t power_line_isr(int irq, void *data)
  *
  * A TV's SoC is powered down in standby; here the host stops the VM instead (QMP stop, its
  * clocks with it: kvm-adjvtime holds arm64's virtual counter, QEMU kvm-clock on x86-64) and
- * continues it at the wake (host/core/beanjar/ir_relay.py). It must not stop the VM before the
- * guest is down, so the kernel itself tells it: the pump hands over the webos.suspended port
+ * continues it at the wake (host/core/beanjar/devices/ir_relay.py). It must not stop the VM before
+ * the guest is down, so the kernel itself tells it: the pump hands over the webos.suspended port
  * (WEBOS_IR_SUSPENDED_PORT, an O_PATH descriptor: a path, kept, which needs no lookup later), and
  * this device's noirq suspend, the last step before s2idle (user space frozen, the other devices
  * suspended: it is registered after them and synchronous), opens it; its noirq resume, the first

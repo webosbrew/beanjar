@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 // beanjar-virtcam: a virtual USB webcam (a Logitech C920 showing GStreamer's test pattern) for a
-// QEMU usb-redir device. `beanjar io usb attach NAME --camera` runs it (host/core/beanjar/usb.py).
+// QEMU usb-redir device. `beanjar io usb attach NAME --camera` runs it (host/core/beanjar/devices/usb.py).
 //
 //   beanjar-virtcam --to HOST:PORT | --unix PATH [--pattern NAME] [--stats SECONDS] [--verbose]
 //

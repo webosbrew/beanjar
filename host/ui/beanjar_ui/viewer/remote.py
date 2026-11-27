@@ -32,8 +32,8 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gtk  # noqa: E402
 
 # the layouts' data, without GTK (the web viewer's too)
-from beanjar.remote_layouts import *  # noqa: E402, F401, F403
-from beanjar.remote_layouts import _light  # noqa: E402
+from beanjar.devices.remote_layouts import *  # noqa: E402, F401, F403
+from beanjar.devices.remote_layouts import _light  # noqa: E402
 
 
 def _mix(a, b, t):

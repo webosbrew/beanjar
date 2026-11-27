@@ -20,8 +20,8 @@
  *
  * The host sets the vector, in mg along the chip's axes, through the module parameter accel_mg
  * ("x,y,z", writable at runtime: /sys/module/lgemu/parameters/accel_mg); beanjar sensor set rotate
- * writes the one for the set's angle (host/core/beanjar/rotation.py, gravity()). It starts at
- * the set standing in landscape. */
+ * writes the one for the set's angle (host/core/beanjar/devices/rotation.py, gravity()). It starts
+ * at the set standing in landscape. */
 #define pr_fmt(fmt) KBUILD_MODNAME ": accel: " fmt
 #include <linux/i2c.h>
 #include <linux/kernel.h>

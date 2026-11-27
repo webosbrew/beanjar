@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from beanjar import soundbar
+from beanjar.devices import soundbar
 from beanjar.base import Error
 
 

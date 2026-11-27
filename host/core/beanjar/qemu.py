@@ -202,11 +202,9 @@ from . import (
     lz4p,
     guestshell,
     hostswap,
-    ir_relay,
     keys,
     layerimage,
     layermeta,
-    mic,
     nvm,
     targets,
     partmap,
@@ -215,6 +213,7 @@ from . import (
     share,
     vmsettings,
 )
+from .devices import ir_relay, mic
 from .tuner import antenna
 
 MEDIA_PORTS = 8

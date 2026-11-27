@@ -16,7 +16,7 @@ import types
 import wave
 
 import pytest
-from beanjar import mic
+from beanjar.devices import mic
 from beanjar.base import Error
 
 

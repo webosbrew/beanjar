@@ -10,7 +10,7 @@
 # portrait 270; rotation.py's ORIENTATIONS). It is what the firmware did, not the angle the sensor
 # was given: N21D's webOS 24 msc keeps its orientation at 180. The host's file of the port
 # (run/rotation) is what `beanjar sensor set rotate` waits for and the viewers turn the picture by
-# (host/core/beanjar/rotation.py). Inside webOS through webos-enter; again a few seconds after
+# (host/core/beanjar/devices/rotation.py). Inside webOS through webos-enter; again a few seconds after
 # the subscription ends (msc not up yet, restarted).
 #
 # beanjar-rotation --parse: the reports for msc's replies on stdin, to stdout (the unit test's).

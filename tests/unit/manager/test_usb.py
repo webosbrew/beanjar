@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""`beanjar io usb` (beanjar/usb.py): the QMP payloads, attach/detach/list against a fake QMP server
+"""`beanjar io usb` (beanjar/devices/usb.py): the QMP payloads, attach/detach/list against a fake QMP server
 (usb-redir devices and disk images), the device lookup in a fake sysfs, the local relay, plug's
 sequence, mkimage's steps and the CLI's remote dispatch. No VM, no USB device, no ssh."""
 
@@ -21,7 +21,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
-from beanjar import ares, base, cli, lifecycle, remote, usb
+from beanjar import ares, base, cli, lifecycle, remote
+from beanjar.devices import usb
 
 
 class FakeQemu:

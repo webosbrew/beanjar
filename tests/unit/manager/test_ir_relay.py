@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""The micom's IR receiver on ir.sock (host/core/beanjar/ir_relay.py): awake, records pass to
+"""The micom's IR receiver on ir.sock (host/core/beanjar/devices/ir_relay.py): awake, records pass to
 QEMU's socket unchanged; in standby POWER and the local key pulse the wake line and every key-down
 and its key-up are dropped. A fake QEMU socket and a fake standby; no VM.
 `pytest tests/unit/manager/test_ir_relay.py`."""
@@ -12,7 +12,7 @@ import threading
 
 import pytest
 
-from beanjar import ir_relay
+from beanjar.devices import ir_relay
 
 
 def ir(down, code):

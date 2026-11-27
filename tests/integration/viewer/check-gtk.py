@@ -683,7 +683,7 @@ def steps(win, pane):
         [
             "host/ui/data/viewer/*.blp",
             "host/ui/beanjar_ui/viewer/*.py",
-            "host/core/beanjar/remote_layouts.py",  # the remotes' glyphs
+            "host/core/beanjar/devices/remote_layouts.py",  # the remotes' glyphs
         ]
     )
     missing = [n for n in used if not theme.has_icon(n)]

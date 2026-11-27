@@ -143,7 +143,7 @@ browser ── HTTP + WebSocket ── beanjar-web ── stdio ── beanjar v
   releases its button at the end of stdin; and the core releases a button whose D-Bus client left
   the bus (a killed pipe, a dropped ssh).
 - **The layout is the GTK remote's data.** The remotes' keys (boxes, colours, labels, IR codes) are
-  `host/core/beanjar/remote_layouts.py`, a module without GTK that the GTK remote
+  `host/core/beanjar/devices/remote_layouts.py`, a module without GTK that the GTK remote
   re-exports. `beanjar remote layout [HOST/]NAME --json` picks the VM's remote as the viewer does
   (its firmware's platform: webOS, NetCast, SimpleSmart) and prints `as_json(layout)`; the web
   server serves that as `layout.json`, so the layout comes from the host that runs the VM. The

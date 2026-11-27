@@ -88,7 +88,8 @@ def cmd_remote_touch(lib, a):
 
 
 def cmd_remote_layout(lib, a):
-    from .. import pipe, remote_layouts
+    from .. import pipe
+    from ..devices import remote_layouts
 
     layout = pipe.vm_layout(lib.vm(a.name))
     data = remote_layouts.as_json(layout)

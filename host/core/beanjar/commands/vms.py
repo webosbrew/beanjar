@@ -375,12 +375,12 @@ def cmd_status(lib, a):
     text = [f"{vm.name}: " + (vmunits.reason_line(reason) if reason else "no reason")]
     if a.verb == "show":
         # what the TV sends out as audio, read from the running guest (soundout.py)
-        from .. import soundout
+        from ..devices import soundout
 
         data["audio"] = soundout.read(vm) if vm.pid() else None
         text += soundout.lines(data["audio"])
         # on a board with the OLED Flex's LED micom, what its lighting shows (lighting.py)
-        from .. import lighting
+        from ..devices import lighting
 
         data["lighting"] = lighting.read(vm) if vm.pid() else None
         text += lighting.lines(data["lighting"])

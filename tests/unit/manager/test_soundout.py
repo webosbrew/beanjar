@@ -5,7 +5,7 @@
 streams decoded per line of firmware, from the values recorded on running sets
 (docs/research/tv-sound-outputs.md, "Output selection recorded by the emulation")."""
 
-from beanjar import soundout
+from beanjar.devices import soundout
 
 AC3_STREAM = (
     "1 audio adecsink0\taudio/x-ac3, framed=(boolean)true, rate=(int)48000, channels=(int)6\n"
