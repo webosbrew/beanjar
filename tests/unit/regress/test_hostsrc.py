@@ -98,7 +98,6 @@ def test_checkout_is_exact_and_keeps_what_is_the_hosts(tmp_path, env):
             ".git/HEAD": "ref: refs/heads/main\n",
             "x/__pycache__/m.pyc": "c",
             "build/Image": "k",
-            "local/ssh/key": "secret",
             "scratch/s": "s",
             "subprojects/q/unpacked.c": "u",
             "subprojects/packagecache/q.tar": "t",
@@ -110,7 +109,6 @@ def test_checkout_is_exact_and_keeps_what_is_the_hosts(tmp_path, env):
     own = [
         ".git/HEAD",
         "build/Image",
-        "local/ssh/key",
         "scratch/s",
         "subprojects/packagecache/q.tar",
         "subprojects/q/unpacked.c",

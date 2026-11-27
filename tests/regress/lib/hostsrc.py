@@ -5,7 +5,7 @@
 Each VM host keeps a bare repository, BARE in its home, made on first use. A run pushes the
 commit it tests there (git push: only the objects the host lacks), at REF_PREFIX<source commit>,
 and checks it out into the host's checkout DEST, exactly: files the commit does not have go,
-except what belongs to the host (PROTECTED: build outputs, its VM identity, scratch, what Meson
+except what belongs to the host (PROTECTED: build outputs, scratch, what Meson
 unpacks and caches under subprojects/). Unchanged files keep their modification times, so the
 host's incremental build stays incremental. A push never touches DEST; only a run's checkout does,
 under the host-wide lock (lock_cmd) that every writer of DEST takes.
@@ -25,7 +25,6 @@ SSH_COMMAND = "ssh -o BatchMode=yes -o ConnectTimeout=10"
 PROTECTED = (
     "/.git/",  # a repository a host may keep there of its own (git clean -ff would remove it)
     "/build/",
-    "/local/",
     "/scratch/",
     "/subprojects/*/",
     "!/subprojects/packagefiles/",

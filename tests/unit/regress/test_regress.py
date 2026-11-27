@@ -663,7 +663,7 @@ class SourceTest(unittest.TestCase):
                 f"cat-file -e refs/hosts/{head}^{{commit}}",
                 f"push -q vmhost:beanjar-src.git +refs/hosts/{head}:refs/hosts/{head}",
                 "git checkout -q -f --detach",
-                "git clean -q -ffdx -e /.git/ -e /build/ -e /local/ -e /scratch/",
+                "git clean -q -ffdx -e /.git/ -e /build/ -e /scratch/",
                 "SRC=none HOST=vmhost DEST=beanjar REGRESS_LOCKED=1 sync-checkout",
                 "scripts/build.sh host",
                 "vm-launcher start",
