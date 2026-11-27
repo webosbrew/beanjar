@@ -7,7 +7,7 @@ lighting settings decoded into what the OLED Flex's LEDs show (docs/research/led
 import json
 
 from beanjar.devices import lighting
-from beanjar import prepare
+from beanjar.board import prepare
 
 # W22O 33.31.68's lightingcontroller, measured: at its start (lightingEnable off) the welcome
 # ceremony, off twice and the brightness; lightingEnable on, the mode's command (dynamic);

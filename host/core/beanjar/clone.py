@@ -31,7 +31,8 @@ import subprocess
 import tempfile
 import tomllib
 
-from . import base, core, keys, nvm, tomlfile, vmconfig, vmidentity
+from . import base, core, keys, tomlfile, vmconfig, vmidentity
+from .board import nvm
 from .access import remote
 from .base import Error
 

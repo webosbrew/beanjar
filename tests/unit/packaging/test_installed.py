@@ -14,7 +14,8 @@ import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar import paths, lls, share
+from beanjar import paths, share
+from beanjar.board import lls
 
 
 def test_paths_and_prebuilt_probe(tmp_path):

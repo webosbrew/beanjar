@@ -212,7 +212,7 @@ MACADR_DISK = "macadr"
 # screen: the size of the VM's display (virtio-gpu): "graphic", the graphic (OSD) plane's (webOS:
 # its compositor lays out on it), or "panel", the panel's (SimpleSmart: the GOP scans its planes
 # out to the panel, and they are placed in the panel's pixels), or a (w, h) of the release's own.
-# The eMMC partition map (beanjar/partmap.py builds the VM's partinfo disk from it). PartmapFile: LG's own table, the 12368-byte object `partinfo` of the ELF file path
+# The eMMC partition map (beanjar/board/partmap.py builds the VM's partinfo disk from it). PartmapFile: LG's own table, the 12368-byte object `partinfo` of the ELF file path
 # in pak (the firmware's factory-init program). PartmapLayout: a table assembled for a release whose
 # own is stale: header, the PartmapFile whose table gives the magic, versions and device; parts,
 # its entries in order (MapPart), at consecutive offsets from 0; reserved, the last entry's (size,
@@ -230,7 +230,7 @@ MapPart = namedtuple("MapPart", "name size filename sw_ver used valid flags")
 # which the VM has not, and on W20L the failed session then crashed webos-connman-adapter in
 # libkadaptor's TEEC_CloseSession; blank, libsestore finds no sedata and goes on.
 # The flag bits of LG's u-boot (partcommon.h): FIXED 1, MASTER 2, IDKEY 4, DATA 16, SECURED 32
-# The I2C NVM EEPROM (beanjar/nvm.py programs a new one; lgemu.ko serves it), the release's record layouts: eeprom, the NVM disk that is its
+# The I2C NVM EEPROM (beanjar/board/nvm.py programs a new one; lgemu.ko serves it), the release's record layouts: eeprom, the NVM disk that is its
 # image; records, (pak, path) of the ELF file with the firmware's default records (gModelInfoDB,
 # gToolOptionDB, gContinentOptDB); the ModelInfoDB's place in the EEPROM (DIL_NVM_InitModelInfoDB),
 # its valid mark and its model name and serial fields as (offset in the record, length); the
@@ -246,7 +246,7 @@ MapPart = namedtuple("MapPart", "name size filename sw_ver used valid flags")
 # gets the FactoryDB (gFactoryDB, the default record: substrate mode off at +0x9C), 0 for none.
 # An Nvm without records (None, and none of the layout) but with lls, the path of LG's
 # lowlevelstorage in the rootfs, is a chip LLS owns (webOS 5 on): a new one gets LLS's own default
-# records, made by running the firmware's code on the board's command line (beanjar/lls.py).
+# records, made by running the firmware's code on the board's command line (beanjar/board/lls.py).
 # local_key, on a tvservice release: where its tvservice reads the model's local key type
 # (tv.model.localKeyType, OSA_MD_GetNewLocalKeyType through tvconfig), a LocalKeyField of the
 # board's ToolOpt= words (the 1-based word, the bit offset, the width, the names of the values
@@ -264,10 +264,10 @@ MapPart = namedtuple("MapPart", "name size filename sw_ver used valid flags")
 # SoC's TEE encrypts (DILE_CRYPTO_EncryptDbgData; 0x1C6). The soc layer's cipher for it is the
 # identity (guest/layers/soc/src/libdile_crypto/dbg-data.c), and every start writes the clear
 # block of the effective mode in the firmware's own encoding (nvm.sync_debug_block,
-# beanjar/nvmdebug.py); the new chip's preparation checks the offset, and the plain copy's, against
+# beanjar/board/nvmdebug.py); the new chip's preparation checks the offset, and the plain copy's, against
 # the build's tvservice (nvm.check_debug_block) and refuses one that differs. None elsewhere.
 # factory, (pak, path) of the ELF file whose code says the fields a factory leaves in a new chip of
-# a release without records (NetCast 4.5's RELEASE: beanjar/nvmfactory.py); None: such a chip is
+# a release without records (NetCast 4.5's RELEASE: beanjar/board/nvmfactory.py); None: such a chip is
 # left all 0xFF for the firmware.
 Nvm = namedtuple(
     "Nvm",

@@ -24,7 +24,7 @@ modelopt=000000100
 # M3's is 6), micom type 0, module type 1 (d16), FRC type 0.
 hwopt=002200010003002010
 # 9 tool option words (ToolOpt1..9), the NVM ToolOptionDB's 32-bit words, which the launcher programs
-# into a new EEPROM (host/core/beanjar/nvm.py): host/tools/research/model-config.py's for the
+# into a new EEPROM (host/core/beanjar/board/nvm.py): host/tools/research/model-config.py's for the
 # 43UK6300PUE on this firmware (W18A's tvconfig-gen DWARF and enums, RELEASE.cfg's UK75 65" values
 # where the model has none of its own): ToolOpt1 INCH_43, TOOL_UK63, MODULE_LGD, 10-bit LVDS;
 # ToolOpt2 input index 1 (row 1 of video_external_input_adjust: HDMI1-4, COMP1, AV1), edge LED, two

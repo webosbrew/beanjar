@@ -20,7 +20,7 @@ modelopt=220010300
 # 0, d14 graphic resolution 2 (1920x1080, U-Boot's fixed K5LP value); the rest U-Boot's reserved 0
 hwopt=202200002003002000
 # U-Boot passes ToolOption1..6 of the NVM ToolOptionDB (setToolOptToNVM), which the launcher
-# programs into a new EEPROM (host/core/beanjar/nvm.py; ToolOption7..9 keep tvservice's
+# programs into a new EEPROM (host/core/beanjar/board/nvm.py; ToolOption7..9 keep tvservice's
 # default record's). W19P's encodings (tvconfig-gen's DWARF TOOL_OPTIONn_T and enums) with its
 # RELEASE.cfg, whose defaults are the UM75 43":
 #   ToolOpt1 131466: INCH_43 10 (bits 0-4), TOOL_UM75 12 (5-10), MODULE_LGD 0 (11-15), CELL RGB 0

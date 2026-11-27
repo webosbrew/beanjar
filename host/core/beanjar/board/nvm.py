@@ -32,7 +32,7 @@ guest/initramfs/rootfs/init also puts in serialNum=). The area is a factory's on
 ContinentOptionDB is the TV's (its menus change it) and is not synced. The debug status follows
 the VM's debug_mode at every start: a plain byte (sync_debug_status), and on webOS 4.x the
 32-byte block that the SoC encrypts on a TV and the emulator keeps clear (sync_debug_block,
-beanjar/nvmdebug.py).
+beanjar/board/nvmdebug.py).
 """
 
 import collections
@@ -42,7 +42,7 @@ import re
 import struct
 import subprocess
 
-from . import targets, paths
+from .. import targets, paths
 
 SIZE = 0x8000
 # webOS 3's ContinentOptionDB: 15 16-bit option words from +8 (continent_record)
@@ -441,7 +441,7 @@ def sync_debug_status(image, nvm, mode, say=print):
 def sync_debug_block(image, nvm, mode, say=print, rand=os.urandom):
     """The debug status block of the bytearray image (Nvm.debug_block_offset, webOS 4.x) set to
     the clear block of mode (DEBUG_MODES' number, which is tvservice's 3/4/5 too) in the firmware's
-    encoding (beanjar/nvmdebug.py), which the soc layer's identity cipher hands tvservice as it is.
+    encoding (beanjar/board/nvmdebug.py), which the soc layer's identity cipher hands tvservice as it is.
     A block that already reads as mode is left alone (its random bytes are not made again at every
     start). Whether the image changed. A release without the block: nothing."""
     from . import nvmdebug
@@ -459,7 +459,7 @@ def sync_debug_block(image, nvm, mode, say=print, rand=os.urandom):
 def check_debug_block(data, nvm):
     """Error unless the tvservice of bytes data reads its debug status where the release says: the
     block at Nvm.debug_block_offset and, where it reads one, the plain copy at debug_status_offset
-    (beanjar/nvmdebug.py decodes its DIL_NVM_Load_DebugStatus)."""
+    (beanjar/board/nvmdebug.py decodes its DIL_NVM_Load_DebugStatus)."""
     from . import nvmdebug
 
     try:
@@ -501,7 +501,7 @@ def new_chip(
 ):
     """The Chip a blank EEPROM of the VM gets: the firmware's own default records programmed as a
         factory would (program; on a release whose chip lowlevelstorage owns, Nvm.lls, LLS's own
-        records, beanjar/lls.py), with the board's values, serial (the VM's own, else board.cmdline's
+        records, beanjar/board/lls.py), with the board's values, serial (the VM's own, else board.cmdline's
         serialNum=) and debug status (debug_mode: DEBUG_MODES' number of the VM's setting, else the
         board's debugMode=); on an LLS chip the factory countryName country (the VM's, where it has
     one: lls.py). Reads the firmware; Error if LLS's records cannot be made. A firmware
@@ -623,11 +623,12 @@ def prepare(
 
 def factory_chip(fw, nvm, mode, cache=None):
     """The new chip of a release without records whose factory fields its own code says
-    (Nvm.factory: beanjar/nvmfactory.py) with the debug status of mode (DEBUG_MODES' number). The
+    (Nvm.factory: beanjar/board/nvmfactory.py) with the debug status of mode (DEBUG_MODES' number). The
     debug status's place and values it finds must be the release's (Nvm.debug_status_offset and
     debug_status_values), or Error. An LZ4P pak (NetCast 4's lgapp) is read from its SquashFS
     image in the firmware cache cache (beanjar/lz4p.py: the one the VM's disk is), made if need be."""
-    from . import fwcache, lz4p, nvmfactory
+    from .. import fwcache, lz4p
+    from . import nvmfactory
 
     pak, path = nvm.factory
     src = os.path.join(fw, pak + ".pak")
@@ -715,7 +716,7 @@ def prepare_lls(
 ):
     """A blank image of a chip lowlevelstorage owns (Nvm.lls)
     becomes a new chip as a set leaves the factory: chip.image, erased with LLS's own default
-    records of the board (new_chip: beanjar/lls.py, which runs the firmware's code on the board's
+    records of the board (new_chip: beanjar/board/lls.py, which runs the firmware's code on the board's
     command line). A programmed one is LLS's and is left as it is, but for its debug status (the
     system DB's debugstatus item), which follows debug_mode (else the board's debugMode=) as U-Boot
     keeps it in agreement with the kernel's word: the item of chip.records, made for that mode."""

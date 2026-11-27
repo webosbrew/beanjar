@@ -77,7 +77,8 @@ import subprocess
 import sys
 import tempfile
 
-from . import nvm, targets, paths, superpak
+from . import nvm
+from .. import targets, paths, superpak
 
 VERSION = 12
 SIZE = 0x8000
@@ -516,7 +517,7 @@ def _guest_request(sysroot, cmdline, tmp, command, tree, eeprom=None, timeout=12
             "-initrd",
             tree.build("initramfs.cpio.gz"),
             "-append",
-            "console=ttyAMA0 beanjar.prepare=1",
+            "console=ttyAMA0 beanjar.board.prepare=1",
         ]
         if eeprom:
             cmd += [
@@ -1404,11 +1405,11 @@ def cache_dir(
 
 
 def main(argv=None):
-    """python3 -m beanjar.lls FIRMWARE_DIR: make (or find) the cached image of FIRMWARE_DIR's target
+    """python3 -m beanjar.board.lls FIRMWARE_DIR: make (or find) the cached image of FIRMWARE_DIR's target
     and print its directory's records."""
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) != 1:
-        print("usage: python3 -m beanjar.lls FIRMWARE_DIR", file=sys.stderr)
+        print("usage: python3 -m beanjar.board.lls FIRMWARE_DIR", file=sys.stderr)
         return 2
     fw = os.path.abspath(argv[0])
     name = os.path.basename(fw.rstrip("/"))

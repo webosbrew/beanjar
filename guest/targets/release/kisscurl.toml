@@ -4,7 +4,7 @@
 # region: bsppart (its bsp/ the lower), otncabi-global, otycabi-global (W21P also has rootfs,
 # bspfw, fonts, tzfw, license, intmicom, boot, kernel and sedata). The same systemd 239 and
 # pm-log-daemon.service, lowlevelstorage with the same seven DB regions (its own default
-# records: beanjar/lls.py), legacy-broadcast as the TV service (now through legacy-broadcast.sh,
+# records: beanjar/board/lls.py), legacy-broadcast as the TV service (now through legacy-broadcast.sh,
 # which picks -dvb, -atsc or -arib by tv.nyx's tvBroadcastSystem), hw-option-gen's DDR digit
 # W20L's. W21P's kernel is 4.4.84 (cap_last_cap 37, read from its kallsyms). Its partition map:
 # see-init's table is W20L's stale one byte for byte, and every index W21P pins is one

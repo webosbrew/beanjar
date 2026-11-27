@@ -123,7 +123,7 @@ at the panel's rate: a 120 fps clip on a 120 Hz panel shows every picture, a 60 
 two, and on a 144 Hz panel each picture lasts the pictures its time covers.
 
 - **The panel's refresh** is the board's, as the firmware decodes it: prepare
-  (`host/core/beanjar/prepare.py`) keeps `tv.hw.json`'s `panelOutputFrameRate`, which the
+  (`host/core/beanjar/board/prepare.py`) keeps `tv.hw.json`'s `panelOutputFrameRate`, which the
   firmware's own `hw-option-gen` makes from the board's `hwopt=` when the EEPROM's records are made
   (`lls.panel_rate`, webOS 5 on; the digit and its table are the release's: digit 4, 60 or 120 Hz,
   on webOS 5 and 6, digit 9 later, with 100, 120, 144, 165, 180 and 240 Hz). Releases before

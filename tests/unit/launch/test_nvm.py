@@ -12,12 +12,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import (
-    lls,
-    nvm,
-    targets,
-    paths,
-)
+from beanjar.board import lls, nvm
+from beanjar import targets, paths
 
 from launchkit import H13_AFRO
 
@@ -369,7 +365,7 @@ class NvmTest(unittest.TestCase):
 
 
 class LlsTest(unittest.TestCase):
-    """beanjar/lls.py: the probe's lines and where initPlugInDB puts each record."""
+    """beanjar/board/lls.py: the probe's lines and where initPlugInDB puts each record."""
 
     def test_large_page_host(self):
         # Pi's 16 KiB host kernel cannot map the stock ARM library under qemu-user.

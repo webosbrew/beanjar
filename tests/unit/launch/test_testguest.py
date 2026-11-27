@@ -5,7 +5,8 @@ data, whose VM is prepared without firmware code and boots with no partition map
 
 import os
 
-from beanjar import paths, prepare, targets
+from beanjar import paths, targets
+from beanjar.board import prepare
 
 TESTGUEST = ("virt", "testguest")
 

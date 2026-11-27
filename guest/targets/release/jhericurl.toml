@@ -7,7 +7,7 @@
 # sizes of all but sedata-arib). The four state partitions of its mount-readwrite.d/00-partinfo.ext4.fstab (p57
 # db8, p58 cmn_data, p59 apps at /mnt/lg/appstore, p50 uhdcp). The eMMC "nvram" partition (6 MiB,
 # see-init's) is legacy-broadcast's NVM. The I2C EEPROM is lowlevelstorage's (decision B): a new one gets LLS's own default records,
-# made by running W20L's code on the board's command line (beanjar/lls.py). PmLog: the stock unit
+# made by running W20L's code on the board's command line (beanjar/board/lls.py). PmLog: the stock unit
 # pm-log-daemon.service (preload-systemd). Both trust bundles and the hashed directory are in its
 # rootfs. Its hw-option-gen's ddrSize digit: 768M, 1G, 1.25G, 1.5G, 2G, 2.5G, 3G, 2G_ADV, 2G_STD,
 # 4G, 5G (scratch/w20l-model-values.md, measured with W20L's own generator).

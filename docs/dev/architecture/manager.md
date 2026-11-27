@@ -73,7 +73,7 @@ crash or a reboot, with no cleanup code; a VM without a unit cannot have one
 ### Prepared board data
 
 What a start needs from the firmware, the model's board and the VM's board settings is worked out
-ahead and kept with the VM, in `<vm>/prepared/` (`host/core/beanjar/prepare.py`): the partinfo
+ahead and kept with the VM, in `<vm>/prepared/` (`host/core/beanjar/board/prepare.py`): the partinfo
 disk's partition map, the image a blank EEPROM becomes (the firmware's own default records
 programmed with the board's values, or on webOS 5 and later lowlevelstorage's records from the
 firmware's own programs), LLS's probe output for a later debug-mode change, the viewer's local key,

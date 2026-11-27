@@ -8,10 +8,10 @@
  * decrypt failed and tvservice fell back to RELEASE whatever the VM's debug mode.
  *
  * On the emulator the cipher is the identity: the EEPROM holds the clear block, which beanjar
- * programs in the firmware's own encoding (host/core/beanjar/nvmdebug.py), and the firmware's own
- * Store writes clear blocks back. Decrypt returns what the EEPROM holds, nothing made up.
- * The signatures are the stock library's (W18R's and W19P's libdile_crypto.so.0.1.1, and the
- * Starfish SDK's dile_crypto.h): in and out of DBG_DATA_SIZE bytes, 0 on success, -1 otherwise. */
+ * programs in the firmware's own encoding (host/core/beanjar/board/nvmdebug.py), and the firmware's
+ * own Store writes clear blocks back. Decrypt returns what the EEPROM holds, nothing made up. The
+ * signatures are the stock library's (W18R's and W19P's libdile_crypto.so.0.1.1, and the Starfish
+ * SDK's dile_crypto.h): in and out of DBG_DATA_SIZE bytes, 0 on success, -1 otherwise. */
 #include <string.h>
 
 #define DBG_DATA_SIZE 32

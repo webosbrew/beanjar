@@ -362,7 +362,8 @@ def context(target, fw, env, expect=None, tree=None):
     import sys
 
     sys.path.insert(0, os.path.join(TOP, "host", "core"))
-    from beanjar import nvm, targets, paths  # noqa: E402
+    from beanjar.board import nvm  # noqa: E402
+    from beanjar import targets, paths  # noqa: E402
     import checklist  # noqa: E402
 
     p = targets.by_name(target)

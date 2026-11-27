@@ -12,7 +12,8 @@ import struct
 import subprocess
 from pathlib import Path
 
-from beanjar import fwcache, partmap, paths
+from beanjar import fwcache, paths
+from beanjar.board import partmap
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VM = os.path.join(TOP, "host", "scripts", "vm-launcher")

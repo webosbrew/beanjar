@@ -5,7 +5,7 @@
  *   lls-probe [LLS [debugstatus N [string|bool DB ITEM VALUE]...]]   (LLS: default
  * /usr/sbin/lowlevelstorage) lls-probe group
  *
- * Run as a 32-bit ARM program in the firmware's root (host/core/beanjar/lls.py: qemu-arm and
+ * Run as a 32-bit ARM program in the firmware's root (host/core/beanjar/board/lls.py: qemu-arm and
  * bwrap, with the board's /proc/cmdline and the tvconfig JSONs in /tmp/var/run/tvconfig). It loads
  * the LLS executable (dlopen; it NEEDs the five DB plugins) and calls what LLS's
  * LLSController::initPlugInDB calls for a DB whose valid mark does not match, through the same

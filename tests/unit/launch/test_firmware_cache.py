@@ -15,17 +15,8 @@ import unittest
 from unittest import mock
 
 
-from beanjar import (
-    fwcache,
-    keys,
-    lls,
-    nvm,
-    targets,
-    partmap,
-    paths,
-    prepare,
-    qemu,
-)
+from beanjar import fwcache, keys, targets, paths, qemu
+from beanjar.board import lls, nvm, partmap, prepare
 
 from launchkit import fake_partmap_build, fake_tree, FW_NAME, H13_AFRO, net, TRUST_PAK
 
@@ -404,7 +395,7 @@ class CacheLockTest(unittest.TestCase):
 
 
 class PrepareTest(unittest.TestCase):
-    """beanjar/prepare.py: a VM's board data worked out ahead (at create, after a settings change),
+    """beanjar/board/prepare.py: a VM's board data worked out ahead (at create, after a settings change),
     stale when what it came from changes, and a start's plan that only reads it."""
 
     def setUp(self):

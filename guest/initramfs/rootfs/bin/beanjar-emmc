@@ -19,7 +19,7 @@
 # bytes. Several dm devices share the one overlay as their lower device, which is fine because it is
 # unmounted (the earlier EBUSY was only from stacking dm over already-mounted disks).
 #
-# The host built the tables (host/core/beanjar/partmap.py: emmc_table_words / emmc_part_words,
+# The host built the tables (host/core/beanjar/board/partmap.py: emmc_table_words / emmc_part_words,
 # boot.conf's EMMC_TABLE / EMMC_PART_NODES) and named the overlay disk (EMMC_OVERLAY). This resolves
 # each serial to its virtio device and hands the resolved tables to the ioctl helper (src/dm-linear.c;
 # the initramfs busybox has no dmsetup).

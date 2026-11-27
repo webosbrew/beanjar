@@ -12,7 +12,8 @@ import types
 import unittest
 import uuid
 
-from beanjar import macadr, partmap, prepare, targets, vmidentity
+from beanjar.board import macadr, partmap, prepare
+from beanjar import targets, vmidentity
 
 from launchkit import fake_map
 

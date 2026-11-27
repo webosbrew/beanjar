@@ -144,7 +144,7 @@ def read_lgudid(d):
 
 def write_lgudid(d, mac):
     """New ids in d (macadr.new_ids of mac), owner-only; returns (lgudid, namespace)."""
-    from . import macadr
+    from .board import macadr
 
     namespace, lgudid = macadr.new_ids(mac)
     path = os.path.join(d, LGUDID)

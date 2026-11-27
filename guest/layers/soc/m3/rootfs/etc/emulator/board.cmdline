@@ -22,7 +22,7 @@ modelopt=000000111000101
 # resolution 6 (U-Boot's constant), external micom (d15 0)
 hwopt=001100003003006000
 # M3's MBoot prints 9 tool option words (ToolOpt1..9), the NVM ToolOptionDB's 32-bit words, which
-# the launcher programs into a new EEPROM (host/core/beanjar/nvm.py). W18R's encodings
+# the launcher programs into a new EEPROM (host/core/beanjar/board/nvm.py). W18R's encodings
 # (tvconfig-gen's DWARF TOOL_OPTIONn_T and enums) with W18R's RELEASE.cfg, whose defaults are the
 # LK61 32":
 #   ToolOpt1 6566: eModelInchType INCH_32 6 (bits 0-4), eModelToolType TOOL_LK61 13 (bits 5-10),

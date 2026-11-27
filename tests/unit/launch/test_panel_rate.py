@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import lls, nvm, prepare
+from beanjar.board import lls, nvm, prepare
 
 
 def hw(tmp_path, value, key="panelOutputFrameRate"):

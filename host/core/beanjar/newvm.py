@@ -48,7 +48,8 @@ import tempfile
 import threading
 import time
 
-from . import capacity, compat, firmware, keys, nvm, targets, paths, vmconfig, vmidentity
+from . import capacity, compat, firmware, keys, targets, paths, vmconfig, vmidentity
+from .board import nvm
 from .core import VM, Library, prepare_board_data
 from .base import NAME_RE, Error
 from .firmware import vm_firmware

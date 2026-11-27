@@ -74,7 +74,7 @@
  read whole at
  *   load and written through its page cache. What a factory programs into a new one (the
  *   ModelInfoDB, the ToolOptionDB) the launcher has written before the VM starts
- *   (host/core/beanjar/nvm.py).
+ *   (host/core/beanjar/board/nvm.py).
  *
  *   The speaker amplifier. tvservice writes its registers at start-up, on every volume change
  *   and around turnOffAv/turnOnAv, and fails the Luna call when a write is not acknowledged.

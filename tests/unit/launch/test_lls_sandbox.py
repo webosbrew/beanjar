@@ -14,7 +14,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import lls, paths
+from beanjar.board import lls
+from beanjar import paths
 
 pytestmark = pytest.mark.skipif(
     not shutil.which("bwrap")

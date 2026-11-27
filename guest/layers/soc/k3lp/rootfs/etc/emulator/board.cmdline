@@ -21,7 +21,7 @@ devtmpfs.mount=1
 # not in the firmware), d14 graphic resolution 2 (1920x1080); the rest 0
 hwopt=202207002003002000
 # U-Boot passes ToolOption1..9 of the NVM ToolOptionDB, which the launcher programs into a new
-# EEPROM (host/core/beanjar/nvm.py). W17P's encodings (tvservice's DWARF TOOL_OPTIONn_T and enums)
+# EEPROM (host/core/beanjar/board/nvm.py). W17P's encodings (tvservice's DWARF TOOL_OPTIONn_T and enums)
 # with its RELEASE.cfg, whose defaults are the UJ65 series' (the model's own):
 #   ToolOpt1 33322: INCH_43 10 (bits 0-4), TOOL_UJ65 17 (5-10), MODULE_LGD 0, LVDS bit 1.
 #   ToolOpt2 18465: video and audio input index 1, BL_EDGE_LED 2, three USB ports, no HDMI switch.

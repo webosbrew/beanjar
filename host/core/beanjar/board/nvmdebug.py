@@ -24,7 +24,7 @@ fields() reads the layout out of the build's own tvservice: the function by its 
 Thumb-2 code decoded just enough to find the reads' constant offsets and lengths, the buffer
 DILE_CRYPTO_DecryptDbgData writes, and the fold and index code over that buffer. Error when the
 code is not of that shape, so a build whose layout differs is refused rather than given a block
-it would read as something else (as beanjar/nvmfactory.py does for NetCast)."""
+it would read as something else (as beanjar/board/nvmfactory.py does for NetCast)."""
 
 import os
 import struct

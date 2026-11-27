@@ -142,10 +142,8 @@ from . import (
     hostswap,
     keys,
     mediasandbox,
-    nvm,
     paths,
     poweroff,
-    prepare,
     qemu,
     runner,
     share,
@@ -155,6 +153,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .board import nvm, prepare
 from .access import console
 from .devices import rotation
 from .network import netns

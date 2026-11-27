@@ -16,7 +16,7 @@ ethaddr=a8:23:fe:12:34:56
 # resolution 1920x1080 (d14 2)
 hwopt=001102001002002000
 # W15L's tvservice reads 8 tool option words (the ToolOptionDB's 16-bit words: ToolOption1..7 and
-# ToolOption9), which the launcher programs into a new EEPROM (host/core/beanjar/nvm.py). From
+# ToolOption9), which the launcher programs into a new EEPROM (host/core/beanjar/board/nvm.py). From
 # RELEASE.cfg (the model's series) through W15L's OSA_MD_SetValueOfToolOptionN setters:
 #   ToolOpt1 1348: INCH_49 (4), TOOL_LF59 (42), MODULE_LGD, LVDS bit 0.
 #   ToolOpt2 4628: video input row 4 of video_adc_LCD_DVB (HDMI x2, component, SCART, AV), audio

@@ -9,7 +9,8 @@ from unittest import mock
 
 import pytest
 
-from beanjar import capacity, newvm, nvm, qemu
+from beanjar import capacity, newvm, qemu
+from beanjar.board import nvm
 
 TARGET = ("x", "y")
 

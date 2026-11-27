@@ -25,7 +25,7 @@ modelopt=00000000000010
 hwopt=001100000001006000
 # M2's MBoot prints 9 tool option words (ToolOpt1..9, its "[ToolOptN] = %d"), the NVM
 # ToolOptionDB's 32-bit words (webOS 3's layout: host/core/beanjar/targets.py's Nvm), which the
-# launcher programs into a new EEPROM (host/core/beanjar/nvm.py) for tvconfig-gen and
+# launcher programs into a new EEPROM (host/core/beanjar/board/nvm.py) for tvconfig-gen and
 # tvservice. W16R's encodings (tvconfig-gen's OSA_MD_SetValueOfToolOptionN, the inch and tool type
 # tables), the values W16R's factory path (tvservice's OSA_MD_InitToolOption) programs from its
 # RELEASE.cfg, whose series is the model's (TOOL_LH60), as derived from the firmware's tables:

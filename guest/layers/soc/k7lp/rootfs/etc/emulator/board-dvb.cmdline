@@ -31,7 +31,7 @@ ToolOpt=70346:32790:69632:65:98830391:158584331
 # The emulator deliberately runs LG's DEBUG mode (3) on every board
 debugMode=3
 # The retail model (U-Boot's "modelName=%s "): libmodelOpt, libdile_boardinfo and LLS's factory
-# DB (the factory line's, beanjar/lls.py); without it factorymanager's modelName is "WEBOS5.0"
+# DB (the factory line's, beanjar/board/lls.py); without it factorymanager's modelName is "WEBOS5.0"
 modelName=43UP77009LB
 # PLACEHOLDER serial; a VM's own replaces it (webos.serial=)
 serialNum=000RAXX00001

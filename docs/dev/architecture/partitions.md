@@ -1,7 +1,7 @@
 # Partition maps and disks
 
 The VM exposes the partition names and indices that stock firmware expects. The launcher
-derives a map from the supplied firmware using `host/core/beanjar/partmap.py` and the
+derives a map from the supplied firmware using `host/core/beanjar/board/partmap.py` and the
 target's `PartmapFile` or `PartmapLayout` declaration.
 
 ## Map and namespace

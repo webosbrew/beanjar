@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # The VM's country (vm.toml firmware.country): the per-VM layer's etc/emulator/country, an
 # alpha-3 code the launcher checked against the board's RMM country group
-# (host/core/beanjar/countries.py). Set once per value, as the settings app's change of country
+# (host/core/beanjar/board/countries.py). Set once per value, as the settings app's change of country
 # sets it (W23P com.palm.app.settings main.js: setSystemSettings option country), through LG's
 # settings service; devicereset (webOS 5 on) sees the change ("country is updated to ...") and
 # writes lowlevelstorage's factory countryName, from which it restores settings' country on every

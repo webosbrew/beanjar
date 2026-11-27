@@ -170,7 +170,7 @@ the firmware's output on the console and RELEASE's code (04.28.15):
   RELEASE's IR table (0x44 OK to UI key 28, 0x7C HOME, 0x28 BACK, 0x5B EXIT) to the UI's callback
   and to its uinput device "LGE RCU" (`MICOM_UINPUT_Init`).
 - **The first-use wizard.** `MAIN_StartApplication` creates it when NAND NVM registry byte 0x521 is 0
-  and EEPROM 0x739 (INSTOP_INFO, FactoryDB 49) is 1. The new chip (`beanjar/nvmfactory.py`, the same
+  and EEPROM 0x739 (INSTOP_INFO, FactoryDB 49) is 1. The new chip (`beanjar/board/nvmfactory.py`, the same
   fields as NetCast 4.5's, debug status 3 to 5 at 0x18A) has INSTOP_INFO 0. Its welcome page takes OK
   (UI key 28) once its app-store storage popup (which locks the keys for up to 40 s) closes.
 

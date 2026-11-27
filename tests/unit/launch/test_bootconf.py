@@ -14,7 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import base, keys, nvm, paths, qemu, targets
+from beanjar import base, keys, paths, qemu, targets
+from beanjar.board import nvm
 
 from launchkit import boot_conf, FW_NAME, H13_AFRO, store_snapshot, text, TOP, TRUST_PAK
 

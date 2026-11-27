@@ -41,7 +41,7 @@ A start (qemu.plan, ensure) whose record is missing or stale prepares it again f
 and why: the development and regress VMs have no create step, and an update of the tree (a
 board.cmdline, a guest build) changes the inputs of every VM at once. It is never silent.
 
-  python3 -m beanjar.prepare VM-DIR      prepare a VM of a library (what `beanjar prepare` runs)
+  python3 -m beanjar.board.prepare VM-DIR      prepare a VM of a library (what `beanjar prepare` runs)
 """
 
 import hashlib
@@ -51,8 +51,9 @@ import shutil
 import subprocess
 import sys
 
-from . import firmware, fwcache, lls, macadr, nvm, partmap, paths, targets, vmidentity
-from .base import identity_dir
+from .. import firmware, fwcache, paths, targets, vmidentity
+from . import lls, macadr, nvm, partmap
+from ..base import identity_dir
 
 VERSION = 8
 DIR = "prepared"
@@ -107,7 +108,7 @@ class Job:
         self.identity_dir = os.path.join(tree.top, ident) if ident else identity_dir(self.vm_dir)
         self.mac = (env.get("MAC") or "").lower()
         if not self.mac and targets.release(self.target).lgudid:
-            from . import qemu
+            from .. import qemu
 
             self.mac = qemu.guest_mac(self.target, tree, self.broadcast, self.model).lower()
 
@@ -468,7 +469,7 @@ def ensure(job, say=print, why=None):
 def vm_env(vm_dir):
     """The environment a library VM's preparation needs (its vm.toml's FW, FW_CACHE, SERIAL,
     BROADCAST, MODEL, DEBUG_MODE, and its RUN_DIR)."""
-    from . import base, core
+    from .. import base, core
 
     try:
         env = core.vm_launcher_env(os.path.join(vm_dir, "vm.toml"))
@@ -490,7 +491,7 @@ def vm(vm_dir, say=print, tree=paths.TREE, force=False):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) != 1:
-        print("usage: python3 -m beanjar.prepare VM-DIR", file=sys.stderr)
+        print("usage: python3 -m beanjar.board.prepare VM-DIR", file=sys.stderr)
         return 2
     try:
         vm(argv[0], lambda line: print(line, file=sys.stderr, flush=True), force=True)

@@ -297,7 +297,7 @@ A VM's files are in `identity/`, not in `vm.toml`: plain files, private keys 060
   libhal_crypto's built-in model secret; `missing = "error"` disables that fallback.
 - **The LGUDID**, `identity/lgudid.toml`: LG's unique device ID (`sm` `deviceid/getIDs`, nyx
   `DeviceInfo`), with the random UUID it was made from, as a set's factory makes them (a UUIDv5 of
-  that UUID and the MAC; `beanjar/macadr.py`). Made at `create`, or at the next start (prepare)
+  that UUID and the MAC; `beanjar/board/macadr.py`). Made at `create`, or at the next start (prepare)
   of a VM without one, with a warning. Where the firmware reads it (goldilocks2 on:
   `Release.lgudid`), prepare puts it with the MAC into the macadr partition's image,
   `prepared/macadr.img`, which the launcher attaches as `/dev/mmcblk0p10` with its writes discarded
@@ -383,7 +383,7 @@ A VM boots either a firmware used in place or one of its own.
   Directory… without "Import into the VM's Folder"): `vm.toml`'s `firmware.directory` names the
   directory, absolute. It is never written, so it may be a shared, read-only collection (an NFS
   export, the same path on every host); what the launcher derives from it (the partition map, the
-  paks' `.src` digest stamps: `beanjar/partmap.py`, `beanjar/fwcache.py`) goes into the VM's
+  paks' `.src` digest stamps: `beanjar/board/partmap.py`, `beanjar/fwcache.py`) goes into the VM's
   `firmware-cache/`. A value with a `/` is a path, used as given; a bare name is looked up in the
   host's `firmware_dirs` (This machine's settings). The firmware needs a `manifest.toml` with its
   `name`, `chip` and `release` (other keys, such as `paks`, are ignored), and the target's paks:

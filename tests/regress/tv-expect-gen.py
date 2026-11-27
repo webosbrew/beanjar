@@ -1701,7 +1701,7 @@ def uhd_of(target, fw_dir, bins):
     where = has_string(bins, "requestUHD") and has_string(bins, UHD_CONFIG)
     if not where:
         return None
-    from beanjar import lls
+    from beanjar.board import lls
 
     p = targets.by_name(target)
     line = targets.board_broadcast(p, fw_dir)
@@ -1723,7 +1723,7 @@ def uhd_of(target, fw_dir, bins):
     return dict(
         value=UHD_PANELS[panel],
         value_source=f"{reads}; the firmware's hw-option-gen gives panelResolution {panel} for "
-        f"{board}'s line (beanjar.lls.tvconfig)",
+        f"{board}'s line (beanjar.board.lls.tvconfig)",
     )
 
 

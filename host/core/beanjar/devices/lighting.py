@@ -155,7 +155,7 @@ def report(table_text, settings_text):
 def has_micom(vm_dir):
     """Whether the VM in vm_dir has the micom: its prepared board data gives lgemu the device
     (prepare.py, targets.led_micom_dev). False where it has none, or no prepared data."""
-    from .. import prepare
+    from ..board import prepare
 
     try:
         with open(os.path.join(vm_dir, prepare.DIR, prepare.RECORD)) as f:

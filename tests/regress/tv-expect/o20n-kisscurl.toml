@@ -79,7 +79,7 @@ url = "http://lgtvonline.lge.com/"
 "settings.option.country" = { present = true, source = "defaultSettings-json-option-153bd0" }
 "settings.option.smartServiceCountryCode2" = { present = true, source = "defaultSettings-json-option-bc3c7c" }
 "sm.getIDs" = { present = true, source = "com-webos-service-sm-d5a801" }
-"sysinfo.UHD" = { present = true, source = "com-webos-service-tv-51a0bf", value = "true", value_source = "rootfs.pak:/usr/sbin/tvservicemock answers UHD from tv.hw.panelResolution (requestUHD; UD: true); the firmware's hw-option-gen gives panelResolution UD for the board's line (beanjar.lls.tvconfig)" }
+"sysinfo.UHD" = { present = true, source = "com-webos-service-tv-51a0bf", value = "true", value_source = "rootfs.pak:/usr/sbin/tvservicemock answers UHD from tv.hw.panelResolution (requestUHD; UD: true); the firmware's hw-option-gen gives panelResolution UD for the board's line (beanjar.board.lls.tvconfig)" }
 "sysinfo._3d" = { present = true, source = "com-webos-service-tv-51a0bf" }
 "sysinfo.boardType" = { present = true, source = "com-webos-service-tv-51a0bf" }
 "sysinfo.firmwareVersion" = { present = true, source = "com-webos-service-tv-51a0bf" }

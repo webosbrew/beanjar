@@ -622,7 +622,7 @@ is one file with an init and an exit function.
 
 `partinfo.c` is LG's `/proc/partinfo`. `partinfo_disk=`, which `/init`
 sets to the disk boot.conf's `PARTINFO_DISK` names (the VM's `partinfo.img`, a state disk the
-launcher makes from `beanjar/partmap.py`'s image of the firmware's map), is read once at load: the
+launcher makes from `beanjar/board/partmap.py`'s image of the firmware's map), is read once at load: the
 first 0x1850 bytes, LG's `struct partmap_info` (`block/partitions/lgemmc.c`). With the magic
 0x20120716 the part creates `/proc/partinfo` with `proc_partinfo_show`'s text (a header, then
 `part%d: %8.8llx %8.8llx "%s"` for every entry but the last); without it there is no file, as on
@@ -729,7 +729,7 @@ exports `lgemu_i2c_read`/`_write` (`lgemu-i2c.h`); the bus drivers call them for
 targets their `i2c` parameter places the devices at (the chip table, `guest/targets/soc/`): lg115x.ko's
 `/dev/lg/iic<n>` and mstar-utopia.ko's HWI2C. Its parameter `nvm_disk` is the EEPROM's block
 device, which `/init` gives it (the state disk boot.conf's `NVM_EEPROM` names); the launcher has
-programmed a new one (`host/core/beanjar/nvm.py`). The remote's IR reaches the micom through
+programmed a new one (`host/core/beanjar/board/nvm.py`). The remote's IR reaches the micom through
 `/dev/lgemu-ir`, which the initramfs's pump `virtio-ir` (`guest/initramfs/src/virtio-ir.c`) feeds from the
 `webos.ir` port. The micom's power commands end webOS's PID namespace as `reboot(2)` in it does,
 which `guest/initramfs/rootfs/bin/webos-start` turns into the VM's power-off or reset. Quick Start+'s side (docs/dev/architecture/suspend.md):

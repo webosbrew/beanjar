@@ -6,7 +6,8 @@ a whole configuration (validate), and the launcher environment they make (launch
 import os
 import re
 
-from . import nvm, targets, vmconfig
+from .board import nvm
+from . import targets, vmconfig
 from .base import (
     Error,
 )

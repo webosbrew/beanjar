@@ -53,13 +53,13 @@ from beanjar import (
     hostprocs,
     lifecycle,
     newvm,
-    nvm,
     paths,
     poweroff,
     targets,
     vmsettings,
     vmunits,
 )  # noqa: E402
+from beanjar.board import nvm  # noqa: E402
 from beanjar.display import gpu  # noqa: E402
 from beanjar.devices import rotation  # noqa: E402
 from beanjar.core import Library  # noqa: E402

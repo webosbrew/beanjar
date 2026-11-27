@@ -32,7 +32,7 @@ hwopt=200112001002002000
 # M14's lxboot prints 8 tool option words (H13's 7). The first 7 have H13's layout, decoded by
 # tvservice's API_SUMDSVC_GetToolOptionN; the eighth is W15M's ToolOption9 (there is no
 # ToolOption8), the ToolOptionDB's word at +18, 0 here. The launcher programs all eight into a new
-# EEPROM (host/core/beanjar/nvm.py, targets.py's Nvm).
+# EEPROM (host/core/beanjar/board/nvm.py, targets.py's Nvm).
 # The values are derived from the firmware's tables for the 42LF652V: the model's inch and tool type, a
 # direct LED backlight and the Magic Remote sold separately (READY), the 42LF652V's retail spec;
 # the rest RELEASE.cfg's, the firmware's factory default (OSA_MD_InitToolOption), whose series is

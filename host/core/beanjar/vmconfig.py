@@ -148,7 +148,7 @@ def decode(doc):
             f"firmware.broadcast {cfg['broadcast']!r}: one of {', '.join(BROADCASTS)}", "broadcast"
         )
     if "country" in cfg:
-        from .countries import CODE
+        from .board.countries import CODE
 
         if not CODE.fullmatch(cfg["country"]):
             _fail(

@@ -54,7 +54,7 @@ partmap = { pak = "lgin", path = "/lginit_app" }
 
 [nvm]
 eeprom = "eeprom"
-# A new chip: 0xFF but what RELEASE's own code says a factory leaves (beanjar/nvmfactory.py reads
+# A new chip: 0xFF but what RELEASE's own code says a factory leaves (beanjar/board/nvmfactory.py reads
 # it out of each build and refuses one whose code differs). Without the first-boot marker every
 # boot is a factory first power-on (UI_SUMODE_DoPowerOnlyStartApp, from MAIN_StartApplication),
 # which never returns on the VM: a black screen, no micom power-state read. The marker:

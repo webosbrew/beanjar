@@ -23,7 +23,7 @@ The partinfo disk's image (image()): the 12368 bytes, the CRC, zeros to the size
 partinfo entry. build() keeps it in the firmware cache (fwcache.default_cache or FW_CACHE):
 <cache>/partinfo-<16 hex>.img, keyed by the source paks and the release row.
 
-  python3 -m beanjar.partmap [FW]    print the map of FW (default: as the launcher's FW)
+  python3 -m beanjar.board.partmap [FW]    print the map of FW (default: as the launcher's FW)
 """
 
 import hashlib
@@ -33,7 +33,8 @@ import subprocess
 import sys
 from collections import namedtuple
 
-from . import fwcache, nvm, targets, paths
+from .. import fwcache, targets, paths
+from . import nvm
 
 MAGIC = 0x20120716
 TABLE_SIZE = 12368  # 0x50 + 128 * 0x60, the object in LG's programs
@@ -405,7 +406,7 @@ def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="beanjar.partmap", description="a firmware's eMMC partition map"
+        prog="beanjar.board.partmap", description="a firmware's eMMC partition map"
     )
     p.add_argument(
         "fw", nargs="?", help="firmware directory or name (default: FW, as the launcher)"

@@ -13,7 +13,7 @@ from unittest import mock
 
 import pytest
 
-from beanjar import lls
+from beanjar.board import lls
 
 
 def test_command(tmp_path):

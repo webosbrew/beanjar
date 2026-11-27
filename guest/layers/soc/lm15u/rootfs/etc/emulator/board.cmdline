@@ -23,7 +23,7 @@ modelopt=100101000
 hwopt=212204001005002000
 # W15U's MBoot prints 8 tool option words (the ToolOptionDB's 16-bit words: ToolOption1..7 and
 # ToolOption9, there is no ToolOption8), which the launcher programs into a new EEPROM
-# (host/core/beanjar/nvm.py) for tvservice. Decoded with W15U's tvservice's setters and RELEASE.cfg:
+# (host/core/beanjar/board/nvm.py) for tvservice. Decoded with W15U's tvservice's setters and RELEASE.cfg:
 #   ToolOpt1 34569: inch index 9 (INCH_65), tool type 56 (TOOL_UF85), maker 0 (LGD), LVDS bit 1.
 #   ToolOpt2 4628: video input row 4 of the UHD DVB table (HDMI x3, component, SCART, AV), audio
 #     index 1, backlight 2 (edge LED), USB field 2 (three ports).

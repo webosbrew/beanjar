@@ -204,14 +204,12 @@ from . import (
     keys,
     layerimage,
     layermeta,
-    nvm,
     targets,
-    partmap,
     paths,
-    prepare,
     share,
     vmsettings,
 )
+from .board import nvm, partmap, prepare
 from .access import guestshell
 from .devices import ir_relay, mic
 from .tuner import antenna
@@ -505,7 +503,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     except targets.Error as e:
         raise Error(f"BROADCAST: {e}") from None
     if env.get("COUNTRY"):
-        from . import countries
+        from .board import countries
 
         try:
             p.country = countries.parse(env["COUNTRY"])

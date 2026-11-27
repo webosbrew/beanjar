@@ -51,9 +51,7 @@ import time
 
 from . import (
     base,
-    countries,
     cpus,
-    nvm,
     targets,
     paths,
     vmconfig,
@@ -66,6 +64,7 @@ from . import (
     vmsettings,
     vmunits,
 )
+from .board import countries, nvm
 from .display import capture_relay, dbus, framing
 from .base import (
     OFF,

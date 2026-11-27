@@ -8,7 +8,8 @@ import json
 from unittest import mock
 
 import pytest
-from beanjar import base, core, countries, lls, vmconfig, vmsettings
+from beanjar import base, core, vmconfig, vmsettings
+from beanjar.board import countries, lls
 
 # a firmware's RMM tables as W22O 13.30's have them, cut down: two blocks, grpCode per record
 GROUPS = {

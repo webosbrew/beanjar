@@ -30,7 +30,7 @@ modelopt=0000000000000010000
 hwopt=202207002003002000
 # lxboot prints 9 tool option words, the ToolOptionDB's 32-bit words (webOS 3's layout:
 # host/core/beanjar/targets.py's Nvm), which the launcher programs into a new EEPROM
-# (host/core/beanjar/nvm.py). W17H's encodings (tvservice's TOOL_OPTIONn_T, the inch and tool
+# (host/core/beanjar/board/nvm.py). W17H's encodings (tvservice's TOOL_OPTIONn_T, the inch and tool
 # type enums), as derived from the firmware's tables. W17H's RELEASE.cfg is series TOOL_SJ85, so
 # beyond the model's own choices these are the firmware's factory default for the board (what its
 # OSA_MD_InitToolOption programs), not the UJ750V's record:

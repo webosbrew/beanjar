@@ -19,7 +19,7 @@ bytes; docs/research/lgudid.md):
 The rest of the partition is zeros. The VM's LGUDID and namespace are its identity's
 (vmidentity.LGUDID); prepare.py builds the image, which the launcher attaches as the partition.
 
-  python3 -m beanjar.macadr IMAGE [OFFSET]    print the MAC and the LGUDID record of an image
+  python3 -m beanjar.board.macadr IMAGE [OFFSET]    print the MAC and the LGUDID record of an image
 """
 
 import hashlib
@@ -136,7 +136,7 @@ def image(size, lgudid, namespace, mac, offset=DEFAULT_OFFSET):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not 1 <= len(argv) <= 2:
-        print("usage: python3 -m beanjar.macadr IMAGE [OFFSET]", file=sys.stderr)
+        print("usage: python3 -m beanjar.board.macadr IMAGE [OFFSET]", file=sys.stderr)
         return 2
     offset = int(argv[1], 0) if len(argv) > 1 else DEFAULT_OFFSET
     with open(argv[0], "rb") as f:

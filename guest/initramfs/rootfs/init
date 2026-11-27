@@ -78,7 +78,7 @@ arg() { # arg NAME DEFAULT -> value of NAME= on the kernel cmdline
 }
 
 # Find a virtio disk by the serial QEMU gave it (-device virtio-blk-pci,serial=NAME).
-if [ "$(arg beanjar.prepare 0)" = 1 ]; then
+if [ "$(arg beanjar.board.prepare 0)" = 1 ]; then
 	exec /bin/firmware-prepare
 fi
 

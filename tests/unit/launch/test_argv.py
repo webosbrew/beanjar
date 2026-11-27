@@ -24,19 +24,8 @@ from pathlib import Path
 from unittest import mock
 
 
-from beanjar import (
-    hostswap,
-    keys,
-    lls,
-    nvm,
-    targets,
-    partmap,
-    paths,
-    qemu,
-    share,
-    tomlfile,
-    vmsettings,
-)
+from beanjar import hostswap, keys, targets, paths, qemu, share, tomlfile, vmsettings
+from beanjar.board import lls, nvm, partmap
 from beanjar.network import netns
 
 from launchkit import (
@@ -1625,7 +1614,7 @@ class ArgvTest(unittest.TestCase):
         """COUNTRY: checked against the board's country group (countries.check, here a stand-in)
         and put in the per-VM layer as etc/emulator/country (0644), upper-cased; a refusal or a
         value that is not three letters stops the launch; none, no file."""
-        from beanjar import countries
+        from beanjar.board import countries
 
         ident = os.path.join(self.tmp, "vm", "identity")
         run = os.path.join(self.tmp, "vm", "run")
