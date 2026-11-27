@@ -237,8 +237,7 @@ replica checkout tree or writable files below `/usr`.
   `~/.local/share/beanjar`) or the user's configured library directory.
 - Firmware, VM configs, identities, state and logs remain user-owned.
 - Checkout development VMs use separate managed development libraries under
-  the same user data base, with their own CA. `migrate-local` copies legacy keys
-  and sparse state offline and retains the originals; runtime defaults no longer
+  the same user data base, with their own CA; runtime defaults do not
   create identity files in the source checkout. Firmware lives in the host's
   firmware collections (`firmware_dirs` in the machine's `config.toml`, default
   `/srv/beanjar/firmware`, possibly a read-only share), used in place, or an

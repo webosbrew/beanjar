@@ -1,15 +1,12 @@
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Managed development VMs and an offline, non-destructive checkout migration."""
+"""Managed development VMs."""
 
 import hashlib
-import filecmp
 import fcntl
 import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import tempfile
 
 from .. import base, paths
@@ -65,30 +62,7 @@ def environment(env, tree=paths.TREE):
     return out
 
 
-def legacy(env, tree):
-    instance = env.get("INSTANCE") or "default"
-    run = tree.build() if instance == "default" else tree.build("instances", instance)
-    return Path(tree.src("local")), Path(run), Path(run) / "state/default"
-
-
-def _offline(run, directory):
-    for path in (run / "launcher.pid", Path(directory) / "run/launcher.pid"):
-        if base.proc_alive(base.read_pid(str(path))):
-            raise Error("stop the development launcher before migration")
-    for path in (run / "qemu.pid", Path(directory) / "run/qemu.pid"):
-        if base.proc_alive(base.read_pid(str(path)), "qemu-system"):
-            raise Error("stop the development VM before migration")
-    from ..runtime import unit
-
-    for props in vmunits.vm_units().values():
-        if props.get("ActiveState") in unit.UP and props.get("Description") in (
-            f"webOS VM {run}",
-            f"webOS VM {directory}/run",
-        ):
-            raise Error("stop the development VM service before migration")
-
-
-def _config(env, tree, preserve_identity=False):
+def _config(env, tree):
     from ..runtime import qemu
 
     firmware, _ = tree.firmware(env.get("FW"))
@@ -111,17 +85,8 @@ def _config(env, tree, preserve_identity=False):
         if targets.release(target).always_layers == targets.WEBOS_LAYERS
         else [],
     )
-    # Preserve the effective legacy board identity rather than generating a different TV.
-    mac = env.get("MAC") or (qemu.guest_mac(target, tree) if preserve_identity else None)
+    mac = env.get("MAC")
     serial = env.get("SERIAL")
-    if not serial and preserve_identity:
-        from ..firmware import targets
-
-        text = Path(
-            tree.src(targets.board_cmdline_src(target, targets.board_broadcast(target, firmware)))
-        ).read_text()
-        match = re.search(r"\bserialNum=([0-9A-Z]{1,16})(?:\s|$)", text)
-        serial = match[1] if match else None
     if mac:
         config["mac"] = mac
     if serial:
@@ -167,19 +132,10 @@ def _checkout(library, tree):
 
 
 def prepare(env, tree=paths.TREE):
-    """Create/read a standard VM config; never replace a legacy identity implicitly."""
-    local, _, _ = legacy(env, tree)
+    """Create/read a standard VM config."""
     library, directory = locations(env, tree)
     config = Path(directory) / "vm.toml"
     if not config.exists():
-        if (
-            local.exists()
-            and any(local.iterdir())
-            and not any(Path(library).glob("vms/*/.migrated-local"))
-        ):
-            raise Error(
-                "legacy local/ identity exists; run host/scripts/vm-launcher migrate-local first"
-            )
         cfg = _config(env, tree)
         _checkout(library, tree)
         with open(Path(library) / ".development.lock", "a") as lock:
@@ -208,95 +164,3 @@ def prepare(env, tree=paths.TREE):
     out["ADDRESS_PREFIX"] = base.addresses_of(library)  # its library's, never the caller's
     out["NET_LAN_PARENT"] = vm_identity.lan_parent_of(library) or ""
     return environment(out, tree)
-
-
-def migrate(env, tree=paths.TREE):
-    """Copy keys, CA and sparse state offline. Originals and conflicting destinations survive."""
-    source, run, state = legacy(env, tree)
-    library, directory = locations(env, tree)
-    target = Path(directory)
-    ca = Path(library) / "ca"
-    _offline(run, directory)
-    if source.is_symlink() or not source.is_dir():
-        raise Error("no legacy local/ directory to migrate")
-    if target.exists():
-        raise Error("development VM already exists; migration will not overwrite it")
-    for path in source.rglob("*"):
-        if path.is_symlink() or not (path.is_file() or path.is_dir()):
-            raise Error("legacy identity contains a symlink or special file; migration refused")
-    if state.is_symlink():
-        raise Error("legacy state is a symlink; migration refused")
-    if state.exists():
-        for path in state.rglob("*"):
-            if path.is_symlink() or not (path.is_file() or path.is_dir()):
-                raise Error("legacy state contains a symlink or special file; migration refused")
-    source_ca = source / "ca"
-    same_ca = lambda: all(
-        path.is_dir()
-        or (
-            not (ca / path.relative_to(source_ca)).is_symlink()
-            and (ca / path.relative_to(source_ca)).is_file()
-            and filecmp.cmp(path, ca / path.relative_to(source_ca), shallow=False)
-        )
-        for path in source_ca.rglob("*")
-        if path.name != ".lock"
-    )
-    if source_ca.exists() and ca.exists() and not same_ca():
-        raise Error("development library CA already exists; migration will not overwrite it")
-    cfg = _config(env, tree, preserve_identity=True)
-    _checkout(library, tree)
-    # Serialize competing preparations and migrations with the library's existing lock.
-    with open(Path(library) / ".development.lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        _offline(run, directory)
-        if target.exists() or source_ca.exists() and ca.exists() and not same_ca():
-            raise Error("migration destination changed; nothing overwritten")
-        new_ca = source_ca.exists() and not ca.exists()
-        with (
-            vm_identity.slot_lock(library),
-            tempfile.TemporaryDirectory(prefix=".migration-", dir=library) as temporary,
-        ):
-            cfg["slot"] = vm_identity.free_slot(library)
-            staged = Path(temporary) / "vm"
-            (staged / "identity").mkdir(parents=True, mode=0o700)
-            for path in source.iterdir():
-                if path.name == "ca":
-                    continue
-                if not path.is_file():
-                    raise Error("unexpected directory in legacy identity; migration refused")
-                shutil.copy2(path, staged / "identity" / path.name)
-            from . import sestore
-
-            try:
-                sestore.migrate(staged / "identity", merge=True)
-            except sestore.Error as error:
-                raise Error(str(error)) from None
-            if state.exists():
-                subprocess.run(
-                    [
-                        "cp",
-                        "-a",
-                        "--reflink=auto",
-                        "--sparse=always",
-                        str(state),
-                        str(staged / "state"),
-                    ],
-                    check=True,
-                )
-            for name in ("state", "run", "logs"):
-                (staged / name).mkdir(exist_ok=True)
-            (staged / ".migrated-local").write_text("Legacy originals retained in the checkout.\n")
-            vm_config.write(str(staged / "vm.toml"), cfg)
-            vm_identity.ensure_identity(str(staged), lambda _: None)
-            if new_ca:
-                shutil.copytree(
-                    source_ca, Path(temporary) / "ca", ignore=shutil.ignore_patterns(".lock")
-                )
-                os.rename(Path(temporary) / "ca", ca)
-            try:
-                os.rename(staged, target)
-            except BaseException:
-                if new_ca:
-                    shutil.rmtree(ca)
-                raise
-    return directory

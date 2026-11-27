@@ -208,26 +208,7 @@ Without `BEANJAR_LIBRARY`, the base is `$XDG_DATA_HOME/beanjar` (normally
 `~/.local/share/beanjar`). The development library has its own `ca/`, and each VM
 has `vm.toml`, `identity/`, `state/`, `run/` and `logs/`. `INSTANCE` selects a
 separate VM; a firmware change requires another instance. Fresh VMs get generated
-identities; migrated VMs retain their effective legacy MAC and serial.
-
-Stop the old checkout VM before migrating. Supply the same `FW`, `MAC`, `SERIAL`
-and launch settings used previously if they were overridden:
-
-```sh
-host/scripts/vm-launcher migrate-local
-# For a named legacy instance:
-INSTANCE=h13-afro host/scripts/vm-launcher migrate-local
-host/scripts/vm-launcher start
-```
-
-Migration copies the checkout's `local/` keys and CA and the selected instance's
-persistent state, preserving sparse disks. It retains the originals and refuses
-active VMs, symlinks or conflicting destinations. An identical existing
-development CA can be reused when migrating another instance. Starting with an
-unmigrated legacy identity refuses to generate replacement keys. Keep the
-original files until the migrated VM has been verified; migration never deletes
-these backups. Development configs can be inspected through the manager using
-`--library` with the development library path printed by migration.
+identities.
 
 `argv` reads an existing development config without creating files. Explicit
 runtime paths remain available to test harnesses: the regression runner keeps
@@ -1081,7 +1062,6 @@ firmware exclusion concerns LG binaries and paks, not those images; raw captures
 
 | What | Where | Why |
 |---|---|---|
-| Legacy checkout migration backups | `local/`: `model-secret`, `ca/` (the proxy CA's key), `*_host_key`, `devmode_rsa`, `id_ed25519`, `authorized_keys`, `known_hosts` | secrets, and the user's keys |
 | A library | `~/.local/share/beanjar` (or `BEANJAR_LIBRARY`): `vms/<name>/{identity,state,logs,run,firmware}`, `ca/` | per-VM keys and model keys, TV state, the user's firmware (each VM's own) |
 | The user's firmware and what is made from it | the host's firmware collections (`firmware_dirs`), `build/firmware-cache` (uncompressed images, partition maps), a library VM's `vms/<name>/firmware/{*.pak,cache}` (or `vms/<name>/firmware-cache` for an external `fw`) | LG's files |
 | The checkout VM's state and logs | `build/state`, `build/logs`, `build/share` (its runtime tree: the per-VM layer with its keys, and what the guest wrote), `build/console.log`, `build/webos.log`, `build/qemu.out`, `build/*.log` | TV state (NDUID, accounts, db8), keys, and logs that quote them |

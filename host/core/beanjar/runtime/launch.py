@@ -1278,9 +1278,6 @@ def parser():
     s.add_argument(
         "--dir", help="IDENTITY, ADDRESS: of this VM directory, not the development VM's"
     )
-    sub.add_parser(
-        "migrate-local", help="copy legacy checkout keys, CA and state to the development VM"
-    )
     return p
 
 
@@ -1289,10 +1286,6 @@ def main(argv_=None):
     try:
         from ..vm import development
 
-        if a.cmd == "migrate-local":
-            print("migrated development VM: " + development.migrate(dict(os.environ)))
-            print("original local/ and state files retained")
-            return 0
         if not getattr(a, "dir", None) and a.cmd not in (
             "config",
             "firmware-cache",

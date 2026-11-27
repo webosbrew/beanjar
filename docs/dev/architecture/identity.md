@@ -46,11 +46,8 @@ Identity files and writable state are not redistributable build outputs. The
 [distribution rules](../guides/build.md#what-may-be-distributed) distinguish reusable artifacts
 from installation-specific material.
 
-## Development migration
+## Development VMs
 
-Checkout launches use managed development libraries in the user's data directory.
-`host/scripts/vm-launcher migrate-local` copies legacy keys, the proxy CA and
-sparse state while the old VM is off. It preserves effective board identity and
-retains the original checkout files. Fresh development VMs generate their own
+Checkout launches use managed development libraries in the user's data directory. Development VMs generate their own
 identity; different instances have separate identity and state directories.
 See the [development guide](../guides/build.md#development-vm-data) for commands.

@@ -74,9 +74,7 @@ external services may reject them.
 ## Legacy key files
 
 Launch and model-key commands use only TOML: the legacy `model-secret`, `ssg-key` and `youtube-key` files of
-an identity are not read. `migrate-local` imports them into `sestore.toml` as part of development migration
-(`model-secret` as `1D492999` text, `ssg-key` as `77D1DD90` PEM text, `youtube-key` as `C1FFB834` text with
-`nul_terminated = true`), keeping the originals.
+an identity are not read.
 
 `beanjar key model set NAME FILE` and the GUI model-key setting update TOML. Installing replaces
 every configured model item with one: the item of the VM's board broadcast where the firmware reads
