@@ -19,7 +19,12 @@
 # - node actions (actions/cache, upload-artifact) need `node` in the job container, which the real
 #   runner supplies and debian:trixie lacks: this machine's node binary is added in a layer on top of
 #   the local debian:trixie, which is the tag the workflows name (labelled, built once).
-# - actions/cache goes to act's own cache server; artifacts go to build/act/artifacts.
+# - actions/cache goes to act's own cache server; artifacts go to build/act/artifacts. act's artifact
+#   server does not understand upload-artifact v7's requests ("unknown field mime_type"), so a failed
+#   "Upload" step does not fail a job here (the files are not kept; the job's logs are in build/act).
+# - act mounts the workspace at the checkout's own path, which can make a Unix socket path longer
+#   than the 108 bytes the kernel allows (the guest check's media socket), where the CI's /__w/...
+#   is short: act runs on a short symlink to the checkout, in the runtime directory.
 set -eu
 TOP=$(cd "$(dirname "$0")/.." && pwd)
 cd "$TOP"
@@ -81,10 +86,12 @@ if [ "$(docker image inspect -f '{{index .Config.Labels "beanjar.act-node"}}' de
 fi
 
 stub=actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1=$work/checkout-stub
+short=${XDG_RUNTIME_DIR:-/tmp}/act-$(printf '%s' "$TOP" | cksum | cut -d' ' -f1)
+ln -sfn "$TOP" "$short"
 act_run() { # workflow job [extra act args]
 	wf=$1 job=$2
 	shift 2
-	act workflow_dispatch -W ".github/workflows/$wf" -j "$job" "$@" \
+	act -C "$short" workflow_dispatch -W ".github/workflows/$wf" -j "$job" "$@" \
 		-P ubuntu-24.04=debian:trixie --pull=false --local-repository "$stub" \
 		--artifact-server-path "$work/artifacts"
 }
@@ -96,7 +103,14 @@ run() { # label workflow job [extra act args]
 	shift
 	log=$work/${label}.log
 	t=$(date +%s)
-	if act_run "$@" >"$log" 2>&1; then r=passed; else r=FAILED; rc=1; tail -40 "$log"; fi
+	if act_run "$@" >"$log" 2>&1; then
+		r=passed
+	elif grep -aq 'Failure - Main Upload' "$log" && ! grep -a 'Failure - ' "$log" | grep -qav 'Failure - Main Upload'; then
+		r=passed # only the artifact upload failed (see above)
+	else
+		r=FAILED rc=1
+		tail -40 "$log"
+	fi
 	results="$results$(printf '  %-22s %-7s %4ss  (log %s)\n' "$label" "$r" "$(($(date +%s) - t))" "build/act/${label}.log")
 "
 	echo "act-check: $label $r"

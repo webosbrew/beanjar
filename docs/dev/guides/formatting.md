@@ -56,5 +56,5 @@ commits being pushed touch `guest/`, `meson/` or `packaging/debian/build-deps/`,
 workflow, each in the CI's `debian:trixie` container through [nektos/act](https://github.com/nektos/act)
 (a release binary in `~/.local/bin`, with Docker and Node.js installed). It prints each job's
 result and time, and the push fails when a job fails. A run takes about 7 minutes without the
-guest build. Skip it with `git push --no-verify`; `scripts/act-check --guest` runs everything by
+guest build (about 16 with it). Skip it with `git push --no-verify`; `scripts/act-check --guest` runs everything by
 hand. It runs the working tree, not the pushed commit, and does not cover the arm64 unit entry.
