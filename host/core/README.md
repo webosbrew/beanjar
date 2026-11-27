@@ -1369,25 +1369,6 @@ Two tags are conventions, which nothing enforces or acts on:
 Beanjar never deletes a VM by its tags; an agent cleaning up asks `list --tag scratch` and
 deletes what it made.
 
-### Using the CLI from scripts and agents
-
-Every command follows the same rules:
-
-- **Output.** The result goes to stdout; progress (the launcher's output, a wipe's steps) and
-  warnings go to stderr. With `--json`, which every command but `shell` takes, stdout is one JSON
-  document: `list` an array of VMs, `show` one object with the same fields, `config show`, `library
-  config show` and `host config show` an object of their keys (`null` for a default, except `host config`'s
-  `firmware_dirs` and `memory_headroom_mib`, which always report their effective values), and the other commands an object
-  naming the VM and what was done (`start`: `name`, `state`, `pid`, `reason`; `status`: `name`,
-  `reason`). `vnc password set` and `reset` give the password's file, never the password; only
-  `vnc password show` prints it.
-- **Text.** Without `--json`, `list` prints aligned columns under a header row, `show` and the
-  config commands one `KEY: value` line each (a nested table's keys joined with a dot: `ssh.root`;
-  `-` for none). No colour.
-- **Exit status.** 0 when it is done, 1 when the operation fails (the VM is not off, the host lacks
-  the memory, no VM of that name), 2 for a usage error (an unknown command or option, a missing
-  argument, a KEY that is not one, a group without its verb, a wrong order).
-- **Errors.** Without `--json` an error is one line on stderr, `beanjar: MESSAGE`. With `--json` it
 ### Snapshots
 
 A snapshot saves a VM that has been set up (first use done, apps installed, settings as wanted) so
@@ -1426,6 +1407,25 @@ the VM's snapshots with it, `rename` keeps them, and `clone` does not copy them.
 every verb runs on the VM's host, where its snapshots are. Design and measurements:
 [vm-snapshots](../../docs/research/vm-snapshots.md).
 
+### Using the CLI from scripts and agents
+
+Every command follows the same rules:
+
+- **Output.** The result goes to stdout; progress (the launcher's output, a wipe's steps) and
+  warnings go to stderr. With `--json`, which every command but `shell` takes, stdout is one JSON
+  document: `list` an array of VMs, `show` one object with the same fields, `config show`, `library
+  config show` and `host config show` an object of their keys (`null` for a default, except `host config`'s
+  `firmware_dirs` and `memory_headroom_mib`, which always report their effective values), and the other commands an object
+  naming the VM and what was done (`start`: `name`, `state`, `pid`, `reason`; `status`: `name`,
+  `reason`). `vnc password set` and `reset` give the password's file, never the password; only
+  `vnc password show` prints it.
+- **Text.** Without `--json`, `list` prints aligned columns under a header row, `show` and the
+  config commands one `KEY: value` line each (a nested table's keys joined with a dot: `ssh.root`;
+  `-` for none). No colour.
+- **Exit status.** 0 when it is done, 1 when the operation fails (the VM is not off, the host lacks
+  the memory, no VM of that name), 2 for a usage error (an unknown command or option, a missing
+  argument, a KEY that is not one, a group without its verb, a wrong order).
+- **Errors.** Without `--json` an error is one line on stderr, `beanjar: MESSAGE`. With `--json` it
   is one JSON object on stderr, `{"error": MESSAGE}`, with `"key"` when it concerns one setting and
   `"usage": true` for a usage error; stdout stays empty.
 - **No prompts without a terminal.** Only a terminal on stdin is asked anything (a VNC password).

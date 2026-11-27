@@ -90,9 +90,6 @@ beanjar stop tv1
   the HDMI-CEC setting on, the TV also finds it over CEC, and turns ARC on with eARC Support off or
   for a bar made `--arc-only`. `io soundbar detach NAME` unplugs it, `io soundbar show NAME` shows
   both sides ([manager README](../../host/core/README.md#sound-bar)).
-- `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
-  synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
-- `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the
 - `io mic play NAME FILE` plays a sound file (any format ffmpeg reads; `-` for stdin) once to
   the built-in far-field microphone of a TV model that has one (the one "Hey LG" wakes; the O22
   family's OLED C2 boards), at real time, as its capture card records it; it returns when the
@@ -105,16 +102,19 @@ beanjar stop tv1
   b down` presses and releases its buttons, triggers and d-pad in turn (`--hold 500ms` for longer
   presses), for scripted tests of games and apps; the TV's own driver and device list see it as
   the real pad ([manager README](../../host/core/README.md#usb-devices)).
+- `stop` saves the guest's logs and sends the TV's own power-off; a guest that cannot take it is
+  synced and stopped instead. `stop --unplug` cuts the power at once and may lose data.
+- `wipe NAME` blanks the state disks (a factory-fresh TV, first-use setup included unless the
   `normal` layer skips it); `delete NAME` removes the VM.
 - `identity reset NAME` makes the VM another TV (new MAC, serial and keys, state wiped);
   `clone SRC DEST` copies a VM as another TV with its state kept.
-
-Every command takes `--json` for scripts.
-
 - `snapshot create NAME SNAP` saves a set-up VM's state (it must be off), and
   `snapshot reset NAME SNAP` puts it back before a test run, with every later change gone and the
   VM's identity kept; `snapshot list NAME`, `snapshot show NAME SNAP` and `snapshot delete NAME
   SNAP` manage them ([manager README](../../host/core/README.md#snapshots)).
+
+Every command takes `--json` for scripts.
+
 ## Settings
 
 `beanjar config show NAME` shows a VM's settings and tags, and `config set NAME KEY=VALUE` or
