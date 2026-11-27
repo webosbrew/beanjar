@@ -202,6 +202,11 @@ def remote_command(a, words, host, name):
         )
     if kind == "keymodel-set":
         raise Error(f"key model set reads a file on this machine: run it on {host} for {name}")
+    # what this machine can refuse is refused before the host is asked anything, its version included
+    if kind == "usb-attach":
+        usb_attach_usage(a, host)
+    if kind == "gamepad-press":
+        gamepad_controls(a)
     if kind not in ("pipe", "mitm-connect", "mitm-clear"):
         # not for a byte stream, often a loop's step, nor the inspector, which runs here
         a.drift = host_drift(host)
@@ -229,9 +234,6 @@ def remote_command(a, words, host, name):
         if a.device or a.camera:
             a.name = name
             return plug_usb(None, a, host)
-        usb_attach_usage(a, host)
-    if kind == "gamepad-press":
-        gamepad_controls(a)
     if kind == "tuner":
         return remote_tuner(a, host, name)
     if kind == "shell":

@@ -147,6 +147,8 @@ class LogShowRemote(unittest.TestCase):
             with (
                 self.subTest(extra=extra),
                 mock.patch.object(remote, "locate", return_value=("pi", "tv")),
+                mock.patch.object(remote, "hosts", return_value={"pi": "ssh://pi"}),
+                mock.patch.object(remote, "identity", return_value=None),
                 mock.patch.object(forward, "run_remote", return_value=0) as run,
                 mock.patch.object(commands, "Library") as library,
             ):
