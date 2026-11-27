@@ -151,11 +151,11 @@ def isolate():
     machine's settings, max_running (XDG_CONFIG_HOME: an empty directory of the test's own, removed
     at exit), its firmware collections kept in HOST_FIRMWARE_DIRS first. Subprocesses get these
     from os.environ."""
-    from beanjar import paths
+    from beanjar.runtime import hostconfig
 
     if not HOST_FIRMWARE_DIRS:
         try:
-            HOST_FIRMWARE_DIRS[:] = paths.firmware_dirs()
+            HOST_FIRMWARE_DIRS[:] = hostconfig.firmware_dirs()
         except ValueError:
             pass
     os.environ["BEANJAR_UNITS"] = OURS.pattern

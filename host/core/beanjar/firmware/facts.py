@@ -414,8 +414,7 @@ def used_symbols(build_dir, libs):
 def _image(fw_dir, image):
     """(path, offset) of fw_dir's stock image (rootfs or bsppart): <image>.pak (root.pak for
     SimpleSmart's rootfs), or super.pak's logical image. Error without it."""
-    from .. import paths
-    from . import superpak
+    from . import probe, superpak
 
     try:
         logical = superpak.images(fw_dir)
@@ -423,7 +422,7 @@ def _image(fw_dir, image):
         raise Error(str(e)) from None
     if image in logical:
         return logical[image][:2]
-    src = paths.root_pak(fw_dir) if image == "rootfs" else None
+    src = probe.root_pak(fw_dir) if image == "rootfs" else None
     src = src or os.path.join(fw_dir, image + ".pak")
     if not os.path.isfile(src):
         raise Error(f"{fw_dir}: no {image}.pak or super.pak {image}")
@@ -434,11 +433,11 @@ def _image(fw_dir, image):
 def mounted_root(fw_dir):
     """The firmware's rootfs image mounted read-only with squashfuse for the with block, so the
     facts' rootfs paths are read in place without extracting it; unmounted after. A fw_dir that
-    already shows the image as files (an epkfs 0.3+ mount: paths.expanded_image) is read as it is,
+    already shows the image as files (an epkfs 0.3+ mount: probe.expanded_image) is read as it is,
     with no mount."""
-    from .. import paths
+    from . import probe
 
-    root = paths.expanded_image(fw_dir)
+    root = probe.expanded_image(fw_dir)
     if root:
         yield root
         return
@@ -499,10 +498,10 @@ def image_file(fw_dir, image, path):
     """The bytes of path in fw_dir's stock image (rootfs or bsppart: <image>.pak, or super.pak's
     logical image), its symlinks followed by unsquashfs; None where the image has no such file.
     Error without the image. Read as files where fw_dir already shows the image so
-    (paths.expanded_image), without unsquashfs."""
-    from .. import paths
+    (probe.expanded_image), without unsquashfs."""
+    from . import probe
 
-    root = paths.expanded_image(fw_dir, image)
+    root = probe.expanded_image(fw_dir, image)
     if root:
         try:
             full = _in_root(root, path)
@@ -585,7 +584,7 @@ def answer_gbmformats(fw_dir, q):
 def answer(fw_dir, questions, symbols, entries=None):
     """The facts (parse's form) of the firmware in fw_dir for questions (parse_questions' form) and
     symbols ({lib: names}). entries: the rootfs image's entries in the questions' directories
-    (default: paths.rootfs_entries, read from the image as the build always did)."""
+    (default: probe.rootfs_entries, read from the image as the build always did)."""
     facts = {k: {} for k in ("path", "version", "lib", "sym", "defines", "exports", "gbmformats")}
     for q in questions.get("defines", ()):
         facts["defines"][q] = answer_defines(fw_dir, q)
@@ -595,11 +594,11 @@ def answer(fw_dir, questions, symbols, entries=None):
         facts["gbmformats"][q] = answer_gbmformats(fw_dir, q)
     if questions["path"]:
         if entries is None:
-            from .. import paths
+            from . import probe
 
             dirs = sorted({os.path.dirname(p) for p in questions["path"]})
             try:
-                entries = paths.rootfs_entries(fw_dir, dirs)
+                entries = probe.rootfs_entries(fw_dir, dirs)
             except ValueError as e:
                 raise Error(str(e)) from None
         have = set(entries)

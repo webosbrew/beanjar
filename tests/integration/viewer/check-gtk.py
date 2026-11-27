@@ -1819,9 +1819,8 @@ def steps(win, pane):
     # 9c. More's Elements layer: screen recognition (beanjar.display.elements, here a stand-in textshot that
     # prints one button in the middle of the 1280x720 frame) boxed over the picture; off again, the
     # layer is hidden and stops reading; without textshot it stays off and says why
-    from gi.repository import GdkPixbuf
-
     from beanjar_ui.viewer import main as mainlib
+    from gi.repository import GdkPixbuf
 
     fake = os.path.join(tmp, "textshot")
     element = {"id": 0, "key": "button:OK", "kind": "button", "x0": 400, "y0": 180, "x1": 880,
@@ -2009,9 +2008,8 @@ app.connect("activate", activate)
 app.run([])
 # Firmware-aware menus and header input: construct the actual widgets, without
 # mapping another GLArea or connecting a second display client.
+from beanjar.firmware import probe  # noqa: E402
 from beanjar_ui.viewer.main import remote_layout  # noqa: E402
-
-from beanjar import paths  # noqa: E402
 
 
 class RecordingCore:
@@ -2083,7 +2081,7 @@ for target, expected in (
     (("lm14", "netcast45"), remotelib.NETCAST),
     (("m2", "simplesmart"), remotelib.SIMPLESMART),
 ):
-    info = paths.vm_info(target, "", "")
+    info = probe.vm_info(target, "", "")
     chosen = remote_layout("auto", info)
     check(chosen == expected.name, f"{info['platform']}: firmware selects {expected.title}")
     recorder = RecordingCore()

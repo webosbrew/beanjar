@@ -5,9 +5,8 @@ data, whose VM is prepared without firmware code and boots with no partition map
 
 import os
 
-from beanjar import paths
-from beanjar.firmware import targets
 from beanjar.board import prepare
+from beanjar.firmware import probe, targets
 
 TESTGUEST = ("virt", "testguest")
 
@@ -33,7 +32,7 @@ def test_target_row():
 
 
 def test_manifest_names_the_target(tmp_path):
-    assert paths.firmware_target(firmware(tmp_path)) == TESTGUEST
+    assert probe.firmware_target(firmware(tmp_path)) == TESTGUEST
 
 
 def test_prepare_without_board_data(tmp_path):

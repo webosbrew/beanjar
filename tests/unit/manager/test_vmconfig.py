@@ -6,9 +6,9 @@
 from unittest import mock
 
 import pytest
-
-from beanjar import base, paths
-from beanjar.vm import library, config, identity, settings
+from beanjar import base
+from beanjar.firmware import probe
+from beanjar.vm import config, identity, library, settings
 
 
 @pytest.fixture
@@ -367,7 +367,7 @@ def test_broadcast(path, tmp_path):
     (fw / "otncabi-arib.pak").touch()
     assert config.read(path)["broadcast"] == "atsc"  # pak names state no standard
     # an ARIB firmware: its model_id.json says so
-    with mock.patch.object(paths, "model_id", return_value={"region": "ARIB"}):
+    with mock.patch.object(probe, "model_id", return_value={"region": "ARIB"}):
         with pytest.raises(base.Error, match="broadcast 'atsc', but the firmware is 'arib'"):
             config.read(path)
 
@@ -405,7 +405,7 @@ def test_model(path, tmp_path):
     with pytest.raises(base.Error, match="model '42LX3QPUA' is a atsc set, not dvb"):
         config.read(path)
     path.write_text('[firmware]\ndirectory = "firmware"\nmodel = "42LX3QPUA"\n')
-    with mock.patch.object(paths, "model_id", return_value={"region": "ARIB"}):
+    with mock.patch.object(probe, "model_id", return_value={"region": "ARIB"}):
         with pytest.raises(base.Error, match="is a atsc set, but the firmware is 'arib'"):
             config.read(path)
 

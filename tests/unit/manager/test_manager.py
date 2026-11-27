@@ -28,19 +28,22 @@ import time
 import tomllib
 import unittest
 import uuid
+from unittest import mock
 
 import pytest
-from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar import base, paths, tomlfile  # noqa: E402
-from beanjar.vm import library as vm_library, keys, identity as vm_identity, settings as vm_settings  # noqa: E402
-from beanjar.runtime import capacity, hostconfig, hostprocs, poweroff, unit, vmunits  # noqa: E402
-from beanjar.firmware import install, targets  # noqa: E402
-from beanjar.display import framing  # noqa: E402
 import testunits  # noqa: E402
+from beanjar import base, tomlfile  # noqa: E402
+from beanjar.display import framing  # noqa: E402
+from beanjar.firmware import install, targets  # noqa: E402
+from beanjar.runtime import capacity, hostconfig, hostprocs, poweroff, unit, vmunits  # noqa: E402
+from beanjar.vm import identity as vm_identity
+from beanjar.vm import keys
+from beanjar.vm import library as vm_library  # noqa: E402
+from beanjar.vm import settings as vm_settings
 
 SYSTEMD = unit.available()
 
@@ -1234,8 +1237,8 @@ class ManagerTest(unittest.TestCase):
         """clone between hosts: SRC on one, DEST on another, and from this machine to a host; each host
         is a library of its own reached through its shell (remote.shell_argv) and its beanjar
         (remote.call_json), here stand-ins on this machine."""
-        from beanjar.vm import clone
         from beanjar.access import remote as rem
+        from beanjar.vm import clone
 
         src_dir, model_key = self.clone_source()
         libs = {"h1": self.lib_dir, "h2": os.path.join(self.tmp, "lib-h2")}
@@ -2238,13 +2241,13 @@ class ManagerTest(unittest.TestCase):
             "firmware_dirs: /srv/beanjar/firmware (not set: the default)",
             self.cli("host", "config", "show"),
         )
-        self.assertEqual(paths.firmware_dirs(), ["/srv/beanjar/firmware"])
+        self.assertEqual(hostconfig.firmware_dirs(), ["/srv/beanjar/firmware"])
         self.assertIn(
             "firmware_dirs: /a:/b/c",
             self.cli("host", "config", "set", "firmware_dirs=/a:/b/c/"),
         )
         self.assertEqual(tload(path), {"firmware_dirs": ["/a", "/b/c"]})
-        self.assertEqual(paths.firmware_dirs(), ["/a", "/b/c"])
+        self.assertEqual(hostconfig.firmware_dirs(), ["/a", "/b/c"])
         self.assertIn(
             "not an absolute directory: rel",
             self.cli("host", "config", "set", "firmware_dirs=rel", ok=False),

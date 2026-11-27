@@ -8,7 +8,7 @@ The firmware (check()) is, by default, a firmware used in place (kind "place"): 
 (the partition map, the uncompressed images' stamps) goes into the VM's firmware-cache/
 (firmware.vm_firmware). Its board data is worked out before it is published (prepare.py: the partition
 map, the new EEPROM chip, the local key, the chip modules' parameters), so its first start only
-reads it. It is a name in the host's firmware collections (paths.firmware_dirs: the
+reads it. It is a name in the host's firmware collections (hostconfig.firmware_dirs: the
 machine's config.toml, firmware_dirs) or a path (any value with a '/'), and needs a manifest.toml
 with its name, chip and release, so nothing is read from its rootfs to tell its target.
 Imported (--import), the firmware becomes the VM's own, in its folder (firmware.OWN, <vm>/firmware),
@@ -48,17 +48,17 @@ import tempfile
 import threading
 import time
 
-from ..runtime import capacity
-from . import keys, config, identity
 from .. import paths
-from ..guestside import compat
-from ..firmware import install, targets
-from ..board import nvm
-from .library import VM, Library, prepare_board_data
 from ..base import NAME_RE, Error
+from ..board import nvm
+from ..firmware import install, probe, targets
 from ..firmware.install import vm_firmware
+from ..guestside import compat
+from ..runtime import capacity, hostconfig
 from ..tomlfile import MANIFEST_HEADER, VM_HEADER, write_toml
+from . import config, identity, keys
 from .identity import free_slot, make_identity_dir, slot_lock
+from .library import VM, Library, prepare_board_data
 from .settings import MANIFEST_KEYS
 
 SIGNALS = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
@@ -76,16 +76,16 @@ def check_name(lib, name):
 
 def resolve(fw):
     """The path of --firmware's value fw: a path (any value with a '/', or ending in .epk) as given,
-    made absolute, or a name in the host's firmware collections (paths.firmware_dirs), the first
+    made absolute, or a name in the host's firmware collections (hostconfig.firmware_dirs), the first
     that has it."""
     v = os.path.expanduser(str(fw).strip())
     if "/" in v or v.endswith(".epk"):
         return os.path.abspath(v)
     try:
-        dirs = paths.firmware_dirs()
+        dirs = hostconfig.firmware_dirs()
     except ValueError as e:
         raise Error(str(e), "fw") from None
-    found = paths.find_firmware(v, dirs) if v not in ("", ".", "..") else None
+    found = probe.find_firmware(v, dirs) if v not in ("", ".", "..") else None
     if not found:
         raise Error(
             f"no firmware {v} in the host's firmware collections ({':'.join(dirs) or 'none'}; "
@@ -96,11 +96,11 @@ def resolve(fw):
 
 
 def collection():
-    """The firmwares of the host's collections (paths.firmware_dirs) that can be used in place:
+    """The firmwares of the host's collections (hostconfig.firmware_dirs) that can be used in place:
     [(name, directory)], each with a manifest.toml and a root pak, by name; a name in two
     collections is the first one's."""
     try:
-        dirs = paths.firmware_dirs()
+        dirs = hostconfig.firmware_dirs()
     except ValueError:
         return []
     found = {}
@@ -113,8 +113,8 @@ def collection():
             fw = os.path.join(d, n)
             if (
                 n not in found
-                and os.path.isfile(os.path.join(fw, paths.MANIFEST))
-                and paths.root_pak(fw)
+                and os.path.isfile(os.path.join(fw, probe.MANIFEST))
+                and probe.root_pak(fw)
             ):
                 found[n] = fw
     return sorted(found.items())
@@ -124,7 +124,7 @@ def check_in_place(fw_dir):
     """The refusals of a firmware used in place: its target (chip, release), from its manifest.toml."""
     if not os.path.isdir(fw_dir):
         raise Error(f"firmware {fw_dir}: no such directory", "fw")
-    if not paths.root_pak(fw_dir):
+    if not probe.root_pak(fw_dir):
         if logical_root(fw_dir):
             raise Error(
                 f"firmware {fw_dir}: its rootfs is mapped in super.pak, which a VM cannot use in "
@@ -144,7 +144,7 @@ def check_in_place(fw_dir):
     if not isinstance(m.get("name"), str) or not m["name"]:
         raise Error(f"firmware {fw_dir}: its manifest.toml names no firmware (name)", "fw")
     try:
-        target = paths.manifest_target(m)
+        target = probe.manifest_target(m)
     except ValueError as e:
         raise Error(f"firmware {fw_dir}: manifest.toml: {e}", "fw") from None
     install.check_paks(fw_dir, target)

@@ -30,9 +30,8 @@ import signal
 import subprocess
 import time
 
-from . import kernelcerts, superpak, targets
-from .. import paths
 from ..base import Error, read_toml
+from . import kernelcerts, probe, superpak, targets
 
 # epk2extract names its output directory "<version>-<otaID>", e.g. 05.06.10.01-HE_DTV_WT1H_AFAAABAA
 FW_DIR_RE = re.compile(r"\d\d\.\d\d\.\d\d(\.\d\d)?-[A-Za-z0-9_.-]+")
@@ -70,11 +69,11 @@ def find_epk2extract(library):
 
 
 def target_of(fw_dir, name=None):
-    """(chip, release) of a firmware being imported (paths.firmware_target: the manifest of a directory
+    """(chip, release) of a firmware being imported (probe.firmware_target: the manifest of a directory
     that has one, else the release its rootfs names with that release's chip for the model code of
     name, default the directory's name); an Error about fw for a firmware this tree does not boot."""
     try:
-        return paths.firmware_target(fw_dir, name)
+        return probe.firmware_target(fw_dir, name)
     except ValueError as e:
         raise Error(str(e), "fw") from None
 
@@ -97,7 +96,7 @@ def logical_images(d):
 
 
 def has_root(d):
-    return bool(paths.root_pak(d) or logical_images(d).get("rootfs"))
+    return bool(probe.root_pak(d) or logical_images(d).get("rootfs"))
 
 
 def paks_size(d, target):

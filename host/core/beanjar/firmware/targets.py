@@ -30,13 +30,13 @@ import tomllib
 from collections import namedtuple
 
 from .. import base, paths
-from . import memory
+from . import memory, probe
 
 # The firmwares this tree boots, by the model code in their name (epk2extract's "..._DTV_<model>_...")
 # -> {release: chip}, from the target files' models. One board can ship several release families, so a firmware's target is
 # (MODELS[model][release], release) with release the codename family its own rootfs names
 # (RELEASE_FILES, release_family), never its version number or model year.
-# Import resolves a firmware once (paths.firmware_target) and
+# Import resolves a firmware once (probe.firmware_target) and
 # records the target in its manifest.toml. BRING_UP: the models whose target is still being brought up
 # (a target file's bring_up): scripts/regress leaves it out of its default set and runs it only when
 # named with --target. Remove the model there once its target passes regress --headless.
@@ -147,7 +147,7 @@ DERIVED_PAKS = {"mstar-mboot": ("boot",)}
 # word replacing the module's own word of the same name: the tuners of a US model differ from a
 # European one's (webos_tv's frontends= and delsys=).
 # firmware_params: ((model code, module, (words...)), ...): a module's parameters added for a
-# firmware of that model code (paths.model_of: W21Z) only, where a chip runs firmware lines whose
+# firmware of that model code (probe.model_of: W21Z) only, where a chip runs firmware lines whose
 # boards differ: W21Z, the HU710P projector on W21P's K7LP, has a DLP controller on I2C (lgemu's
 # i2c_dev dlpc). prepare.py adds them to the VM's derived parameters (firmware_module_params).
 Soc = namedtuple(
@@ -1091,24 +1091,24 @@ def firmware_paks(fw):
         return []
 
 
-# model_id.json's region (paths.model_id) -> the broadcast standard: the values LG's nyxDeviceInfo
+# model_id.json's region (probe.model_id) -> the broadcast standard: the values LG's nyxDeviceInfo
 # module and libdile_tvregion compare it with, GLOBAL a global build (which names none)
 MODEL_ID_REGIONS = {"ARIB": "arib", "ATSC": "atsc", "DVB": "dvb", "GLOBAL": None}
 
 
 def firmware_broadcast(fw):
     """The broadcast standard of the firmware directory fw as the firmware itself states it: its
-    rootfs's etc/starfish/model_id.json region (paths.model_id; ARIB, ATSC, DVB, or GLOBAL for a
+    rootfs's etc/starfish/model_id.json region (probe.model_id; ARIB, ATSC, DVB, or GLOBAL for a
     global build: None), which a super.pak firmware's pak names do not carry; a NetCast-line
-    firmware's, its RELEASE.cfg modelName's first word (paths.release_cfg_model). None for a webOS
+    firmware's, its RELEASE.cfg modelName's first word (probe.release_cfg_model). None for a webOS
     firmware without model_id.json (before jhericurl; those chips have one board, and their paks
     are named for their standard, which only picks the paks: _broadcast_release) or without fw. An
     Error for a region LG's code does not name."""
-    identity = paths.model_id(fw)
+    identity = probe.model_id(fw)
     if identity is None:
         # a NetCast-line firmware (SimpleSmart, NetCast 4.5) states it as its RELEASE.cfg's
         # modelName, the standard before the platform: DVB-M2, ATSC-LM14
-        model = paths.release_cfg_model(fw)
+        model = probe.release_cfg_model(fw)
         standard = model.split("-", 1)[0] if model else None
         if standard is not None and standard not in MODEL_ID_REGIONS:
             raise Error(f"{fw}: RELEASE.cfg's modelName {model!r} names no broadcast standard")
@@ -1605,7 +1605,7 @@ def tee_device(target, fw):
     if tee_module(target) is not None:
         return ()
     try:
-        return ("tee=1",) if paths.rootfs_has(fw, TEE_CLIENT) else ()
+        return ("tee=1",) if probe.rootfs_has(fw, TEE_CLIENT) else ()
     except ValueError as e:
         raise Error(f"{name(target)}: whether the firmware has OP-TEE's client: {e}") from None
 
@@ -1770,8 +1770,8 @@ def _join_i2c_dev(words):
 
 def firmware_module_params(target, fw_name):
     """{module: (words...)}: the parameters Soc.firmware_params adds for the firmware fw_name (by
-    its model code, paths.model_of), none for another firmware of the chip."""
-    code, out = paths.model_of(fw_name), {}
+    its model code, probe.model_of), none for another firmware of the chip."""
+    code, out = probe.model_of(fw_name), {}
     for c, module, words in soc(target).firmware_params:
         if c == code:
             out[module] = out.get(module, ()) + tuple(words)

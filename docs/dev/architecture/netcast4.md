@@ -11,7 +11,7 @@ decided.
 
 `guest/targets/h13-netcast4.toml` (model NC4H, its own `[soc]`: lg115x.ko with H13 B0's chip
 identity and the I2C devices of this firmware's RELEASE.cfg) and `guest/targets/release/netcast4.toml`,
-platform "NetCast" 4. Recognition (`paths.firmware_release`): a sysvinit `root.pak` and `mode.pak`'s
+platform "NetCast" 4. Recognition (`probe.firmware_release`): a sysvinit `root.pak` and `mode.pak`'s
 `RELEASE.cfg`, as the other NetCast-line targets, and no vendor pak: NetCast 4's GAL_GX `libgal.so`
 is in the lglib pak. NetCast is native-only (`vm.settings.NATIVE_ONLY`): on an x86 PC the VM runs the
 arm64 guest kernel under TCG, with the 32-bit userland in AArch32.

@@ -8,9 +8,8 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
-from beanjar import base, paths
-from beanjar.firmware import install, superpak
+from beanjar import base
+from beanjar.firmware import install, probe, superpak
 
 HERE = Path(__file__).resolve().parent
 
@@ -70,7 +69,7 @@ def test_raw_ranges_and_source_preservation(pak):
 
 @pytest.mark.skipif(not shutil.which("unsquashfs"), reason="official unsquashfs required")
 def test_release_read_from_offset(pak):
-    family, source = paths.firmware_release(pak.src)
+    family, source = probe.firmware_release(pak.src)
     assert family == "afro"
     assert "super.pak" in source
 
@@ -130,14 +129,14 @@ def test_w24p_requires_actual_machine(pak, machine):
     name = "33.20.23.01-HE_DTV_W24P_AFADATAA"
     identity = '{"machine": "' + machine + '"}' if machine else "{}"
     with (
-        mock.patch.object(paths, "firmware_release", return_value=("ombre", "fixture")),
-        mock.patch.object(paths, "_squashfs_cat", return_value=identity),
+        mock.patch.object(probe, "firmware_release", return_value=("ombre", "fixture")),
+        mock.patch.object(probe, "_squashfs_cat", return_value=identity),
     ):
         if machine == "K8LPN2":
-            assert paths.firmware_target(str(pak.src), name) == ("k8lpn2", "ombre")
+            assert probe.firmware_target(str(pak.src), name) == ("k8lpn2", "ombre")
         else:
             with pytest.raises(ValueError, match="is not K8LPN2"):
-                paths.firmware_target(str(pak.src), name)
+                probe.firmware_target(str(pak.src), name)
 
 
 def test_truncated_copy_removes_partial_image(pak):

@@ -2,16 +2,20 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Managed development VMs."""
 
-import hashlib
 import fcntl
+import hashlib
 import os
-from pathlib import Path
 import re
 import tempfile
+from pathlib import Path
 
 from .. import base, paths
-from . import library as vm_library, config as vm_config, identity as vm_identity, settings
+from ..firmware import probe
 from ..runtime import vmunits
+from . import config as vm_config
+from . import identity as vm_identity
+from . import library as vm_library
+from . import settings
 
 
 class Error(Exception):
@@ -68,7 +72,7 @@ def _config(env, tree):
     firmware, _ = tree.firmware(env.get("FW"))
     # vm.toml resolves a relative fw against the VM's folder (firmware.vm_firmware), not the caller's
     firmware = os.path.abspath(firmware)
-    target = paths.firmware_target(firmware)
+    target = probe.firmware_target(firmware)
     from ..firmware import targets
 
     display = env.get("DISPLAY_BACKEND") or (

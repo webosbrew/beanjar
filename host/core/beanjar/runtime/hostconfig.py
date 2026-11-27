@@ -4,16 +4,15 @@
 directory): max_running, firmware_dirs, memory_headroom_mib, runner."""
 
 import os
+import tomllib
 
-from .. import paths
-from ..base import Error, read_toml
 from .. import tomlfile
-
+from ..base import Error, read_toml
 
 # The machine's settings, every library's alike (the development library's, the regress harness's):
 # $XDG_CONFIG_HOME/beanjar/config.toml (docs/dev/architecture/manager.md, "Several VMs at once").
 # max_running: how many VMs may run at once on this host; unset, no limit. firmware_dirs: the host's
-# firmware collections (paths.firmware_dirs), where create --firmware NAME and the launcher look a
+# firmware collections (firmware_dirs), where create --firmware NAME and the launcher look a
 # firmware up; unset, /srv/beanjar/firmware. memory_headroom_mib: the memory reserved beyond each
 # VM's RAM, shared by admission and its KVM unit's soft memory limit; unset, 1024 MiB. runner: how VMs
 # run here (runner.py: systemd or session); unset or auto, systemd where a user systemd runs.
@@ -24,11 +23,52 @@ GLOBAL_HEADER = "Beanjar's settings for this machine, every library's (beanjar h
 
 
 def global_config_dir():
-    return paths.global_config_dir()
+    return os.path.join(
+        os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "beanjar"
+    )
 
 
 def global_config_path():
-    return paths.global_config_path()
+    return os.path.join(global_config_dir(), "config.toml")
+
+
+# firmware_dirs: the host's firmware collections, where a bare firmware name is looked up, in order;
+# each firmware a directory <collection>/<name> of its paks (and, for create --firmware, a
+# manifest.toml).
+DEFAULT_FIRMWARE_DIRS = ("/srv/beanjar/firmware",)
+
+
+def parse_firmware_dirs(v):
+    """firmware_dirs as a list of absolute directories: a list as it is, a string split at ':'
+    (the CLI's host config set firmware_dirs=A:B); ~ expanded. ValueError for anything else, or
+    for a relative directory."""
+    items = v.split(":") if isinstance(v, str) else v
+    if not isinstance(items, (list, tuple)) or not all(isinstance(d, str) for d in items):
+        raise ValueError("firmware_dirs is a list of directories")
+    out = [os.path.normpath(os.path.expanduser(d.strip())) for d in items if d.strip()]
+    bad = [d for d in out if not os.path.isabs(d)]
+    if bad:
+        raise ValueError(f"firmware_dirs: not an absolute directory: {', '.join(bad)}")
+    return out
+
+
+def firmware_dirs():
+    """The host's firmware collections, in order: config.toml's firmware_dirs, else
+    DEFAULT_FIRMWARE_DIRS. ValueError for a config.toml that cannot be read or a bad value."""
+    path = global_config_path()
+    try:
+        with open(path, "rb") as f:
+            cfg = tomllib.load(f)
+    except FileNotFoundError:
+        cfg = {}
+    except (OSError, ValueError) as e:
+        raise ValueError(f"{path}: {e}") from None
+    if "firmware_dirs" not in cfg:
+        return list(DEFAULT_FIRMWARE_DIRS)
+    try:
+        return parse_firmware_dirs(cfg["firmware_dirs"])
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from None
 
 
 def parse_max_running(v):
@@ -65,7 +105,7 @@ def global_config():
             raise Error(f"{global_config_path()}: {e}") from None
     if "firmware_dirs" in cfg:
         try:
-            cfg["firmware_dirs"] = paths.parse_firmware_dirs(cfg["firmware_dirs"])
+            cfg["firmware_dirs"] = parse_firmware_dirs(cfg["firmware_dirs"])
         except ValueError as e:
             raise Error(f"{global_config_path()}: {e}") from None
     if "memory_headroom_mib" in cfg:
@@ -97,7 +137,7 @@ def set_global_option(key, value):
         value = runner.parse(value)
     else:
         try:
-            value = paths.parse_firmware_dirs(value) or None
+            value = parse_firmware_dirs(value) or None
         except ValueError as e:
             raise Error(str(e), key) from None
     path = global_config_path()

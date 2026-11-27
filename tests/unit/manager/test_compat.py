@@ -15,12 +15,11 @@ import tomllib
 from unittest import mock
 
 import pytest
-
+from beanjar import paths
+from beanjar.firmware import probe, targets
 from beanjar.guestside import compat
 from beanjar.runtime import launch
-from beanjar import paths
 from beanjar.vm import config
-from beanjar.firmware import targets
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -309,7 +308,7 @@ def test_real_guest_modules_declare_what_every_target_passes(env):
 def test_vm_info_beanjar_table(env):
     run = os.path.join(env.tmp, "run")
     os.makedirs(run)
-    paths.write_vm_info(
+    probe.write_vm_info(
         run, {"platform": "webOS", "version": "1", "beanjar": compat.run_info(env.tree)}
     )
     with open(os.path.join(run, "vm-info.toml"), "rb") as f:

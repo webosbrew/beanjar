@@ -245,7 +245,7 @@ launcher's TCG factor, qemu.TIME_SCALE, as the guest's bootd timers are; under K
 The targets are targets.MODELS' (`host/scripts/vm-launcher config TARGETS`); a target whose model is in targets.BRING_UP is still being
 brought up and is left out without --target (named, it runs), and so is a target that has never booted (its
 file's tested = false: targets.untested_targets, warned about when named); a target's firmware is the one in the host's
-firmware collections (beanjar host config's firmware_dirs) that resolves to it (paths.firmware_target: its model code and the
+firmware collections (beanjar host config's firmware_dirs) that resolves to it (probe.firmware_target: its model code and the
 release its rootfs names; the default firmware first; --fw NAME picks one where there are several). Exits 1 if any target failed, 2 on a usage error.
 """
 
@@ -263,7 +263,6 @@ import sys
 import threading
 import time
 import tomllib
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 TOP = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -271,18 +270,25 @@ IDENTITY_PY = os.path.join(TOP, "packaging", "identity.py")
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 sys.path.insert(0, os.path.join(TOP, "tests", "regress", "lib"))
 sys.path.insert(0, os.path.join(TOP, "scripts"))
-from beanjar.guestside import compat, components  # noqa: E402
-from beanjar.runtime import launch, qemu, vmunits  # noqa: E402
-from beanjar import paths  # noqa: E402
-from beanjar.firmware import targets  # noqa: E402
-from beanjar.board import nvm  # noqa: E402
 import buildlock  # noqa: E402
 import checklist  # noqa: E402
-import hostsrc  # noqa: E402
 import device_census  # noqa: E402
+import hostsrc  # noqa: E402
 import idlecpu  # noqa: E402
 import lanemem  # noqa: E402
 import tvsuite  # noqa: E402
+from beanjar.board import nvm  # noqa: E402
+from beanjar.firmware import (
+    probe,  # noqa: E402
+    targets,  # noqa: E402
+)
+from beanjar.guestside import compat, components  # noqa: E402
+from beanjar.runtime import (  # noqa: E402
+    hostconfig,  # noqa: E402
+    launch,
+    qemu,
+    vmunits,
+)
 
 STEPS = {
     "graphics": (
@@ -492,16 +498,16 @@ def gl_expected(target, top=TOP):
 
 
 def firmware_dirs():
-    """The host's firmware collections (paths.firmware_dirs: config.toml's firmware_dirs)."""
+    """The host's firmware collections (hostconfig.firmware_dirs: config.toml's firmware_dirs)."""
     try:
-        return paths.firmware_dirs()
+        return hostconfig.firmware_dirs()
     except ValueError as e:
         raise Usage(str(e)) from None
 
 
 def find_firmwares(dirs):
     """{target name: {firmware name: its directory}} of the firmware directories in dirs, each by the target
-    it resolves to (paths.firmware_target; one that does not resolve is not a firmware of this tree), a
+    it resolves to (probe.firmware_target; one that does not resolve is not a firmware of this tree), a
     name in several dirs from the first."""
     found = {}
     for d in dirs:
@@ -510,21 +516,21 @@ def find_firmwares(dirs):
         except OSError:
             continue
         for n in names:
-            if paths.model_of(n) not in targets.MODELS or not os.path.isdir(os.path.join(d, n)):
+            if probe.model_of(n) not in targets.MODELS or not os.path.isdir(os.path.join(d, n)):
                 continue
             try:
-                target = targets.name(paths.firmware_target(os.path.join(d, n), n))
+                target = targets.name(probe.firmware_target(os.path.join(d, n), n))
             except ValueError:
                 continue
             found.setdefault(target, {}).setdefault(n, os.path.join(d, n))
     return found
 
 
-def select(want, fws, found, default_fw=paths.FW_NAME):
+def select(want, fws, found, default_fw=probe.FW_NAME):
     """[(target, firmware name)] in TARGETS order: the targets wanted (all but those in bring-up or untested without
     --target: named_only_targets), each with its
     firmware (--fw, else the default firmware, else the only one found that is not a bring-up model's, unless the
-    whole target is in bring-up, or of several the one that boots the chip's default board: paths.default_candidates).
+    whole target is in bring-up, or of several the one that boots the chip's default board: probe.default_candidates).
     found: find_firmwares(). Usage on anything unclear."""
     known = all_targets()
     for p in want:
@@ -547,7 +553,7 @@ def select(want, fws, found, default_fw=paths.FW_NAME):
             continue
         if p not in chosen:
             # a bring-up model's firmware on a target that is not in bring-up (W21Z on W21P's target) only with --fw
-            cands = paths.default_candidates(targets.by_name(p), found.get(p, {}))
+            cands = probe.default_candidates(targets.by_name(p), found.get(p, {}))
             if default_fw in cands:
                 chosen[p] = default_fw
             elif len(cands) == 1:
@@ -566,7 +572,7 @@ def instance_id(target, fw):
     """The INSTANCE a target's lane runs in: the target's name, or for a bring-up model's firmware on a
     target that is not in bring-up (W21Z on W21P's k7lp-kisscurl, only with --fw) <target>-<model>: a
     development VM is bound to one firmware, so the default firmware's VM cannot boot it."""
-    model = paths.model_of(fw)
+    model = probe.model_of(fw)
     if model in targets.BRING_UP and not targets.in_bring_up(targets.by_name(target)):
         return f"{target}-{model.lower()}"
     return target

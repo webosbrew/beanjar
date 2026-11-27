@@ -27,7 +27,7 @@ dashboard have the user's visual acceptance; the dashboard responds to remote na
 
 `guest/targets/lm14-netcast45.toml`: model NC5U with its own `[soc]` (chip names follow LG's
 platform name, as the firmware states it: `ATSC-LM14`, `liblm14`), and
-`guest/targets/release/netcast45.toml`, platform "NetCast" 4.5. Recognition (`paths.firmware_release`):
+`guest/targets/release/netcast45.toml`, platform "NetCast" 4.5. Recognition (`probe.firmware_release`):
 a sysvinit `root.pak` and `mode.pak`'s `RELEASE.cfg`, as SimpleSmart; both lines' RELEASE.cfgs set
 `bSupportNC45`, so the vendor pak's graphics library tells them apart (SimpleSmart's is
 `libhalgal.so`, NetCast 4.5's `libgal.so`).

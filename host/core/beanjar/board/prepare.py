@@ -51,11 +51,11 @@ import shutil
 import subprocess
 import sys
 
-from ..firmware import install, cache, targets
 from .. import paths
+from ..base import identity_dir
+from ..firmware import cache, install, probe, targets
 from ..vm import identity
 from . import lls, macadr, nvm, partmap
-from ..base import identity_dir
 
 VERSION = 8
 DIR = "prepared"
@@ -84,7 +84,7 @@ class Job:
         self.tree = tree
         self.fw, self.fw_name = tree.firmware(env.get("FW"))
         try:
-            self.target = paths.firmware_target(self.fw, self.fw_name)
+            self.target = probe.firmware_target(self.fw, self.fw_name)
         except ValueError as e:
             raise Error(str(e)) from None
         try:

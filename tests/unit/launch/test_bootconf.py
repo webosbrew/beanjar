@@ -13,14 +13,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
 from beanjar import base, paths
-from beanjar.vm import keys
-from beanjar.runtime import qemu
-from beanjar.firmware import targets
 from beanjar.board import nvm
-
-from launchkit import boot_conf, FW_NAME, H13_AFRO, store_snapshot, text, TOP, TRUST_PAK
+from beanjar.firmware import probe, targets
+from beanjar.runtime import qemu
+from beanjar.vm import keys
+from launchkit import FW_NAME, H13_AFRO, TOP, TRUST_PAK, boot_conf, store_snapshot, text
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # made-up parameters of an "mstar-mmap" module (targets._mstar_mmap: LM14 04.11.18's record IDs)
@@ -755,17 +753,17 @@ class BootConfTest(unittest.TestCase):
                 check=True, stdout=subprocess.DEVNULL,
             )  # fmt: skip
             self.assertEqual(
-                paths.rootfs_entries(str(fw), ["usr/lib"]),
+                probe.rootfs_entries(str(fw), ["usr/lib"]),
                 ["usr/lib/extracted-only.so"],
             )  # fmt: skip
             shutil.rmtree(fw / "rootfs")
             self.assertEqual(
-                paths.rootfs_entries(str(fw), ["usr/lib", "/usr/lib/nyx/modules/"]),
+                probe.rootfs_entries(str(fw), ["usr/lib", "/usr/lib/nyx/modules/"]),
                 ["usr/lib/libsestore.so.0.1.0", "usr/lib/nyx", "usr/lib/nyx/modules/nyxSecureStore.module"],
             )  # fmt: skip
             (fw / "rootfs.pak").unlink()
             with self.assertRaises(ValueError):
-                paths.rootfs_entries(str(fw), ["usr/lib"])
+                probe.rootfs_entries(str(fw), ["usr/lib"])
 
     def test_tables(self):
         """Every target MODELS names has both axes; the launcher's disks and paks are the tables'; a
@@ -1385,27 +1383,27 @@ class BootConfTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="beanjar-release-") as tmp:
             fw = os.path.join(tmp, FW_NAME)
             os.mkdir(fw)
-            with mock.patch.object(paths, "firmware_release", return_value=("afro", where)):
+            with mock.patch.object(probe, "firmware_release", return_value=("afro", where)):
                 self.assertEqual(install.target_of(fw), H13_AFRO)
-            with mock.patch.object(paths, "firmware_release", return_value=("jhericurl", where)):
+            with mock.patch.object(probe, "firmware_release", return_value=("jhericurl", where)):
                 with self.assertRaisesRegex(
                     base.Error, "WT1H jhericurl firmware might be unsupported"
                 ):
                     install.target_of(fw)
-            with mock.patch.object(paths, "firmware_release", return_value=("beehive", where)):
+            with mock.patch.object(probe, "firmware_release", return_value=("beehive", where)):
                 with self.assertRaisesRegex(
                     base.Error, r"WT1H beehive firmware might be unsupported"
                 ):
                     install.target_of(fw)
-            with mock.patch.object(paths, "firmware_release", return_value=(None, "no rootfs.pak")):
+            with mock.patch.object(probe, "firmware_release", return_value=(None, "no rootfs.pak")):
                 with self.assertRaisesRegex(
                     base.Error, "no rootfs.pak: its webOS release is unknown"
                 ):
                     install.target_of(fw)
             # the release is read from the rootfs itself
-            self.assertEqual(paths.firmware_release(fw), (None, "no rootfs.pak"))
+            self.assertEqual(probe.firmware_release(fw), (None, "no rootfs.pak"))
             shutil.copyfile(TRUST_PAK, os.path.join(fw, "rootfs.pak"))
-            self.assertEqual(paths.firmware_release(fw), ("afro", where))
+            self.assertEqual(probe.firmware_release(fw), ("afro", where))
 
     def test_targets_of_models(self):
         """MODELS is model -> {release: chip}: a firmware's target is its release's chip and the release;
@@ -1640,29 +1638,29 @@ class BootConfTest(unittest.TestCase):
                 open(os.path.join(fw, f), "wb").close()
             with (
                 mock.patch.object(
-                    paths,
+                    probe,
                     "_squashfs_cat",
                     lambda pak, path: cats.get((os.path.basename(pak), path)),
                 ),
-                mock.patch.object(paths, "_squashfs_names", lambda pak: vend),
+                mock.patch.object(probe, "_squashfs_names", lambda pak: vend),
             ):
-                self.assertEqual(paths.firmware_release(fw)[0], "simplesmart")
-                self.assertEqual(paths.firmware_target(fw), ("m2", "simplesmart"))
+                self.assertEqual(probe.firmware_release(fw)[0], "simplesmart")
+                self.assertEqual(probe.firmware_target(fw), ("m2", "simplesmart"))
                 # NetCast 4.5: the vendor's graphics library is GAL_GX's libgal.so
                 vend.clear()
                 vend.update({"/libgal.so", "/libmadp.so"})
-                self.assertEqual(paths.firmware_release(fw)[0], "netcast45")
+                self.assertEqual(probe.firmware_release(fw)[0], "netcast45")
                 vend.clear()
-                self.assertIsNone(paths.firmware_release(fw)[0])
+                self.assertIsNone(probe.firmware_release(fw)[0])
                 # NetCast 4 (H13): no vendor pak, GAL_GX's libgal.so in the lglib pak
                 os.unlink(os.path.join(fw, "vend.pak"))
-                self.assertIsNone(paths.firmware_release(fw)[0])
+                self.assertIsNone(probe.firmware_release(fw)[0])
                 open(os.path.join(fw, "lgli.pak"), "wb").close()
                 vend.update({"/libgal.so", "/libkadaptor.so"})
-                self.assertEqual(paths.firmware_release(fw)[0], "netcast4")
+                self.assertEqual(probe.firmware_release(fw)[0], "netcast4")
                 del cats[("mode.pak", "RELEASE.cfg")]
-                self.assertIsNone(paths.firmware_release(fw)[0])
-            self.assertEqual(paths.root_pak(fw), os.path.join(fw, "root.pak"))
+                self.assertIsNone(probe.firmware_release(fw)[0])
+            self.assertEqual(probe.root_pak(fw), os.path.join(fw, "root.pak"))
         self.assertEqual(targets.root_pak(("m2", "simplesmart")), "root")
         self.assertEqual(targets.always_layers(("m2", "simplesmart")), ("simplesmart",))
         self.assertEqual(targets.always_layers(H13_AFRO), ("webos", "soc", "common"))

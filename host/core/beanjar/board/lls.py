@@ -77,9 +77,10 @@ import subprocess
 import sys
 import tempfile
 
-from . import nvm
-from ..firmware import targets, superpak
 from .. import paths
+from ..firmware import probe as fwprobe
+from ..firmware import superpak, targets
+from . import nvm
 
 VERSION = 12
 SIZE = 0x8000
@@ -1414,7 +1415,7 @@ def main(argv=None):
         return 2
     fw = os.path.abspath(argv[0])
     name = os.path.basename(fw.rstrip("/"))
-    target = paths.firmware_target(fw, name)
+    target = fwprobe.firmware_target(fw, name)
     if not targets.release(target).nvm.lls:
         print(f"{targets.name(target)}: the EEPROM is not LLS's", file=sys.stderr)
         return 1

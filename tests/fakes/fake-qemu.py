@@ -383,7 +383,7 @@ def main():
         w, h = (int(v) for v in sys.argv[sys.argv.index("--size") + 1].split("x"))
     os.makedirs(d, exist_ok=True)
     bufs = dmabuf_buffers(w, h) if "--dmabuf" in sys.argv else None  # before the bus: may exit
-    # what the launcher writes beside the sockets (paths.write_vm_info), with the run's [beanjar]
+    # what the launcher writes beside the sockets (probe.write_vm_info), with the run's [beanjar]
     # versions (information only)
     top = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     with open(os.path.join(top, "packaging", "VERSION")) as f:

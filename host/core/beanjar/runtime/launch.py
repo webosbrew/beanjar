@@ -47,7 +47,7 @@ beanjar.runtime.launch with host/core on PYTHONPATH).
   host/scripts/vm-launcher config FW --target CHIP-RELEASE   the target's firmware instead, not FW's (paths.Tree.target_firmware;
                                    what firmware-facts reads)
   host/scripts/vm-launcher config RENDERNODE     print the render node a TCG VM's GPU would use, or surfaceless
-  host/scripts/vm-launcher config TARGET           print FW's (chip, release) as <chip>-<release>, e.g. h13-afro (paths.firmware_target)
+  host/scripts/vm-launcher config TARGET           print FW's (chip, release) as <chip>-<release>, e.g. h13-afro (probe.firmware_target)
   host/scripts/vm-launcher config PAKS           print the pak files FW's target needs, e.g. rootfs.pak (targets.pak_files)
   host/scripts/vm-launcher config TARGETS          print the targets this tree boots, one per line (targets.all_targets)
   host/scripts/vm-launcher config ADDRESS [--dir VM-DIR]   print the VM's host address, <addresses>.<its slot>, where
@@ -134,15 +134,15 @@ import time
 import tomllib
 
 from .. import base, paths
-from ..vm import library, keys, identity, settings
-from . import hostswap, mediasandbox, poweroff, qemu, runner, unit, vmunits
-from ..guestside import compat, share
-from ..firmware import cache, facts, targets
-from ..board import nvm, prepare
 from ..access import console
+from ..board import nvm, prepare
 from ..devices import rotation
+from ..firmware import cache, facts, probe, targets
+from ..guestside import compat, share
 from ..network import netns
 from ..tuner import antenna
+from ..vm import identity, keys, library, settings
+from . import hostswap, mediasandbox, poweroff, qemu, runner, unit, vmunits
 
 TREE = paths.TREE
 # Every runtime path of a --dir VM follows its directory, whatever the caller's environment; the
@@ -463,7 +463,7 @@ def run(words, env=None):
         (p.emmc_overlay, p.emmc_table, p.emmc_part_nodes) if p.updatable else None,
         p.model,
     )
-    info = paths.vm_info(p.target, p.fw, p.fw_name)  # the viewer's window title
+    info = probe.vm_info(p.target, p.fw, p.fw_name)  # the viewer's window title
     info["layers"] = list(p.layers)  # the viewer's GPU meter: the gl layer is the guest on host GL
     if p.broadcast:
         info["broadcast"] = p.broadcast  # the board's standard: an ARIB board's Japanese remote
@@ -481,7 +481,7 @@ def run(words, env=None):
     if not p.hub_argv:
         info["media"] = "off"  # no helper decodes: the viewer cores run as with --no-media
     info["beanjar"] = compat.run_info(p.tree)  # the versions, for logs and messages only
-    paths.write_vm_info(p.run_dir, info)
+    probe.write_vm_info(p.run_dir, info)
     if p.gpu_backend_argv:
         # the GPU process (beanjar.display.gpu_backend): the vhost-user socket listens before QEMU starts;
         # the child takes QEMU's connection and becomes the backend, which ends with it
@@ -635,7 +635,7 @@ def guest_preflight(env, name=None):
     if the guest payload lacks one its target needs."""
     try:
         fw, fw_name = TREE.firmware(env.get("FW"))
-        target = paths.firmware_target(fw, fw_name)
+        target = probe.firmware_target(fw, fw_name)
     except ValueError as e:
         raise Error(str(e)) from None
     name = name or vm_name(os.path.join(TREE.top, env.get("RUN_DIR") or "build"))
@@ -785,7 +785,7 @@ class Bg:
         else:
             # the platform this launch runs (its vm-info.toml): the test guest's call is its own
             try:
-                with open(os.path.join(self.run_dir, paths.VM_INFO), "rb") as f:
+                with open(os.path.join(self.run_dir, probe.VM_INFO), "rb") as f:
                     platform = tomllib.load(f).get("platform")
             except (OSError, ValueError):
                 platform = None
@@ -1408,7 +1408,7 @@ def main(argv_=None):
         if a.cmd == "config" and a.var in ("TARGET", "PAKS"):
             try:
                 fw, fw_name = TREE.firmware(os.environ.get("FW"))
-                target = paths.firmware_target(fw, fw_name)
+                target = probe.firmware_target(fw, fw_name)
             except ValueError as e:
                 raise Error(str(e)) from None
             print(

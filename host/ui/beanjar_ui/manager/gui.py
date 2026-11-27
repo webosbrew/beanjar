@@ -43,18 +43,23 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
-
 from beanjar import base, paths  # noqa: E402
-from beanjar.vm import library as vm_library, create, settings as vm_settings  # noqa: E402
-from beanjar.runtime import capacity, hostprocs, lifecycle, poweroff, vmunits  # noqa: E402
-from beanjar.firmware import install, targets  # noqa: E402
-from beanjar.board import nvm  # noqa: E402
-from beanjar.display import gpu  # noqa: E402
-from beanjar.devices import rotation  # noqa: E402
-from beanjar.vm.library import Library  # noqa: E402
 from beanjar.base import OFF, RUNNING, STARTING, Error  # noqa: E402
+from beanjar.board import nvm  # noqa: E402
+from beanjar.devices import rotation  # noqa: E402
+from beanjar.display import gpu  # noqa: E402
+from beanjar.firmware import (  # noqa: E402
+    install,
+    probe,  # noqa: E402
+    targets,
+)
 from beanjar.firmware.install import fmt_size  # noqa: E402
+from beanjar.runtime import capacity, hostprocs, lifecycle, poweroff, vmunits  # noqa: E402
+from beanjar.vm import create
+from beanjar.vm import library as vm_library  # noqa: E402
+from beanjar.vm import settings as vm_settings
+from beanjar.vm.library import Library  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from .. import no_display  # noqa: E402
 from . import header, picture, summary_facts  # noqa: E402
@@ -163,7 +168,7 @@ def untested_suffix(fw_dir):
     """ " (not tested yet: may not boot)" after a firmware whose target has never booted
     (targets.tested), "" otherwise or if its target cannot be told."""
     try:
-        target = paths.firmware_target(fw_dir)
+        target = probe.firmware_target(fw_dir)
     except ValueError:
         return ""
     return "" if targets.tested(target) else f" ({targets.UNTESTED})"
@@ -1036,7 +1041,7 @@ class Manager:
             + (f", viewer pid {vpid}" if vpid else "")
         )
         fw_dir = vm.firmware_dir()
-        fw_found = bool(paths.root_pak(fw_dir))
+        fw_found = bool(probe.root_pak(fw_dir))
         if not fw_found:
             values["fw"] = f"{fw_dir} (not found)"
         elif vm.firmware_external():
@@ -1179,7 +1184,7 @@ class Manager:
     @staticmethod
     def _untested(fw_dir):
         try:
-            return not targets.tested(paths.firmware_target(fw_dir))
+            return not targets.tested(probe.firmware_target(fw_dir))
         except ValueError:
             return False
 
@@ -1783,7 +1788,7 @@ class Manager:
             sources += [("Firmware File (.epk)…", "epk", None), ("Directory…", "dir", None)]
         else:
             sources = []
-            if paths.root_pak(os.path.join(vm_dir, install.OWN_FW)):
+            if probe.root_pak(os.path.join(vm_dir, install.OWN_FW)):
                 m = install.manifest(os.path.join(vm_dir, install.OWN_FW)) or {}
                 form.own_fw = m.get("name", install.OWN_FW)
                 sources.append((f"In the VM's Folder: {fw_label(form.own_fw)}", "own", ""))

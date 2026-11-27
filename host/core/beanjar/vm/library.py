@@ -22,7 +22,7 @@ are beanjar_ui's (host/ui). Layout:
 
 The machine's settings, every library's: $XDG_CONFIG_HOME/beanjar/config.toml, max_running (how many
 VMs may run at once: running_refusal), with .running.lock beside it (running_lock), and
-firmware_dirs (the host's firmware collections: paths.firmware_dirs).
+firmware_dirs (the host's firmware collections: hostconfig.firmware_dirs).
 
 VM files use vmconfig; library settings and firmware manifests retain their flat schema.
 
@@ -50,11 +50,6 @@ import tempfile
 import time
 
 from .. import base, paths, tomlfile
-from . import config as vm_config, identity, settings
-from ..runtime import cpus, capacity, hostconfig, hostprocs, poweroff, vmunits
-from ..firmware import targets
-from ..board import countries, nvm
-from ..display import capture_relay, dbus, framing
 from ..base import (
     OFF,
     RUNNING,
@@ -68,8 +63,14 @@ from ..base import (
     read_toml,
     slot_domain,
 )
+from ..board import countries, nvm
+from ..display import capture_relay, dbus, framing
 from ..display.dbus import SCREENSHOT_NAME
+from ..firmware import probe, targets
 from ..firmware.install import OWN_FW, vm_firmware
+from ..runtime import capacity, cpus, hostconfig, hostprocs, poweroff, vmunits
+from . import config as vm_config
+from . import identity, settings
 
 
 def default_repo():
@@ -325,10 +326,10 @@ class VM:
         return self.firmware_dir() != os.path.join(self.dir, OWN_FW)
 
     def target(self):
-        """The firmware target (chip, release) it boots (paths.firmware_target: its firmware's manifest,
+        """The firmware target (chip, release) it boots (probe.firmware_target: its firmware's manifest,
         else the external directory's name); Error if it is not one this tree boots."""
         try:
-            return paths.firmware_target(self.firmware_dir())
+            return probe.firmware_target(self.firmware_dir())
         except ValueError as e:
             raise Error(str(e), "fw") from None
 
@@ -631,7 +632,7 @@ class VM:
         try:
             always = list(
                 targets.always_layers(
-                    paths.firmware_target(vm_firmware(self.dir, cfg.get("fw"))[0])
+                    probe.firmware_target(vm_firmware(self.dir, cfg.get("fw"))[0])
                 )
             )
         except (Error, ValueError):
@@ -1106,7 +1107,7 @@ class Library:
         if cfg.get("forward"):
             vm.forwards(cfg)  # its own ports against its layers' and beanjar's (layermeta.forwards)
         d, _cache = vm_firmware(vm.dir, cfg.get("fw"))
-        if not paths.root_pak(d):
+        if not probe.root_pak(d):
             raise Error(f"firmware {d}: no rootfs.pak or root.pak", "fw")
         if cfg.get("broadcast") or cfg.get("model"):
             # before anything is saved
@@ -1116,7 +1117,7 @@ class Library:
         ):
             # the board's country group, after the broadcast standard that picks the board
             try:
-                target = paths.firmware_target(d)
+                target = probe.firmware_target(d)
                 countries.check(
                     d,
                     target,
@@ -1132,7 +1133,7 @@ class Library:
         if values.get("fw") is not None:
             # the platform is the firmware's (its target's)
             try:
-                paths.firmware_target(d)
+                probe.firmware_target(d)
             except ValueError as e:
                 raise Error(str(e), "fw") from None
         userland = cfg.get("userland", settings.DEFAULT_USERLAND)
@@ -1147,7 +1148,7 @@ class Library:
         if userland == "qemu-user" or guest_kernel != settings.DEFAULT_GUEST_KERNEL:
             # refused on some platforms (vm.settings.NATIVE_ONLY)
             try:
-                platform = targets.platform(paths.firmware_target(d))
+                platform = targets.platform(probe.firmware_target(d))
             except ValueError as e:
                 raise Error(str(e), "fw") from None
             refusal = settings.userland_refusal(platform, userland, guest_kernel)
@@ -1791,7 +1792,8 @@ class Library:
         are made to name NEW (keys.relabel; cosmetic, and put back if the rename fails). Interrupted
         before the rename, it is still NAME, whole; after it, NEW, whole; a start lock left by a
         killed run names a dead process and is removed as stale by the next command."""
-        from . import keys, create as vm_create
+        from . import create as vm_create
+        from . import keys
 
         vm = self.vm(name)
         if os.path.basename(self.root).startswith("development-"):

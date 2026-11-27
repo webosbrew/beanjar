@@ -250,13 +250,12 @@ def check_firmware_broadcast(fw, broadcast, model=None):
     model its chip has a board of (Soc.model_boards) of that standard, and the firmware's own
     standard where it names one (its model_id.json). A firmware whose target its manifest does not
     tell is left to the launcher, which checks the same."""
-    from ..firmware import targets
-    from .. import paths
+    from ..firmware import probe, targets
 
-    if not os.path.isfile(os.path.join(fw, paths.MANIFEST)):
+    if not os.path.isfile(os.path.join(fw, probe.MANIFEST)):
         return  # telling the target would read the rootfs: every read of vm.toml must stay cheap
     try:
-        target = paths.firmware_target(fw)
+        target = probe.firmware_target(fw)
     except (ValueError, OSError):
         return
     if model:

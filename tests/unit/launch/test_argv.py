@@ -23,26 +23,24 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-
+from beanjar import paths, tomlfile
+from beanjar.board import lls, nvm, partmap
+from beanjar.firmware import probe, targets
+from beanjar.guestside import share
+from beanjar.network import netns
 from beanjar.runtime import hostswap, qemu
 from beanjar.vm import keys, settings
-from beanjar import paths, tomlfile
-from beanjar.guestside import share
-from beanjar.firmware import targets
-from beanjar.board import lls, nvm, partmap
-from beanjar.network import netns
-
 from launchkit import (
-    fake_partmap_build,
-    fake_tree,
     FW_NAME,
     H13_AFRO,
     KEY,
-    net,
-    store_snapshot,
     TOP,
     TRUST_PAK,
     VM,
+    fake_partmap_build,
+    fake_tree,
+    net,
+    store_snapshot,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -671,7 +669,7 @@ class ArgvTest(unittest.TestCase):
         ):
             with (
                 self.subTest(target=target),
-                mock.patch.object(paths, "firmware_target", return_value=target),
+                mock.patch.object(probe, "firmware_target", return_value=target),
                 mock.patch.object(nvm, "board_ram", return_value=2048),
                 mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
                 mock.patch.object(share, "resolve_layers", return_value=([], [])),
@@ -696,7 +694,7 @@ class ArgvTest(unittest.TestCase):
         for target in (("o22", "queue"), ("o22", "ombre"), ("k8hp", "ombre"), ("m14", "beehive")):
             with (
                 self.subTest(target=target),
-                mock.patch.object(paths, "firmware_target", return_value=target),
+                mock.patch.object(probe, "firmware_target", return_value=target),
                 mock.patch.object(nvm, "board_ram", return_value=2048),
                 mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
                 mock.patch.object(share, "resolve_layers", return_value=([], [])),
@@ -731,7 +729,7 @@ class ArgvTest(unittest.TestCase):
             layers.append(share.Layer("common", os.path.join(d, "common"), "common"))
             self.assertEqual(share.kernel_args(layers), ["virtio_gpu.modifiers=1", "gl.word=1"])
             with (
-                mock.patch.object(paths, "firmware_target", return_value=("o22n", "ponytail")),
+                mock.patch.object(probe, "firmware_target", return_value=("o22n", "ponytail")),
                 mock.patch.object(nvm, "board_ram", return_value=2048),
                 mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
                 mock.patch.object(share, "resolve_layers", return_value=(layers, [])),
@@ -757,7 +755,7 @@ class ArgvTest(unittest.TestCase):
         """Two outputs in the GPU's own process: auto no longer leaves them out, and the
         backend's device keeps max_outputs=2 and the second output's setup."""
         with (
-            mock.patch.object(paths, "firmware_target", return_value=("o22", "queue")),
+            mock.patch.object(probe, "firmware_target", return_value=("o22", "queue")),
             mock.patch.object(nvm, "board_ram", return_value=2048),
             mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
             mock.patch.object(share, "resolve_layers", return_value=([], [])),
@@ -804,7 +802,7 @@ class ArgvTest(unittest.TestCase):
         ):
             with (
                 self.subTest(target=target, layers=layers, backend=backend),
-                mock.patch.object(paths, "firmware_target", return_value=target),
+                mock.patch.object(probe, "firmware_target", return_value=target),
                 mock.patch.object(nvm, "board_ram", return_value=2048),
                 mock.patch.object(nvm, "board_graphic", return_value="1920x1080"),
                 # the fake tree has h13-afro's layers only
@@ -2131,14 +2129,14 @@ class ArgvTest(unittest.TestCase):
             self.assertEqual(r.stdout, "02:00:00:00:00:09\n")
 
     def test_firmware_target(self):
-        """paths.firmware_target: the one place a firmware's (chip, release) comes from; the launcher, the
+        """probe.firmware_target: the one place a firmware's (chip, release) comes from; the launcher, the
         build (host/scripts/vm-launcher config TARGET) and the layers follow it."""
         fw = os.path.join(self.tmp, FW_NAME)
-        self.assertEqual(paths.firmware_target(fw), H13_AFRO)
+        self.assertEqual(probe.firmware_target(fw), H13_AFRO)
         own = os.path.join(self.tmp, "vm", "firmware")  # a manager VM's own copy: its manifest
         os.makedirs(own)
         with self.assertRaisesRegex(ValueError, "unknown-model firmware might be unsupported"):
-            paths.firmware_target(own)
+            probe.firmware_target(own)
         # the target import recorded, and nothing else: a manifest without it is refused, not guessed
         for text, error in (
             (f'name = "{FW_NAME}"\nchip = "WT1H"\n', "manifest.toml: no chip and release"),
@@ -2152,29 +2150,29 @@ class ArgvTest(unittest.TestCase):
             with open(os.path.join(own, "manifest.toml"), "w") as f:
                 f.write(text)
             with self.assertRaisesRegex(ValueError, error):
-                paths.firmware_target(own)
+                probe.firmware_target(own)
         with open(os.path.join(own, "manifest.toml"), "w") as f:
             f.write('name = "renamed"\nchip = "h13"\nrelease = "afro"\n')
-        self.assertEqual(paths.firmware_target(own), H13_AFRO)
+        self.assertEqual(probe.firmware_target(own), H13_AFRO)
         # Imported firmware retains the collection's LLS cache name even though
         # its managed directory is simply called "firmware".
         self.assertEqual(paths.Tree(self.tmp).firmware(own), (own, "renamed"))
         with self.assertRaisesRegex(
             ValueError, "W99X firmware might be unsupported: no board definition covers it"
         ):
-            paths.firmware_target(os.path.join(self.tmp, "43.22.40.01-HE_DTV_W99X_AFABJAPU"))
+            probe.firmware_target(os.path.join(self.tmp, "43.22.40.01-HE_DTV_W99X_AFABJAPU"))
         # without a manifest: the release its rootfs names, that release's chip for the model
         named = os.path.join(self.tmp, "renamed")
         os.makedirs(named)
         with self.assertRaisesRegex(ValueError, "no rootfs.pak: its webOS release is unknown"):
-            paths.firmware_target(named, FW_NAME)
+            probe.firmware_target(named, FW_NAME)
         shutil.copyfile(TRUST_PAK, os.path.join(named, "rootfs.pak"))  # afro
-        self.assertEqual(paths.firmware_target(named, FW_NAME), H13_AFRO)
+        self.assertEqual(probe.firmware_target(named, FW_NAME), H13_AFRO)
         with self.assertRaisesRegex(
             ValueError,
             r"W15M afro firmware might be unsupported: no board definition covers it",
         ):
-            paths.firmware_target(named, "04.06.75.01-HE_DTV_W15M_AFAAABAA")
+            probe.firmware_target(named, "04.06.75.01-HE_DTV_W15M_AFAAABAA")
         self.assertEqual(
             paths.Tree("/t").layer(H13_AFRO, "soc", "x"), "/t/build/layers/h13-afro/soc/x"
         )
@@ -2243,7 +2241,7 @@ class ArgvTest(unittest.TestCase):
         tree, m16p = paths.Tree(top), ("m16p", "dreadlocks2")
         with (
             mock.patch.dict(os.environ, HOME=home, XDG_CONFIG_HOME=cfg),
-            mock.patch.object(paths, "firmware_release", release),
+            mock.patch.object(probe, "firmware_release", release),
         ):
             self.assertEqual(tree.target_firmware(H13_AFRO), (os.path.join(fws, FW_NAME), FW_NAME))
             self.assertEqual(
@@ -2265,7 +2263,7 @@ class ArgvTest(unittest.TestCase):
                     tree.target_firmware(("m3", "goldilocks")), (os.path.join(fws, w17h_b), w17h_b)
                 )
                 self.assertEqual(
-                    paths.firmware_target(os.path.join(fws, w17h_b)), ("m3", "goldilocks")
+                    probe.firmware_target(os.path.join(fws, w17h_b)), ("m3", "goldilocks")
                 )
             os.rename(os.path.join(fws, FW_NAME), os.path.join(fws, "x"))  # no default firmware
             with self.assertRaisesRegex(ValueError, "no firmware of h13-afro"):
@@ -2299,7 +2297,7 @@ class ArgvTest(unittest.TestCase):
         tree, k7lp = paths.Tree(top), ("k7lp", "kisscurl")
         with (
             mock.patch.dict(os.environ, HOME=home, XDG_CONFIG_HOME=cfg),
-            mock.patch.object(paths, "firmware_release", release),
+            mock.patch.object(probe, "firmware_release", release),
         ):
             with self.assertRaisesRegex(ValueError, "no firmware of k7lp-kisscurl"):
                 tree.target_firmware(k7lp)
@@ -2308,12 +2306,12 @@ class ArgvTest(unittest.TestCase):
             # an explicit firmware still resolves to the target
             self.assertEqual(tree.target(os.path.join(fws, w21z)), k7lp)
         self.assertEqual(
-            paths.default_candidates(k7lp, {w21z: os.path.join(fws, w21z), w21p: None}), [w21p]
+            probe.default_candidates(k7lp, {w21z: os.path.join(fws, w21z), w21p: None}), [w21p]
         )
         # a target wholly in bring-up keeps its bring-up firmware
         w22p = "03.30.00.01-HE_DTV_W22P_AFADATAA"
         self.assertTrue(targets.in_bring_up(("k8lp", "mullet")))
-        self.assertEqual(paths.default_candidates(("k8lp", "mullet"), {w22p: None}), [w22p])
+        self.assertEqual(probe.default_candidates(("k8lp", "mullet"), {w22p: None}), [w22p])
 
     def test_target_firmware_prefers_default_board(self):
         """Of several firmwares of a target, the one that boots the chip's default board
@@ -2322,7 +2320,7 @@ class ArgvTest(unittest.TestCase):
         stay ambiguous."""
         self.enterContext(
             mock.patch.object(
-                paths,
+                probe,
                 "model_id",
                 lambda d: {
                     "region": "ARIB" if "_AFA" in d and "J" in d.rsplit("_", 1)[-1] else "GLOBAL"
@@ -2347,7 +2345,7 @@ class ArgvTest(unittest.TestCase):
         self.assertEqual(targets.default_broadcast(k8hp), "atsc")
         with (
             mock.patch.dict(os.environ, HOME=home, XDG_CONFIG_HOME=cfg),
-            mock.patch.object(paths, "firmware_release", release),
+            mock.patch.object(probe, "firmware_release", release),
         ):
             self.assertEqual(tree.target_firmware(k8hp), (os.path.join(fws, us), us))
             # two global firmwares: both boot the default board
@@ -2361,7 +2359,7 @@ class ArgvTest(unittest.TestCase):
         os.makedirs(os.path.join(self.tmp, o22_jp))
         open(os.path.join(self.tmp, o22_jp, "otncabi-arib.pak"), "w").close()
         self.assertEqual(
-            paths.default_candidates(
+            probe.default_candidates(
                 o22, {o22_jp: os.path.join(self.tmp, o22_jp), o22_us: os.path.join(fws, o22_us)}
             ),
             [o22_us],
@@ -2371,7 +2369,7 @@ class ArgvTest(unittest.TestCase):
         os.makedirs(os.path.join(fws, jp2))
         open(os.path.join(fws, jp2, "otycabi-arib.pak"), "w").close()
         self.assertEqual(
-            paths.default_candidates(
+            probe.default_candidates(
                 ("k8hp", "mullet"), {jp: os.path.join(fws, jp), jp2: os.path.join(fws, jp2)}
             ),
             [jp, jp2],

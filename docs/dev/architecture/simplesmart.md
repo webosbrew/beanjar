@@ -13,7 +13,7 @@ measured while building it.
 `guest/targets/soc/m2.toml` is unchanged), and `guest/targets/release/simplesmart.toml` (stated
 whole, nothing of the webOS releases'). The files' comments give the evidence for each field.
 
-- Recognition (`paths.firmware_release`): no `rootfs.pak` and no `starfish-release`; a SimpleSmart
+- Recognition (`probe.firmware_release`): no `rootfs.pak` and no `starfish-release`; a SimpleSmart
   firmware is a sysvinit `root.pak` (`etc/inittab`) with a model pak `mode.pak` whose `RELEASE.cfg`
   names the OTA ID (`szOtaid`). The model code is the `_LCD_` part of the name (`SS1A`).
 - Paks: epk2extract's four-letter names. Init mounts only the root (p18, LZO) and lginit (p19);

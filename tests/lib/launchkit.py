@@ -12,9 +12,9 @@ import struct
 import subprocess
 from pathlib import Path
 
-from beanjar.firmware import cache as firmware_cache
-from beanjar import paths
 from beanjar.board import partmap
+from beanjar.firmware import cache as firmware_cache
+from beanjar.firmware import probe
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VM = os.path.join(TOP, "host", "scripts", "vm-launcher")
@@ -22,7 +22,7 @@ VM = os.path.join(TOP, "host", "scripts", "vm-launcher")
 TRUST_PAK = os.path.join(TOP, "tests", "fakes", "trust-rootfs.pak")
 # a model key of the right shape (host/core/beanjar/vm/modelkey.py)
 KEY = base64.b64encode(bytes(range(32)))
-FW_NAME = paths.FW_NAME  # a firmware name the launcher resolves to (h13, afro)
+FW_NAME = probe.FW_NAME  # a firmware name the launcher resolves to (h13, afro)
 H13_AFRO = ("h13", "afro")
 
 

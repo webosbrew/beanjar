@@ -9,15 +9,14 @@ import stat
 import sys
 
 from .. import base
-from ..vm import library, keys, settings
-from ..runtime import hostprocs, poweroff, vmunits
 from ..access import remote
-from ..vm.library import fmt_duration
 from ..base import Error
+from ..runtime import hostprocs, poweroff, vmunits
+from ..vm import keys, library, settings
+from ..vm.library import fmt_duration
 from .common import Usage, emit, kv_lines, layer_versions, progress, table, warn
 from .forward import bare_new_name
 from .settings import settings_of, warn_mitm
-
 
 # seconds a VM's firmware may take to answer list (firmware_facts): a firmware collection on a
 # network mount whose server is gone must not hang the listing of every VM
@@ -110,12 +109,12 @@ def vm_row(vm):
 def unit_row(name, props):
     """A VM's unit in beanjar.slice that is no library's VM (a regress target's, one of another
     RUN_DIR): what its unit and its main process's environment (the launcher's) tell."""
-    from ..vm import keys
     from .. import paths
-    from ..runtime import qemu
-    from ..firmware import targets
     from ..board import nvm
+    from ..firmware import probe, targets
     from ..network import netns
+    from ..runtime import qemu
+    from ..vm import keys
 
     tag, vm_name = vmunits.unit_tag(name)
     env = hostprocs.proc_env(int(props.get("MainPID") or 0) or None)
@@ -146,7 +145,7 @@ def unit_row(name, props):
     fw, platform, mem = env.get("FW") or "", "", env.get("MEM")
     try:
         fw = os.path.join(tree.top, tree.firmware(fw)[0])
-        target = paths.firmware_target(fw)
+        target = probe.firmware_target(fw)
         platform = targets.platform_title(target)
         model = env.get("MODEL")
         mem = mem or nvm.board_ram(

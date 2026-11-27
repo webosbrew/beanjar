@@ -702,13 +702,14 @@ def run(src, name, cache):
 
 def self_test_firmware(base, name):
     """The directory of the firmware name: in base, else in the host's collections (beanjar's
-    paths.find_firmware)."""
+    probe.find_firmware)."""
     if base:
         return os.path.join(base, name)
     sys.path.insert(0, os.path.join(REPO, "host", "core"))
-    from beanjar import paths
+    from beanjar.firmware import probe
+    from beanjar.runtime import hostconfig
 
-    return paths.find_firmware(name) or os.path.join(paths.firmware_dirs()[0], name)
+    return probe.find_firmware(name) or os.path.join(hostconfig.firmware_dirs()[0], name)
 
 
 def main():

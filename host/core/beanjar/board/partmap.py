@@ -33,8 +33,9 @@ import subprocess
 import sys
 from collections import namedtuple
 
-from ..firmware import cache as firmware_cache, targets
 from .. import paths
+from ..firmware import cache as firmware_cache
+from ..firmware import probe, targets
 from . import nvm
 
 MAGIC = 0x20120716
@@ -420,7 +421,7 @@ def main(argv=None):
             m = read(a.image)
         else:
             fw, name = paths.TREE.firmware(a.fw or os.environ.get("FW"))
-            m = decode(table(fw, paths.firmware_target(fw, name)))
+            m = decode(table(fw, probe.firmware_target(fw, name)))
     except (Error, ValueError, OSError) as e:
         print(e, file=sys.stderr)
         return 1

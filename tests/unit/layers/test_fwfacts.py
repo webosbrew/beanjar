@@ -8,18 +8,18 @@ versioned library must give a program the same NEEDED entries, dynamic symbols a
 the library itself."""
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 import unittest.mock
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
 from beanjar.firmware import facts as firmware_facts  # noqa: E402
-from beanjar import paths  # noqa: E402
+from beanjar.firmware import probe  # noqa: E402
 
 FACTS = """# demo
 defines bsppart:bsp/usr/lib/libdemo.so:demo_f yes
@@ -275,9 +275,9 @@ class Expanded(unittest.TestCase):
         """A rootfs/ directory without its pak beside it is not taken for the image."""
         with tempfile.TemporaryDirectory() as tmp:
             self.tree(Path(tmp) / "rootfs")
-            self.assertIsNone(paths.expanded_image(tmp))
+            self.assertIsNone(probe.expanded_image(tmp))
             (Path(tmp) / "rootfs.pak").write_bytes(b"")
-            self.assertEqual(paths.expanded_image(tmp), os.path.join(tmp, "rootfs"))
+            self.assertEqual(probe.expanded_image(tmp), os.path.join(tmp, "rootfs"))
 
     def test_image_file(self):
         with tempfile.TemporaryDirectory() as tmp:

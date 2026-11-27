@@ -362,14 +362,16 @@ def context(target, fw, env, expect=None, tree=None):
     import sys
 
     sys.path.insert(0, os.path.join(TOP, "host", "core"))
-    from beanjar.board import nvm  # noqa: E402
-    from beanjar.firmware import targets  # noqa: E402
-    from beanjar import paths  # noqa: E402
     import checklist  # noqa: E402
+    from beanjar.board import nvm  # noqa: E402
+    from beanjar.firmware import (
+        probe,  # noqa: E402
+        targets,  # noqa: E402
+    )
 
     p = targets.by_name(target)
     row = load_expect(target) if expect is None else expect
-    fw_dir = paths.find_firmware(fw)  # in the host's collections (firmware_dirs)
+    fw_dir = probe.find_firmware(fw)  # in the host's collections (firmware_dirs)
     board_broadcast = targets.board_broadcast(p, fw_dir)
     board = nvm.board_params(p, broadcast=board_broadcast)
     broadcast = checklist.broadcast_of_firmware(fw_dir, targets.pak_files(p, fw_dir)) or row.get(
@@ -1685,8 +1687,8 @@ def tone_facts(path, freqs):
     """What a recording (QEMU's wavcapture, 44100 Hz s16 stereo) holds of each frequency: per
     AUDIO_WINDOW window, the loudest channel's level and which of freqs carries AUDIO_PURE of its
     energy; per frequency the seconds of windows it held and their median level (dBFS)."""
-    import wave
     import struct
+    import wave
 
     try:
         with wave.open(path, "rb") as w:
@@ -2718,6 +2720,7 @@ def prune_captures(d, at_ms=10000):
     """Keeps of a case's captures (shot-<ms>.ppm) only sheet.png, the one about at_ms after the
     first with a decoded picture (else after the first): the run's contact sheet (decode_sheet)."""
     import glob
+
     from PIL import Image
 
     shots = sorted(glob.glob(os.path.join(d, "shot-*.ppm")))
@@ -2747,6 +2750,7 @@ def decode_sheet(run_dir, out=None, at_ms=10000):
     after its first one with a decoded picture (else after its first capture), labelled
     target/case, for looking at what played. Returns the path, or None without any capture."""
     import glob
+
     from PIL import Image, ImageDraw
 
     tiles = []

@@ -8,7 +8,7 @@ version.
 
 ## Target recognition
 
-`paths.firmware_target` uses the imported manifest when present. Otherwise it reads the model
+`probe.firmware_target` uses the imported manifest when present. Otherwise it reads the model
 code and the release from the firmware. webOS names its release family in `rootfs.pak`'s
 `etc/starfish-release`. The family is the codename before the hyphen, such as `goldilocks2`,
 not the first digit of the version or the model year.

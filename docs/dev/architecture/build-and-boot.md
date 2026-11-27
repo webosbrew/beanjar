@@ -97,7 +97,7 @@ name, so a release newer than the last one studied gets the shims its consumers 
 new rule. The build reads no firmware: each rule asks whether the target's rootfs image has a path
 (`fw_path`) or whether a stock library defines a symbol (`fw_defines`), answered by the target's checked-in firmware facts, `guest/targets/facts/<chip>-<release>.txt`
 ([Firmware facts](../guides/build.md#commands); `guest/targets/meson.build`). `host/scripts/vm-launcher
-firmware-facts` writes the answers from the image's own listing (`paths.rootfs_entries`, which runs
+firmware-facts` writes the answers from the image's own listing (`probe.rootfs_entries`, which runs
 `unsquashfs -ls` on `rootfs.pak` or `super.pak`'s logical rootfs), never from an extracted `rootfs/`,
 so a partial extraction cannot change a selection. `guest/layers/soc/meson.build` then applies:
 

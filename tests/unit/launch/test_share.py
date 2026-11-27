@@ -9,23 +9,21 @@ import sys
 import tempfile
 import unittest
 
-
-from beanjar.firmware import targets
 from beanjar import paths
+from beanjar.firmware import probe, targets
 from beanjar.guestside import share
-
-from launchkit import boot_conf, H13_AFRO, TOP, VM
+from launchkit import H13_AFRO, TOP, VM, boot_conf
 
 
 class VmInfoTest(unittest.TestCase):
-    """The viewer's window title: what the launcher writes (paths.vm_info) and the viewer builds from it."""
+    """The viewer's window title: what the launcher writes (probe.vm_info) and the viewer builds from it."""
 
     def test_title(self):
         sys.path.insert(0, os.path.join(TOP, "host", "ui"))
         from beanjar_ui.viewer import main as viewer
 
         with tempfile.TemporaryDirectory() as d:
-            info = paths.vm_info(("k7lp", "kisscurl"), d, "03.34.95.01-HE_DTV_W21P_AFADABAA")
+            info = probe.vm_info(("k7lp", "kisscurl"), d, "03.34.95.01-HE_DTV_W21P_AFADABAA")
             self.assertEqual(
                 info,
                 {
@@ -38,15 +36,15 @@ class VmInfoTest(unittest.TestCase):
                 },
             )
             self.assertEqual(
-                paths.vm_info(("h13", "afro"), d, "firmware"),
+                probe.vm_info(("h13", "afro"), d, "firmware"),
                 {"platform": "webOS", "version": "1", "soc": "h13", "release": "afro"},
             )
             with open(
                 os.path.join(d, "manifest.toml"), "w"
             ) as f:  # a manager VM's firmware/ names itself
                 f.write('name = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"\n')
-            self.assertEqual(paths.vm_info(("h13", "afro"), d, "firmware")["board"], "WT1H")
-            paths.write_vm_info(d, info)
+            self.assertEqual(probe.vm_info(("h13", "afro"), d, "firmware")["board"], "WT1H")
+            probe.write_vm_info(d, info)
             got = viewer.vm_info(d)
             self.assertEqual(got, info)
             self.assertEqual(
@@ -60,7 +58,7 @@ class VmInfoTest(unittest.TestCase):
             self.assertEqual(
                 viewer.titles(
                     None,
-                    paths.vm_info(
+                    probe.vm_info(
                         ("k5lp", "goldilocks2"),
                         os.path.join(d, "none"),
                         "04.10.20.01-HE_DTV_W19P_AFADABAA",

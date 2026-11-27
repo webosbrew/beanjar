@@ -6,11 +6,11 @@ add, remove, list, prune-layer-images)."""
 import argparse
 import os
 
-from ..runtime import capacity, hostconfig
-from ..vm import library, settings
 from .. import paths
 from ..access import remote
 from ..base import Error
+from ..runtime import capacity, hostconfig
+from ..vm import library, settings
 from .common import Usage, emit, layer_versions, progress, table, text_value
 
 
@@ -163,7 +163,7 @@ def cmd_host_config(lib, a):
     shown = hostconfig.global_config()
     data = {
         "max_running": shown.get("max_running"),
-        "firmware_dirs": shown.get("firmware_dirs") or list(paths.DEFAULT_FIRMWARE_DIRS),
+        "firmware_dirs": shown.get("firmware_dirs") or list(hostconfig.DEFAULT_FIRMWARE_DIRS),
         "memory_headroom_mib": shown.get("memory_headroom_mib") or capacity.START_HEADROOM_MIB,
         "runner": shown.get("runner") or "auto",
     }
@@ -230,7 +230,7 @@ def cmd_host_list(lib, a):
 
 def cmd_host_prune_layer_images(lib, a):
     """Remove the cached layer images no VM of this library (and its development libraries) uses."""
-    from .. import base, paths
+    from .. import base
     from ..guestside import layerimage
 
     libraries = [library.Library(r) for r in base.slot_domain(lib.root)[1] if os.path.isdir(r)]

@@ -14,14 +14,13 @@ import time
 import unittest
 from unittest import mock
 
-
-from beanjar.firmware import cache as firmware_cache, targets
-from beanjar.vm import keys
 from beanjar import paths
-from beanjar.runtime import qemu
 from beanjar.board import lls, nvm, partmap, prepare
-
-from launchkit import fake_partmap_build, fake_tree, FW_NAME, H13_AFRO, net, TRUST_PAK
+from beanjar.firmware import cache as firmware_cache
+from beanjar.firmware import probe, targets
+from beanjar.runtime import qemu
+from beanjar.vm import keys
+from launchkit import FW_NAME, H13_AFRO, TRUST_PAK, fake_partmap_build, fake_tree, net
 
 
 @unittest.skipUnless(shutil.which("unsquashfs"), "no squashfs-tools")
@@ -38,17 +37,17 @@ class SquashfsCatTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_squashfs_cat(self):
-        sys_ca = paths._squashfs_cat(TRUST_PAK, "etc/ssl/certs/ca-certificates.crt")
+        sys_ca = probe._squashfs_cat(TRUST_PAK, "etc/ssl/certs/ca-certificates.crt")
         self.assertEqual(sys_ca.count("BEGIN CERTIFICATE"), 1)
-        self.assertEqual(paths._squashfs_cat(TRUST_PAK, "/etc/ssl/certs/link.pem"), sys_ca)
-        sdp = paths._squashfs_cat(TRUST_PAK, "usr/share/ca-certificates/sdp/sdp-ca.pem")
+        self.assertEqual(probe._squashfs_cat(TRUST_PAK, "/etc/ssl/certs/link.pem"), sys_ca)
+        sdp = probe._squashfs_cat(TRUST_PAK, "usr/share/ca-certificates/sdp/sdp-ca.pem")
         self.assertFalse(sdp.endswith("\n"))
         for bad in ("etc/nope", "etc/ssl", "etc/ssl/certs/ca-certificates.crt/x"):
-            self.assertIsNone(paths._squashfs_cat(TRUST_PAK, bad), bad)
-        names = paths._squashfs_names(TRUST_PAK)
+            self.assertIsNone(probe._squashfs_cat(TRUST_PAK, bad), bad)
+        names = probe._squashfs_names(TRUST_PAK)
         self.assertIn("/etc/starfish-release", names)
         self.assertIn("/etc/ssl/certs/link.pem", names)
-        self.assertEqual(paths._squashfs_names(os.path.join(self.tmp, "missing.pak")), set())
+        self.assertEqual(probe._squashfs_names(os.path.join(self.tmp, "missing.pak")), set())
 
     @unittest.skipUnless(
         shutil.which("mksquashfs") and shutil.which("unsquashfs"), "no squashfs-tools"
@@ -82,7 +81,7 @@ class SquashfsCatTest(unittest.TestCase):
             root.read("/etc/starfish-release"), b"lower release\n", "lower takes precedence"
         )
         path = "etc/ssl/certs/ca-certificates.crt"
-        expected = paths._squashfs_cat(TRUST_PAK, path).encode()
+        expected = probe._squashfs_cat(TRUST_PAK, path).encode()
         self.assertEqual(root.read("/" + path), expected, "falls back to the root pak")
         stock = subprocess.run(
             ["unsquashfs", "-cat", img, lower.subdir + "/etc/abs"], capture_output=True

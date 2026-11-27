@@ -738,9 +738,9 @@ class HelpersTest(unittest.TestCase):
         sys.path.insert(
             0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "host", "core")
         )
-        from beanjar import paths
+        from beanjar.firmware import probe
 
-        fw = paths.find_firmware("04.06.75.01-HE_DTV_W15M_AFAAABAA") or ""
+        fw = probe.find_firmware("04.06.75.01-HE_DTV_W15M_AFAAABAA") or ""
         if not os.path.isfile(os.path.join(fw, "rootfs.pak")) or not os.access(
             gen.OBJDUMP, os.X_OK
         ):
@@ -1731,6 +1731,7 @@ def decode_dir(
     """A decode case's viewer directory as decode_viewer leaves it: viewer.log, captures, media.wav."""
     import math
     import struct
+
     from PIL import Image
 
     helper = [
@@ -2161,10 +2162,11 @@ class DecodeTest(unittest.TestCase):
         sys.path.insert(
             0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), "host", "core")
         )
-        from beanjar import paths
+
+        from beanjar.firmware import probe
 
         fws = {
-            n: paths.find_firmware(n) or ""
+            n: probe.find_firmware(n) or ""
             for n in ("05.40.97.01-HE_DTV_W19P_AFADABAA", "03.70.25.01-HE_DTV_W21P_AFADATAA")
         }
         if not all(os.path.isfile(os.path.join(d, "rootfs.pak")) for d in fws.values()):
@@ -2184,7 +2186,7 @@ class DecodeTest(unittest.TestCase):
         )
         self.assertIn("opus", w21p["audio/webm"])
         self.assertIn("av01.*", w21p["video/webm"])
-        w24g = paths.find_firmware("02.68.80.01-HE_DTV_W24G_AFABATAA") or ""
+        w24g = probe.find_firmware("02.68.80.01-HE_DTV_W24G_AFABATAA") or ""
         if os.path.isfile(os.path.join(w24g, "rootfs.pak")):  # string views and spans
             cbe = "usr/palm/services/com.palm.webruntime/lib/libcbe.so"
             w24g = gen.mse_parsers(gen.Firmware(w24g).read("rootfs.pak", cbe))
@@ -2193,6 +2195,7 @@ class DecodeTest(unittest.TestCase):
 
     def test_slice_prune_sheet(self):
         import tempfile
+
         from PIL import Image
 
         with tempfile.TemporaryDirectory() as d:

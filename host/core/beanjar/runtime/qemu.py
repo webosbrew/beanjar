@@ -190,22 +190,22 @@ import glob
 import os
 import platform
 import re
-import stat
 import shutil
+import stat
 import subprocess
 import sys
-from pathlib import Path
 
-from ..display import capture_relay
-from ..firmware import cache as firmware_cache, lz4p, targets
-from . import hostswap
-from ..vm import keys, settings
 from .. import paths
-from ..guestside import layerimage, layermeta, share
-from ..board import nvm, partmap, prepare
 from ..access import guestshell
+from ..board import nvm, partmap, prepare
 from ..devices import ir_relay, mic
+from ..display import capture_relay
+from ..firmware import cache as firmware_cache
+from ..firmware import lz4p, probe, targets
+from ..guestside import layerimage, layermeta, share
 from ..tuner import antenna
+from ..vm import keys, settings
+from . import hostswap
 
 MEDIA_PORTS = 8
 MEDIA_POOL = "media-pool"  # the media pool's file (WEBOS_MEDIA_POOL_SIZE), the helper's
@@ -335,7 +335,7 @@ class Plan:
     that guest_layer() makes; ca, the proxy CA's certificate, None
     unless NET_MODE=mitm or LG's services are mocked in direct), ca_dir (the proxy's CA, NETSTUB_CA), run_dir, host_dir and out_dir (the
     guest's other shares, share.py), tree, fw (the firmware directory) and fw_name (its name),
-    target (the firmware's (chip, release), paths.firmware_target)."""
+    target (the firmware's (chip, release), probe.firmware_target)."""
 
     def __init__(self):
         self.argv, self.wrap, self.env, self.disks, self.remove, self.state_dir = (
@@ -413,7 +413,7 @@ def vm_mem(env, tree=paths.TREE):
         if env.get("MEM"):
             return int(env["MEM"])
         fw, fw_name = tree.firmware(env.get("FW"))
-        target = paths.firmware_target(fw, fw_name)
+        target = probe.firmware_target(fw, fw_name)
         model = targets.board_model(target, fw, env.get("BROADCAST"), env.get("MODEL"))
         return nvm.board_ram(
             target,
@@ -481,7 +481,7 @@ def plan(env, words=(), accel=None, tree=paths.TREE, say=None, dry=False):
     fw, fw_name = tree.firmware(env.get("FW"))
     p.fw, p.fw_name = fw, fw_name
     try:
-        p.target = paths.firmware_target(fw, fw_name)  # (chip, release): the layers the guest gets
+        p.target = probe.firmware_target(fw, fw_name)  # (chip, release): the layers the guest gets
     except ValueError as e:
         raise Error(str(e)) from None
     try:

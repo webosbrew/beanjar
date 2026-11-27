@@ -10,7 +10,6 @@ import tomllib
 from pathlib import Path
 
 import pytest
-
 from beanjar.firmware import targets
 
 TOP = Path(__file__).resolve().parents[3]
@@ -86,7 +85,7 @@ def test_tee_device_keyed_on_the_client(monkeypatch):
         asked.append((fw, path))
         return fw == "with"
 
-    monkeypatch.setattr(targets.paths, "rootfs_has", has)
+    monkeypatch.setattr(targets.probe, "rootfs_has", has)
     lm = ("lm21ann", "ponytail")
     assert targets.tee_module(lm) is None
     assert targets.tee_device(lm, "with") == ("tee=1",)
@@ -99,7 +98,7 @@ def test_tee_device_keyed_on_the_client(monkeypatch):
     def unreadable(fw, path):
         raise ValueError("no rootfs.pak")
 
-    monkeypatch.setattr(targets.paths, "rootfs_has", unreadable)
+    monkeypatch.setattr(targets.probe, "rootfs_has", unreadable)
     with pytest.raises(targets.Error, match="OP-TEE's client"):
         targets.tee_device(lm, "x")
 

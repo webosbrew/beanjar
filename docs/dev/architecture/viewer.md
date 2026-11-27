@@ -548,7 +548,7 @@ Audio keeps using SDL, with only the audio subsystem initialized.
 - **Contents.** An `Adw.ApplicationWindow` (2026-09-29; the viewer is an `Adw.Application` and
   prefers the dark style): an `Adw.ToolbarView` whose top bar is a compact `Adw.HeaderBar` (an
   `Adw.WindowTitle`; the Remote toggle; the menu button). The titles come from what the launcher
-  wrote at the VM's start into `vm-info.toml` beside the sockets (`paths.vm_info`, every launch: the
+  wrote at the VM's start into `vm-info.toml` beside the sockets (`probe.vm_info`, every launch: the
   manager's and `host/scripts/vm-launcher`'s, so `regress --viewer` too): the platform and the version LG markets
   the release as (`Release.platform`, `Release.version`), board (OTA model code, from the
   firmware's name), SoC, release codename and firmware version; and a library VM's name, its

@@ -276,7 +276,7 @@ class SelectTest(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as d,
-            mock.patch.object(regress.paths, "model_id", model_id),
+            mock.patch.object(regress.probe, "model_id", model_id),
         ):
             for n, pak in ((us, "otncabi-global.pak"), (jp, "otncabi-arib.pak")):
                 os.makedirs(os.path.join(d, n))
@@ -296,7 +296,7 @@ class SelectTest(unittest.TestCase):
                 )
 
     def test_find_firmwares(self):
-        """A firmware is listed under the target it resolves to (paths.firmware_target: the release its
+        """A firmware is listed under the target it resolves to (probe.firmware_target: the release its
         rootfs names); one that resolves to none is not listed."""
         releases = {
             WT1H: "afro",
@@ -312,7 +312,7 @@ class SelectTest(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as d,
-            mock.patch.object(regress.paths, "firmware_release", release),
+            mock.patch.object(regress.probe, "firmware_release", release),
         ):
             for n in (WT1H, W16R, W17H, "04.63.25.01-HE_DTV_W20L_AFAAJAAA", "notes"):
                 os.makedirs(os.path.join(d, "a", n))

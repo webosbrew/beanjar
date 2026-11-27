@@ -11,8 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from beanjar import paths
-from beanjar.firmware import targets
+from beanjar.firmware import probe, targets
 
 pytestmark = pytest.mark.skipif(
     not (shutil.which("mksquashfs") and shutil.which("unsquashfs")), reason="needs squashfs-tools"
@@ -79,7 +78,7 @@ def ident(region):
 def test_model_id_region(tmp_path, region, broadcast):
     fw = plain_firmware(tmp_path, "fw", ident(region))
     assert targets.firmware_broadcast(fw) == broadcast
-    assert paths.model_id(fw)["machine"] == "O22N3"
+    assert probe.model_id(fw)["machine"] == "O22N3"
 
 
 def test_super_pak_firmware_states_its_standard(tmp_path):
