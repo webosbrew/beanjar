@@ -10,6 +10,7 @@ from unittest import mock
 
 import pytest
 from beanjar.network import mitmtool, netns
+from beanjar.runtime import mediasandbox
 
 
 class Tree:
@@ -286,7 +287,7 @@ def proxy_mocks(tmp_path, exe, bwrap):
         mock.patch.object(netns.subprocess, "run", return_value=ca),
         mock.patch.object(netns.subprocess, "Popen", return_value=mock.Mock()),
         mock.patch.object(mitmtool, "check", return_value=mitmtool.Tool(str(exe), "12.3.1", "")),
-        mock.patch.object(mitmtool, "sandbox", return_value=bwrap),
+        mock.patch.object(mediasandbox, "find", return_value=bwrap),
     )
 
 

@@ -6,6 +6,7 @@ import os
 from unittest import mock
 
 from beanjar.network import mitmtool
+from beanjar.runtime import mediasandbox
 
 
 def script(path, text="#!/bin/sh\n"):
@@ -52,7 +53,7 @@ def test_version_from_the_command(tmp_path):
 
 
 # Whether bubblewrap is installed on this machine is not what test_check tests
-@mock.patch.object(mitmtool, "sandbox", return_value="/usr/bin/bwrap")
+@mock.patch.object(mediasandbox, "find", return_value="/usr/bin/bwrap")
 def test_check(_sandbox, tmp_path):
     missing = mitmtool.check({"NETNS_MITMWEB": str(tmp_path / "none")})
     assert not missing.usable and mitmtool.INSTALL in missing.problem
@@ -86,9 +87,9 @@ def test_python(tmp_path):
 
 def test_check_needs_bubblewrap(tmp_path):
     exe = script(tmp_path / "mitmweb", "#!/bin/sh\necho 'Mitmproxy: 12.3.1'\n")
-    with mock.patch.object(mitmtool, "sandbox", return_value=None):
+    with mock.patch.object(mediasandbox, "find", return_value=None):
         tool = mitmtool.check({"NETNS_MITMWEB": str(exe)})
     assert not tool.usable and tool.problem == mitmtool.SANDBOX_PROBLEM
     assert tool.brief() == "bubblewrap not installed"
     fake = script(tmp_path / "bin" / "bwrap")
-    assert mitmtool.sandbox({"PATH": str(tmp_path / "bin")}) == str(fake)
+    assert mediasandbox.find({"PATH": str(tmp_path / "bin")}) == str(fake)

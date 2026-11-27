@@ -30,6 +30,7 @@ bubblewrap exists on Linux only; elsewhere (macOS) command() is never reached.
 
 import glob
 import os
+import shutil
 import subprocess
 import sys
 
@@ -63,13 +64,14 @@ def enabled(env):
     return value == "on"
 
 
-def find(env):
-    """bwrap's path on a Linux host (on PATH, else /usr/bin or /bin), or None."""
+def find(env=None):
+    """bwrap's path on a Linux host (on PATH, else /usr/bin or /bin), or None: the sandbox of the
+    media helper (launch.py) and of mitmweb (network/netns.py, network/mitmtool.py)."""
     if not sys.platform.startswith("linux"):
         return None
-    from ..network import mitmtool
-
-    return mitmtool.sandbox(env)
+    env = os.environ if env is None else env
+    path = os.pathsep.join(x for x in (env.get("PATH"), "/usr/bin", "/bin") if x)
+    return shutil.which(BWRAP, path=path)
 
 
 def problem(bwrap):

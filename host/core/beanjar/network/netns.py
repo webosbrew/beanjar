@@ -95,7 +95,7 @@ import threading
 import time
 
 from .. import base, paths
-from ..runtime import hostswap
+from ..runtime import hostswap, mediasandbox
 from ..vm import settings
 from . import mitmtool
 
@@ -1132,7 +1132,7 @@ def _start_proxy(env, tree, rundir, logdir, web_port):
         for f in (mitm_log, env["NETSTUB_LOG"]):
             open(f, "a").close()
             os.chmod(f, 0o600)
-        bwrap = mitmtool.sandbox(env)
+        bwrap = mediasandbox.find(env)
         if not bwrap:
             raise OSError(mitmtool.SANDBOX_PROBLEM)
         confdir, mitmweb = os.path.dirname(ca), os.path.realpath(tool.path)
