@@ -23,11 +23,11 @@ contract the packages' dependencies express (contract): an apt hint, not a runti
 
 import argparse
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
 import tomllib
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[1]
 VERSION_FILE = "packaging/VERSION"
@@ -37,7 +37,7 @@ SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 def _semver():
     """host/core/beanjar/semver.py: the version pattern and the contract rule, shared with the manager."""
-    from importlib.util import spec_from_file_location, module_from_spec
+    from importlib.util import module_from_spec, spec_from_file_location
 
     spec = spec_from_file_location("beanjar_semver", TOP / "host/core/beanjar/semver.py")
     module = module_from_spec(spec)

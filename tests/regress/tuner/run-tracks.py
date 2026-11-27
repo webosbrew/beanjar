@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
-from beanjar.tuner import lineup, atsc
+from beanjar.tuner import atsc, lineup
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")
 

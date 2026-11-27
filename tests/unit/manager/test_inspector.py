@@ -3,13 +3,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Inspector readiness must come from the running VM and a real mitmweb response."""
 
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import threading
 from unittest import mock
 
 import pytest
-
 from beanjar.network import inspector
 
 

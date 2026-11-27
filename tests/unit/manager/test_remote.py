@@ -23,15 +23,16 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
-from beanjar.access import ares, remote  # noqa: E402
+import subprocess  # noqa: E402
+
 from beanjar import base  # noqa: E402
-from beanjar.cli import main, dispatch  # noqa: E402
-from beanjar.vm import library as vm_library  # noqa: E402
-from beanjar.runtime import hostconfig  # noqa: E402
+from beanjar.access import ares, remote  # noqa: E402
+from beanjar.cli import dispatch, main  # noqa: E402
+from beanjar.cli import vms as vm_commands  # noqa: E402
 from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.network import inspector  # noqa: E402
-from beanjar.cli import vms as vm_commands  # noqa: E402
-import subprocess  # noqa: E402
+from beanjar.runtime import hostconfig  # noqa: E402
+from beanjar.vm import library as vm_library  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0\0\0\rIHDR" + (1280).to_bytes(4, "big") + (720).to_bytes(4, "big")
 

@@ -4,8 +4,8 @@
 backend. check-cursor-compat.py loads the library it builds with ctypes, so it runs as its own
 process: a crash there fails this test instead of ending the run."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def test_cursor_compat(run_check):

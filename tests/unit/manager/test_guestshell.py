@@ -12,7 +12,6 @@ import struct
 import threading
 
 import pytest
-
 from beanjar.access import guestshell as gs
 from beanjar.cli import parser
 from beanjar.cli.shell import command_words

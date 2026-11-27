@@ -10,9 +10,9 @@ Spacebuns' stock Weston owns GBM and its output policy. The adapted samples
 import argparse
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 ROOTFS = TOP / "guest/layers/gl/rootfs"

@@ -11,11 +11,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-
+from beanjar import paths
 from beanjar.board import lls, nvm
 from beanjar.firmware import targets
-from beanjar import paths
-
 from launchkit import H13_AFRO
 
 

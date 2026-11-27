@@ -16,8 +16,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "host", "core"))
 from beanjar import base  # noqa: E402
-from beanjar.vm import library  # noqa: E402
 from beanjar.runtime import unit, vmunits  # noqa: E402
+from beanjar.vm import library  # noqa: E402
 
 p = argparse.ArgumentParser()
 p.add_argument("cmd", choices=("start", "stop", "status", "prepare"))

@@ -11,6 +11,13 @@ indent-width = 4
 [tool.ruff.format]
 indent-style = "space"
 
+[tool.ruff.lint]
+# Only the import rules: sorted imports (I) and no unused ones (F401). An import kept on purpose,
+# for its side effect or as a re-export, carries `# noqa: F401` and the reason. beanjar, beanjar_ui
+# and beanjar_web are not declared first-party: the sources reach sys.path at run time, and the
+# tree's imports have always sorted them with the third-party ones.
+select = ["I", "F401"]
+
 [tool.pytest.ini_options]
 # The test tiers (docs/dev/guides/testing.md): tests/unit needs no build and no firmware,
 # tests/integration the host build's outputs. tests/regress is the VM boot suite

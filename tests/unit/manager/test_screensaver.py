@@ -9,25 +9,23 @@ import fcntl
 import io
 import json
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
 from beanjar import base
-from beanjar.cli import main, dispatch
-from beanjar.vm import library as vm_library
-from beanjar.runtime import poweroff
 from beanjar.access import remote
+from beanjar.cli import dispatch, forward, main
 from beanjar.display import screensaver as ss
-from beanjar.cli import forward
+from beanjar.runtime import poweroff
 
 
 class Clock:

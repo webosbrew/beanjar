@@ -5,8 +5,8 @@
 script take their list from targets.payload_modules(), which names lgemu and every SocModule of targets.py
 (what compat.module_params looks for as build/<module>.ko)."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))

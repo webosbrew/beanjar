@@ -7,11 +7,11 @@ import base64
 import ctypes
 import errno
 import hashlib
-import struct
 import os
-from pathlib import Path
+import struct
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 

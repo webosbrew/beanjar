@@ -4,8 +4,8 @@
 window. Each check is a program of its own (check-*.py, run with the built beanjar-vnc), as it
 starts and ends the server and the stand-ins itself; its exit 77 is a skip."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 

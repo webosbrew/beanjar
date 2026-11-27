@@ -29,8 +29,8 @@ from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 
 from . import band
-from .atsc import FF_PID0, NULL_PID, PACKET, Error, channel, crc32_mpeg, events, ff_remap
 from .arib import time_rewrite as _time_rewrite
+from .atsc import FF_PID0, NULL_PID, PACKET, Error, channel, crc32_mpeg, events, ff_remap
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 1  # of the generator: part of a stream's key (stream_key)

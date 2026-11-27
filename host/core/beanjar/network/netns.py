@@ -95,8 +95,8 @@ import threading
 import time
 
 from .. import base, paths
-from ..vm import settings
 from ..runtime import hostswap
+from ..vm import settings
 from . import mitmtool
 
 

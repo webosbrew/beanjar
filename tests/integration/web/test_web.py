@@ -6,8 +6,8 @@ traffic inspector against the user's own mitmweb (check-mitm.py). No VM; each ch
 its own, skipped (77) without what it needs (python3-aiohttp, Debian's novnc or bootstrap-icons,
 chromium, mitmproxy 12.0.1 or newer)."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 

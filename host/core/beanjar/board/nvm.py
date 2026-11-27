@@ -42,8 +42,8 @@ import re
 import struct
 import subprocess
 
-from ..firmware import targets
 from .. import paths
+from ..firmware import targets
 
 SIZE = 0x8000
 # webOS 3's ContinentOptionDB: 15 16-bit option words from +8 (continent_record)
@@ -628,7 +628,8 @@ def factory_chip(fw, nvm, mode, cache=None):
     debug status's place and values it finds must be the release's (Nvm.debug_status_offset and
     debug_status_values), or Error. An LZ4P pak (NetCast 4's lgapp) is read from its SquashFS
     image in the firmware cache cache (beanjar/firmware/lz4p.py: the one the VM's disk is), made if need be."""
-    from ..firmware import cache as firmware_cache, lz4p
+    from ..firmware import cache as firmware_cache
+    from ..firmware import lz4p
     from . import nvmfactory
 
     pak, path = nvm.factory

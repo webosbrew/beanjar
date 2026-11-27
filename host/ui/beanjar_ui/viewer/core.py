@@ -9,7 +9,7 @@ Python-side call shapes."""
 import ctypes
 import os
 
-from beanjar_ui.viewer._core_abi import ABI, _CB, _I, _SIGNATURES
+from beanjar_ui.viewer._core_abi import _CB, _I, _SIGNATURES, ABI
 
 LIBRARY = "libbeanjar-viewer-core.so"
 

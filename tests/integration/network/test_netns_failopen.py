@@ -21,7 +21,6 @@ from unittest import mock
 TOP = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
 from beanjar.network import netns
-from beanjar import paths
 
 
 class StopHandler(unittest.TestCase):

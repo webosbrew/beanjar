@@ -3,20 +3,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The status bar's indicator state and tooltips (beanjar_ui/viewer/statusfmt.py), no GTK or display."""
 
+import json
 import os
 import sys
-import json
 import tempfile
 from unittest.mock import patch
-
-import pytest
-
 
 for package in ("ui", "core"):
     sys.path.append(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "host", package)
     )
-from beanjar_ui.viewer import stats, statusfmt as f  # noqa: E402
+from beanjar_ui.viewer import stats  # noqa: E402
+from beanjar_ui.viewer import statusfmt as f
 
 
 def test_statusfmt():

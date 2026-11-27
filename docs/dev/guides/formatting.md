@@ -27,7 +27,10 @@ python3 tests/unit/formatting/test_hooks.py
 ```
 
 Ruff 0.17.0 formats Python with four spaces, a 100-column limit and Python 3.11 syntax
-compatibility (the manager and packaging use `tomllib`). No Ruff lint rules run.
+compatibility (the manager and packaging use `tomllib`). The only lint rules are the import ones
+(`[tool.ruff.lint]`: `I`, sorted imports, and `F401`, no unused imports), run by the same hook and
+by `scripts/format check`: the commit hook fixes them, and an import kept on purpose, for its side
+effect or as a re-export, gets `# noqa: F401` and a few words why.
 clang-format 19.1.7 uses LLVM style, four spaces, Linux function braces and a 100-column
 limit. Consecutive `#define` values are aligned. Include sorting is disabled. Ruff's version
 is enforced by `[tool.ruff]` in `pyproject.toml`. Use clang-format 19.1.7 to keep C formatting consistent.

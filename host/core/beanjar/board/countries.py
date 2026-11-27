@@ -25,9 +25,9 @@ Read in place (lls.Root: unsquashfs -cat of the paks as the VM stacks them), a f
 import json
 import re
 
-from . import lls
 from .. import paths
 from ..firmware import targets
+from . import lls
 
 RMM_GROUPS = "/etc/configd/data/rmmCountryGroup.json"
 RMM_RECORD = "/etc/configd/data/rmm/{group}/{country}/tv.rmm.json"

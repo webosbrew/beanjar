@@ -3,7 +3,6 @@
 """The launch tests start units: stop them however the run ends."""
 
 import pytest
-
 import testunits
 
 

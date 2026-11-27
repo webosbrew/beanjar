@@ -14,8 +14,8 @@ import importlib.abc
 import json
 import os
 import pkgutil
-import sys
 import subprocess
+import sys
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))

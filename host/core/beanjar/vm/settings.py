@@ -6,12 +6,10 @@ a whole configuration (validate), and the launcher environment they make (launch
 import os
 import re
 
+from ..base import Error
 from ..board import nvm
 from ..firmware import targets
-from . import config
-from ..base import Error
-from . import identity
-
+from . import config, identity
 
 DISPLAYS = ("dbus", "egl-headless", "none")
 

@@ -22,8 +22,8 @@ import xml.etree.ElementTree as ET
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar.tuner import band, lineup, atsc
 from beanjar.tuner import arib as arib
+from beanjar.tuner import atsc, band, lineup
 
 LINEUP = lineup.default("arib")
 SERVICE = LINEUP["rf"][0]["services"][0]

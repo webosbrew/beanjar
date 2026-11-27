@@ -5,10 +5,9 @@
 tntfs and ntfs: compiled on the host with the genuine header, every option is dropped, renamed or one the
 kernel driver (vfat, ntfs3) declares in its parameter list in the kernel source (subprojects/linux.wrap's, or LINUX_SRC)."""
 
-import os
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
 from linuxsrc import linux_source

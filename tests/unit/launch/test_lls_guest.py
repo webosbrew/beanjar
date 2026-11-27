@@ -12,7 +12,6 @@ import time
 from unittest import mock
 
 import pytest
-
 from beanjar.board import lls
 
 

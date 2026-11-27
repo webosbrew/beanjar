@@ -22,7 +22,6 @@ No holder waits for itself:
                   waiting for ever.
 """
 
-import contextlib
 import fcntl
 import os
 import sys

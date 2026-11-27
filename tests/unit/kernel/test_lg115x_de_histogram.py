@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Compile the actual provider against a controlled proc/seq/sleep API."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/lg115x"
 

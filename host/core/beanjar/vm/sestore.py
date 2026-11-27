@@ -3,12 +3,12 @@
 """Per-VM secure-store inputs. TOML stays on the host; the guest receives exact item bytes."""
 
 import os
-from pathlib import Path
 import re
 import stat
 import struct
 import tempfile
 import tomllib
+from pathlib import Path
 
 from . import modelkey
 

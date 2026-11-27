@@ -20,10 +20,11 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
-from beanjar.cli import main
 from beanjar.access import remote
-from beanjar.tuner import antenna, band, lineup, atsc as tuner_atsc, user_stream
+from beanjar.cli import main
+from beanjar.tuner import antenna, band, lineup, user_stream
 from beanjar.tuner import arib as arib
+from beanjar.tuner import atsc as tuner_atsc
 
 ATSC_MIN = """
 broadcast = "atsc"

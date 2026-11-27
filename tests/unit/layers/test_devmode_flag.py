@@ -6,12 +6,12 @@
 import configparser
 import os
 import shutil
-from pathlib import Path
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3] / "guest/layers/devmode/rootfs"
 UNITS = ROOT / "etc/systemd/system"

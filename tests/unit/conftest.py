@@ -12,9 +12,9 @@ use among themselves, tests/conftest.py) stay.
 
 import atexit
 import os
-from pathlib import Path
 import shutil
 import tempfile
+from pathlib import Path
 
 _home = Path(tempfile.mkdtemp(prefix="beanjar-unit-home-"))
 atexit.register(shutil.rmtree, _home, ignore_errors=True)

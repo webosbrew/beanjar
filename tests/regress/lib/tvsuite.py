@@ -2759,13 +2759,8 @@ def decode_sheet(run_dir, out=None, at_ms=10000):
             continue
         kept = sorted(glob.glob(os.path.join(d, "sheet-*.png")))
         if kept:
-            tiles.append(
-                (
-                    f"{d.split(os.sep)[-3]} {os.path.basename(d)} @"
-                    f"{int(re.search(r'sheet-(\d+)', kept[0]).group(1)) / 1000:.0f}s",
-                    kept[0],
-                )
-            )
+            at_s = int(re.search(r"sheet-(\d+)", kept[0]).group(1)) / 1000
+            tiles.append((f"{d.split(os.sep)[-3]} {os.path.basename(d)} @{at_s:.0f}s", kept[0]))
             continue
         shots = sorted(glob.glob(os.path.join(d, "shot-*.p?m")))
         if not shots:

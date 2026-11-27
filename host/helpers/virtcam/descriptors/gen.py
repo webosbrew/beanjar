@@ -20,7 +20,10 @@ camera's own settings for compressed formats, which a real C920 does not have. T
 check then expects the dump's wTotalLength plus 16 bytes for each.
 """
 
-import re, struct, sys, os
+import os
+import re
+import struct
+import sys
 
 SERIAL = "00000000"  # fixed, non-identifying (real unit had a hex serial)
 LANGID = 0x0409

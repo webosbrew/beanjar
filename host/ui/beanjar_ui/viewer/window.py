@@ -13,12 +13,11 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
 
 from . import ui  # noqa: E402
 from .keys import key_controller  # noqa: E402
 from .pane import ViewerPane  # noqa: E402, re-exported
-from .remote import find  # noqa: E402
 from .remote_window import RemoteWindow  # noqa: E402, re-exported
 
 # More's planes: the action's name, the core's WV_PLANE_* bit (core.h)

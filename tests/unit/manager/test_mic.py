@@ -16,8 +16,8 @@ import types
 import wave
 
 import pytest
-from beanjar.devices import mic
 from beanjar.base import Error
+from beanjar.devices import mic
 
 
 def fake_vm(tmp_path, target, pid=1234):

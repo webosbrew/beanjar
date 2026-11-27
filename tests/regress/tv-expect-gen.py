@@ -52,7 +52,6 @@ TOP = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(HERE, "lib"))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 import tvsuite  # noqa: E402
-import checklist  # noqa: E402
 from beanjar.firmware import superpak, targets  # noqa: E402
 from beanjar.tomlfile import toml_key, toml_value  # noqa: E402
 

@@ -25,8 +25,8 @@ import shutil
 import tomllib
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from . import band
 from ..base import Error as BaseError
+from . import band
 
 
 class Error(BaseError):

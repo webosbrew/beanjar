@@ -312,6 +312,7 @@ def main(args):
 
 def run(o):
     from gi.repository import Adw, Gio, GLib
+
     from . import core as corelib
     from . import ui
 

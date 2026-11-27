@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 sys.path.insert(0, HERE)
 
-from beanjar.tuner import antenna, band, lineup, atsc, user_stream
+from beanjar.tuner import antenna, atsc, band, lineup, user_stream
 from beanjar.tuner import arib as arib
 from beanjar.tuner import dvb as dvb
 

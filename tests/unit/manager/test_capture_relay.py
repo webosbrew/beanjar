@@ -15,7 +15,6 @@ import threading
 import time
 
 import pytest
-
 from beanjar.display import capture_relay as cr
 
 H = struct.Struct("<6Iii")

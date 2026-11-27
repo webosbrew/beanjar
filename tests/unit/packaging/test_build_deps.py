@@ -3,7 +3,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Every build-deps control file parses, and build-deps.sh builds a .deb for each."""
 
-import glob, os, shutil, subprocess, sys, tempfile
+import glob
+import os
+import shutil
+import subprocess
+import tempfile
 
 import pytest
 

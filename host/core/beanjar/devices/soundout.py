@@ -391,8 +391,8 @@ def read(vm, timeout=10.0):
     port, the media helper's streams from its run directory; with `error` when the guest did not
     answer (still starting, a beanjar without the shell relay)."""
     from ..access import guestshell
-    from ..runtime import qemu
     from ..base import Error
+    from ..runtime import qemu
 
     streams_text = None
     try:

@@ -7,9 +7,9 @@ import argparse
 import csv
 import io
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def main():

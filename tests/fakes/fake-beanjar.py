@@ -21,9 +21,9 @@ import time
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar import base  # noqa: E402
-from beanjar.vm import library  # noqa: E402
-from beanjar.display import framing, pipe  # noqa: E402
 from beanjar.devices import remote_layouts  # noqa: E402
+from beanjar.display import framing, pipe  # noqa: E402
+from beanjar.vm import library  # noqa: E402
 
 D = os.environ["FAKE_DIR"]
 args = sys.argv[1:]

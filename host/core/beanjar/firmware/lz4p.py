@@ -23,8 +23,8 @@ import subprocess
 import sys
 import tempfile
 
-from . import cache as firmware_cache
 from .. import paths
+from . import cache as firmware_cache
 
 MAGIC = b"LZ4P"
 

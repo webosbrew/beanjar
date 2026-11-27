@@ -9,9 +9,10 @@ Inputs are generated locally; no firmware bytes or expected rows are tracked.
 
 import importlib.util
 import io
-from pathlib import Path
 import struct
 import sys
+from pathlib import Path
+
 from elftools.elf.elffile import ELFFile
 
 path = Path(__file__).resolve().parents[3] / "host/helpers/mstar/mmap-table.py"

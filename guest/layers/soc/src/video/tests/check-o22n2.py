@@ -13,9 +13,9 @@ dts-seamless and add dts_audiodec. This checks registration and property types, 
 
 import os
 import re
-from pathlib import Path
 import subprocess
 import tempfile
+from pathlib import Path
 
 video = Path(__file__).resolve().parents[1]
 top = video.parents[4]

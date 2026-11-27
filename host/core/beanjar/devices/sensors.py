@@ -133,8 +133,8 @@ def parse_temperature(out):
 
 
 def _console(vm, line):
-    from ..access import console
     from .. import paths
+    from ..access import console
 
     state, detail = vm.state()
     if state != base.RUNNING or detail or not vm.pid():

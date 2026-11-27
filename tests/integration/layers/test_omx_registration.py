@@ -16,13 +16,12 @@ omx_plugin, target; guest/layers/soc/src/video/meson.build), with the target's f
 import configparser
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import pytest
 

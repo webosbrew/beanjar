@@ -14,7 +14,6 @@ page itself, the flow in its list, its WebSocket at the prefix, no request outsi
 Prints what it checked; no VM, no network beyond loopback."""
 
 import asyncio
-import json
 import os
 import shutil
 import socket

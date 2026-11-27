@@ -25,10 +25,10 @@ ares-TOOL run (on a board, every module imported costs tens of milliseconds)."""
 import sys
 
 from ..access import remote
-from .main import command_index, global_options
-from ..vm.library import Library
 from ..base import Error
+from ..vm.library import Library
 from .common import Parser, Usage, fail, warn
+from .main import command_index, global_options
 
 
 def main(argv):

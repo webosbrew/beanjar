@@ -4,13 +4,13 @@
 """Exercise the shipped config helper without sound hardware or real mounts."""
 
 import json
-import stat
 import os
-from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 

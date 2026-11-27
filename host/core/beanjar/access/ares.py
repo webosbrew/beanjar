@@ -54,10 +54,10 @@ import tempfile
 import termios
 
 from .. import base
-from ..vm import keys, settings
-from ..guestside import layermeta
-from . import remote
 from ..base import Error
+from ..guestside import layermeta
+from ..vm import keys, settings
+from . import remote
 
 TOOL_RE = re.compile(r"ares-[a-z-]+")
 HOME_DIR = "ares-home"  # under the VM's run directory

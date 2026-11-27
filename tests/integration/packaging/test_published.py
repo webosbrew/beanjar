@@ -4,8 +4,8 @@
 initramfs and the layers (no key, secret or netproxy layer; skipped, 77, until the guest build has
 published an initramfs), and check-gl-ffi.py, the GL layer's libffi ABI for its Wayland client."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 

@@ -8,10 +8,9 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
+from beanjar.board import nvm
 from beanjar.runtime import capacity, qemu
 from beanjar.vm import create
-from beanjar.board import nvm
 
 TARGET = ("x", "y")
 

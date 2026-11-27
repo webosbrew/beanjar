@@ -9,16 +9,16 @@ Nothing connects to a VM or an installed web service. Prints measured states and
 import asyncio
 import base64
 import os
-from pathlib import Path
 import re
 import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
-import sys
 import zlib
+from pathlib import Path
 
 try:
     import aiohttp

@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from urllib.parse import quote, urlsplit
 
 from .. import base
-from ..vm import settings
 from ..runtime import hostprocs
+from ..vm import settings
 
 
 @dataclass(frozen=True)

@@ -150,9 +150,8 @@ def test_picture_turn():
     gi = pytest.importorskip("gi")
     for name, version in (("GdkPixbuf", "2.0"), ("Gdk", "4.0"), ("Gtk", "4.0")):
         gi.require_version(name, version)
-    from gi.repository import GdkPixbuf, GLib
-
     from beanjar_ui.manager.picture import turn
+    from gi.repository import GdkPixbuf, GLib
 
     a, b = b"\xff\x00\x00", b"\x00\x00\xff"  # red, blue: a 2x1 picture, red at the left
     pix = GdkPixbuf.Pixbuf.new_from_bytes(

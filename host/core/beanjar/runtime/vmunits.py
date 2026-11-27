@@ -13,7 +13,6 @@ import time
 
 from ..base import Error
 
-
 UNIT_PROPS = ("ActiveState", "SubState", "MainPID", "Result", "ExecMainStatus", "Description")
 
 

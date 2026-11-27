@@ -29,9 +29,8 @@ import os
 import socket
 import struct
 import subprocess
-import sys
-import threading
 import tempfile
+import threading
 import time
 
 MAGIC = 0x324D5357

@@ -8,17 +8,17 @@ import gzip
 import importlib.util
 import io
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
-from beanjar.vm import library as vm_library
 from beanjar import paths
 from beanjar.guestside import components, layermeta
+from beanjar.vm import library as vm_library
 
 spec = importlib.util.spec_from_file_location("component_publish", TOP / "meson/components.py")
 publisher = importlib.util.module_from_spec(spec)

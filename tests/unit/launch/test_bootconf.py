@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from beanjar import base, paths
+from beanjar import base
 from beanjar.board import nvm
 from beanjar.firmware import probe, targets
 from beanjar.runtime import qemu

@@ -16,11 +16,10 @@ shown as "On this host"."""
 import threading
 import time
 
-from gi.repository import Gio, GLib, Gtk, Pango
-
 from beanjar import base
-from beanjar.vm import settings
 from beanjar.network import inspector, mitmtool
+from beanjar.vm import settings
+from gi.repository import Gio, GLib, Gtk, Pango
 
 DESCRIPTION = (
     "This VM's own mitmweb, on its own port and with its own password, while it runs. "

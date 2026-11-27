@@ -129,7 +129,8 @@ def remote_lineup(a, host, name, uri, mirror, listed):
     """io tuner lineup for VM name on host: the host keeps the file (--fed), this machine, which
     feeds the VM, the file and the files it names (mirror) and makes the streams."""
     from .. import paths
-    from ..tuner import antenna, lineup as tuner_lineup
+    from ..tuner import antenna
+    from ..tuner import lineup as tuner_lineup
 
     words = ["io", "tuner", "lineup", a.lineup_verb, remote.own(name)]
     if a.lineup_verb == "show":

@@ -7,9 +7,8 @@ details and credentials" with link lan "On this host" for this host's way in (it
 its password (always one, random per start unless BEANJAR_VNC_PASSWORD chose it, in the owner-only
 run/vnc.password) with Copy Password."""
 
-from gi.repository import Gio, GLib, Gtk, Pango
-
 from beanjar.network import inspector
+from gi.repository import Gio, GLib, Gtk, Pango
 
 from .inspector_ui import detail_row, value_label
 

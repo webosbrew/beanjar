@@ -58,8 +58,9 @@ import threading
 import time
 
 from .. import base
-from . import band, lineup as tuner_lineup, atsc, arib, dvb, user_stream
 from ..base import Error
+from . import arib, atsc, band, dvb, user_stream
+from . import lineup as tuner_lineup
 
 MAGIC = 0x4E555457
 MAP, TS, TUNE = 1, 2, 3

@@ -4,8 +4,8 @@
 (tests/fakes/fake-qemu.py), with this build's programs: no VM. Each check a program of its own;
 its exit 77 is a skip."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 

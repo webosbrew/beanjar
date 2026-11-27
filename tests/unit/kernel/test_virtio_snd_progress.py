@@ -3,12 +3,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Compile the shipped worker/pointer with pinned ALSA ring recovery and test locks."""
 
-from pathlib import Path
 import os
-import resource
 import re
+import resource
 import subprocess
-import sys
+from pathlib import Path
 
 import pytest
 from linuxsrc import linux_source

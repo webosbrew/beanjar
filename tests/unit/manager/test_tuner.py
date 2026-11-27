@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "host", "core"))
 
 from beanjar.access import ares, remote
 from beanjar.cli import main
-from beanjar.tuner import antenna, band, lineup, atsc
+from beanjar.tuner import antenna, atsc, band, lineup
 from beanjar.tuner import arib as arib
 
 ATSC = lineup.default("atsc")

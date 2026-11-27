@@ -4,10 +4,9 @@
 """Install repository hooks while preserving the currently inherited hook directory."""
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
-
+from pathlib import Path
 
 # the hooks that run the pre-commit framework (.pre-commit-config.yaml), after an inherited one
 WRAPPED = ("pre-commit", "pre-push")

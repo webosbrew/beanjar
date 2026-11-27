@@ -7,12 +7,11 @@ A reference such as "#123" or a link to an issue of this project means nothing t
 the published tree. Comments and documents say what and why in words instead.
 """
 
-from pathlib import Path
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[3]
 PATHS = ROOT / ".github" / "publish" / "paths.txt"

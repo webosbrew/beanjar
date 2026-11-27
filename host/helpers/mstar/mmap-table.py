@@ -12,9 +12,9 @@ import argparse
 import hashlib
 import io
 import json
-from pathlib import Path
 import struct
 import sys
+from pathlib import Path
 
 _installed = Path(__file__).resolve().parents[2]
 sys.path.insert(
@@ -292,6 +292,7 @@ def cached(fw, name, interval, length):
     IDs and output digest agree. Older metadata without IDs or an output digest is regenerated on
     a host with pyelftools. A host with the cache copied from another needs no pyelftools."""
     import subprocess
+
     from beanjar import paths
 
     tree = paths.Tree(_installed if (_installed / "installation.toml").is_file() else REPO)

@@ -7,7 +7,6 @@ off, and the CUDA wheel's libraries on the loader path. No models, VM or network
 
 import json
 import os
-from pathlib import Path
 import shutil
 import signal
 import subprocess
@@ -15,10 +14,10 @@ import sys
 import tempfile
 import textwrap
 import time
+from pathlib import Path
 from unittest import mock
 
 import pytest
-
 from beanjar.display import elements
 
 TOP = Path(__file__).resolve().parents[3]

@@ -14,9 +14,9 @@ request counts (the same kernel message may occur in several captured files).
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import stat
+from pathlib import Path
 
 MAX_FILES = 64
 MAX_BYTES = 2 * 1024 * 1024

@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
 from beanjar.guestside import layerimage, share
 from beanjar.runtime import vmunits
 

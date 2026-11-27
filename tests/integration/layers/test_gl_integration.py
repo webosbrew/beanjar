@@ -5,8 +5,8 @@ adapter configuration unchanged for existing compositors. Run by the guest build
 artefacts.json: gl_layer, gl_integration, target, build_root; guest/layers/gl/meson.build), skipped
 elsewhere."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def test_gl_integration(artefact, artefacts, run_check):

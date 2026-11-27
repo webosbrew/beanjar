@@ -7,7 +7,6 @@ import json
 from unittest import mock
 
 import pytest
-
 from beanjar.board import lls, nvm, prepare
 
 

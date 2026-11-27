@@ -6,7 +6,7 @@ repos:
   - repo: local
     hooks:
       - id: ruff-format
-        name: Ruff format
+        name: Ruff format and import rules
         language: system
         entry: python3 scripts/format-hooks/python-format.py
         types: [text]
@@ -27,7 +27,7 @@ repos:
         types: [text]
         stages: [pre-commit]
       - id: ruff-check
-        name: Ruff format check
+        name: Ruff format and import rules check
         language: system
         entry: python3 scripts/format-hooks/python-format.py --check
         types: [text]

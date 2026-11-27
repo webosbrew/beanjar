@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """The Qt EGLFS Starfish output helper, run under a root prefix: no mount, no firmware."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 

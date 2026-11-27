@@ -8,7 +8,6 @@ import os
 from ..base import Error
 from . import hostconfig, hostprocs, vmunits
 
-
 # The start's admission (Library.start): a VM starts if the host's MemAvailable, less what the
 # library's other starting and running VMs may still claim, covers its RAM (-m, VM.guest_ram: the
 # TV's, VM.mem, and under qemu-user that userland's own on top) and

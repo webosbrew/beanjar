@@ -6,8 +6,8 @@ N21D's msc drives it: CHIP_ID, the init writes, the six data bytes at 0x12 (raw 
 msc's orientation bands for each gravity vector), the range, the soft reset and the vector's
 parser."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/lgemu"
 

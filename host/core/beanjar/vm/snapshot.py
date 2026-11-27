@@ -38,8 +38,8 @@ import tempfile
 import time
 
 from .. import base, tomlfile
-from . import sestore
 from ..base import NAME_RE, Error, read_toml
+from . import sestore
 
 SNAPSHOTS = "snapshots"
 RECORD = "snapshot.toml"

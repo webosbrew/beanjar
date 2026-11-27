@@ -646,8 +646,8 @@ def run_remote(host, name, argv, tty):
     import shutil
     import tempfile
 
-    from . import ares, remote
     from ..base import Error
+    from . import ares, remote
 
     uri = remote.hosts()[host]
     info = remote.call_json(host, uri, ["show", remote.own(name)])

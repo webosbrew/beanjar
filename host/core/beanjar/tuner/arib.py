@@ -27,8 +27,8 @@ import subprocess
 from datetime import date, datetime, timedelta, timezone
 from xml.sax.saxutils import escape, quoteattr
 
-from .band import jp_uhf_hz
 from .atsc import FF_PID0, PACKET, Error, crc32_mpeg, ff_remap
+from .band import jp_uhf_hz
 
 MUX_RATE = 5_000_000  # bits a second
 VERSION = 9  # of the generator: part of a stream's key (stream_key)

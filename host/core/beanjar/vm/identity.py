@@ -8,10 +8,9 @@ import re
 import secrets
 import sys
 
-from . import config
-from ..base import Error, addresses_of, identity_dir, library_of, read_toml, slot_domain
 from .. import tomlfile
-
+from ..base import Error, addresses_of, identity_dir, library_of, read_toml, slot_domain
+from . import config
 
 # The TV's identity: the board MAC and serial number, one of each per
 # VM (vm.toml's mac and serial), made at create. The MAC is the library's mac_prefix (config.toml,

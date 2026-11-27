@@ -14,12 +14,10 @@ import time
 import unittest
 from unittest import mock
 
-
-from beanjar import base
-from beanjar.vm import library, settings
-from beanjar.runtime import capacity, hostconfig, launch, qemu, unit, vmunits
-
 import testunits
+from beanjar import base
+from beanjar.runtime import capacity, hostconfig, launch, qemu, unit, vmunits
+from beanjar.vm import library, settings
 
 
 class LingerTest(unittest.TestCase):

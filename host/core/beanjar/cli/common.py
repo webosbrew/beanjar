@@ -10,9 +10,9 @@ JSON object on stderr, {"error": message, "key": setting or absent, "usage": tru
 import json
 import sys
 
+from ..base import Error
 from ..vm import library
 from .main import json_error
-from ..base import Error
 
 
 class Usage(Error):
@@ -93,8 +93,8 @@ def version_info():
     beanjar. source is "package" (the installed package's installation.toml) or "checkout" (the
     commit the checkout holds); guest is the guest payload's {"version", "commit"}. A commit that
     cannot be known is null, a version "unknown"."""
-    from ..guestside import compat
     from .. import paths
+    from ..guestside import compat
 
     host = compat.host_identity()
     return {

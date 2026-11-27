@@ -243,7 +243,8 @@ def drift_text(item):
 
 def components(tree, target, name):
     """Error unless the guest payload has every always-used component of the firmware target."""
-    from . import components as guestside_components, share
+    from . import components as guestside_components
+    from . import share
 
     missing = []
     for layer in targets.always_layers(target):

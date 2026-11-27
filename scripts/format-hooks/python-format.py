@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Mariotaku <git@mariotaku.me> and the Beanjar contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Select Python sources, including non-executable scripts, from pre-commit's file batch."""
+"""Select Python sources, including non-executable scripts, from pre-commit's file batch, and
+format them: `ruff check --fix` for the import rules (pyproject.toml's [tool.ruff.lint]: sorted
+imports, no unused ones), then `ruff format`. With --check nothing is changed and both must pass."""
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def main():
@@ -25,10 +27,11 @@ def main():
                 sources.append(name)
     if not sources:
         return 0
-    command = ["ruff", "format"]
-    if check:
-        command.append("--check")
-    return subprocess.run([*command, "--", *sources]).returncode
+    # the import rules first: removing an import can leave a different layout for the formatter
+    lint = ["ruff", "check"] if check else ["ruff", "check", "--fix"]
+    fmt = ["ruff", "format", "--check"] if check else ["ruff", "format"]
+    codes = [subprocess.run([*command, "--", *sources]).returncode for command in (lint, fmt)]
+    return max(codes)
 
 
 if __name__ == "__main__":

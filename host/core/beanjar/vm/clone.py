@@ -32,10 +32,11 @@ import tempfile
 import tomllib
 
 from .. import base, tomlfile
-from . import library as vm_library, keys, config, identity
-from ..board import nvm
 from ..access import remote
 from ..base import Error
+from ..board import nvm
+from . import config, identity, keys
+from . import library as vm_library
 
 STAGE = ".clone-stage-"
 SCRATCH = ".clone-"

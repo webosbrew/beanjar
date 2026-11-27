@@ -19,9 +19,9 @@ import shlex
 import time
 
 from .. import base, paths
-from ..runtime import poweroff
 from ..access import console
 from ..base import Error
+from ..runtime import poweroff
 
 POWER = "luna://com.webos.service.tvpower/power2/"
 SAM = "luna://com.webos.applicationManager/"

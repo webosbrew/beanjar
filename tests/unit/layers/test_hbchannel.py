@@ -11,7 +11,6 @@ import hashlib
 import io
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -19,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 HERE = TOP / "guest/layers/hbchannel"  # the layer under test

@@ -9,9 +9,8 @@ import shutil
 import subprocess
 
 import pytest
-
-from beanjar.devices import soundbar
 from beanjar.base import Error
+from beanjar.devices import soundbar
 
 
 def edid_with_sads(raw):

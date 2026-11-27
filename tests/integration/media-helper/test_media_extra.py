@@ -12,8 +12,8 @@ file does not import). The helper runs with --hwdec none (software decode).
 No viewer, GPU, or display is needed.
 """
 
-import ctypes as C
 import array
+import ctypes as C
 import fcntl
 import importlib.util
 import json
@@ -22,7 +22,6 @@ import shutil
 import socket
 import struct
 import subprocess
-import sys
 import tempfile
 import time
 import unittest

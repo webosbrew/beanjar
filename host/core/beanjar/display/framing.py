@@ -5,7 +5,6 @@ PNG a screenshot is (the guest display's size recorded in it)."""
 
 from ..base import Error
 
-
 # A headless viewer takes its picture this long after the first scanout, for the video windows and
 # LG's cursor to arrive.
 SCREENSHOT_SETTLE_MS = 1500

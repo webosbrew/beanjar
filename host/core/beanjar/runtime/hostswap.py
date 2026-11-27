@@ -24,7 +24,6 @@ import os
 
 from ..base import Error
 
-
 # the disk's serial, which the guest's init looks for, and the -add-fd opaque string's prefix
 SERIAL = "beanjar-swap"
 # the descriptor QEMU inherits the memfd at, and the fdset -add-fd puts it in. Fixed, so that

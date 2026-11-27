@@ -67,12 +67,13 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import base  # noqa: E402
-from beanjar.vm import library, settings as vm_settings  # noqa: E402
-from beanjar.runtime import hostconfig, unit  # noqa: E402
-from beanjar.firmware import targets  # noqa: E402
-from beanjar_ui.manager import gui, ui  # noqa: E402
 import testunits  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.firmware import targets  # noqa: E402
+from beanjar.runtime import hostconfig, unit  # noqa: E402
+from beanjar.vm import library  # noqa: E402
+from beanjar.vm import settings as vm_settings
+from beanjar_ui.manager import gui, ui  # noqa: E402
 
 
 def icon_names(patterns):

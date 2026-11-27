@@ -12,8 +12,6 @@ import pathlib
 import subprocess
 import tempfile
 
-import pytest
-
 
 def test_native_input():
     ROOT = pathlib.Path(__file__).resolve().parents[3]

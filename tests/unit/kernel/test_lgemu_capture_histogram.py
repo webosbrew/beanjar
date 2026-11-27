@@ -5,9 +5,9 @@
 API: the regions match the measured table, the counts come from the captured picture, a preset
 takes effect from the scheduled update, and a read before any data or before START fails."""
 
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE = ROOT / "guest/kernel/modules/lgemu"

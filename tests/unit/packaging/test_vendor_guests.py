@@ -7,9 +7,9 @@ BEANJAR_VENDOR_<PROGRAM>_<ARCH> overrides that one."""
 
 import hashlib
 import io
-from pathlib import Path
 import sys
 import tarfile
+from pathlib import Path
 
 import pytest
 

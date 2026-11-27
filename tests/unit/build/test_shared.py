@@ -4,10 +4,10 @@
 """meson/shared.py: one build in a shared directory, reused by every build directory that asks
 for it with the same inputs, and done again when an input changes."""
 
-from pathlib import Path
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SHARED = ROOT / "meson" / "shared.py"

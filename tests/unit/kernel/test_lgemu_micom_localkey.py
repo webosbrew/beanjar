@@ -5,8 +5,8 @@
 check the 0xC0 poll replies for remote and local key edges, the keys left at a suspend; and its
 front LED latches."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/lgemu"
 INCLUDE = MODULE.parents[3] / "include"

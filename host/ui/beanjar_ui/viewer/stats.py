@@ -48,12 +48,11 @@ import tomllib
 import gi
 
 gi.require_version("Gio", "2.0")
-from gi.repository import Gio, GLib  # noqa: E402
-
 from beanjar import base  # noqa: E402
-from beanjar.vm import library  # noqa: E402
-from beanjar.runtime import capacity  # noqa: E402
 from beanjar.display import gpu  # noqa: E402
+from beanjar.runtime import capacity  # noqa: E402
+from beanjar.vm import library  # noqa: E402
+from gi.repository import Gio, GLib  # noqa: E402
 
 # the directory the core package beanjar is in (host/core in a checkout), for python3 -m beanjar
 CORE = os.path.dirname(os.path.dirname(os.path.abspath(library.__file__)))

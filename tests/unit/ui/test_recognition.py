@@ -172,8 +172,8 @@ def test_recognizer_error_and_stop():
 
 
 def test_recognizer_start_needs_textshot(monkeypatch):
-    from beanjar.display import elements
     from beanjar.base import Error
+    from beanjar.display import elements
 
     monkeypatch.setenv("BEANJAR_TEXTSHOT", "/nonexistent/textshot")
     rec = r.Recognizer(lambda *_: True, lambda: None, lambda fn: fn(), lambda _r: None)

@@ -11,7 +11,6 @@ import socket
 import threading
 
 import pytest
-
 from beanjar.devices import ir_relay
 
 

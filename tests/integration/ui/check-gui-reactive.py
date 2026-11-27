@@ -40,11 +40,11 @@ if not os.environ.get("DISPLAY"):
     print("SKIP: no X display (run under xvfb-run -a)")
     sys.exit(77)
 
-from beanjar import base  # noqa: E402
-from beanjar.vm import library as vm_library  # noqa: E402
-from beanjar.runtime import unit  # noqa: E402
-from beanjar_ui.manager import gui  # noqa: E402
 import testunits  # noqa: E402
+from beanjar import base  # noqa: E402
+from beanjar.runtime import unit  # noqa: E402
+from beanjar.vm import library as vm_library  # noqa: E402
+from beanjar_ui.manager import gui  # noqa: E402
 
 FW = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
 WITHIN = 3.0  # seconds a change may take to show: "about a second", with room for a slow host

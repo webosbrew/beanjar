@@ -4,9 +4,9 @@
 """meson/fetch.py: one unpacked tree per wrap, redone when the wrap or a patch changes, and safe
 when several builds run it at once."""
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 FETCH = ROOT / "meson" / "fetch.py"

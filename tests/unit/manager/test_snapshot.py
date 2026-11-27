@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 from beanjar import base
-from beanjar.vm import clone, library, sestore, snapshot, config
+from beanjar.vm import clone, config, library, sestore, snapshot
 
 FW = "05.06.10.01-HE_DTV_WT1H_AFAAABAA"
 SERIAL = "123ABCD45678"

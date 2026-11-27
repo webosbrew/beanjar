@@ -20,8 +20,8 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import ui  # noqa: E402
-from .keys import HOME_KEYS  # noqa: E402
 from .elements_layer import ElementsLayer  # noqa: E402
+from .keys import HOME_KEYS  # noqa: E402
 from .remote import LAYOUTS, RemotePanel, find  # noqa: E402
 from .remote_window import RemoteWindow  # noqa: E402
 from .stats import Stats, front_led, panel_off  # noqa: E402
@@ -246,7 +246,6 @@ class ViewerPane(Gtk.Box):
         landscape): `beanjar sensor set rotate NAME ANGLE`; the picture follows when the guest reports it."""
         if not self.can_rotate() or self.rotating:
             return
-        from beanjar.devices import rotation
 
         from .stats import CORE
 

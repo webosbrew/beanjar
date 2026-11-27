@@ -4,12 +4,12 @@
 """PC-only fake QEMU audio, no VM and no display. Own and reap every child."""
 
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 top = Path(__file__).resolve().parents[3]
 with tempfile.TemporaryDirectory(prefix="check-audio-context-") as tmp:

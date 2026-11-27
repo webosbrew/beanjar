@@ -3,6 +3,7 @@
 """The TV remote: remote pipe, press, pointer and touch, and the layout."""
 
 import argparse
+
 from .common import DURATION_HELP, Usage, duration, emit, parse_size
 
 
@@ -88,8 +89,8 @@ def cmd_remote_touch(lib, a):
 
 
 def cmd_remote_layout(lib, a):
-    from ..display import pipe
     from ..devices import remote_layouts
+    from ..display import pipe
 
     layout = pipe.vm_layout(lib.vm(a.name))
     data = remote_layouts.as_json(layout)

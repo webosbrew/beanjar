@@ -15,11 +15,9 @@ import types
 import unittest
 from unittest import mock
 
-
 from beanjar.display import secondary
-from beanjar.runtime import launch, qemu
 from beanjar.network import netns
-
+from beanjar.runtime import launch, qemu
 from launchkit import TOP
 
 

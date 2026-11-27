@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from beanjar.display import gpu
 
 UNIT = "/user.slice/user-1000.slice/user@1000.service/beanjar.slice/beanjar-vm-x-y.service"

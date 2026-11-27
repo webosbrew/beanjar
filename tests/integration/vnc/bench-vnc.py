@@ -34,8 +34,8 @@ import time
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import loopback  # noqa: E402
-from rfbclient import ENCODINGS, NAMES, Rfb  # noqa: E402
 import videostream as vs  # noqa: E402
+from rfbclient import ENCODINGS, NAMES, Rfb  # noqa: E402
 
 TICK = os.sysconf("SC_CLK_TCK")
 

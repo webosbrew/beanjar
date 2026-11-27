@@ -14,9 +14,9 @@ Meson shows it as skipped, as the scripts' own exit 77 did before.
 import collections
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 

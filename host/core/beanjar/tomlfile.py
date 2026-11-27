@@ -11,7 +11,6 @@ from .base import (
     Error,
 )
 
-
 VM_HEADER = "A VM of Beanjar (host/core/README.md). Change it while the VM is off."
 
 

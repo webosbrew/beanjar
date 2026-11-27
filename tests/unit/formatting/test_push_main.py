@@ -3,12 +3,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """scripts/push-main's control flow, with scripts/act-check stubbed."""
 
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[3]
 

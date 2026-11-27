@@ -34,8 +34,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
 sys.path.insert(0, os.path.join(TOP, "host", "core"))
 
-from beanjar.tuner import band, atsc
 from beanjar.tuner import arib as arib
+from beanjar.tuner import atsc, band
 from beanjar.tuner import dvb as dvb
 
 BEANJAR = os.environ.get("BEANJAR", "beanjar")

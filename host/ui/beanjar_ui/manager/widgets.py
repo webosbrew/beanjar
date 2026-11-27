@@ -7,10 +7,10 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
+from beanjar.base import Error  # noqa: E402
 from gi.repository import Adw, GLib, GObject, Graphene, Gtk  # noqa: E402
 
 from . import ui  # noqa: E402
-from beanjar.base import Error  # noqa: E402
 
 
 @ui.template("window")

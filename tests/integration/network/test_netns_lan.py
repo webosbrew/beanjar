@@ -6,10 +6,10 @@ run together in one namespace of their own, which is the LAN: netns_lan_cases.py
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 import pytest
 

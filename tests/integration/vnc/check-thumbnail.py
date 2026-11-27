@@ -43,9 +43,8 @@ import numpy
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import loopback  # noqa: E402
-from rfbclient import Rfb  # noqa: E402
-
 from gi.repository import Gio, GLib  # noqa: E402
+from rfbclient import Rfb  # noqa: E402
 
 TOP = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 VNC, HEADLESS = sys.argv[1], sys.argv[2]

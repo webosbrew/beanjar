@@ -14,9 +14,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from beanjar.runtime import launch, mediasandbox, qemu
 from beanjar import paths
-
+from beanjar.runtime import launch, mediasandbox, qemu
 from launchkit import fake_tree
 
 # what a desktop session hands its programs, the launcher among them

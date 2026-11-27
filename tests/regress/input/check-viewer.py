@@ -12,13 +12,13 @@ to RUN_DIR/share/out. Leaves a rendered PPM in build/. The test client stays ali
 stops, or start-viewer-probe.sh is run again.
 """
 
-from pathlib import Path
+import os
 import re
 import struct
 import subprocess
-import os
 import sys
 import time
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))

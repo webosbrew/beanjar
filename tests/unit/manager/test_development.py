@@ -7,10 +7,9 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-
-from beanjar.vm import development, config
 from beanjar import paths
 from beanjar.runtime import qemu
+from beanjar.vm import config, development
 
 
 class Dev:

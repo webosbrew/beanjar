@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Compile the production PM micom peer (mailbox.c pm_take) against a recording micom."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/mstar-utopia"
 

@@ -9,15 +9,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-
-from beanjar.firmware import targets
-from beanjar import paths
-from beanjar.runtime import qemu
-from beanjar.board import partmap
-
 import testunits
-
-from launchkit import fake_map, fake_partmap_build, fake_tree, H13_AFRO, net
+from beanjar import paths
+from beanjar.board import partmap
+from beanjar.firmware import targets
+from beanjar.runtime import qemu
+from launchkit import H13_AFRO, fake_map, fake_partmap_build, fake_tree, net
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

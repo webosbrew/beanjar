@@ -10,7 +10,6 @@ import os
 import struct
 import sys
 
-
 # Linux 6.18.53 (subprojects/linux.wrap), include/uapi/linux/rtc.h:
 # struct rtc_time contains nine signed int fields; RTC_RD_TIME is
 # _IOR('p', 0x09, struct rtc_time). ARM and ARM64 use asm-generic/ioctl.h.

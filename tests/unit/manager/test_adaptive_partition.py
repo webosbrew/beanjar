@@ -11,8 +11,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from beanjar.firmware import install, kernelcerts, targets
 from beanjar.board import prepare
+from beanjar.firmware import install, kernelcerts, targets
 
 QUEUE = ("o22", "queue")
 # W22O 43.21.89's paks as the shared collection keeps them (ARIB build), without appackage.pak

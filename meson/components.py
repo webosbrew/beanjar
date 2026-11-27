@@ -13,10 +13,10 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path
 import shutil
 import stat
 import tempfile
+from pathlib import Path
 
 
 def digest(tree):

@@ -7,10 +7,10 @@ build's BUILDINFO lists the codecs and decoders it was configured with (its Code
 beanjar-vendor's ffmpeg-helper/decoders). A codec added to caps_codec() without a new build fails
 here."""
 
+import sys
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
-import sys
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "meson"))

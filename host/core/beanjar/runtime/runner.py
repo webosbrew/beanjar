@@ -22,8 +22,8 @@ import os
 import time
 
 from .. import base
-from . import unit, vmunits
 from ..base import Error
+from . import unit, vmunits
 
 SYSTEMD, SESSION = "systemd", "session"
 AUTO = "auto"

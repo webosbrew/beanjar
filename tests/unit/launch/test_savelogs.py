@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from beanjar.runtime import launch
 from beanjar.guestside import share
+from beanjar.runtime import launch
 from launchkit import TOP, VM
 
 HOST_LOGS = {

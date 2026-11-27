@@ -21,10 +21,10 @@ the pinned ffmpeg-helper build was made from is this one.
 """
 
 import ctypes
-from pathlib import Path
 import platform
 import re
 import sys
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[1]
 MEDIA = TOP / "host/media"

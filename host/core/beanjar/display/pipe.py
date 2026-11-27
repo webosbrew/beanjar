@@ -39,8 +39,8 @@ import sys
 import threading
 import time
 
-from . import dbus, framing
 from ..base import Error
+from . import dbus, framing
 from .dbus import SCREENSHOT_NAME, SCREENSHOT_PATH
 
 CHUNK = 1 << 16
@@ -50,9 +50,9 @@ PRESS_HOLD = 0.1  # seconds a `remote press` holds each key: a short press
 def vm_layout(vm):
     """The layout the GTK viewer would show for vm: its firmware's remote, the Japanese one on an
     ARIB board (tuner.vm_broadcast, as the launch writes it to vm-info.toml)."""
+    from ..devices import remote_layouts as lib
     from ..firmware import targets
     from ..tuner import antenna
-    from ..devices import remote_layouts as lib
 
     try:
         target = vm.target()

@@ -4,11 +4,11 @@
 """Genuine kernel and ARM32 clients in an isolated firmware-free QEMU guest."""
 
 import argparse
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))

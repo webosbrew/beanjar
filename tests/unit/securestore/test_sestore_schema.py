@@ -5,10 +5,10 @@
 
 import base64
 import json
-from pathlib import Path
 import re
 import sys
 import tomllib
+from pathlib import Path
 
 import pytest
 

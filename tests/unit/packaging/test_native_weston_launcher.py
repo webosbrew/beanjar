@@ -6,8 +6,8 @@
 import importlib.util
 import os
 import shutil
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 

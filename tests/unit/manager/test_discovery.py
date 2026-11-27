@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, Mock, patch
 
 import dns.message
 import pytest
-
 from beanjar.network import discovery
 
 

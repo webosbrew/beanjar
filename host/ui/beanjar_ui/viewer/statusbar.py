@@ -11,8 +11,8 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Graphene", "1.0")
 from gi.repository import Gdk, Graphene, Gtk  # noqa: E402
 
-from . import statusfmt as fmt  # noqa: E402
 from . import stats as statslib  # noqa: E402
+from . import statusfmt as fmt  # noqa: E402
 from . import ui  # noqa: E402
 
 # libadwaita's colours (its CSS variables): the bar is coloured as a header bar, as a

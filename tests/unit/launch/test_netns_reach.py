@@ -10,7 +10,6 @@ import os
 from unittest import mock
 
 import pytest
-
 from beanjar.network import netns
 
 

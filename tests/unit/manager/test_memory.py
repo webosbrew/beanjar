@@ -3,16 +3,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Memory preparation contracts: registry layouts, aliases and rejected malformed inputs."""
 
-import importlib.util
 import hashlib
+import importlib.util
 import json
-from pathlib import Path
 import struct
 import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
-
 from beanjar.firmware import memory, targets
 
 TOP = Path(__file__).resolve().parents[3]

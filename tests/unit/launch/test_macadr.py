@@ -15,7 +15,6 @@ import uuid
 from beanjar.board import macadr, partmap, prepare
 from beanjar.firmware import targets
 from beanjar.vm import identity
-
 from launchkit import fake_map
 
 MAC = "a8:23:fe:12:34:56"

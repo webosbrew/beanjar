@@ -5,10 +5,10 @@
 
 import ctypes
 import pathlib
-import struct
 import shlex
-import sys
+import struct
 import subprocess
+import sys
 import tempfile
 import time
 

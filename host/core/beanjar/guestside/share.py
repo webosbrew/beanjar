@@ -42,8 +42,8 @@ import stat
 import sys
 from typing import NamedTuple
 
-from . import layermeta
 from ..firmware import targets
+from . import layermeta
 
 # The guest-side scripts every VM has (the launcher's save-logs.sh at stop, time-boot.sh, check-m1.sh).
 BASE = (

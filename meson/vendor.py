@@ -31,13 +31,13 @@ must name the program; nothing is checked against the pin.
 
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import sys
 import tarfile
 import tomllib
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[1]
 PIN = TOP / "packaging/vendor.toml"

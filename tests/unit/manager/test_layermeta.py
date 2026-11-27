@@ -8,9 +8,8 @@ import os
 import shutil
 
 import pytest
-
-from beanjar.guestside import layermeta
 from beanjar import paths
+from beanjar.guestside import layermeta
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 

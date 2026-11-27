@@ -7,9 +7,9 @@ first boot records data-migrator's version instead of migrating."""
 import importlib.machinery
 import importlib.util
 import io
-from pathlib import Path
 import shlex
 import subprocess
+from pathlib import Path
 from unittest import mock
 
 import pytest

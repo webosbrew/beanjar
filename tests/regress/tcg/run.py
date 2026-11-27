@@ -6,11 +6,11 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import socket
 import subprocess
 import time
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 PROFILES = {

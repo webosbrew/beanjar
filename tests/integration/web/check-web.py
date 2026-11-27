@@ -78,8 +78,8 @@ from beanjar.devices import remote_layouts  # noqa: E402
 
 sys.path.insert(0, os.path.join(TOP, "tests", "lib"))
 import audiostream  # noqa: E402
-import videostream  # noqa: E402
 import loopback  # noqa: E402
+import videostream  # noqa: E402
 
 sys.path.insert(0, os.path.join(TOP, "host", "web"))
 from beanjar_web import access, server  # noqa: E402

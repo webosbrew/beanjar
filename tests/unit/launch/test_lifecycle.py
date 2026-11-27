@@ -22,14 +22,11 @@ import unittest
 import warnings
 from unittest import mock
 
-
-from beanjar import base
-from beanjar.vm import library
-from beanjar.runtime import launch, lifecycle, poweroff, unit, vmunits
-from beanjar.access import console
-
 import testunits
-
+from beanjar import base
+from beanjar.access import console
+from beanjar.runtime import launch, lifecycle, poweroff, unit, vmunits
+from beanjar.vm import library
 from launchkit import TOP
 
 

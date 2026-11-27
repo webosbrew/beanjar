@@ -9,8 +9,8 @@ from unittest import mock
 
 import pytest
 from beanjar import base
-from beanjar.vm import library, config, settings
 from beanjar.board import countries, lls
+from beanjar.vm import config, library, settings
 
 # a firmware's RMM tables as W22O 13.30's have them, cut down: two blocks, grpCode per record
 GROUPS = {

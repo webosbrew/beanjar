@@ -5,8 +5,8 @@
 libmicom_sensor and tvbatteryd read them: 0x0C's state and level, its temperatures in 0.1 K, the
 self-diagnosis words of 0x0D and 0x0F, and no answer on a set without a battery."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/lgemu"
 

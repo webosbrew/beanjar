@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Installed resources stay immutable; generated data belongs to the user."""
 
-from pathlib import Path
 import importlib.util
 import os
 import subprocess
 import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -15,8 +15,8 @@ import pytest
 TOP = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(TOP / "host/core"))
 from beanjar import paths
-from beanjar.guestside import share
 from beanjar.board import lls
+from beanjar.guestside import share
 
 
 def test_paths_and_prebuilt_probe(tmp_path):

@@ -13,9 +13,8 @@ import time
 from unittest import mock
 
 import pytest
-
-from beanjar.board import lls
 from beanjar import paths
+from beanjar.board import lls
 
 pytestmark = pytest.mark.skipif(
     not shutil.which("bwrap")

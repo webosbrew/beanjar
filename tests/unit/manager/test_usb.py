@@ -21,11 +21,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "host/core"))
-from beanjar.access import ares, remote
 from beanjar import base
+from beanjar.access import ares, remote
 from beanjar.cli import main
-from beanjar.runtime import lifecycle
 from beanjar.devices import usb
+from beanjar.runtime import lifecycle
 
 
 class FakeQemu:

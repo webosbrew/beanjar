@@ -4,12 +4,11 @@
 """Exercise the real formatting hooks in isolated repositories."""
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[3]
 # what install-hooks.py needs on PATH (the CI's lint job has them all)
@@ -137,6 +136,23 @@ class TestHooks:
         assert "Rolling back fixes" in result.stdout + result.stderr
         assert source.read_text() == "x=3 # unstaged\n"
         assert self.run_cmd("git", "show", ":sample.py").stdout == "x=2\n"
+
+    def test_import_rules_fixed_at_commit_and_failed_by_check(self):
+        source = self.repo / "sample.py"
+        messy = "import sys\nimport os\n\nprint(os.name)\n"
+        source.write_text(messy)
+        self.run_cmd("git", "add", "sample.py")
+        result = self.run_cmd("scripts/format", "check", ok=False)
+        assert result.returncode != 0
+        assert source.read_text() == messy
+        result = self.run_cmd("git", "commit", "-qm", "unsorted", ok=False)
+        assert result.returncode != 0
+        assert source.read_text() == "import os\n\nprint(os.name)\n"
+        self.run_cmd("git", "add", "sample.py")
+        self.run_cmd("git", "commit", "-qm", "sorted")
+        kept = "import sys  # noqa: F401  side effect\n"
+        source.write_text(kept)
+        self.run_cmd("scripts/format", "check")
 
     def test_scope_and_nonmutating_check(self):
         files = {

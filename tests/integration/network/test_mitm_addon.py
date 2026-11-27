@@ -7,10 +7,10 @@ mitmweb it finds (tests/meson.build); under another Python they are skipped."""
 
 import os
 import re
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -21,12 +21,11 @@ import pytest
 pytest.importorskip(
     "mitmproxy", reason="no mitmproxy: run with mitmweb's Python (pipx install mitmproxy)"
 )
+import mitm_addon
 from mitmproxy import connection, http  # noqa: E402
 from mitmproxy.addons.next_layer import NextLayer
 from mitmproxy.proxy import context
-from mitmproxy.proxy.layers import tls
 from mitmproxy.test import taddons
-import mitm_addon
 
 
 def flow(request_headers=(), response_headers=None, method="GET", status=200):

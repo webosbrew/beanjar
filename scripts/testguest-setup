@@ -31,10 +31,10 @@ Then the build is
 """
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOP / "meson"))

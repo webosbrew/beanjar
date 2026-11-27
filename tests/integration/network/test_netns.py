@@ -31,11 +31,10 @@ import subprocess
 import sys
 import threading
 import time
-
-import pytest
 import urllib.error
 import urllib.request
 
+import pytest
 import testunits
 
 HERE = os.path.dirname(os.path.abspath(__file__))

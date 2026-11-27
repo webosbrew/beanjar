@@ -9,7 +9,6 @@ import dns.exception
 import dns.message
 import dns.rrset
 import pytest
-
 from beanjar.network.discovery_dns import _classes, endpoint_ttls, guest_hosts, rewrite
 
 GUEST = "10.0.2.15"

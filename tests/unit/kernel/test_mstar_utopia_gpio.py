@@ -6,8 +6,8 @@ libkadaptor does: pad levels through commands 1, 2, 3 and 5, and MApi_SWI2C's tr
 software I2C bus (a start bit-banged with the pad commands, then command 7 for bytes, 8 for a read
 and 9 for the stop), with a recording device behind slave 0x54 on pads 47/48 (soc/lm15u.toml)."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 MODULE = Path(__file__).resolve().parents[3] / "guest/kernel/modules/mstar-utopia"
 

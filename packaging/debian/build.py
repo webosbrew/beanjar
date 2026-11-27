@@ -10,15 +10,14 @@ guest-installation.toml. Git is never run here. --host-only reads no guest input
 
 import argparse
 import hashlib
-import importlib.metadata
-import re
 import os
-from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(TOP / "host/core"))
@@ -482,7 +481,7 @@ def stage_libraries(tree, destination):
 
 
 def components(source, destination):
-    from importlib.util import spec_from_file_location, module_from_spec
+    from importlib.util import module_from_spec, spec_from_file_location
 
     spec = spec_from_file_location("guest_component_builder", TOP / "meson/components.py")
     module = module_from_spec(spec)
@@ -555,7 +554,7 @@ def unselected_targets(components_dir):
 
 def load_identity():
     """packaging/identity.py, which reads the published source versions (it never runs git here)."""
-    from importlib.util import spec_from_file_location, module_from_spec
+    from importlib.util import module_from_spec, spec_from_file_location
 
     spec = spec_from_file_location("beanjar_identity", TOP / "packaging/identity.py")
     module = module_from_spec(spec)
@@ -834,7 +833,7 @@ def installation_toml(**fields):
 
 
 def audit_private(*roots):
-    from importlib.util import spec_from_file_location, module_from_spec
+    from importlib.util import module_from_spec, spec_from_file_location
 
     spec = spec_from_file_location("audit", TOP / "packaging/shippable.py")
     audit = module_from_spec(spec)
