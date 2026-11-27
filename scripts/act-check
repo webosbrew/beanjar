@@ -51,6 +51,11 @@ fi
 
 work=$TOP/build/act
 mkdir -p "$work/artifacts" "$work/checkout-stub" "$work/image"
+# one run at a time: act's artifact server listens on a fixed port, and the logs are shared
+command -v flock >/dev/null 2>&1 && {
+	exec 9>"$work/lock"
+	flock -n 9 || { echo "act-check: another run is going; waiting for it"; flock 9; }
+}
 cat >"$work/checkout-stub/action.yml" <<'EOF'
 name: checkout stub
 runs:
